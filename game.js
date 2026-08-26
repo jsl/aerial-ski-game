@@ -921,11 +921,35 @@ function _startGame() {
             if (!mat || !mat.albedoColor) continue;
             if (BAKED.test(mat.name)) continue;            // baked in Blender
             if (mat.bumpTexture) continue;                 // already textured
+            // The corridor snow gets its own treatment — measured, not guessed
+            // (iteration 6). The old path put BOTH maps on snowMat: a heavy
+            // normal map (strength 2.34 biases E[nz] < 1, darkening every shaded
+            // pixel systematically) and a tinted albedo map whose mean sits below
+            // the material colour. Meanwhile the flanking fields ride lsMat,
+            // which matches NO rule and stays untextured — so the groomed run
+            // rendered a measured 0.62 luminance against the flanks' 0.79: the
+            // "grey ramp". In-page A/B (tests/drive/grey-ab.spec.js, temp):
+            // swapping the corridor to a plain lsMat-like PBR restored 0.76+
+            // while stripping the bake moved nothing (+0.001). Fix: numeric
+            // albedo tuned a step BRIGHTER than the flanks (the footage wants
+            // the run the brightest surface in frame), dielectric F0 matched to
+            // lsMat (snowMat carried metallicF0Factor=1), and ONLY a gentle
+            // normal map for corduroy/drift relief.
+            const bare = mat.name.replace(/_baked$/, '');
+            if (/^snowMat$/.test(bare)) {
+                mat.metallicF0Factor = 0.21;
+                mat.albedoColor = new BABYLON.Color3(0.955, 0.97, 1.0);
+                const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 256, {
+                    scale: 26, strength: 1.05,
+                });
+                if (surfSnow) mat.bumpTexture = surfSnow.normal;
+                else mat.bumpTexture = null;
+                applied++;
+                continue;
+            }
             // The lightmapped terrain runs on CLONES named "<name>_baked" (see
-            // applyBakedLighting). They are the same surface and must get the same
-            // detail maps, so the suffix is stripped before matching — without
-            // this, exactly the 28 meshes the bake covers would be the ones left
-            // as flat untextured colour.
+            // applyBakedLighting) — same surface, same detail maps, suffix
+            // stripped before matching.
             const rule = RULES.find(r => r[0].test(mat.name.replace(/_baked$/, '')));
             if (!rule) continue;
             const base = [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
@@ -2174,6 +2198,35 @@ function _startGame() {
         wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
         wb.material = lsMat;
     }
+
+    // ── Junction filler slabs (the "cyan seam" fix) ──────────────────────────
+    // The six w* flanks are separate boxes at different slope angles and their
+    // z-ranges do not meet: the whole TRANS zone has no flank slab at all, and
+    // nothing covers KICKER_END+1 → LANDING_START_Z beside the drop. From the
+    // ready camera that showed background through a full-width strip
+    // (measured: 12.2% sky-like pixels in the kicker region). These fillers
+    // bridge every junction generously; being slightly BELOW the corridor tops
+    // they never poke through the run. 'corner*' prefix keeps them in the
+    // extract-terrain STATIC_PREFIXES so future bakes cover them.
+    {
+        const seamSlab = (name, zMid, depth) => {
+            const s = BABYLON.MeshBuilder.CreateBox(name,
+                { width: 110, height: 4, depth }, scene);
+            s.position.set(0, terrainRootY(zMid) - FOOT_OFFSET - 2.2, zMid);
+            s.material = lsMat;
+            return s;
+        };
+        // in-run → transition junction
+        seamSlab('corner_inrun_trans', FLAT_Z - TRANS_LEN / 2, TRANS_LEN + 10);
+        // transition → table junction
+        seamSlab('corner_trans_table', FLAT_Z + TRANS_LEN / 2, TRANS_LEN + 12);
+        // table end → landing start: the gap that showed fog/sky through it
+        const gapMid = (KICKER_END_Z + 1 + LANDING_START_Z) / 2;
+        seamSlab('corner_table_landing', gapMid, LANDING_START_Z - (KICKER_END_Z + 1) + 12);
+        // landing → outrun join
+        seamSlab('corner_landing_outrun', OUTRUN_Z, 14);
+    }
+
 
     // ── Background mountain peaks — distributed to fill the horizon ────────────
     // Camera in side view looks from -X toward +X, so peaks at positive X form

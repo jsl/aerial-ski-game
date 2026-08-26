@@ -34,8 +34,7 @@ test('surface maps are generated and applied across the scene', async ({ page })
                     hasNormal: !!m.bumpTexture,
                     hasAlbedo: !!m.albedoTexture,
                     uScale: m.bumpTexture ? m.bumpTexture.uScale : null,
-                    // albedoColor must be white once an albedo MAP is present,
-                    // or the hue multiplies in twice and everything darkens.
+                    f0: typeof m.metallicF0Factor === 'number' ? m.metallicF0Factor : null,
                     albedoColor: m.albedoColor
                         ? [m.albedoColor.r, m.albedoColor.g, m.albedoColor.b] : null,
                 };
@@ -49,11 +48,20 @@ test('surface maps are generated and applied across the scene', async ({ page })
 
     expect(info.snow, 'snowMat missing').not.toBeNull();
     expect(info.snow.hasNormal, 'snow has no normal map').toBe(true);
-    expect(info.snow.hasAlbedo, 'snow has no albedo map').toBe(true);
     expect(info.snow.uScale, 'snow texture is not tiled').toBeGreaterThan(1);
-    expect(info.snow.albedoColor.every(c => c === 1),
-        'albedoColor was not neutralised — the base hue is being applied twice, ' +
-        'which darkens every textured surface').toBe(true);
+    // Grey ramp (iteration 6): the corridor carries a NORMAL map only. A tinted
+    // albedo map over a white base multiplied its sub-unity mean through every
+    // pixel while the untextured flanks stayed bright — the run measured 17%
+    // darker than its own flanks. The hue now lives in an explicit albedoColor,
+    // tuned a step brighter than lsMat's flanks, with dielectric F0 matched.
+    expect(info.snow.hasAlbedo,
+        'snowMat must not carry an albedo map — see the grey-ramp note in game.js')
+        .toBe(false);
+    expect(info.snow.f0).toBeCloseTo(0.21, 5);
+    expect(info.snow.albedoColor).not.toBeNull();
+    expect(Math.abs(info.snow.albedoColor[0] - 0.955)).toBeLessThan(0.01);
+    expect(Math.abs(info.snow.albedoColor[1] - 0.97)).toBeLessThan(0.01);
+    expect(Math.abs(info.snow.albedoColor[2] - 1.0)).toBeLessThan(0.01);
 
     expect(errors, 'errors during texture generation').toEqual([]);
 });
