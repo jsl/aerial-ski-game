@@ -199,13 +199,16 @@ modes; add a spec for the night mode (light count, particle system present and e
 sky luminance low, snow luminance under lights high).
 
 ### P10 — Free-look camera after the run (author request, 2026-08-26)
-Once the athlete has landed and stopped, or the crash ragdoll has settled, and during
-replay playback, let the player pan around the scene: drag (mouse/touch) orbits the
+In the **ready state before the run starts**, once the athlete has landed and stopped, or
+the crash ragdoll has settled, and during replay playback, let the player pan around the
+scene: drag (mouse/touch) orbits the
 `ArcRotateCamera` around the athlete, wheel/pinch zooms within sane limits, arrow keys/WASD
 nudge, and `C` still cycles the preset views. The per-frame camera follow must yield to user
 input in these states (resume following on the next run). Show a one-line HUD hint ("drag to
-look around") the first time. Acceptance: a drive spec drives a full run to a stop, injects a
-drag, and asserts `camera.alpha`/`beta` changed and stay changed until the next run starts.
+look around") the first time. The free-look must not swallow the inputs that start the run (the launch/charge keys and
+buttons still work while orbiting). Acceptance: a drive spec injects a drag in the ready
+state and asserts `camera.alpha`/`beta` changed; then drives a full run to a stop, drags
+again, and asserts the view changed and stays changed until the next run starts.
 
 ## Definition of done for the branch
 All P0–P6, P9 and P10 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
