@@ -110,6 +110,20 @@ bone; bind arms ~10° abducted, tighten weights), shins 12 cm outboard of the sk
 pitched back ≈ 25° (`crown` taken at x = 0). Make the build log's centroid-vs-target lines
 hard failures.
 
+### P9 — Night snowfall mode (author request, 2026-08-26)
+A switchable weather/time mode modelled on `reference/frames/IMG_3396/` (night training
+session, heavy snowfall): near-black sky with no horizon detail; warm floodlights on poles
+along the in-run and table (point/spot lights with visible pools on the snow, a few sources,
+not hundreds); the kicker block and table brightly lit and reading pure white; falling snow
+as a GPU particle system in a camera-following volume (thousands of flakes, slow fall with
+wind drift and slight turbulence, size 1–4 px, brighter near the lights, visible against the
+dark sky and faint against snow); reduced visibility via dark fog; a puff of snow off the lip
+at takeoff (`_spawnSnowBurst` variant) and a bigger, slower-dissipating landing cloud. Snow
+surface reflectance stays high so lit snow does not go grey. Toggle by URL parameter and/or a
+menu option; the default remains the sunny day mode; every existing spec must pass in both
+modes; add a spec for the night mode (light count, particle system present and emitting,
+sky luminance low, snow luminance under lights high).
+
 ## Definition of done for the branch
-All P0–P6 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
+All P0–P6 and P9 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.
