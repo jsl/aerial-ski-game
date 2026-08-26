@@ -52,7 +52,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | open | |
-| P2 | Sky and sun | open | |
+| P2 | Sky and sun | open | **measured (iter 5): sky luminance 0.799 > snow 0.787 — snow is NOT the brightest surface; athlete shadow drop only 11.6% (target ≥15%); still plain `ShadowGenerator(2048)` (game.js:756)** |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
 | P5 | Snow surfaces | open | |
@@ -62,7 +62,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
-| — | Reviewer order 3: grey ramp | open | next; A/B harness committed (`compare.spec.js`) |
+| — | Reviewer order 3: grey ramp | open | **measured (iter 5): corridor 0.622 vs flanks 0.787/0.788 luminance — run reads 17% darker than its own flanks**; A/B harness committed (`compare.spec.js`) + baseline in `review-measure.spec.js` |
 | — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; before P1 |
 
 ## Open questions for the reviewer
@@ -282,3 +282,81 @@ it had introduced (stripe off the shins) and a new build gate that would have ca
 - Ready stance (order 4), then P1. P8 residuals: hands ride slightly forward in the ready
   crouch (re-check after the ready-stance pose lands); crotch loop is base-mesh geometry
   (needs a base-mesh seam fix, queued behind the order list).
+
+### 5 — Review-only: measured audit of the current render, no features
+
+Shots inspected directly (I can view PNGs) and re-measured with a new non-gating
+harness, `tests/drive/review-measure.spec.js` (prints `REVIEW_MEASURE`; boot + three
+camera probes ≈ 90 s). Self-review of iter 4 first: commit intact, working tree clean,
+no scratch-bake files, `./tests/run-all.sh` **ALL GREEN** (unit 73/73, golden 30/30,
+browser + mutation + coverage pass, drive 38/38), `look` shots regenerated.
+
+**What reads wrong now (measurements from the scene view; regions are fixed fractional
+boxes of the 1100×850 frame — harness kept as the A/B baseline)**
+
+1. **Grey ramp (order 3, still open — now quantified).** Corridor (table beside the
+   athlete) mean luminance **0.622** vs near flank **0.787** and far flank **0.788** —
+   the run reads **17% darker** than its own flanks; the footage wants the run the
+   brightest surface in frame. Worse, the **sky itself measures 0.799 — brighter than
+   every snow surface**, so P2's "snow the brightest surface in frame" is violated even
+   before the sky is modelled. The kicker face measures 0.651, the ribbed transition
+   0.640 — both in the dark band. Next iteration: A/B the suspect list from the
+   feedback (stale `terrain_skyvis`/`terrain_shadow` multipliers on the lightmapped
+   meshes, `_baked` clones losing detail maps, `lsMat` vs `snowMat`, exposed dark side
+   faces, SSAO in the concave transition) using `compare.spec.js` + this harness.
+2. **Background still visible through the kicker region (cyan-seam family).** The
+   kicker-face sample contains **12.2% sky-like (blue-dominant) pixels** in the scene
+   view — the gap between the `wb`/`w*` flank boxes around `game.js:2160` shows fog/sky
+   behind the kicker from this angle. Caveat on the row-scan half of the probe: its
+   worst row (y=0.40, 15%) is the horizon-adjacent top row, where real sky legitimately
+   appears, so the kicker-region skyFrac is the usable seam number; a proper
+   "no sky colour inside the terrain footprint" check needs the P1 camera angles.
+3. **The athlete casts no usable shadow (P2 quick win, still open).** Overhead ring
+   probe (8 points at 2 m around the standing athlete, same frame): darkest ring patch
+   **0.592 vs lit 0.670 = 11.6% drop** — under the ≥15% acceptance, and the ring min
+   flatters the real under-foot number. Cause unchanged since the feedback: plain
+   `ShadowGenerator(2048, sunLight)` (game.js:756) auto-fitted to every caster (~174
+   trees + peaks + the whole run ≈ 20 cm/texel). Tree shadows DO render (visible in the
+   shots) but the skier is lost. CSM work not started; `ASSET_V` remains 8.
+4. **Interim tree-trunk fix never landed.** Trunks are still `tessellation: 6` and
+   foliage `tessellation: 7` (game.js:2090/2095) — the reviewer's stopgap (≥16 sides,
+   base flare, snow collar) is a ~10-line change that was overtaken by the athlete
+   rebuild; the shots still show faceted cones on cylinders. Do it before P4 impostors.
+5. **Skis are still flat slats.** No curved-tip code exists (the feedback item has no
+   implementation; only a physics-side comment at game.js:3873 mentions tips). The
+   shots show flat black bars under the boots.
+6. **Athlete residuals confirmed in this rebuild's shots (P8 open list):** hands hang
+   clearly in FRONT of the thighs in the ready crouch (figure_front — the known
+   ready-pose residual, re-check after ready-stance lands); bib is a faint pale patch
+   with no legible digits (P7 bib number 30 not started); shoulders read as broad puffy
+   lumps (the 31%-of-height item); a skin-coloured patch (face slot) is visible from
+   the rear-quarter view — worth checking the helmet brim wraps behind the ear line
+   before calling it done.
+7. **World dressing gaps vs footage (as planned, not regressions):** flat cyan
+   background with a fog band and low-poly cone peaks (P2/P6), no B-net/wands/flag/deck
+   (P3), no forest walls (P4), smooth white landing with no chop (P5).
+
+**Regressions:** none found. Iter 4's rebuild holds (bind≡driver gates, stripe bake
+gate, leg-step gate all green in the suite).
+
+**Re-prioritised list for the next iterations** (changed items bolded):
+1. **Grey ramp + kicker seam** (order 3) — baseline numbers above; expect the biggest
+   visual win per hour; includes making the flank fills continuous.
+2. **Interim tree trunks** (tessellation 16+, smooth normals, base flare + snow
+   collar, foliage 12+ or stacked layered cones, instanced) — small, do before P4.
+3. **Shadow quick win** (order "right after 3"): CSM per the P2 paragraph, athlete +
+   skis guaranteed casters after async load; acceptance thresholds already in the plan;
+   reuse `review-measure.spec.js`'s ring probe for the ≥15% number.
+4. Ready stance (order 4, unchanged).
+5. P1 in slices: continuous corridor ribbon sampling `terrainRootY − FOOT_OFFSET`
+   (C1, ≤0.25 m samples), skirts/base + snow underside, lateral blend that removes the
+   seam for good, roll-out radius; keep the C1 physics findings under Open questions.
+6. P2 sky/sun (gradient sky, sun disc, fog re-tune, post 1.6→~1.2) — after the terrain
+   reads white so brightness comparisons become meaningful.
+7. Then P3 dressing, P4 forest; P7 bib number and curved ski tips stay queued as
+   small renderer-side wins between larger items.
+
+**Verification:** unit 73/73; golden 30/30; full `run-all.sh` ALL GREEN; drive 38/38
+before this iteration's additions; `review-measure.spec.js` green standalone and in the
+full-suite rerun (result recorded in the commit). No `engine/`, no `body-model`, no
+`assets/` changes; `ASSET_V` unchanged at 8.
