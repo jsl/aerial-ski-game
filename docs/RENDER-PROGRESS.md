@@ -63,7 +63,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | open | **measured (iter 5): corridor 0.622 vs flanks 0.787/0.788 luminance — run reads 17% darker than its own flanks**; A/B harness committed (`compare.spec.js`) + baseline in `review-measure.spec.js` |
-| — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; before P1 |
+| — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; **+ ready-state arms hang at the sides (|hand z − hip z| ≤ 3 cm) per the reviewer's post-iter-4 check**; before P1 |
+| — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
 ## Open questions for the reviewer
 
@@ -340,6 +341,11 @@ boxes of the 1100×850 frame — harness kept as the A/B baseline)**
 gate, leg-step gate all green in the suite).
 
 **Re-prioritised list for the next iterations** (changed items bolded):
+0. **The reviewer's post-iter-4 check landed mid-iteration (81d866c):**
+   `APPROVED: body proportions rebaseline` is queued as its own physics commit
+   (own commit + golden rebaseline + athlete rebuild, ±5% flip-rate constraint) and
+   the ready-stance item now also pins the arms at the sides (|hand z − hip z| ≤ 3 cm).
+   Both fold into the queue below; the rebaseline is a full iteration by itself.
 1. **Grey ramp + kicker seam** (order 3) — baseline numbers above; expect the biggest
    visual win per hour; includes making the flank fills continuous.
 2. **Interim tree trunks** (tessellation 16+, smooth normals, base flare + snow
