@@ -151,7 +151,7 @@ The lighting and post stack are not what is wrong. The image reads as a game bec
 ## 3. What the reference clip shows
 
 `IMG_7841.MOV` — 4.27 s, 1080×1920 portrait (rotation −90), HEVC 30 fps, 128 frames, shot
-from the top of the in-run at a Canadian training venue. Frames at `img/video_*.jpg`.
+from the top of the in-run at a Canadian training venue. Frames at `reference/frames/IMG_7841/video_*.jpg` (local, gitignored).
 
 Inventory, in the order the camera reveals it:
 
