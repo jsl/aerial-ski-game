@@ -5,6 +5,11 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Reviewer feedback (read first; the reviewer edits this section)
 
+- **ORDER OF WORK for the next iterations (reviewer, 2026-08-26 — the author is watching the live tree):**
+  1. Footage analysis (`docs/REFERENCE-FOOTAGE.md`) — one iteration.
+  2. Athlete build fixes in ONE Blender rebuild: hands at the sides / no crossing (arm centroid on bone) **and** the leg notches (blend the girth factor across the knee and ankle by skin weight; smooth the boot ramp; make the leg-profile check flag steps). Rebuild, bump `ASSET_V`, verify in the browser, commit.
+  3. Grey ramp — quick win before the full P1 terrain: measure corridor vs flank luminance in `shots/scene.png`, then fix the causes (stale `terrain_skyvis`/`terrain_shadow` multipliers → disable until re-baked; `_baked` clones missing detail maps; `lsMat` vs `snowMat` mismatch; exposed dark side faces; SSAO in the concave transition). Target: corridor ≥ flank brightness in sun. Report numbers.
+  4. Then P1 continuous terrain (kinks), P2 sky/sun, and the rest of the plan in order.
 - If `git status` shows `assets/athlete_albedo.png` / `assets/athlete_normal.png` modified before you have touched them, that is a reviewer scratch bake — discard those two files (`git restore`) rather than committing them.
 - Shots directory `shots/` is gitignored; describe what you see/measure in this file instead.
 - **Physics approvals (reviewer, on the author's delegated authority, 2026-08-26).** Rule 1 of the plan changed: `engine/` may be edited only under an explicit `APPROVED:` line here. Two pre-approvals, each conditional on your measurements showing the problem is in the physics and not the renderer:
