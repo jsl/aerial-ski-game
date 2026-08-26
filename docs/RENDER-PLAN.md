@@ -77,6 +77,12 @@ kicker is a sculpted block with near-vertical sides; the landing is a bowl with 
 and a rounded knoll. Keep `snowMat` on the corridor. Update `blender/terrain.json` /
 `extract-terrain.spec.js` if the bake pipeline reads the geometry.
 
+**The ground is solid (author, 2026-08-26).** The corridor ribbon, the flank fills and the
+ridgelines must be closed volumes: extrude a skirt from every terrain edge down to a common
+base level well below the lowest playable point, cap it with a base plane, and give the
+terrain material `backFaceCulling = false` with a snow-coloured underside as a last line of
+defence, so no camera angle ever shows the world's underside or a see-through edge.
+
 ### P2 — Sky and sun
 Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_7841): sunny mode confirmed — deep blue
 zenith with cumulus, sun ≈30–35° from camera-left, hard cool shadows, snow the brightest
@@ -209,6 +215,15 @@ look around") the first time. The free-look must not swallow the inputs that sta
 buttons still work while orbiting). Acceptance: a drive spec injects a drag in the ready
 state and asserts `camera.alpha`/`beta` changed; then drives a full run to a stop, drags
 again, and asserts the view changed and stays changed until the next run starts.
+
+**Never see under the terrain (author, 2026-08-26).** In free-look the camera must stay above
+the snow: clamp the camera position each frame to ≥ 1.0 m above the terrain height under it
+(`terrainRootY`/the visual heightfield, whichever is lower, plus the flank fills), and cap the
+orbit so the eye cannot pass below the local surface — a beta limit derived from the slope
+under the camera, not a fixed 0.05. Acceptance: a spec sweeps alpha/beta/radius to their
+limits in the ready state and after a run and asserts the camera's height above the terrain
+under it never drops below 0.5 m and that no rendered frame has the black/backface look
+(sample the frame's lower third: no region reads as unlit backface).
 
 ## Definition of done for the branch
 All P0–P6, P9 and P10 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
