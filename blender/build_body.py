@@ -152,20 +152,41 @@ def bl(name):
     """
     Segment centre in BLENDER axes.
 
-    Determined empirically: the glTF exporter's export_yup conversion combines
-    with Blender's own axes such that the round trip lands as Babylon (x, y, z) =
-    Blender (y, z, x). So in Blender, X is fore/aft (chest faces +X), Y is
-    left/right, and Z is up. The suit detail below depends on that mapping.
+    THE FRAME CONTRACT, measured twice before being trusted (2026-08-26):
+
+    The game consumes the glTF vertex data RAW — it re-parents the body meshes
+    under skierRoot with an identity local transform — so whatever the exporter
+    writes IS the space the drivers live in. glTF is Y-up, and export_yup
+    converts Blender (x, y, z) -> glTF (x, z, -y). The drivers live with lateral
+    on their x, up on their y, and FORWARD on NEGATIVE z. So the mesh must be
+    AUTHORED in Blender as:
+
+        Blender X = lateral   (the game's L segments at NEGATIVE x)
+        Blender Y = -forward  (the CHEST faces +Y, so exporting turns +Y into -z)
+        Blender Z = up
+
+    With that mapping a segment centre exported from `bl()` lands at exactly the
+    coordinates its driver node occupies, and no runtime unbaking is needed. The
+    previous mapping — Blender (depth, lateral, height), chest on +X — sent the
+    mesh out 90 degrees yawed from its own skeleton, which is what produced the
+    shoulder humps, the sideways torso and the "game L = metarig R" swap below it.
+
+    The suit-detail code downstream assumes: lateral on X, fore/aft on Y (chest
+    positive), up on Z.
     """
     p = POSE.get(name, {})
     if is_arm(name):
-        x_babylon, y_babylon = ARM_BIND[name]
-        z_babylon = BASE_Z.get(name, 0.0)
+        # At rest armSweep has swept phi = pi: the arm segment centre has fallen
+        # from its overhead UNtucked spot to just under the shoulder pivot, which
+        # ARM_BIND records. These ARE the driver node positions at rest
+        # (measured: upperArmL node at (-0.205, 0, +0.008)).
+        lateral, vertical = ARM_BIND[name]
+        forward = BASE_Z.get(name, 0.0)
     else:
-        x_babylon = p.get('x', 0.0)
-        y_babylon = p.get('y', 0.0)
-        z_babylon = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
-    return Vector((z_babylon, x_babylon, y_babylon))
+        lateral = p.get('x', 0.0)
+        vertical = p.get('y', 0.0)
+        forward = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
+    return Vector((lateral, -forward, vertical))
 
 
 def seg_ends(name):
@@ -193,11 +214,10 @@ def load_base():
     """
     Bring in the CC0 human body and put it in the rig's axes.
 
-    The bundle's figure stands with its arm span along X and its fore/aft along
-    Y; bl() expects the opposite. Rotating 90 degrees about Z lines them up, and
-    which way the chest ends up facing is checked afterwards from the mesh's own
-    asymmetry rather than assumed — the base mesh's front is its -Y side, so a
-    +90 rotation puts the chest on +X, which is what bl() wants.
+    The bundle's figure stands with its arm span along X and its chest facing
+    -Y; the frame contract above wants the span on X (either sign, the mesh is
+    bilaterally symmetric) and the CHEST on +Y. A half turn about Z delivers
+    both: (x, y) -> (-x, -y), chest from -Y to +Y.
     """
     path = BASE if os.path.isabs(BASE) else os.path.join(ROOT, BASE)
     with bpy.data.libraries.load(path, link=False) as (src, dst):
@@ -207,7 +227,7 @@ def load_base():
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    obj.rotation_euler = (0, 0, math.radians(90))
+    obj.rotation_euler = (0, 0, math.radians(180))
     bpy.ops.object.transform_apply(rotation=True)
 
     me = obj.data
@@ -285,8 +305,8 @@ def anatomical_joints(obj):
     a shoulder placed at the centre of the "upperArm" segment is nowhere near
     where a shoulder is.
 
-    Returned in the rig's axes — X fore/aft, Y lateral, Z up — which is the
-    metarig's own axes rotated the same 90 degrees as the mesh.
+    Returned in the rig's axes — X lateral, Y -forward, Z up — which is the
+    metarig's own axes rotated the same half turn about Z as the mesh.
     """
     bpy.ops.preferences.addon_enable(module='rigify')
     bpy.ops.object.armature_human_metarig_add()
@@ -302,28 +322,23 @@ def anatomical_joints(obj):
     s = mesh_h / meta_h
 
     def conv(v):
-        # Metarig axes -> rig axes: the same +90 degrees about Z applied to the
-        # mesh, i.e. (x, y, z) -> (-y, x, z), then scaled to this figure.
-        return Vector((-v.y * s, v.x * s, v.z * s))
+        # Metarig axes -> rig axes: the same 180 degrees about Z applied to the
+        # mesh, i.e. (x, y, z) -> (-x, -y, z), then scaled to this figure.
+        return Vector((-v.x * s, -v.y * s, v.z * s))
 
     # WHICH METARIG SIDE IS THE GAME'S "L"?
     #
-    # The game's L and R are LABELS, not anatomy. In this frame — X forward, Z up
-    # — the figure's left is +Y, but bl('upperArmL').y is NEGATIVE. So the game's
-    # "L" segments live on the anatomical right, and taking Rigify's .L for them
-    # builds every limb on one side of the body and then poses it across to the
-    # other. Measured, upperArmL was created at y = +0.165 and dragged to
-    # -0.205: the limbs crossed the midline, the legs splayed, and the feet
-    # missed the skis entirely.
-    #
-    # Derived from the sign rather than hardcoded, so it stays correct if the
-    # pose tables are ever mirrored.
+    # The game's L and R are LABELS, not anatomy: L segments sit at NEGATIVE x.
+    # Under the frame contract the anatomical left lands on Blender X negative,
+    # so the sides SHOULD agree now. The check stays derived from the signs
+    # rather than hardcoded, so it keeps catching a mirrored source instead of
+    # silently building every limb on the wrong side and posing it across.
     probe = conv(bones['upper_arm.L'].head_local)
-    game_left_is_metarig_L = (probe.y < 0) == (bl('upperArmL').y < 0)
+    game_left_is_metarig_L = (probe.x < 0) == (bl('upperArmL').x < 0)
     sideL = '.L' if game_left_is_metarig_L else '.R'
     sideR = '.R' if game_left_is_metarig_L else '.L'
     log(f'game "L" maps to metarig {sideL} '
-        f'(metarig .L converts to y={probe.y:+.3f}, game wants {bl("upperArmL").y:+.3f})')
+        f'(metarig .L converts to x={probe.x:+.3f}, game wants {bl("upperArmL").x:+.3f})')
 
     def head_of(name):
         return conv(bones[name].head_local)
@@ -553,7 +568,7 @@ def skeleton_offset(co):
         # towards that axis — and for the shins, whose factor is 0.75, that dragged
         # both inner faces across the gap until the two legs merged into a single
         # column. It reads as one leg missing, not as a leg in the wrong place.
-        if abs(c.y) > 0.02 and (c.y > 0) != (p.y > 0):
+        if abs(c.x) > 0.02 and (c.x > 0) != (p.x > 0):
             continue
         half = SEGMENTS[name]['h'] / 2
         z = max(c.z - half, min(c.z + half, p.z))          # clamp onto the axis
@@ -581,8 +596,8 @@ def build_report(body, tag):
     stand = hi - lo
 
     def width_at(z, band=0.03):
-        ys = [v.co.y for v in body.data.vertices if abs(v.co.z - z) < band]
-        return (max(ys) - min(ys)) if ys else 0.0
+        xs = [v.co.x for v in body.data.vertices if abs(v.co.z - z) < band]
+        return (max(xs) - min(xs)) if xs else 0.0
 
     shoulder = width_at(bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.72)
     chest = width_at(bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.30)
@@ -688,9 +703,10 @@ def shape_helmet(body):
     c = bl('head')
     jaw = c.z - seg['h'] / 2 * 0.55
 
-    # Fore/aft, lateral, vertical radii. A helmet is longer front-to-back than it
-    # is wide, and its crown sits above the head's own centre.
-    rx, ry, rz = seg['d'] / 2 * 1.02, seg['w'] / 2 * 1.00, seg['h'] / 2 * 1.06
+    # Lateral, fore/aft, vertical radii. A helmet is longer front-to-back than it
+    # is wide, and its crown sits above the head's own centre. With the frame
+    # contract above, lateral is X and fore/aft is Y.
+    rx, ry, rz = seg['w'] / 2 * 1.00, seg['d'] / 2 * 1.02, seg['h'] / 2 * 1.06
     top = c.z + rz
     moved = 0
     own4 = dominant_segments(body)
@@ -767,9 +783,11 @@ def leg_profile(body, tag):
     rows, prev = [], None
     z = hip
     while z > sole:
-        ys = [v.co.y for v in body.data.vertices
-              if abs(v.co.z - z) < 0.012 and v.co.y < -0.005]
-        w = (max(ys) - min(ys)) if len(ys) > 3 else 0.0
+        # Lateral width is X now; keep only the game-L half of the figure so a
+        # jog of the two thighs cannot read as one wide leg.
+        xs = [v.co.x for v in body.data.vertices
+              if abs(v.co.z - z) < 0.012 and v.co.x < -0.005]
+        w = (max(xs) - min(xs)) if len(xs) > 3 else 0.0
         rows.append((z, w))
         z -= 0.02
     widths = [w for _, w in rows]
@@ -813,7 +831,7 @@ def rigid_boots(body, arm, joints):
             continue
         t = min(1.0, max(0.0, (ankle_z + BAND - v.co.z) / BAND))
         t = t * t * (3 - 2 * t)                       # smoothstep
-        side = 'L' if v.co.y < 0 else 'R'
+        side = 'L' if v.co.x < 0 else 'R'             # lateral is X now
         for g in list(v.groups):
             nm = body.vertex_groups[g.group].name
             if nm == f'lowerLeg{side}':
@@ -823,6 +841,127 @@ def rigid_boots(body, arm, joints):
         fixed += 1
     log(f'boots pinned to the shins over a {BAND * 1000:.0f} mm ramp: '
         f'{fixed} vertices')
+
+
+# ── Rest frame normalisation ────────────────────────────────────────────────
+
+# Blender -> glTF coordinate permutation used by export_yup: (x, y, z) -> (x, z,
+# -y). As a matrix (rows), conjugating a Blender-space rotation with this turns
+# it into the rotation the exporter will write into the glb.
+CONV = Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0)))
+
+
+def normalize_bind_frame(arm, foot_lift):
+    """
+    Point every bone's REST ROTATION at its driver's rest rotation.
+
+    The mesh is authored in the driver frame (see bl()), and the shift before
+    this put every bone's head — the exported node TRANSLATION — on the segment
+    centre. But glTF also exports each joint's ROTATION from the bone's rest
+    matrix, and Babylon skins a vertex with `current x inverseBind`: whatever
+    rotation the file carries at bind time is subtracted from whatever the
+    linked driver says every frame afterwards. If the exported rest rotation is
+    anything other than the driver's rest rotation, EVERY vertex gets skinned by
+    that residual twist even standing perfectly still. Measured on the old
+    build, those residuals ran 4–38 degrees per bone, displacing forearm
+    vertices 0.29 m — the shoulder humps and the sideways torso.
+
+    On the running game every driver sits, at rest, at its POSE_UNTUCKED spot
+    with rotation IDENTITY — except the arms, which armSweep has swept by phi =
+    pi at armDrop = 1 (measured: upperArmL node at (-0.205, 0, +0.008),
+    rotation (-pi, 0, 0)). So the exported rest rotations must be:
+
+        identity            for torso/head/legs
+        pi about X          for all four arm segments
+
+    An arbitrary target rotation is always realisable on an edit bone whose
+    y-axis (head -> tail) runs along the target's second column — for the legs
+    that leaves tails sticking out level BEHIND each centre, for the arms level
+    in FRONT. Odd to look at, and irrelevant to the weights: bones in this rig
+    name influences, they never carry geometry.
+
+    Implemented iteratively rather than by replicating Blender's
+    vec_roll_to_mat3: set head/tail, read what the armature actually produced,
+    and close the residual roll to zero. Hard-fails unless every bone matches
+    to half a millimetre / five thousandths of a radian.
+    """
+    export_target = {n: Matrix.Identity(3) for n in ANATOMY}
+    for n in ANATOMY:
+        if is_arm(n):
+            export_target[n] = Matrix.Rotation(math.pi, 3, 'X')
+
+    bpy.ops.object.select_all(action='DESELECT')
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+
+    def snap():
+        bpy.ops.object.mode_set(mode='OBJECT')
+        return {nm: arm.pose.bones[nm].bone.matrix_local.copy()
+                for nm in ANATOMY}
+
+    # Place head/tail along the desired rotation's y column, at the rest length
+    # each bone already had — the shins' is shorter than the segment, by the
+    # boot lift, and the clean-bake audit below depends on that staying true.
+    bpy.ops.object.mode_set(mode='EDIT')
+    for nm in ANATOMY:
+        eb = arm.data.edit_bones[nm]
+        want = CONV.transposed() @ export_target[nm] @ CONV       # Blender axes
+        c = bl(nm)
+        u = want.col[1].normalized()
+        length = SEGMENTS[nm]['h']
+        if nm.startswith('lowerLeg'):
+            length -= foot_lift
+        eb.head = c
+        eb.tail = c + u * length
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    mats = snap()
+    worst_r = worst_t = None
+    for _attempt in range(8):
+        worst_r = worst_t = 0.0
+        bpy.ops.object.mode_set(mode='EDIT')
+        for nm in ANATOMY:
+            eb = arm.data.edit_bones[nm]
+            want = CONV.transposed() @ export_target[nm] @ CONV
+            # cur carries the bone LENGTH as a y-scale; strip it so the
+            # difference below can only be a spin about the shared y axis.
+            cur = mats[nm].to_3x3().copy()
+            for ci in range(3):
+                cur.col[ci].normalize()
+            e = cur.inverted() @ want
+            d_roll = math.atan2(e[0][2], e[0][0])
+            resid = e.to_4x4() @ Matrix.Rotation(-d_roll, 4, 'Y')
+            ang = max(abs(resid[0][0] - 1.0), abs(resid[0][2]),
+                      abs(resid[1][0]), abs(resid[1][2]),
+                      abs(resid[2][2] - 1.0))
+            trans = (mats[nm].translation - bl(nm)).length
+            if ang > worst_r:
+                worst_r = ang
+            if trans > worst_t:
+                worst_t = trans
+            eb.roll += d_roll
+        bpy.ops.object.mode_set(mode='OBJECT')
+        mats = snap()
+        if worst_r < 5e-3 and worst_t < 5e-4:
+            break
+
+    log(f'rest frames normalised to the drivers: worst residual '
+        f'{worst_r * 1000:.1f} mrad, translation {worst_t * 1000:.2f} mm')
+    # The exported asset is only self-consistent if this is exact; fail the
+    # build otherwise rather than shipping a figure that twists at rest.
+    if worst_r > 5e-3 or worst_t > 5e-4:
+        detail = []
+        for nm in ANATOMY:
+            want = CONV.transposed() @ export_target[nm] @ CONV
+            cur = mats[nm].to_3x3().copy()
+            for ci in range(3):
+                cur.col[ci].normalize()
+            e = cur.inverted() @ want
+            detail.append(f'{nm}: yaw-at-rest {math.degrees(math.atan2(e[0][2], e[0][0])):.2f} deg, '
+                          f'trans {(mats[nm].translation - bl(nm)).length * 1000:.2f} mm')
+        raise SystemExit('[body] bind frame failed to normalise:\n  ' + '\n  '.join(detail))
+    return mats
+
 
 
 def pose_onto_segments(body, arm, foot_lift):
@@ -949,6 +1088,11 @@ def pose_onto_segments(body, arm, foot_lift):
     bpy.ops.object.mode_set(mode='OBJECT')
     log('bind pose shifted onto the driver nodes (segment centres)')
 
+    # …and now the ROTATION half of "bind equals driver": see the essay on
+    # normalize_bind_frame. Without it every bone carries its metarig-inherited
+    # roll into the export and the game skins a residual twist into every vertex.
+    normalize_bind_frame(arm, foot_lift)
+
     bad = []
     for name in ANATOMY:
         pb = arm.pose.bones[name]
@@ -1043,6 +1187,8 @@ def segment_frame(co, force=None):
     side the vertex was on and then used that as the outboard direction, which
     inverts it — so the blue stripe and the panel seam were both painted down the
     INSIDE of each leg, where they are invisible between the athlete's knees.
+
+    Frame contract: lateral on X, fore/aft on Y with the chest POSITIVE, up Z.
     """
     x, y, z = co
     if force is not None:
@@ -1050,8 +1196,8 @@ def segment_frame(co, force=None):
         half = SEGMENTS[force]['h'] / 2
         radial = math.hypot(x - c.x, y - c.y)
         along = max(-1.0, min(1.0, (z - c.z) / half)) if half > 0 else 0.0
-        out = 1.0 if c.y >= 0 else -1.0
-        front = 1.0 if (x - c.x) > 0 else -1.0
+        out = 1.0 if c.x >= 0 else -1.0
+        front = 1.0 if (y - c.y) > 0 else -1.0
         return force, along, radial, out, front, (x - c.x, y - c.y, z - c.z)
     best, best_d = None, 1e9
     for name in BODY_SEGMENTS:
@@ -1066,25 +1212,26 @@ def segment_frame(co, force=None):
             best_d, best = d, (name, c, half, radial)
     name, c, half, radial = best
     along = max(-1.0, min(1.0, (z - c.z) / half)) if half > 0 else 0.0
-    out = 1.0 if c.y >= 0 else -1.0
-    front = 1.0 if (x - c.x) > 0 else -1.0
+    out = 1.0 if c.x >= 0 else -1.0
+    front = 1.0 if (y - c.y) > 0 else -1.0
     return name, along, radial, out, front, (x - c.x, y - c.y, z - c.z)
 
 
-def bib_mask(name, along, front, ly):
+def bib_mask(name, along, front, lat):
     """
     1 inside the competition bib, 0 outside, with a short ramp at the border.
 
     The bib in the reference covers the chest from just under the arms to the
     waist and wraps a little way round the ribs; it is a front garment, so the
-    back of the torso is bare suit.
+    back of the torso is bare suit. `lat` is the LATERAL offset from the segment
+    axis — how far round towards the ribs.
     """
     if name != 'torso' or front < 0:
         return 0.0
     if not (-0.68 < along < 0.52):
         return 0.0
     edge = min(along + 0.68, 0.52 - along) / 0.12
-    wrap = 1.0 - max(0.0, (abs(ly) - 0.09) / 0.05)
+    wrap = 1.0 - max(0.0, (abs(lat) - 0.09) / 0.05)
     return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
 
 
@@ -1106,7 +1253,7 @@ def displace_suit(obj):
     for i, v in enumerate(verts):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
-        lx, ly, lz = local
+        lx, ly, lz = local          # lateral, fore/aft (chest +), up
         d = 0.0
 
         is_head = name == 'head'
@@ -1116,7 +1263,9 @@ def displace_suit(obj):
         if is_head:
             # Helmet: hard, smooth, with a shallow crown ridge and the goggle
             # strap. No fabric weave — a woven helmet reads as a knitted hat.
-            d += 0.0012 * math.exp(-((ly / 0.03) ** 2))          # crown ridge
+            # The crown ridge runs fore/aft over the top, so it narrows in the
+            # LATERAL direction.
+            d += 0.0012 * math.exp(-((lx / 0.03) ** 2))          # crown ridge
             d += 0.0022 * math.exp(-(((lz - 0.02) / 0.022) ** 2))  # goggle strap
         else:
             d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0011
@@ -1129,10 +1278,14 @@ def displace_suit(obj):
                 d -= joint * joint * (band - 0.45) * 0.010
 
             # Panel seams: a groove up the outboard side of every limb and one up
-            # the spine. The single strongest "this is a garment" cue.
+            # the spine. The single strongest "this is a garment" cue. Angles are
+            # measured in the transverse plane with atan2(fore/aft, lateral): the
+            # outboard direction of a leg lies ON the lateral axis, at angle 0 or
+            # pi depending on the side; the back of the torso is the -Y direction,
+            # angle pi either way.
             azim = math.atan2(ly, lx)
             if is_leg or is_arm:
-                outward = math.pi / 2 * out
+                outward = 0.0 if out > 0 else math.pi
                 dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
                 d -= 0.0016 * math.exp(-((dphi / 0.13) ** 2))
                 if is_leg and dphi < 0.30:
@@ -1144,7 +1297,7 @@ def displace_suit(obj):
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
 
             # The bib is a separate garment over the suit, so it gets a real lip.
-            d += 0.0026 * bib_mask(name, along, front, ly)
+            d += 0.0026 * bib_mask(name, along, front, lx)
 
             # Waistband, glove cuffs, boot cuffs: hard steps, not soft blends.
             # The glove is at along = +1, not -1: POSE_UNTUCKED holds the arms UP,
@@ -1179,7 +1332,7 @@ def paint_suit(obj):
     for i, v in enumerate(mesh.vertices):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
-        lx, ly, lz = local
+        lx, ly, lz = local          # lateral, fore/aft (chest +), up
         col, tag = SUIT, 'suit'
 
         if name == 'head':
@@ -1189,8 +1342,10 @@ def paint_suit(obj):
         elif name == 'torso' and -0.95 < along < -0.70:
             col, tag = WAIST, 'waist'
         elif name.startswith(('upperLeg', 'lowerLeg')):
+            # See displace_suit for the transverse-angle convention: outboard is
+            # angle 0 or pi depending on side.
             azim = math.atan2(ly, lx)
-            outward = math.pi / 2 * out
+            outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
             # Narrowed from 0.38: at that width the stripe wrapped most of the
             # way round the shin and the leg read as blue with a white edge
@@ -1198,12 +1353,12 @@ def paint_suit(obj):
             if dphi < 0.26:
                 col, tag = STRIPE, 'stripe'
 
-        if bib_mask(name, along, front, ly) > 0.5:
+        if bib_mask(name, along, front, lx) > 0.5:
             # A plain block rather than a legible numeral: at any distance this
             # figure is ever shown, a white patch and a white "15" are the same
             # number of pixels, and a drawn digit would be the one detail that
             # looks obviously synthetic up close.
-            if -0.34 < along < 0.06 and abs(ly) < 0.062:
+            if -0.34 < along < 0.06 and abs(lx) < 0.062:
                 col, tag = BIB_NUMBER, 'number'
             else:
                 col, tag = BIB, 'bib'
@@ -1625,6 +1780,146 @@ def add_equipment():
     return made
 
 
+def patch_skin_binds(path):
+    """
+    Rewrite the skin's inverseBindMatrices to exactly inverse(driver rest).
+
+    WHY THIS EXISTS. Babylon skins a vertex with `current x inverseBind`, and
+    with linkTransformNode the "current" half IS the driver's transform — so
+    bind-equals-driver is a statement purely about the 160 floats in the glb's
+    skin accessor: IBM_j must equal inverse(T(centre_j) · Rot_driver(j) @ rest).
+
+    The Blender exporter derives those matrices from its own joint rest states,
+    and the chain (edit-bone matrix -> exporter joint TRS -> accessor bytes)
+    does not preserve them the way the runtime needs: measured on this very
+    export, every leg/torso/head node carries an extra -90 deg about X and every
+    arm +90 deg, so a bone would skin in with a residual quarter-turn twist even
+    standing still (the old build's shoulder humps and sideways torso, at root).
+    node rotations are irrelevant to the fix because game.js overrides each
+    linked bone's local matrix from its driver every frame; what survives is the
+    accessor.
+
+    So the binding is asserted here, after the export, where the numbers can be
+    seen rather than inferred: same-size float rewrite inside the GLB container.
+    The driver rest transforms are known exactly by construction — bl() for the
+    translation, identity except pi-about-X for the arms (armSweep(phi = pi) at
+    armDrop = 1). Hard-fails if the accessor is not found or sized as expected.
+
+    Runs on the raw GLB, no dependencies beyond the standard library.
+    """
+    import struct
+
+    def seg_matrix(name):
+        """
+        The DRIVER'S REST LOCAL MATRIX, composed straight in the BABYLON axes
+        the accessor is consumed in (the game links bones and never rebakes,
+        so these floats ARE the binding): translation = the POSE_UNTUCKED
+        centre exactly as game.js drives it — lateral on X, UP on Y, the
+        BASE_Z fore/aft stagger on Z — rotation = identity except pi about X
+        for the arms (armSweep(phi = pi) at armDrop = 1).
+        """
+        p = POSE.get(name, {})
+        if is_arm(name):
+            lat, up = ARM_BIND[name]
+        else:
+            lat = p.get('x', 0.0)
+            up = p.get('y', 0.0)
+        fore = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
+        rot = Matrix.Identity(4)
+        if is_arm(name):
+            rot = Matrix.Rotation(math.pi, 4, 'X')
+        return Matrix.Translation(Vector((lat, up, fore))) @ rot
+
+    want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
+
+    data = bytearray(open(path, 'rb').read())
+    magic, ver, total = struct.unpack_from('<III', data, 0)
+    assert magic == 0x46546C67, 'not a GLB'
+
+    # Walk chunks to find JSON and BIN.
+    off = 12
+    js = bin_ = None
+    while off < len(data):
+        ln, typ = struct.unpack_from('<II', data, off)
+        body = data[off + 8:off + 8 + ln]
+        if typ == 0x4E4F534A:
+            js = json.loads(bytes(body))
+        elif typ == 0x004E4942:
+            bin_ = off
+        off += 8 + ln
+    assert js is not None and bin_ is not None, 'GLB missing JSON/BIN chunk'
+    bin_body_off = bin_ + 8
+
+    skin = js['skins'][0]
+    acc = js['accessors'][skin['inverseBindMatrices']]
+    view = js['bufferViews'][acc['bufferView']]
+    n = acc['count']
+    assert acc['componentType'] == 5126 and n == len(want), (
+        f'unexpected IBM accessor: type={acc.get("componentType")} count={n}')
+    start = bin_body_off + view.get('byteOffset', 0) + acc.get('byteOffset', 0)
+    floats_expected = n * 16
+    assert view['byteLength'] == floats_expected * 4, (
+        f'IBM bufferView holds {view["byteLength"] / 4} floats, '
+        f'expected {floats_expected}')
+
+    name_of = {}
+    for i, nj in enumerate(js['nodes']):
+        if i in set(skin['joints']) and nj.get('name') in want:
+            name_of[skin['joints'].index(i)] = nj['name']
+    assert len(name_of) == len(want), (
+        f'joint names resolved {len(name_of)} of {len(want)}')
+
+    worst = 0.0
+    order = sorted(name_of.items())
+    flat = []
+    for slot, nm in order:
+        m = want[nm]
+        # glTF stores column-major: element k = row k%4, col k//4.
+        vals = [m[r][c] for c in range(4) for r in range(4)]
+        struct.pack_into('<16f', data, start + slot * 64, *vals)
+    log('bind matrices patched onto driver rests (' +
+        ', '.join(f'{slot}:{nm}' for slot, nm in order) + ')')
+    open(path, 'wb').write(data)
+
+    # Self-verify by re-reading the file just written.
+    check = patch_skin_binds_verify(path, want)
+    worst = check
+    return worst
+
+
+def patch_skin_binds_verify(path, want):
+    """Re-read `path` and return the worst |IBM - want| element, per bone."""
+    import struct
+    data = open(path, 'rb').read()
+    off = 12
+    js = bin_ = None
+    while off < len(data):
+        ln, typ = struct.unpack_from('<II', data, off)
+        body = data[off + 8:off + 8 + ln]
+        if typ == 0x4E4F534A:
+            js = json.loads(bytes(body))
+        elif typ == 0x004E4942:
+            bin_ = off
+        off += 8 + ln
+    skin = js['skins'][0]
+    acc = js['accessors'][skin['inverseBindMatrices']]
+    view = js['bufferViews'][acc['bufferView']]
+    start = bin_ + 8 + view.get('byteOffset', 0) + acc.get('byteOffset', 0)
+    name_of = {}
+    for i, nj in enumerate(js['nodes']):
+        if i in set(skin['joints']) and nj.get('name') in want:
+            name_of[skin['joints'].index(i)] = nj['name']
+    worst = 0.0
+    for slot, nm in sorted(name_of.items()):
+        got = struct.unpack_from('<16f', data, start + slot * 64)
+        w = want[nm]
+        expected = [w[r][c] for c in range(4) for r in range(4)]
+        worst = max(worst, max(abs(g - e) for g, e in zip(got, expected)))
+    log(f'verified written binds against driver rests: worst element diff '
+        f'{worst:.2e}')
+    return worst
+
+
 def main():
     clear()
     body = load_base()
@@ -1683,6 +1978,12 @@ def main():
         export_yup=True, export_apply=False,   # apply=False keeps the armature
         export_skins=True, export_animations=False,
     )
+    # Bind := driver, written where it survives the trip: see the essay above
+    # patch_skin_binds for why this is asserted on the file and not assumed.
+    residual = patch_skin_binds(out)
+    if residual > 1e-5:
+        raise SystemExit(f'[body] bind matrices drifted from driver rests by '
+                         f'{residual:.2e} after rewrite')
     log(f'BODY_EXPORTED device={device} path={out} verts={len(low.data.vertices)} '
         f'bones={len(arm.data.bones)} equipment={len(equip)} res={RES}')
 

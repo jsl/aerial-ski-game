@@ -250,6 +250,146 @@ test('the athlete is still visible after a crash', async ({ page }) => {
         'leave the skis tumbling on their own').toBeGreaterThan(0);
 });
 
+test('bind equals driver and the figure faces -z', async ({ page }) => {
+    // ── THE P0 RIG FRAME CONTRACT, measured rather than trusted (2026-08-26
+    // analysis; fixed build-side in build_body.py this branch).
+    //
+    // Three things must hold for the body asset to be correct ON ITS OWN:
+    //
+    // 1. BIND == DRIVER for every bone at rest. linkTransformNode makes the
+    //    bone FOLLOW its driver node, and Babylon skins a vertex with
+    //    current x inverseBind — so if inverseBind != driverRest, EVERY vertex
+    //    carries a residual displacement standing perfectly still. That was the
+    //    shoulder-hump root cause: measured residuals ran 4-38 deg and up to
+    //    0.30 m of forearm smear. This is exactly
+    //    getAbsoluteInverseBindMatrix() x getAbsoluteMatrix() == identity.
+    // 2. Rest geometry is not deformed at all — the whole-mesh version of the
+    //    same statement (raw positions vs skinned positions at boot).
+    // 3. The figure faces -Z in its own root frame. The old build authored the
+    //    mesh 90 deg yawed from its skeleton; here we assert toes sit AHEAD of
+    //    ankles along -z, the direction the game calls forward.
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const V = BABYLON.VertexBuffer;
+        const parts = scene.meshes.filter(
+            m => m.name && m.name.startsWith('athleteBody') &&
+            m.skeleton && m.getTotalVertices() > 0);
+        const out = { bones: {}, bands: {} };
+        const skel = parts[0].skeleton;
+        skel.computeAbsoluteMatrices ? skel.computeAbsoluteMatrices(true)
+            : skel.computeAbsoluteTransforms(true);
+        for (const b of skel.bones) {
+            if (!b.name || b.name === 'AthleteRig') continue;
+            const abs = b.getAbsoluteMatrix ? b.getAbsoluteMatrix()
+                : b.getAbsoluteTransform();
+            const inv = b.getAbsoluteInverseBindMatrix
+                ? b.getAbsoluteInverseBindMatrix()
+                : b.getInvertedAbsoluteTransform();
+            const t = new BABYLON.Vector3();
+            const q = new BABYLON.Quaternion();
+            const s = new BABYLON.Vector3();
+            inv.multiply(abs).decompose(s, q, t);
+            out.bones[b.name] = {
+                trans: +t.length().toFixed(4),
+                rotDeg: +(Math.acos(Math.min(1, Math.abs(q.w))) * 2 * 180 /
+                    Math.PI).toFixed(2),
+            };
+        }
+
+        // Root-local frame for everything geometric.
+        const root = scene.getMeshByName('skierRoot') ||
+            (parts[0] && parts[0].parent);
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+
+        let worstD = 0, sumD = 0, nD = 0;
+        let gLo = 1e9, gHi = -1e9;
+        for (const p of parts) {
+            p.computeWorldMatrix(true);
+            const world = p.getWorldMatrix();
+            const raw = p.getVerticesData(V.PositionKind);
+            const skinned = p.getPositionData(true, false);
+            if (!raw || !skinned) continue;
+            const tmp = new BABYLON.Vector3();
+            for (let i = 0; i < raw.length / 3; i++) {
+                const dx = skinned[i * 3] - raw[i * 3];
+                const dy = skinned[i * 3 + 1] - raw[i * 3 + 1];
+                const dz = skinned[i * 3 + 2] - raw[i * 3 + 2];
+                const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                worstD = Math.max(worstD, d);
+                sumD += d;
+                nD++;
+                // Global height band in ROOT space (the rest state is upright,
+                // so world minus tilt ~= local; use the transform properly).
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2],
+                    world.multiply(toLocal), tmp);
+                gLo = Math.min(gLo, tmp.y);
+                gHi = Math.max(gHi, tmp.y);
+            }
+        }
+        out.deform = { max: +worstD.toFixed(4), mean: +(sumD / nD).toFixed(5), n: nD };
+
+        // Toe vs ankle bands in root-local space.
+        let toeSum = 0, toeN = 0, toeMin = 1e9, ankSum = 0, ankN = 0;
+        for (const p of parts) {
+            const raw = p.getVerticesData(V.PositionKind);
+            if (!raw) continue;
+            p.computeWorldMatrix(true);
+            const world = p.getWorldMatrix();
+            const tmp = new BABYLON.Vector3();
+            for (let i = 0; i < raw.length / 3; i++) {
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2],
+                    world.multiply(toLocal), tmp);
+                if (tmp.y < gLo + 0.04) {
+                    toeSum += tmp.z;
+                    toeN++;
+                    toeMin = Math.min(toeMin, tmp.z);
+                } else if (tmp.y > gLo + 0.07 && tmp.y < gLo + 0.11) {
+                    ankSum += tmp.z;
+                    ankN++;
+                }
+            }
+        }
+        out.bands = {
+            toeMeanZ: toeN ? +(toeSum / toeN).toFixed(4) : null,
+            toeN,
+            toeMinZ: toeN ? +toeMin.toFixed(4) : null,
+            ankleMeanZ: ankN ? +(ankSum / ankN).toFixed(4) : null,
+            ankleN: ankN,
+        };
+        return out;
+    });
+
+    console.log('BINDDRIVER ' + JSON.stringify(r.bones));
+    console.log('RESTDEFORM ' + JSON.stringify(r.deform));
+    console.log('FACING ' + JSON.stringify(r.bands));
+
+    expect(Object.keys(r.bones).length,
+        'no body bones found to check').toBeGreaterThanOrEqual(10);
+    for (const [name, m] of Object.entries(r.bones)) {
+        expect(m.trans, `${name}: bind-to-driver residual ${m.trans} m ` +
+            `(inverseBind x current must be identity at rest)`).toBeLessThan(0.001);
+        expect(m.rotDeg, `${name}: bind-to-driver rotation ${m.rotDeg} deg`)
+            .toBeLessThan(0.5);
+    }
+    expect(r.deform.max, 'rest geometry deforms by ' + r.deform.max +
+        ' m under its own bind pose').toBeLessThan(0.002);
+    expect(r.deform.mean, 'mean rest deformation ' + r.deform.mean + ' m')
+        .toBeLessThan(0.0005);
+
+    // Toes ahead of ankles along -z. In the yawed build the whole lower body
+    // ran along +x instead; numbers like these catch it immediately.
+    expect(r.bands.toeN, 'no toe-band vertices found').toBeGreaterThan(100);
+    expect(r.bands.ankleN, 'no ankle-band vertices found').toBeGreaterThan(50);
+    expect(r.bands.toeMeanZ - r.bands.ankleMeanZ,
+        `toes (${r.bands.toeMeanZ}) do not lead ankles (${r.bands.ankleMeanZ}) ` +
+        `along -z — the figure is not facing the fall line`).toBeLessThan(-0.03);
+});
+
 test('the legs have no notch once skinned', async ({ page }) => {
     // The build measures its own leg profile and reports it smooth, yet a dent
     // was still visible in the browser — so the notch is created by the SKINNING,

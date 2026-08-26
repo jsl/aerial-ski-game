@@ -37,7 +37,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 | Priority | Item | State | Notes |
 |---|---|---|---|
-| P0 | Rig frame fix | open | |
+| P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | open | |
 | P2 | Sky and sun | open | |
 | P3 | Venue dressing | open | |
@@ -45,15 +45,87 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | open | |
-| P8 | Build-side defects | open | |
+| P8 | Build-side defects | open | exposed by P0, queued as iter 2: hands inboard/forward, shins ~4 cm outboard (y_mean +0.020/+0.036 vs ∓0.008), shoulders 31% of height |
 | P9 | Night snowfall mode | open | ref: IMG_3396 |
 
 ## Open questions for the reviewer
 
-- (none yet)
+- The Blender exporter writes joint-node rotations of its own (−90°/+90° about
+  X by bone group) that are NOT what Babylon ends up skinning with. The P0 fix
+  therefore asserts the skin's `inverseBindMatrices` accessor directly:
+  `patch_skin_binds` in `blender/build_body.py` rewrites those 160 floats
+  post-export to exactly inverse(driver rest) and re-reads the file to verify
+  (worst element diff 0.00e+00). Babylon skins with `current × inverseBind` and
+  `linkTransformNode` overrides node locals every frame, so the accessor is the
+  only state that matters — flagged in case a future loader version derives
+  binds differently.
 
 ## Iterations
 
 ### 0 — baseline (reviewer)
 - Branch created from `worktree-blender-assets` at `69d1655`; audit committed in `54f73d0`.
 - Baseline shots: `docs/analysis-2026-08-26/img/scene.jpg`, `fix_before.jpg`.
+
+### 1 — P0 rig frame fix, build-side
+I can view PNGs; shots inspected directly (tooling renders them).
+
+**What changed**
+- `blender/build_body.py`: the mesh is now authored in the DRIVER frame —
+  `bl()` maps Babylon (x, y, z) = Blender (x, −forward, height): lateral on
+  Blender X (game L at negative x), chest facing Blender +Y (export_yup turns
+  +Y into glTF −z), up Z. The "game L ↔ metarig .R" swap is gone — with the
+  corrected frame the sides agree anatomically, and the sign probe stays as a
+  guard. Base mesh loads with a 180° Z turn instead of 90°.
+- `normalize_bind_frame` (new): after `armature_apply` + the bind shift onto
+  segment centres, every edit bone's roll is closed iteratively until its rest
+  matrix equals the driver's rotation (identity for torso/head/legs, π about X
+  for arms — armSweep(phi=π) at armDrop=1). Build hard-fails above 5 mrad /
+  0.5 mm residual. Measured this build: 0.0 mrad, 0.00 mm; shins keep their
+  h−foot_lift rest length so the clean-bake audit still passes.
+- `patch_skin_binds` (new, post-export): rewrites the GLB skin's
+  `inverseBindMatrices` to exactly inverse(driver rest) — translation = the
+  POSE_UNTUCKED centre in Babylon axes, rotation identity except π/X on arms —
+  then re-reads the file and verifies. Rationale: measured on this very export,
+  the Blender exporter writes joint-node rotations of −90°/+90° X that do not
+  survive to what Babylon skins with; the accessor does (see Open questions).
+- Axis consumers re-audited for the new frame: `segment_frame` (front=+Y,
+  out=±X), `bib_mask`, `paint_suit`/`displace_suit` (stripe/seam azimuth
+  anchors, number-patch lateral extent, crown ridge along fore/aft),
+  `shape_helmet` (width/depth radii), `skeleton_offset`, `rigid_boots`,
+  `build_report`, `leg_profile` (lateral width now X).
+- `tests/drive/rig.spec.js`: new test "bind equals driver and the figure faces
+  −z" — per-bone `getAbsoluteInverseBindMatrix() × getAbsoluteMatrix()`
+  identity (translation < 1 mm, rotation < 0.5°), whole-mesh rest deformation
+  < 2 mm, toes ahead of ankles along −z (the acceptance set from the plan).
+- `game.js`: `ASSET_V` 5 → 6. Assets rebuilt at 2048/96 (~20 s): body glb +
+  albedo/normal/ao + maps json. No engine/ or body-model changes.
+
+**Verification numbers**
+- Browser at rest, all 10 bones: bind-to-driver translation 0.000 m, rotation
+  0.00° (test threshold 1 mm / 0.5°). Whole-mesh raw-vs-skinned rest
+  deformation: max 0.0000 m, mean 0.0000 m over 12,612 vertices (old build:
+  forearms displaced 0.29–0.30 m).
+- Facing: toe-band mean z = −0.0609 (n=2500) vs ankle-band mean z = +0.0314
+  (n=276) — toes lead ankles by 0.092 m along −z; toe min z = −0.142.
+- Build log: `game "L" maps to metarig .L`; bone placement worst 0.0 mm; rest
+  pose baked cleanly; suit paint census 9,630 stripe / 1,622 bib / 227 number
+  / 19,926 glove (matches pre-fix magnitudes — no paint regression); albedo
+  sRGB mean 0.881 (was 0.88).
+- `npm run test:unit` pass; `npm run test:golden` 30/30 (physics untouched);
+  full Playwright drive suite 37/37 including the new rig test, the ski/sole
+  tests, leg notch (worst dip 16 mm at y=−0.44, threshold 30 mm — the author's
+  step-notch rework is queued for iter 2 as ordered), body-deform, extract-terrain.
+- Shots: `figure.png` (rear) — back reads as a back, no shoulder humps, normal
+  neck; `figure_front.png` — bib and face of the body toward the front camera,
+  stripe on the leg sides; `scene.png` — athlete square to the run, skis down
+  the fall line with torso aligned behind them (was: torso stood sideways).
+  Hands hang slightly inboard/at the front — P8, next iteration per the order
+  of work.
+
+**Open / next**
+- The plan's game-side stopgap (`probe_yawfix2.js`) was NOT needed — the
+  build-side fix landed and verified; nothing to remove from `game.js` (the
+  loader there is unchanged).
+- Next per the pinned order: footage analysis (`docs/REFERENCE-FOOTAGE.md`),
+  then the iter-2 athlete rebuild (arm centroid-on-bone + leg-notch girth
+  blending, one Blender rebuild, ASSET_V bump), then the grey ramp.

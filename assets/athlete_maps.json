@@ -7,18 +7,18 @@
   "normal": {
    "p99": 1.0,
    "mean": 0.6624,
-   "belowHalf": 0.0013,
+   "belowHalf": 0.0012,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.9573,
-   "belowHalf": 0.027,
+   "mean": 0.9578,
+   "belowHalf": 0.0264,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8808,
+   "mean": 0.8807,
    "belowHalf": 0.0682,
    "srgb": true
   }
