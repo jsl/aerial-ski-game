@@ -93,6 +93,21 @@ camera-left, shadow frustum fitted to the run, fog density reduced (clear air) w
 haze only on the far ridgelines, post contrast from 1.6 toward ~1.2 once real range exists.
 Snow must read brighter than the sky.
 
+**Shadows (author, 2026-08-26): the skier casts none and the trees are inconsistent.** Root
+cause to verify and fix: a single 2048 `ShadowGenerator` whose directional frustum is
+auto-fitted to every caster (≈174 trees, the peaks, the whole run) — hundreds of metres per
+map, ~20 cm per texel, so the athlete's shadow vanishes and tree shadows flicker with the
+bias. Do: switch the sun to a `CascadedShadowGenerator` (3–4 cascades, `lambda` ≈ 0.8,
+`shadowMaxZ` ≈ 200, `autoCalcDepthBounds` on, PCF/PCSS filtering, `stabilizeCascades`);
+make sure the skinned `athleteBody*` primitives **and** the skis are in the caster list after
+the async load and stay there (`useBones` for skinned casters), and that terrain, flank fills,
+kicker and skis `receiveShadows`. Trees: all instances cast (thin instances need the source
+mesh in the caster list; impostors cast via alpha in the depth pass) or come from the bake —
+not a mix. Acceptance spec: sample terrain luminance directly under the standing athlete vs
+2 m beside it (shadow present: ≥ 15% darker); under a near tree vs open snow (≥ 20% darker);
+the athlete's shadow stays present through the in-run and after landing; no acne/peter-
+panning at the skis (bias tuned per cascade).
+
 ### P3 — Venue dressing
 Footage deltas (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520/7841): the B-net runs
 continuously along **both** edges from the table through the landing and curves around
