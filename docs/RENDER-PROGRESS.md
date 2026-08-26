@@ -49,8 +49,11 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | open | |
-| P8 | Build-side defects | open | exposed by P0, queued as iter 2: hands inboard/forward, shins ~4 cm outboard (y_mean +0.020/+0.036 vs ∓0.008), shoulders 31% of height |
-| P9 | Night snowfall mode | open | ref: IMG_3396 |
+| P8 | Build-side defects | open | exposed by P0, queued as iter 3: hands inboard/forward, shins ~4 cm outboard (y_mean +0.020/+0.036 vs ∓0.008), shoulders 31% of height, leg-notch girth blend |
+| P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
+| — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
+| — | Reviewer order 2: athlete rebuild | open | arm centroid-on-bone + leg-notch girth blending, one Blender rebuild |
+| — | Reviewer order 3: grey ramp | open | after order 2 |
 
 ## Open questions for the reviewer
 
@@ -63,6 +66,11 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   `linkTransformNode` overrides node locals every frame, so the accessor is the
   only state that matters — flagged in case a future loader version derives
   binds differently.
+
+- **Camera presets** (from the footage — base-of-kicker looking up, behind-the-athlete
+  in-run, coach position at the knoll; all documented in `docs/REFERENCE-FOOTAGE.md`):
+  the plan has no slot for camera work. Renderer-side presets only, no engine change.
+  Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
 
@@ -133,3 +141,53 @@ I can view PNGs; shots inspected directly (tooling renders them).
 - Next per the pinned order: footage analysis (`docs/REFERENCE-FOOTAGE.md`),
   then the iter-2 athlete rebuild (arm centroid-on-bone + leg-notch girth
   blending, one Blender rebuild, ASSET_V bump), then the grey ramp.
+
+### 2 — Reference footage analysis (five new clips) + plan deltas
+I can view JPG/PNGs in this session; all contact sheets and the detail frames cited
+below were inspected directly, not guessed.
+
+**What changed**
+- New `docs/REFERENCE-FOOTAGE.md`: per-clip analysis of `IMG_3765` (base-of-kicker,
+  spring), `IMG_3768` (behind-athlete in-run, spring), `IMG_3523` (judges-tower view,
+  winter overcast), `IMG_3520` (high side view of the landing, winter overcast),
+  `IMG_3396` (night floodlight session — the P9 reference), plus the `IMG_7841`
+  landing sequence at 0.1 s steps. Each clip: camera perspective, venue geometry,
+  environment, lighting/colour, athlete technique, frame references.
+- **Two venues, one world** stated explicitly in the doc: the winter forest venue is
+  the game's world; the spring clips are used only for kicker geometry, in-run layout
+  and technique. The "CAN"/maple-leaf kicker wrap and the roundel flag are called out
+  as excluded (ground rule 3).
+- A **Deltas vs the game** section: 14 concrete, measurable changes, each mapped to a
+  plan priority; the same deltas are appended to `docs/RENDER-PLAN.md` under P1–P7
+  and P9.
+- No code, no assets, no engine/ changes — docs only. `ASSET_V` unchanged.
+
+**Key numbers taken from the frames** (for the later iterations that implement them)
+- Kicker: side walls ≈2.5–3 m vertical, take-off face curving to near-vertical lip
+  (IMG_3765 f_001–f_003); athlete leaves nearly straight up, layout, skis parallel.
+- In-run: two parallel lanes with rough divider, low crouch, hands forward at knee
+  height (IMG_3768 f_002); arms sweep up together at the lip.
+- Landing: sink ≈ sole depth at deepest compression; plume ≈1–1.5 m at peak ~0.4–0.5 s
+  after touchdown, trailing 1–2 s (IMG_7841 landing_sequence steps 1–7) — matches the
+  pinned 0.05–0.10 m compliant-layer sink.
+- Dressing: B-net both edges curving around the bowl; two rows of red wands with
+  pennants on the landing centreline; plain blue knoll flag; timber deck on dark
+  containers as the judges' deck; coaches in red jackets at the knoll.
+- Night (P9): 5–7 warm (~2800–3500 K) floodlights; near-black sky, no horizon; kicker
+  near-pure-white in pools; pool-edge falloff, not uniform fog; flakes as 4–15 px
+  elongated streaks, denser near lights; takeoff puff ~0.5–1 m / ~1 s; landing cloud
+  ~1.5–2 m / ~2 s.
+
+**Verification**
+- `npm run test:unit` 73/73 pass; `npm run test:golden` 30/30 (no code touched —
+  re-run as the iteration's regression check after the self-review of iter 1).
+- Working tree contained only the two docs before commit; no reviewer scratch-bake
+  files present.
+
+**Open / next**
+- Next per the pinned order: iter-3 athlete rebuild in ONE Blender pass (arm
+  centroid-on-bone with the build failing on offset; leg-notch girth blending across
+  knee/ankle; boot ramp smoothing; leg-profile check flags steps), rebuild + ASSET_V
+  bump + browser verification. Then the grey-ramp quick win (order 3).
+- Camera presets from the footage have no plan slot — under Open questions for the
+  reviewer.

@@ -58,6 +58,11 @@ game-side stopgap first (`docs/analysis-2026-08-26/probes/probe_yawfix2.js`: bak
 `bone.setBindMatrix(node._localMatrix)`), clearly commented as temporary, and remove it when
 the build-side fix lands.
 
+Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_3765/3768): rebuild the kicker as a
+sculpted white block — vertical side walls ≈2.5–3 m, take-off face curving to a
+near-vertical lip above them, thin dark edge line at the wall/face junction; add two
+parallel in-run lanes (visual grooves + rough divider, physics keeps the single profile).
+
 Acceptance (add to `tests/drive/rig.spec.js`): for every bone at rest,
 `bone.getAbsoluteInverseBindMatrix() × bone.getAbsoluteMatrix()` is identity (translation
 < 1 mm, rotation < 0.5°); under `applyPose(…, tuck=1, …)` the centroid of each bone's
@@ -73,6 +78,9 @@ and a rounded knoll. Keep `snowMat` on the corridor. Update `blender/terrain.jso
 `extract-terrain.spec.js` if the bake pipeline reads the geometry.
 
 ### P2 — Sky and sun
+Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_7841): sunny mode confirmed — deep blue
+zenith with cumulus, sun ≈30–35° from camera-left, hard cool shadows, snow the brightest
+surface in frame.
 A visible sky (skybox from the same HDR that produced `assets/environment.env`, or a
 procedural gradient + cloud layer), a sun disc/glare, sun elevation ≈ 32° with azimuth from
 camera-left, shadow frustum fitted to the run, fog density reduced (clear air) with height
@@ -80,17 +88,32 @@ haze only on the far ridgelines, post contrast from 1.6 toward ~1.2 once real ra
 Snow must read brighter than the sky.
 
 ### P3 — Venue dressing
+Footage deltas (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520/7841): the B-net runs
+continuously along **both** edges from the table through the landing and curves around
+the bowl, sagging slightly between posts; add two rows of orange/red wands with small
+pennants marking the landing centreline; a plain blue flag on a pole at the knoll crest
+(no roundel); a timber-deck platform on dark shipping containers beside the kicker as
+the judges'/start deck; the static figures at the knoll wear **red jackets** (accent
+colour against white/blue). Generic panels only — no federation marks.
 Blue B-net fencing along both landing edges (instanced posts + alpha-cut strips), orange
 marker poles, generic side panels on the kicker, a flag at the knoll, a simple judges'
 tower/scaffold at the top, two or three static coach figures at the knoll. All static, all
 cheap.
 
 ### P4 — Forest
+Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520): forest walls close in on both
+sides of the landing; snowy house roofs visible in the valley behind the trees.
 Mixed woodland: mostly bare deciduous (cards/billboards with a bare-crown texture) with a
 minority of irregular conifers whose tops are snow-tinted; clustered placement closer to the
 landing; trees cast shadows (caster list or the bake); varied scale; fewer identical shapes.
 
 ### P5 — Snow surfaces
+Footage deltas (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520/7841): the chopped landing
+shows dense ski-track furrows, twin landing furrows, chunks/clods pushed to the sides
+(subtle green-tinged ice in places) and a smoother raked centre band — feed these into
+`blender/bake_landing.py`. Landing spray: plume off the ski tails peaking ~1–1.5 m above
+the surface ~0.4–0.5 s after touchdown, trailing 1–2 s; sink to roughly sole depth at the
+deepest compression (matches the pinned contact rules). Scale `_spawnSnowBurst` to this.
 Three materials: corduroy in-run, hand-sculpted table/knoll, chopped landing (higher normal
 amplitude, albedo variation, ski-track decals). Scale up `_spawnSnowBurst` on landing.
 
@@ -111,9 +134,15 @@ the allowed sink band (see the contact rules in the progress file). Log measurem
 build (chunk size distribution, amplitude, tile seam error) and bump `ASSET_V`.
 
 ### P6 — Horizon
+Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520): low forested ridgelines with a
+few snowy roofs at the valley edge behind the forest — not cone peaks.
 Layered forested ridgeline silhouettes fading with distance instead of cone peaks.
 
 ### P7 — Athlete in flight and suit
+Footage delta (`docs/REFERENCE-FOOTAGE.md`, IMG_3768/3765/7841): in-run crouch with back
+near-horizontal and hands forward at knee height, arms quiet until the transition; both
+arms sweep up together to overhead-by-the-ears; layout flight with skis parallel and
+together; arms open wide for the landing ride-out.
 Make `POSE_ARMS_UP`-style tight overhead arms the default airborne arm state in the
 renderer's pose blending **without changing physics tables** (renderer-side only, ADR-0002);
 skis parallel and together in flight; arms open on landing. In the Blender paint, make the
@@ -127,6 +156,13 @@ pitched back ≈ 25° (`crown` taken at x = 0). Make the build log's centroid-vs
 hard failures.
 
 ### P9 — Night snowfall mode (author request, 2026-08-26)
+Footage numbers (`docs/REFERENCE-FOOTAGE.md`, IMG_3396): 5–7 warm (~2800–3500 K)
+floodlights on poles along the in-run crest and table with visible halation; near-black
+sky with **no horizon detail**; kicker/table near-pure-white inside pools; fast falloff
+to black between pools (pool-edge falloff rather than uniform fog); lit snow stays
+white; falling snow as elongated streaks ~4–15 px, denser/brighter near the lights;
+takeoff puff lifting ~0.5–1 m off the lip for ~1 s; landing cloud ~1.5–2 m lingering
+~2 s, backlit so it glows.
 A switchable weather/time mode modelled on `reference/frames/IMG_3396/` (night training
 session, heavy snowfall): near-black sky with no horizon detail; warm floodlights on poles
 along the in-run and table (point/spot lights with visible pools on the snow, a few sources,
