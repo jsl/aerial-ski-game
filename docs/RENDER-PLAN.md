@@ -9,11 +9,17 @@ iteration and act on it before anything else.
 
 ## Ground rules (non-negotiable)
 
-1. **Physics is frozen.** Do not edit anything under `engine/`, and do not change numeric
-   values in `engine/core/body-model.js` or `blender/body-model.json`. `npm run test:unit`
-   and `npm run test:golden` must pass on every commit. Visual terrain must sample the same
-   functions the physics uses (`terrainRootY`, `AerialEngine.aerialSki.*`) so surface and
-   physics never disagree.
+1. **Physics changes need written approval.** Anything under `engine/`, and the numeric
+   values in `engine/core/body-model.js` / `blender/body-model.json`, may only change when
+   the reviewer has written an `APPROVED:` line for that specific change in the **Reviewer
+   feedback** section of `docs/RENDER-PROGRESS.md` (the reviewer holds the author's
+   delegated authority for physics and golden-trace rebaselines). To request one: measure
+   the problem, write the proposed change and its expected gameplay effect under **Open
+   questions**, and continue with other work. An approved physics change ships in its own
+   commit with the golden traces rebaselined per ADR-0005 (`tests/golden/`), the before/after
+   trace deltas summarised in the progress entry, and `npm run test:unit` /
+   `npm run test:golden` green. Visual terrain must sample the same functions the physics
+   uses (`terrainRootY`, `AerialEngine.aerialSki.*`) so surface and physics never disagree.
 2. **The shipped game has no dependencies and no build step** (ADR-0010). `index.html`
    loads local files. No npm runtime packages, no bundler. Procedural textures are generated
    at runtime or by committed scripts (Blender scripts in `blender/`, node scripts in
