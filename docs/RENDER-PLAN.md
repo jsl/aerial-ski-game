@@ -94,6 +94,22 @@ landing; trees cast shadows (caster list or the bake); varied scale; fewer ident
 Three materials: corduroy in-run, hand-sculpted table/knoll, chopped landing (higher normal
 amplitude, albedo variation, ski-track decals). Scale up `_spawnSnowBurst` on landing.
 
+**The landing zone's texture and its chop come from Blender, matched to the footage (author
+request, 2026-08-26).** Add `blender/bake_landing.py`: build a high-poly procedural "chopped"
+surface modelled on `reference/frames/IMG_7841/` (landing and `landing_sequence_10fps.jpg`)
+and `reference/frames/IMG_3396/` — loose broken chunks and clods 10–30 cm across, low ridges
+left by the chop, ski-track furrows running down-slope, boot prints, softer rounded lumps at
+the sides, a smooth hand-sculpted knoll at the top — with a slight blue-shadowed albedo
+variation (snow albedo stays ≥ 0.85; shadows come from AO/normals, not dark paint). Bake
+tiling **normal, AO and albedo** tiles (2048, seamless, same `bakeutil` conventions and
+colour-management fixes as `build_body.py`), plus a **heightmap**, into `assets/` and wire
+them to a dedicated `landingMat` on the landing ribbon; apply the heightmap as real vertex
+displacement on the landing mesh (5–10 cm amplitude, fading to zero at the knoll and at the
+edges) so the chop shows in silhouette and in the sun's shadows, not only as a texture.
+Ski contact keeps using the physics profile; the displaced visual surface must stay within
+the allowed sink band (see the contact rules in the progress file). Log measurements in the
+build (chunk size distribution, amplitude, tile seam error) and bump `ASSET_V`.
+
 ### P6 — Horizon
 Layered forested ridgeline silhouettes fading with distance instead of cone peaks.
 
