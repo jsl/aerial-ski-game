@@ -107,6 +107,20 @@ Mixed woodland: mostly bare deciduous (cards/billboards with a bare-crown textur
 minority of irregular conifers whose tops are snow-tinted; clustered placement closer to the
 landing; trees cast shadows (caster list or the bake); varied scale; fewer identical shapes.
 
+**Make the trees genuinely realistic (author, 2026-08-26).** Cones and cylinders cannot get
+there; bake them in Blender. Add `blender/bake_trees.py`: generate 2–3 species (snow-loaded
+spruce/fir with drooping branch layers and a tapered trunk; bare birch/maple with fine
+branching; one bushy understory) — via the Sapling add-on or a scripted L-system — and bake
+each to an **impostor atlas**: 8 horizontal views × 1–2 elevations, albedo + normal + alpha,
+2048 atlas per species, plus a simple 2-quad "cross-card" fallback texture. In the game,
+render trees as camera-facing (or octahedral) impostors with alpha-test, per-instance
+scale/tint/rotation jitter via thin instances, hundreds of trees at negligible cost; the 20–30
+nearest trees can be low-poly meshes (trunk + 5–7 branch cards) exported from the same
+Blender scene for parallax. Snow load on upper branch surfaces; slight blue in the shade;
+bare crowns read as a grey-brown haze at distance. Trees cast shadows (impostor alpha in the
+shadow map, or baked). Acceptance: a `trees` spec counts instances and draw calls (≤ 20 draw
+calls for the whole forest), and shots from the side and ready cameras are inspected.
+
 ### P5 — Snow surfaces
 Footage deltas (`docs/REFERENCE-FOOTAGE.md`, IMG_3523/3520/7841): the chopped landing
 shows dense ski-track furrows, twin landing furrows, chunks/clods pushed to the sides
@@ -149,6 +163,14 @@ skis parallel and together in flight; arms open on landing. In the Blender paint
 blue a broad panel (not a pinstripe) and enlarge the bib/waist so the suit reads at
 distance.
 
+**Legible bib number — "30" (author, 2026-08-26).** Paint a real competition number on the
+bib, front and back: the digits **30**, dark navy on the white patch, digit height ≥ 60% of
+the bib height, a clean sans-serif rendered in Blender (text object baked into the albedo, or
+a font-rendered mask in `paint_suit`), correctly oriented and not mirrored on either side.
+Acceptance: from `figure_front.png` at the look camera the digits are readable by eye; a
+spec checks the number-patch UV region's dark-pixel fraction lies in a plausible band and
+that the two digits are distinct blobs.
+
 ### P8 — Build-side defects exposed by P0
 Arms fused to torso / hands meeting at the crotch (arm-dominant centroid 7 cm inboard of the
 bone; bind arms ~10° abducted, tighten weights), shins 12 cm outboard of the skis, head
@@ -176,6 +198,15 @@ menu option; the default remains the sunny day mode; every existing spec must pa
 modes; add a spec for the night mode (light count, particle system present and emitting,
 sky luminance low, snow luminance under lights high).
 
+### P10 — Free-look camera after the run (author request, 2026-08-26)
+Once the athlete has landed and stopped, or the crash ragdoll has settled, and during
+replay playback, let the player pan around the scene: drag (mouse/touch) orbits the
+`ArcRotateCamera` around the athlete, wheel/pinch zooms within sane limits, arrow keys/WASD
+nudge, and `C` still cycles the preset views. The per-frame camera follow must yield to user
+input in these states (resume following on the next run). Show a one-line HUD hint ("drag to
+look around") the first time. Acceptance: a drive spec drives a full run to a stop, injects a
+drag, and asserts `camera.alpha`/`beta` changed and stay changed until the next run starts.
+
 ## Definition of done for the branch
-All P0–P6 and P9 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
+All P0–P6, P9 and P10 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.
