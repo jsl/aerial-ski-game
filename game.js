@@ -788,7 +788,7 @@ function _startGame() {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=6';
+    const ASSET_V = '?v=8';
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -1151,10 +1151,24 @@ function _startGame() {
                     // glossier reads as a wetsuit.
                     bodyMat.roughness   = 0.68;
                     bodyMat.metallic    = 0.0;
-                    // primitive0 is material slot 0 (suit), primitive1 is slot 1
-                    // (helmet), in Blender's slot order.
+
+                    // primitive2 is material slot 2 (face): matte skin under
+                    // the brim. The albedo map carries the skin tone; no
+                    // sheen at all — glossy cheeks read as latex.
+                    const faceMat = makePBR('athleteFace_mat', scene);
+                    faceMat.albedoTexture = suitAlbedo;
+                    faceMat.bumpTexture   = suitNormal;
+                    faceMat.ambientTexture = suitAO;
+                    faceMat.albedoColor = new BABYLON.Color3(1, 1, 1);
+                    faceMat.roughness   = 0.85;
+                    faceMat.metallic    = 0.0;
+
+                    // primitive0 is material slot 0 (suit), primitive1 is slot
+                    // 1 (helmet + goggle lens), primitive2 is slot 2 (face),
+                    // in Blender's slot order.
                     for (const part of bodyParts) {
-                        part.material = /primitive1$/.test(part.name) ? helmetMat : bodyMat;
+                        part.material = /primitive1$/.test(part.name) ? helmetMat :
+                            /primitive2$/.test(part.name) ? faceMat : bodyMat;
                     }
 
                     // Hide the solids the body replaces. They keep articulating —

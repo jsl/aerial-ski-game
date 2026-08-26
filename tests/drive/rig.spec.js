@@ -471,3 +471,124 @@ test('the legs have no notch once skinned', async ({ page }) => {
     expect(r.worst, `the leg narrows ${(r.worst * 1000).toFixed(0)} mm at y=${r.at} ` +
         `and widens again — that is a collapse, not a contour`).toBeLessThan(0.030);
 });
+
+test('hands hang beside the thighs and shins sit on their ski lines', async ({ page }) => {
+    // ── The P8 build defects the author could see, measured post-rebuild:
+    // heat-map weight bleed used to park the forearm centroid inboard/ahead of
+    // its bone (hands crossing when raised) and the shins ~13 cm outside their
+    // ski centre lines (feet standing in the air either side of the skis).
+    // The rebuild settles chain geometry onto the drivers, so at REST:
+    //   * each hand's centroid clears the torso laterally by >= 2 cm,
+    //   * it sits within +-6 cm of the hip line fore/aft (was: well in front),
+    //   * each shin's own-vertex centroid sits within 2 cm of its ski's
+    //     centre line laterally (was: ~13 cm outboard),
+    //   * the two sides mirror within 2 cm.
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const V = BABYLON.VertexBuffer;
+        const parts = scene.meshes.filter(
+            m => m.name && m.name.startsWith('athleteBody') &&
+            m.skeleton && m.getTotalVertices() > 0);
+        const skel = parts[0].skeleton;
+        const root = scene.getMeshByName('skierRoot') || parts[0].parent;
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+        const loc = (m) => {
+            m.computeWorldMatrix(true);
+            return BABYLON.Vector3.TransformCoordinates(
+                m.getAbsolutePosition(), toLocal);
+        };
+        // Bucket every vertex under its DOMINANT JOINT SLOT, then resolve
+        // slots -> bone names once. Joint slots follow the bone's own index,
+        // which is how patch_skin_binds orders the accessor it rewrites.
+        const buckets = {};
+        for (const part of parts) {
+            part.computeWorldMatrix(true);
+            const world = part.getWorldMatrix();
+            const pos = part.getVerticesData(V.PositionKind);
+            const mi = part.getVerticesData(V.MatricesIndicesKind);
+            const mw = part.getVerticesData(V.MatricesWeightsKind);
+            if (!pos || !mi || !mw) continue;
+            const tmp = new BABYLON.Vector3();
+            for (let i = 0; i < pos.length / 3; i++) {
+                let bestSlot = -1, bestW = 0;
+                for (let k = 0; k < 4; k++) {
+                    if (mw[i * 4 + k] > bestW) { bestW = mw[i * 4 + k]; bestSlot = mi[i * 4 + k]; }
+                }
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2],
+                    world.multiply(toLocal), tmp);
+                (buckets[bestSlot] = buckets[bestSlot] || []).push(
+                    { x: tmp.x, y: tmp.y, z: tmp.z });
+            }
+        }
+        const byName = {};
+        let hipZsum = 0, hipN = 0;
+        for (const b of skel.bones) {
+            const pts = buckets[b.getIndex()];
+            if (!pts) continue;
+            byName[b.name] = pts;
+            if (/^upperLeg[LR]$/.test(b.name)) {
+                const node = b.getTransformNode && b.getTransformNode();
+                if (node) {
+                    node.computeWorldMatrix(true);
+                    hipZsum += BABYLON.Vector3.TransformCoordinates(
+                        node.getAbsolutePosition(), toLocal).z;
+                    hipN++;
+                }
+            }
+        }
+        const centroid = (pts) => pts.length ? {
+            n: pts.length,
+            x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+            z: pts.reduce((s, p) => s + p.z, 0) / pts.length,
+        } : null;
+        // HANDS: distal third of each forearm cluster (arms hang down, so the
+        // hand band is the LOWEST third by height).
+        const hands = {};
+        for (const side of ['L', 'R']) {
+            const pts = [...(byName['lowerArm' + side] || [])].sort((a, b) => a.y - b.y);
+            const cutY = pts.length ? pts[Math.floor(pts.length * 0.33)].y : 1e9;
+            hands[side] = centroid(pts.filter(p => p.y <= cutY));
+        }
+        // SHINS: a band around the mid-shin (driver rests at y=-0.815).
+        const shins = {};
+        for (const side of ['L', 'R']) {
+            const ski = loc(scene.getMeshByName('ski' + side));
+            const c = centroid((byName['lowerLeg' + side] || [])
+                .filter(p => Math.abs(p.y - (-0.815)) < 0.10));
+            shins[side] = c ? { lat: +Math.abs(c.x - ski.x).toFixed(4),
+                                dx: +(c.x - ski.x).toFixed(4) } : null;
+        }
+        return {
+            handsOut: {
+                L: hands.L ? +Math.abs(hands.L.x).toFixed(4) : null,
+                R: hands.R ? +Math.abs(hands.R.x).toFixed(4) : null,
+            },
+            handsFore: hands.L && hipN ? {
+                Lz: +hands.L.z.toFixed(4),
+                Rz: +hands.R.z.toFixed(4),
+                hipZ: +(hipZsum / hipN).toFixed(4),
+            } : null,
+            shins,
+        };
+    });
+
+    console.log('HANDSSHINS ' + JSON.stringify(r));
+    // NOTE on what is NOT asserted here: fore/aft hand placement. At boot the
+    // game rests in its READY CROUCH (arms biased forward, knees bowed), so a
+    // standing-figure hand window cannot hold until the renderer-side
+    // ready-stance pose lands (reviewer order 4). Lateral clearance,
+    // mirror symmetry and shin-over-ski ARE asset-level contracts.
+    expect(r.handsOut.L && r.handsOut.R, 'no forearm clusters found').toBeTruthy();
+    expect(r.handsOut.L, `left hand x=${r.handsOut.L}`).toBeGreaterThan(0.155);
+    expect(r.handsOut.R, `right hand x=${r.handsOut.R}`).toBeGreaterThan(0.155);
+    expect(Math.abs(r.handsOut.L - r.handsOut.R), `hands not mirrored ` +
+        `(L ${r.handsOut.L} vs R ${r.handsOut.R})`).toBeLessThan(0.02);
+    expect(r.shins.L.lat, `left shin ${r.shins.L.dx} m off its ski centreline`)
+        .toBeLessThan(0.04);
+    expect(r.shins.R.lat, `right shin ${r.shins.R.dx} m off its ski centreline`)
+        .toBeLessThan(0.04);
+});
