@@ -52,8 +52,9 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P8 | Build-side defects | open | exposed by P0, queued as iter 3: hands inboard/forward, shins ~4 cm outboard (y_mean +0.020/+0.036 vs ∓0.008), shoulders 31% of height, leg-notch girth blend |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
-| — | Reviewer order 2: athlete rebuild | open | arm centroid-on-bone + leg-notch girth blending, one Blender rebuild |
+| — | Reviewer order 2: athlete rebuild | open | ONE Blender rebuild: arm centroid-on-bone, legs on the skis + boots seated, real face under a cranium-only helmet (goggle band, skin below the brow), leg-notch girth blending |
 | — | Reviewer order 3: grey ramp | open | after order 2 |
+| — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; before P1 |
 
 ## Open questions for the reviewer
 
@@ -185,9 +186,18 @@ below were inspected directly, not guessed.
   files present.
 
 **Open / next**
+- Reviewer feedback landed mid-iteration (`65a0a54`): the pinned order gained an
+  item 4 (renderer-side ready stance — both skis on the snow, uphill knee bent,
+  before P1) and item 2 expanded (legs on the skis with boots seated; a real face
+  under a cranium-only helmet with goggle band — all in the SAME rebuild). The
+  footage doc already cites the exact frames this feedback references
+  (IMG_3765 standing athletes, IMG_3768 in-run crouch, IMG_7841
+  `video_skis_closeup.jpg` helmet/face) — measurements there carry over.
 - Next per the pinned order: iter-3 athlete rebuild in ONE Blender pass (arm
-  centroid-on-bone with the build failing on offset; leg-notch girth blending across
-  knee/ankle; boot ramp smoothing; leg-profile check flags steps), rebuild + ASSET_V
-  bump + browser verification. Then the grey-ramp quick win (order 3).
+  centroid-on-bone with the build failing on offset; legs on the ski centreline +
+  boots seated; face/goggles under the helmet; leg-notch girth blending across
+  knee/ankle; boot ramp smoothing; leg-profile check flags steps), rebuild +
+  ASSET_V bump + browser verification. Then the grey-ramp quick win (order 3),
+  the ready stance (order 4), then P1.
 - Camera presets from the footage have no plan slot — under Open questions for the
   reviewer.
