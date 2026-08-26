@@ -27,3 +27,6 @@ __pycache__/
 # compare.spec.js on demand; they are output, not source, and they churn on
 # every render tweak.
 shots/
+
+# Reference footage (author-supplied clips and extracted frames; not source)
+reference/
