@@ -225,6 +225,29 @@ limits in the ready state and after a run and asserts the camera's height above 
 under it never drops below 0.5 m and that no rendered frame has the black/backface look
 (sample the frame's lower third: no region reads as unlit backface).
 
+### P11 — A coherent crash (author, 2026-08-26)
+Today a crash hides the skinned body and re-shows the legacy primitive driver solids
+(`game.js` ≈ 4441–4500), detaching them so boxes and spheres fly apart. Replace with a
+connected ragdoll that the skinned athlete follows:
+- Keep `athleteBody*` visible; never re-show the legacy solids or detail meshes.
+- Position-based ragdoll on the 10 drivers, renderer-side (the crash is display; `engine/`
+  untouched): each frame integrate driver positions with gravity, terrain contact (the ski
+  contact rules — hard zones zero penetration, landing zone ≤ 0.10 m), friction that scales
+  with slope, and angular damping; then run 4–8 iterations of distance constraints so
+  adjacent segments stay joined at neck, shoulders, elbows, hips, knees (joint gap ≤ 2 cm)
+  with coarse angle limits (no knee hyper-extension past 10°, elbows ≤ 150°); torso and head
+  keep their relative orientation within ±30°. The result is a floppy but intact body that
+  tumbles, slides down the landing, and settles within ~3–4 s.
+- Bindings release: skis detach at impact and slide/cartwheel away separately, coming to rest
+  on the snow (never below it). Helmet stays on.
+- Snow: a burst at impact and a trailing spray while sliding, scaled to speed; a shallow
+  furrow decal where the body slid is a bonus.
+- Camera follows the tumble then eases to the resting body; free-look (P10) is enabled once
+  settled.
+Acceptance in a drive spec: force a crash; every frame assert all joint gaps ≤ 2 cm, every
+driver's lowest point respects the contact rules for its zone, no legacy solid is visible, the
+body settles (speed < 0.1 m/s) within 5 s, and the skis end up on the surface.
+
 ## Definition of done for the branch
-All P0–P6, P9 and P10 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
+All P0–P6, P9, P10 and P11 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.
