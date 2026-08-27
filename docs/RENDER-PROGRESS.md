@@ -269,6 +269,16 @@ touched); ASSET_V `?v=8→9`.
 - Should the entry-20 history note be corrected (race → starvation + race)?
   The boot waits remain correct and are kept.
 
+**Reviewer feedback landed mid-session (ba7f66a, 05:05) — disposition:**
+item 1 (flake fix) executed FIRST as ordered (f698220), with the deeper
+root cause (dt-skip freeze) found and fixed beyond it; item 2 (bundle) is
+this iteration's slice — the ±0.205-mesh-vs-±0.175-bones mismatch they flag
+is exactly the `ARM_BIND`/mirror straggler fixed here, binds now green;
+the bundle REMAINDER (straight arms, loose suit, deltoid/shoulders, brim
+wrap, styled skis + bindings, part-2 rebalance) is queued first for 22;
+item 3 (fence scale: net top ≤ 1.3 m, post ≤ 6 cm, thinner strands) queued
+for 22/23 — not started this session.
+
 ### 20 — Review-only: full-suite audit; snow>sky reproduces; rig wait failure root-caused to a body-link input race (probe numbers)
 
 No features. Scratch `/home/justin/aerial-agents/scratch/iter-20/` holds
