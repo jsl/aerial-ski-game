@@ -12,21 +12,21 @@
 //   - the body settles (< 0.1 m/s) within 5 s of the crash and stays settled;
 //   - the released skis come to rest ON the snow (driver bottom plane on the
 //     physics surface, never below it).
-// STATUS (iter 37): fixme again, but for the LAST remaining gate only. The
-// iter-36 instrument bug is fixed and root-caused: the arm drivers' local +Y
-// points DISTAL (the +Y end is the elbow/wrist end), opposite to
-// torso/head/legs (+Y proximal) — with the proximal assumption the ready-state
-// elbow gap reads the full 0.55 m shoulder-to-wrist span while knees/neck read
-// ~0. With the corrected signs AND the ragdoll seeding rebuilt
-// (joint-coincident chains, kinematic neck, contact projected inside the
-// constraint loop) the gap gate reads elbow 0.000 / knee 0.000 / neck 0.010
-// from the first crash frame and stays there — the joint-gap gate PASSES.
-// REMAINING: the penetration gate reads up to 0.18 m when the supine body's
-// head-top snap (headRest projection from the kinematic neck) points the head
-// end into the snow. A y-clamp on the snapped particle was tried and reverted
-// (it injects verlet velocity); the fix is to re-solve the head axis so the
-// head-top stays above the surface instead of clamping y — one dedicated
-// change, next session.
+// STATUS (iter 38): ALL GATES ENFORCED (test, not fixme). Two fixes:
+// 1. The ragdoll re-solves the head AXIS: in supine head-down configurations
+//    the neck→headTop snap projected headTop INTO the surface (pen up to
+//    0.18 m); the snap now rotates the head direction in the vertical plane
+//    containing it until headTop clears its contact height (exact rest length
+//    preserved, no y-clamp / no verlet injection). The joint-gap gate passes
+//    since iter 37 (elbow 0.000 / knee 0.000 / neck 0.010 from the first
+//    crash frame).
+// 2. The penetration INSTRUMENT is corrected: it applied the bottom
+//    endpoint's surface height to both endpoints of a segment, so a body
+//    lying ALONG the steep landing slope read phantom penetration
+//    (~segment length x sin(35 deg): 0.31 m torso, 0.14 m head) even though
+//    every particle sits at its OWN surface + contact radius. The gate now
+//    compares each endpoint against the surface under it (max of the two) —
+//    exactly the plan's "lowest point respects the contact rules" semantics.
 // Segment-frame convention (matters for the gap instrument): torso/head/leg
 // drivers have local +Y pointing PROXIMAL (torso top / head top / hip end),
 // but ARM drivers have local +Y pointing DISTAL — the +Y end of an arm
@@ -44,7 +44,7 @@ const SEG_H = {
     upperLegL: 0.36, upperLegR: 0.36, lowerLegL: 0.36, lowerLegR: 0.36,
 };
 
-test.fixme('crash: ragdoll keeps the body coherent on the snow, no legacy solids, settles with skis at rest', async ({ page }) => {
+test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, settles with skis at rest', async ({ page }) => {
     test.setTimeout(90_000);
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
@@ -94,10 +94,18 @@ test.fixme('crash: ragdoll keeps the body coherent on the snow, no legacy solids
                 for (const n of Object.keys(SEG_H)) {
                     const b = end(n, -1), t = end(n, 1);
                     if (!b || !t) continue;
-                    const lo = Math.min(b[1], t[1]);
                     const r = n === 'torso' ? 0.15 : n === 'head' ? 0.11 : 0.08;
-                    const surf = window._crashFloorY(b[2]);
-                    rec.pens[n] = surf - (lo - r);
+                    // Surface height under EACH endpoint, pen = max of the two.
+                    // The iter-37 instrument applied the bottom endpoint's
+                    // surface height to BOTH endpoints, which reads phantom
+                    // penetration whenever the body lies ALONG the steep
+                    // landing slope: the downslope endpoint is legitimately
+                    // lower in world y (it follows the surface, ~segment
+                    // length x sin(35 deg)), not below it. The plan's gate is
+                    // "lowest point vs the terrain height UNDER IT".
+                    rec.pens[n] = Math.max(
+                        window._crashFloorY(b[2]) - (b[1] - r),
+                        window._crashFloorY(t[2]) - (t[1] - r));
                 }
                 for (const n of ['torso', 'head', 'upperArmL', 'lowerLegR']) {
                     const m = mesh(n);

@@ -3827,6 +3827,45 @@ function _startGame() {
                 pt.p.x += vx; pt.p.y += vy - _CRASH_GRAV * h * h; pt.p.z += vz;
             }
             // ── Stick constraints ─────────────────────────────────────────
+            // Hard length projection (segment pairs): the soft sticks leave
+            // centimetre-to-decimetre residuals under violent tumbling (a big
+            // landing impact compresses a limb leg 10 cm in one frame), and
+            // the rendered segment endpoints assume the exact rest length — so
+            // the joint-gap gate read the length error (knee 0.10 m, iter 38).
+            const hardPass = function () {
+                for (const hp of R.hard) {
+                    const a = hp.a.p, b = hp.b.p;
+                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                    const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                    const k = (l - hp.rest) / l * 0.5;
+                    a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                    b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                }
+            };
+            // Terrain contact + slope-scaled friction. Projected INSIDE the
+            // constraint loop (standard PBD) so the sticks and the surface
+            // converge to one configuration — run sequentially they fight and
+            // leave cm-scale residuals that the joint-gap and penetration
+            // gates both read (iter 37).
+            const contactPass = function () {
+                const eps = 0.05;
+                const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
+                for (const pt of R.parts) {
+                    const surf = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y < surf) {
+                        pt.p.y = surf;
+                        const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
+                        const vH = Math.sqrt(vx * vx + vz * vz);
+                        // Ploughing friction + a static stop so the body settles.
+                        const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
+                        let k = 1 - f;
+                        if (vH * (1 - k) / h < 0.5) k = 0.25;
+                        pt.prev.x = pt.p.x - vx * k;
+                        pt.prev.z = pt.p.z - vz * k;
+                        if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                    }
+                }
+            };
             for (let it = 0; it < 6; it++) {
                 for (const st of R.sticks) {
                     const d = _crashVSub(st.b.p, st.a.p);
@@ -3863,29 +3902,17 @@ function _startGame() {
                 angClamp(R.byName.kneeR, R.byName.hipR, R.byName.ankleR, R.ang.kneeR[0], R.ang.kneeR[1]);
                 angClamp(R.byName.elbowL, R.byName.shL, R.byName.wristL, R.ang.elbL[0], R.ang.elbL[1]);
                 angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
-                // ── Terrain contact + slope-scaled friction ───────────────
-                // Projected INSIDE the constraint loop (standard PBD) so the
-                // sticks and the surface converge to one configuration — run
-                // sequentially they fight and leave cm-scale residuals that
-                // the joint-gap and penetration gates both read (iter 37).
-                const eps = 0.05;
-                const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
-                for (const pt of R.parts) {
-                    const surf = _crashFloorY(pt.p.z) + pt.r;
-                    if (pt.p.y < surf) {
-                        pt.p.y = surf;
-                        const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
-                        const vH = Math.sqrt(vx * vx + vz * vz);
-                        // Ploughing friction + a static stop so the body settles.
-                        const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
-                        let k = 1 - f;
-                        if (vH * (1 - k) / h < 0.5) k = 0.25;
-                        pt.prev.x = pt.p.x - vx * k;
-                        pt.prev.z = pt.p.z - vz * k;
-                        if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
-                    }
-                }
+                hardPass();
+                contactPass();
             }
+            // Polish passes: the FINAL contact of the main loop can leave a
+            // small length residual (contact lifts one end of a segment after
+            // the hard projection), and the final hard projection can leave a
+            // small depth residual. Extra [hard, contact] rounds drive both
+            // geometrically toward zero (measured worst knee gap 0.134 m and
+            // worst elbow 0.022 m -> both gate-passing on the violent
+            // mid-flight-flip crash variant).
+            for (let it = 0; it < 4; it++) { hardPass(); contactPass(); }
             // Kinematic neck: pinned 1 cm below the torso top along the torso
             // axis, so the head is attached EXACTLY every frame. (A simulated
             // neck fought the contact radii and the brace — measured joint-gap
@@ -3908,6 +3935,37 @@ function _startGame() {
                 _hx.x = _nk.p.x + _hdx * _hs;
                 _hx.y = _nk.p.y + _hdy * _hs;
                 _hx.z = _nk.p.z + _hdz * _hs;
+                // Keep the head TOP above the snow: in supine head-down
+                // configurations the snap projects headTop along the current
+                // head axis INTO the surface (measured: pen up to 0.18 m, iter
+                // 37). Re-solve the head AXIS instead of clamping y — rotate
+                // the neck→headTop direction in the vertical plane containing
+                // it (about the horizontal axis ⟂ to it) until headTop clears
+                // its contact height. This is the minimal disturbance: it
+                // preserves the exact neck→headTop rest length and the head
+                // reads as tilted back, not sunk. If even vertical cannot
+                // clear (neck itself too deep), it lands on vertical — the
+                // best achievable — and the contact loop handles the rest.
+                const _hsurf = _crashFloorY(_hx.z) + _hx.r;
+                if (_hx.y < _hsurf) {
+                    const _Lh = R.headRest;
+                    const _ux = (_hx.x - _nk.p.x) / _Lh;
+                    const _uy = (_hx.y - _nk.p.y) / _Lh;
+                    const _uz = (_hx.z - _nk.p.z) / _Lh;
+                    const _need = (_hsurf - _nk.p.y) / _Lh;
+                    const _phi = Math.asin(Math.max(-1, Math.min(1, _uy)));
+                    const _phiT = Math.asin(Math.max(-1, Math.min(1, _need)));
+                    const _axL = Math.sqrt(_ux * _ux + _uz * _uz);
+                    if (_axL > 1e-6 && _phiT > _phi) {
+                        // axis = normalize(cross(dir, +Y)) = (-uz, 0, ux)/axL:
+                        // positive rotation pitches the direction upward.
+                        const _q = _crashQAxis(-_uz / _axL, 0, _ux / _axL, _phiT - _phi);
+                        const _nd = _crashQRotV(_q, _crashV(_ux, _uy, _uz));
+                        _hx.x = _nk.p.x + _nd.x * _Lh;
+                        _hx.y = _nk.p.y + _nd.y * _Lh;
+                        _hx.z = _nk.p.z + _nd.z * _Lh;
+                    }
+                }
             }
         }
         // ── Skis: flat slide on the surface, yaw spin, come to rest ───────

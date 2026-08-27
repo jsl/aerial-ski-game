@@ -112,7 +112,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
-| P11 | Coherent crash | **slice landed (iter 36, commit f84de2f); instrument + seeding root-caused (iter 37, commit bdd5869)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 21 sticks / 6 iters, contact INSIDE the constraint loop, kinematic neck, slope-scaled friction + static stop) drives the bones; skis release and slide to rest. Iter-37: joint-gap gate now PASSES — elbow 0.000 / knee 0.000 / neck 0.010 m from the first crash frame (gate ≤ 0.02); audit `state` byte-identical ×30 (node-census re-capture). OPEN: pen gate reads ≤ 0.18 m when the supine head-top snap points the head into the snow (spec stays fixme, diagnosis in header); browser eyeball of the crash still owed |
+| P11 | Coherent crash | **slice landed (iter 36, f84de2f); instrument + seeding root-caused (iter 37, bdd5869); ALL acceptance gates ENFORCED (iter 38)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 21 sticks / 6 iters + hard length projection & polish, contact INSIDE the loop, kinematic neck, slope-scaled friction + static stop) drives the bones; skis release and slide to rest. Iter-38: pen gate root-caused — the spec applied the BOTTOM endpoint's surface height to both endpoints (phantom pen = seg len × sin 35° ≈ 0.31 m torso / 0.14 m head along-slope); ragdoll head-axis re-solve + in-loop hard projection (knee gap 0.134 → 0.013 in harness sweep); spec `test()` green ×2 browser runs; audit `state` byte-identical ×30 (node-census re-capture). OPEN: crash-moment eyeball still owed |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
@@ -241,6 +241,74 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 38 — P11 closed to enforced gates: pen gate was an instrument defect on the slope + head-axis re-solve + hard length projection (commit this tree)
+
+Tree started clean at `8f29dba` (entry 37). Unit of work: entry 37's two open
+items — the penetration gate (spec `test.fixme`) and the crash eyeball.
+
+**Root cause of the pen gate (falsifies the entry-37 diagnosis).** The spec
+computed `surf = _crashFloorY(bottomEndpoint.z)` and applied it to BOTH
+endpoints of a segment (`pen = surf − (min(y) − radius)`). Whenever the body
+lies ALONG the ~35° landing slope, the downslope endpoint is legitimately
+lower in world y — it follows the surface — so the instrument read phantom
+penetration of ~segment length × sin 35°: **0.31 m for the 0.55 m torso,
+0.14 m for the 0.24 m head** — matching the measured "0.18 m" of iter 37 and
+this session's first runs (0.305 m). Probe evidence: a gentle lip crash with
+the torso across-hill reads penT −0.009 the whole way; the same body along-
+slope reads +0.31. The gate now compares EACH endpoint against the surface
+under it (max of the two) — exactly the plan's "lowest point respects the
+contact rules" semantics.
+
+**Two real ragdoll fixes landed anyway (both needed for the corrected gate):**
+
+1. **Head-axis re-solve** (`game.js`, after the neck→headTop snap): in supine
+   head-down configurations the snap projected headTop INTO the surface. The
+   snap now rotates the neck→headTop direction in the vertical plane
+   containing it until headTop clears its contact radius (exact rest length
+   preserved; no y-clamp, no verlet injection — the iter-37 revert reason).
+   Measured: worst head pen in the sweep −0.008..−0.7 (was +0.12..+0.18).
+2. **Hard length projection** (`R.hard`, built since iter 36 but never
+   applied): the soft sticks leave centimetre-to-decimetre length residuals
+   under violent tumbling, and the rendered endpoints assume exact rest
+   lengths, so the joint-gap gate read the LENGTH error (knee 0.10 m in one
+   browser run, knee 0.134 m in a harness variant). `hardPass` now runs
+   inside the constraint loop before `contactPass`, plus 4 polish
+   [hard, contact] rounds per substep — the contact (last op) immediately
+   repairs any below-surface displacement, which is why this is safe where
+   the iter-37 attempt (outside the loop, after contact) was not. Sweep:
+   knee gap 0.134 → 0.013, elbow 0.022 → within gate.
+
+**Spec flipped `test.fixme` → `test()`** (`tests/drive/crash-ragdoll.spec.js`,
+header rewritten with both mechanisms). `index.html` `game.js?v=22→23`;
+`engine/` and `assets/` untouched, ASSET_V unchanged.
+
+**Verification.** Harness sweep (`~/aerial-agents/scratch/iter-38/sweep-
+crash.js`, 7 input variants, deterministic node harness, same instrument as
+the spec): 6 crashing variants — **maxGap ≤ 0.0102** (neck 0.010 = the
+designed kinematic NECK_OFF), **maxPen ≤ 0.0342** (gates: 0.02 / 0.06);
+7th variant never crashes (sub-threshold charge). Drive spec in the real
+browser: **green ×2** (plus the sweep). `npm run test:unit` **74/74**.
+`npm run test:golden`: 13 crash-node mismatches → audit
+(`tests/golden/audit-ready-stance.js` vs HEAD traces in scratch) **PASS:
+physics state byte-identical in all 30 scenarios** (node-census-only class,
+4th use: ready-stance, hop-turn, iter-36/37) → re-captured → **30/30**.
+`look` regenerated; shots inspected (I can view PNGs): scene/figure/
+figure_front all consistent with the stable tree — B-net both edges, styled
+skis + bindings, face/goggles/helmet read, arms at the sides; no visual
+regression (the crash path is not framed by the look cameras).
+
+**Open for the reviewer**
+- The crash-moment EYEBALL is still owed (entry 36/37 item): the look
+  cameras frame the ready state only. The ragdoll visuals changed twice
+  since the last eyes-on (iter-37 arm un-flip, this iteration's head-axis
+  re-solve); propose a crash-time capture next iteration.
+- The trace re-capture is again node-census-only with `state` byte-identical
+  ×30 — confirm it stands without a fresh APPROVED line.
+- Instrument correction note: the pen gate's semantics changed from
+  "both endpoints vs the bottom endpoint's surface" to "each endpoint vs the
+  surface under it". On flat ground the two are identical; the old form was
+  only correct there. The gate value (0.06) is unchanged.
 
 ### 37 — P11 slice 2: crash-spec instrument + ragdoll arm/neck seeding root-caused; joint-gap gate green; pen gate one fix from done (commit bdd5869)
 
