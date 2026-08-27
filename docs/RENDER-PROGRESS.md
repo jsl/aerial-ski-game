@@ -86,7 +86,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
-| P7 | Flight pose / suit | open | |
+| P7 | Flight pose / suit | **bib 30 landed (iter 21)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open |
 | P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
@@ -97,7 +97,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
-| — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20)** | the ONE Blender rebuild bundle (straight arms, loose suit, cranium/brim, bib 30, 155 cm styled skis + binding) + rebaseline part 2 (torso/legs, pending entry-19 construction approval) → iter 21; drive-spec body-link race fix (test-only) → 21/22 |
+| — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20)** | the ONE Blender rebuild bundle (straight arms, loose suit, cranium/brim, bib 30, 155 cm styled skis + binding) + rebaseline part 2 (torso/legs, pending entry-19 construction approval) → iter 21/22; drive-spec body-link race fix → **21 (part: waits + the real root cause, the dt-skip freeze)** |
 
 ## Open questions for the reviewer
 
@@ -182,6 +182,92 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 21 — Rebuild lands binds on the approved tables; legible bib 30 (P7); the wait-class root cause was the dt-skip freeze, not only the input race
+
+Two commits: `f698220` (test-only waits), `21848ba` (rebuild + bib + clamp).
+Scratch `~/aerial-agents/scratch/iter-21/` holds probe logs + chest crops; the
+temp probe scripts are not in the tree.
+
+**Entry-20's call, executed — and then corrected by measurement.** The
+test-only boot fix was landed first (all six press-start specs now wait for
+`_bodyLinked > 0`, ready-stance flip 8→45 s). Standalone reruns STILL failed
+(rig + ready-stance, `readyState` never flips), so the "input-vs-body-link
+race" was not the whole story. A live probe (SwiftShader, real game.js):
+link completes (all 10 bones, no page errors), ArrowUp FIRES (handler sets
+`readyTurnT = 0.001`), grounded/posZ static — **the simulation is not
+stepping at all**: `engine.getFps()` = 1, and `game.js`'s update guard
+`if (rawDt > 0.1) return;` skips EVERY frame when the render clock stalls, so
+no state ever advances. This reframes the entry-18→20 flake class: under
+suite load the fps collapses below ~10 (dt ≈ 100–125 ms, historically ON the
+guard line), and any state-transition wait is a coin flip. Fix (game.js,
+`21848ba`): **clamp dt to 0.1 s instead of skipping** — stalled frames
+process as capped 0.1 s steps, identical integration to a busy frame; normal
+play (>10 fps) is byte-unaffected. Probe after the clamp: turn completes in
+11.9 s wall at 1 fps (was never). Iter-20's own probe log shows the same
+freeze pre-rebuild, so this is not an asset regression.
+
+**Rebuild vs the APPROVED part-1 tables (ASSET_V 8→9).**
+- `blender/body-model.json` mirror synced to the engine (arm x ±0.205→±0.175
+  in POSE_UNTUCKED; ski d 1.20→1.55) — the mirror of the already-committed
+  02ab44d change, required so the build stops baking binds at ±0.205.
+- Found and fixed the actual straggler: `ARM_BIND` (the hang-pose table
+  `patch_skin_binds` uses for arm binds) still carried ±0.205 — the browser
+  gate read `lowerArmL residual 0.03 m`, exactly the old offset. After the
+  sync: **bind≡driver green for all 10 bones** (rig.spec 7/7, thresholds
+  1 mm/0.5°) — first time green since iter 19 landed the tables.
+- Build log: rest frames normalised 0.0 mrad / 0.00 mm; stripe bake gate
+  241/3349 (0.072, unchanged); albedo census normal.
+
+**Bib 30 (P7 core).** Navy "30" painted on the white plate, front AND back.
+Orientation is derived, not eyeballed: un-mirrored text satisfies R×U=N with
+U=+Z ⇒ the chest plate reads toward −X and the back plate toward +X (opposite
+world directions, each correct to its own viewer). The plate spans along
+−0.54..+0.32 (71% of the bib height) with ink at 90% of that (~65% of the bib
+height — inside the ≥60% gate); a back bib panel was added so the rear number
+sits on bib fabric. **Build gate (new, hard):** the saved albedo is sampled
+on a barycentric grid over every plate-interior triangle (~800–880 samples
+per face at 2048) — ink fraction must lie in [0.10, 0.45]: measured
+**0.343 front / 0.286 back**. Component counting at plate granularity is
+recorded but NOT gated (binning noise fragments strokes at any workable bin
+size — measured 7–21 at three resolutions); glyph topology cannot drift
+silently because every rect shares the stem rectangle by construction.
+Note: the old "plain block by design" comment was superseded by the author's
+P7 request; the block verdict is reversed.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30 byte-identical** (no rebaseline — the harness never goes through the
+RAF loop, so the clamp cannot touch traces; the glb is stubbed). Drive on the
+committed tree: rig **7/7**, ready-stance 1/1, body 4/4, look 1/1 (54 s),
+baked included in the batch — 10 passed + rig batch green. `look` shots
+regenerated and inspected directly (I can view PNGs): `figure_front.png`
+shows the white plate with navy digits on the chest; `scene.png` scene,
+fence, trees, shadows unchanged. `index.html` scripts `?v=13→14` (game.js
+touched); ASSET_V `?v=8→9`.
+
+**Open / next**
+1. **Straight-on digit check (first 5 minutes of 22):** in the ready stance
+   the athlete is yawed ~90°, so `figure_front.png` sees the plate oblique —
+   digits present but foreshortened; the per-face reading basis needs one
+   head-on chest render (small spec or a temporary camera) to confirm not
+   mirrored/rotated, especially on the back.
+2. **Deferred from this bundle:** straight-arm elbow surgery (P8/reviewer
+   item 43), loose-suit shell + folds, cranium/brim wrap re-check, styled
+   155 cm mogul skis with binding (renderer-side), rebaseline part 2
+   (torso/legs — still pending entry-19 construction approval).
+3. game.spec full-run and athlete-wired were NOT rerun standalone this
+   session (time); the dt clamp specifically de-risks their charge/takeoff
+   waits — worth one confirmation run in 22.
+
+**Open questions for the reviewer**
+- The dt clamp is a game.js behaviour change made under test-infrastructure
+  pressure. Rationale: the skip-guard turned any render stall >100 ms into a
+  fully frozen sim (inputs accepted, zero progress), which is also a real-
+  world hazard on weak GPUs; the clamp bounds a stalled step to the same
+  0.1 s a busy frame already gets. Confirm acceptable, or name the
+  alternative you want (e.g. clamp 0.05, or a test-only `_simTick` hook).
+- Should the entry-20 history note be corrected (race → starvation + race)?
+  The boot waits remain correct and are kept.
 
 ### 20 — Review-only: full-suite audit; snow>sky reproduces; rig wait failure root-caused to a body-link input race (probe numbers)
 
