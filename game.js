@@ -1598,6 +1598,9 @@ function _startGame() {
 
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
+    // Crash-ragdoll probe (P11 spec): the surface the ragdoll contacts (the
+    // physics surface: terrainRootY(z) - FOOT_OFFSET, or the mode floor).
+    window._crashFloorY = function (z) { return _crashFloorY(z); };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
     if (_trampolineMode || _poolDiveMode) {
@@ -3544,7 +3547,352 @@ function _startGame() {
     let crashActive        = false; // true while ragdoll animation is running
     let crashTimer         = 0;
     let crashFallDir       = 1;
-    let crashPieces        = [];   // detached body-part physics pieces
+    let crashPieces        = [];   // detached body-part physics pieces (legacy path, retired by the P11 ragdoll)
+    let ragdoll            = null; // coherent crash ragdoll state (P11)
+
+    // ── P11: coherent crash ragdoll (renderer-side, ADR-0002) ────────────────
+    // A crash is display: the engine already decided the landing failed and
+    // froze state.vz. Instead of hiding the skinned body and flinging the
+    // legacy driver solids apart, the athlete STAYS the skinned body and a
+    // position-based ragdoll takes over the driver transforms for the crash
+    // duration (applyPose is gated off while crashActive; the bones follow the
+    // drivers via linkTransformNode exactly as in normal play).
+    //
+    // Model: 15 verlet particles (shared joint particles, so every joint gap is
+    // 0 by construction), one stick per body segment plus collar/pelvis braces,
+    // 6 constraint iterations, coarse angular limits (head ≤ 35° off the torso
+    // axis, knees/elbows clamped about their seeded flexion), terrain contact
+    // with slope-scaled friction and a low-speed static stop, and released
+    // skis that slide flat on the surface to rest. The sim runs in WORLD space
+    // and writes root-local transforms back onto the (still parented) driver
+    // nodes, so the golden harness's quaternion/vector stub math reproduces it
+    // exactly — no Matrix/TransformCoordinates/Quaternion.invert anywhere.
+    // All quats are plain {x,y,z,w} objects built by hand; BABYLON.Quaternion
+    // is constructed only at the node write sites.
+    const _CRASH_GRAV = 9.81;
+    const _crashQMul = function (a, b) {
+        return {
+            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        };
+    };
+    const _crashQConj = function (q) { return { x: -q.x, y: -q.y, z: -q.z, w: q.w }; };
+    const _crashQAxis = function (ax, ay, az, ang) {
+        const l = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+        const s = Math.sin(ang / 2) / l;
+        return { x: ax * s, y: ay * s, z: az * s, w: Math.cos(ang / 2) };
+    };
+    const _crashQRotV = function (q, v) {
+        const px =  q.w * v.x + q.y * v.z - q.z * v.y;
+        const py =  q.w * v.y + q.z * v.x - q.x * v.z;
+        const pz =  q.w * v.z + q.x * v.y - q.y * v.x;
+        const pw = -q.x * v.x - q.y * v.y - q.z * v.z;
+        return {
+            x: px * q.w + pw * -q.x + py * -q.z - pz * -q.y,
+            y: py * q.w + pw * -q.y + pz * -q.x - px * -q.z,
+            z: pz * q.w + pw * -q.z + px * -q.y - py * -q.x,
+        };
+    };
+    const _crashV = function (x, y, z) { return { x: x || 0, y: y || 0, z: z || 0 }; };
+    const _crashVSub = function (a, b) { return _crashV(a.x - b.x, a.y - b.y, a.z - b.z); };
+    const _crashVLen = function (a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) || 1e-9; };
+    // Euler (rx, ry, rz) → quat, Babylon's YXZ intrinsic order (R = Ry·Rx·Rz).
+    const _crashQEulerYXZ = function (rx, ry, rz) {
+        return _crashQMul(
+            _crashQAxis(0, 1, 0, ry),
+            _crashQMul(_crashQAxis(1, 0, 0, rx), _crashQAxis(0, 0, 1, rz)));
+    };
+    // Local +Y axis a driver node's rx/rz rotation gives its cylinder (ry = 0):
+    // Rx(rx)·Rz(rz)·(0,1,0) = (−sin rz, cos rz·cos rx, cos rz·sin rx).
+    const _crashSegAxis = function (n) {
+        const rx = (n.rotation && n.rotation.x) || 0;
+        const rz = (n.rotation && n.rotation.z) || 0;
+        const srz = Math.sin(rz), crz = Math.cos(rz);
+        if (n.rotationQuaternion) {
+            return _crashQRotV(n.rotationQuaternion, _crashV(0, 1, 0));
+        }
+        return _crashV(-srz, crz * Math.cos(rx), crz * Math.sin(rx));
+    };
+    const _crashFloorY = function (z) {
+        return _poolDiveMode ? poolSurfaceY
+            : (_trampolineMode || _trampolineMatMode)
+                ? (TRAMPOLINE_Y - FOOT_OFFSET)
+                : (terrainRootY(z) - FOOT_OFFSET);
+    };
+    // Hard zones: zero penetration ever. Chopped landing zone: sink ≤ 0.10 m.
+    const _crashZoneHard = function (z) {
+        return z < LANDING_START_Z + LANDING_TRANS_LEN;
+    };
+
+    function _crashRagdollInit() {
+        const M = character.meshes;
+        const rootPos = character.root.position;
+        const qRoot = character.root.rotationQuaternion || _crashQAxis(0, 1, 0, 0);
+        const qRootInv = _crashQConj(qRoot);
+        const toWorld = function (lp) {
+            const r = _crashQRotV(qRoot, lp);
+            return _crashV(rootPos.x + r.x, rootPos.y + r.y, rootPos.z + r.z);
+        };
+
+        // Seed particle world positions from the current driver transforms.
+        const segEnds = {};
+        for (const seg of SEGMENTS) {
+            const n = M[seg.name];
+            if (!n) continue;
+            const dir = _crashSegAxis(n);
+            const hh = seg.h / 2;
+            segEnds[seg.name] = {
+                top: toWorld(_crashV(n.position.x + dir.x * hh, n.position.y + dir.y * hh, n.position.z + dir.z * hh)),
+                bot: toWorld(_crashV(n.position.x - dir.x * hh, n.position.y - dir.y * hh, n.position.z - dir.z * hh)),
+                dir: dir,
+            };
+        }
+        const avg = function (a, b) {
+            return _crashV((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+        };
+        const P = {
+            torsoTop:    segEnds.torso.top,
+            torsoBottom: segEnds.torso.bot,
+            headTop:     segEnds.head.top,
+            neck:        segEnds.head.bot,       // head bottom ≈ torso top
+            shL: segEnds.upperArmL.top, shR: segEnds.upperArmR.top,
+            elbowL: avg(segEnds.upperArmL.bot, segEnds.lowerArmL.top),
+            elbowR: avg(segEnds.upperArmR.bot, segEnds.lowerArmR.top),
+            wristL: segEnds.lowerArmL.bot, wristR: segEnds.lowerArmR.bot,
+            hipL: segEnds.upperLegL.top, hipR: segEnds.upperLegR.top,
+            kneeL: avg(segEnds.upperLegL.bot, segEnds.lowerLegL.top),
+            kneeR: avg(segEnds.upperLegR.bot, segEnds.lowerLegR.top),
+            ankleL: segEnds.lowerLegL.bot, ankleR: segEnds.lowerLegR.bot,
+        };
+        const parts = [];
+        for (const k of Object.keys(P)) parts.push({ name: k, p: P[k], prev: _crashV(P[k].x, P[k].y, P[k].z) });
+        const byName = {};
+        for (const pt of parts) byName[pt.name] = pt;
+        const RADIUS = {
+            torsoTop: 0.16, torsoBottom: 0.16, neck: 0.12, headTop: 0.12,
+            shL: 0.08, shR: 0.08, elbowL: 0.06, elbowR: 0.06,
+            wristL: 0.05, wristR: 0.05,
+            hipL: 0.10, hipR: 0.10, kneeL: 0.08, kneeR: 0.08,
+            ankleL: 0.06, ankleR: 0.06,
+        };
+        for (const pt of parts) pt.r = RADIUS[pt.name] || 0.07;
+
+        const dist = function (a, b) { return _crashVLen(_crashVSub(a, b)); };
+        const STICKS = [
+            ['torsoTop', 'torsoBottom'], ['neck', 'headTop'],
+            ['torsoTop', 'shL'], ['torsoTop', 'shR'], ['shL', 'shR'],
+            ['torsoBottom', 'shL'], ['torsoBottom', 'shR'],
+            ['shL', 'elbowL'], ['elbowL', 'wristL'],
+            ['shR', 'elbowR'], ['elbowR', 'wristR'],
+            ['torsoBottom', 'hipL'], ['torsoBottom', 'hipR'], ['hipL', 'hipR'],
+            ['torsoTop', 'hipL'], ['torsoTop', 'hipR'],
+            ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+            ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+        ].map(function (s) {
+            return { a: byName[s[0]], b: byName[s[1]], rest: dist(P[s[0]], P[s[1]]) };
+        });
+
+        // Seed angles, so the limits never fight the crash pose (a tuck lands
+        // deeply flexed; the limits clamp AWAY from the seed, not into it).
+        const angAt = function (j, a, b) {
+            const u = _crashVSub(a, j), v = _crashVSub(b, j);
+            const c = (u.x * v.x + u.y * v.y + u.z * v.z) / (_crashVLen(u) * _crashVLen(v));
+            return Math.acos(Math.max(-1, Math.min(1, c)));
+        };
+        const seedHead = angAt(P.neck, P.torsoTop, P.headTop);
+        const seedKneeL = angAt(P.kneeL, P.hipL, P.ankleL);
+        const seedKneeR = angAt(P.kneeR, P.hipR, P.ankleR);
+        const seedElbL = angAt(P.elbowL, P.shL, P.wristL);
+        const seedElbR = angAt(P.elbowR, P.shR, P.wristR);
+        const clampAng = function (a, lo, hi) { return Math.max(lo, Math.min(hi, a)); };
+        const ANG = {
+            headMax: clampAng(seedHead + 0.10, 0.61, 0.9),          // ≤ ~35–50° off the torso axis
+            kneeL: [clampAng(seedKneeL - 0.2, 0.7, 3.05), clampAng(seedKneeL + 0.2, 3.05, Math.PI)],
+            kneeR: [clampAng(seedKneeR - 0.2, 0.7, 3.05), clampAng(seedKneeR + 0.2, 3.05, Math.PI)],
+            elbL: [clampAng(seedElbL - 0.2, 0.6, 3.1), clampAng(seedElbL + 0.2, 3.1, Math.PI)],
+            elbR: [clampAng(seedElbR - 0.2, 0.6, 3.1), clampAng(seedElbR + 0.2, 3.1, Math.PI)],
+        };
+
+        // Skis release at impact: flat-on-surface slide with yaw spin.
+        const skis = [];
+        for (const sk of ['skiL', 'skiR']) {
+            const n = M[sk];
+            if (!n) continue;
+            const lp = n.position;
+            const pos = toWorld(lp);
+            const qNode = n.rotationQuaternion
+                ? { x: n.rotationQuaternion.x, y: n.rotationQuaternion.y, z: n.rotationQuaternion.z, w: n.rotationQuaternion.w }
+                : _crashQEulerYXZ(n.rotation.x || 0, n.rotation.y || 0, n.rotation.z || 0);
+            const fwd = _crashQRotV(_crashQMul(qRoot, qNode), _crashV(0, 0, 1));
+            skis.push({
+                node: n, pos: pos,
+                vel: _crashV((Math.random() - 0.5) * 2.4, 0.6 + Math.random() * 0.8, 1.4 + Math.random() * 2.0),
+                yaw: Math.atan2(fwd.x, fwd.z || 1e-6),
+                vyaw: (Math.random() - 0.5) * 5.0,
+                resting: false, y0: 0.015,
+            });
+        }
+
+        const torso = P.torsoTop;
+        return {
+            parts, byName, sticks: STICKS, ang: ANG, skis,
+            qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
+            torso: _crashV(torso.x, torso.y, torso.z),
+            maxSpeed: 99, sprayT: 0, t: 0,
+        };
+    }
+
+    function _crashRagdollStep(R, dt) {
+        R.t += dt;
+        // The root KEEPS SLIDING during the crash (physics continues; only the
+        // crash froze state.vz at impact and the slope re-accelerates it), so
+        // the world→local write-back must use the LIVE root transform, not a
+        // capture. The root orientation is frozen while crashActive.
+        const _rp = character.root.position;
+        const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
+        const _rq = character.root.rotationQuaternion || R.qRoot;
+        const qRootInv = _crashQConj(_rq);
+        // ── Verlet integrate (2 substeps for stability at clamped dt) ─────
+        const nSub = dt > 0.026 ? 3 : 2;
+        const h = dt / nSub;
+        for (let s = 0; s < nSub; s++) {
+            for (const pt of R.parts) {
+                const vx = (pt.p.x - pt.prev.x) * 0.996;
+                const vy = (pt.p.y - pt.prev.y) * 0.996;
+                const vz = (pt.p.z - pt.prev.z) * 0.996;
+                pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                pt.p.x += vx; pt.p.y += vy - _CRASH_GRAV * h * h; pt.p.z += vz;
+            }
+            // ── Stick constraints ─────────────────────────────────────────
+            for (let it = 0; it < 6; it++) {
+                for (const st of R.sticks) {
+                    const d = _crashVSub(st.b.p, st.a.p);
+                    const len = _crashVLen(d);
+                    const diff = (len - st.rest) / len * 0.5;
+                    st.a.p.x += d.x * diff; st.a.p.y += d.y * diff; st.a.p.z += d.z * diff;
+                    st.b.p.x -= d.x * diff; st.b.p.y -= d.y * diff; st.b.p.z -= d.z * diff;
+                }
+                // ── Coarse angular limits (distal particle moves) ─────────
+                const angClamp = function (j, a, b, lo, hi) {
+                    const u = _crashVSub(a.p, j.p), v = _crashVSub(b.p, j.p);
+                    const lu = _crashVLen(u), lv = _crashVLen(v);
+                    const c = Math.max(-1, Math.min(1, (u.x * v.x + u.y * v.y + u.z * v.z) / (lu * lv)));
+                    const ang = Math.acos(c);
+                    if (ang >= lo && ang <= hi) return;
+                    const target = ang < lo ? lo : hi;
+                    // Rotate b about the joint axis (u×v) onto the clamped angle.
+                    const ax = (u.y * v.z - u.z * v.y) / (lu * lv);
+                    const ay = (u.z * v.x - u.x * v.z) / (lu * lv);
+                    const az = (u.x * v.y - u.y * v.x) / (lu * lv);
+                    if (ax * ax + ay * ay + az * az < 1e-8) return; // degenerate (u ∥ v)
+                    const q = _crashQAxis(ax, ay, az, target - ang);
+                    const nb = _crashQRotV(q, _crashV(v.x / lv, v.y / lv, v.z / lv));
+                    b.p.x = j.p.x + nb.x * lv; b.p.y = j.p.y + nb.y * lv; b.p.z = j.p.z + nb.z * lv;
+                };
+                angClamp(R.byName.neck, R.byName.torsoTop, R.byName.headTop, 0, R.ang.headMax);
+                angClamp(R.byName.kneeL, R.byName.hipL, R.byName.ankleL, R.ang.kneeL[0], R.ang.kneeL[1]);
+                angClamp(R.byName.kneeR, R.byName.hipR, R.byName.ankleR, R.ang.kneeR[0], R.ang.kneeR[1]);
+                angClamp(R.byName.elbowL, R.byName.shL, R.byName.wristL, R.ang.elbL[0], R.ang.elbL[1]);
+                angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
+            }
+            // ── Terrain contact + slope-scaled friction ───────────────────
+            const eps = 0.05;
+            const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
+            for (const pt of R.parts) {
+                const surf = _crashFloorY(pt.p.z) + pt.r;
+                if (pt.p.y < surf) {
+                    pt.p.y = surf;
+                    const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
+                    const vH = Math.sqrt(vx * vx + vz * vz);
+                    // Ploughing friction + a static stop so the body settles.
+                    const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
+                    let k = 1 - f;
+                    if (vH * (1 - k) / h < 0.5) k = 0.25;
+                    pt.prev.x = pt.p.x - vx * k;
+                    pt.prev.z = pt.p.z - vz * k;
+                    if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                }
+            }
+        }
+        // ── Skis: flat slide on the surface, yaw spin, come to rest ───────
+        for (const sk of R.skis) {
+            if (!sk.resting) {
+                sk.vel.y -= _CRASH_GRAV * dt;
+                sk.pos.x += sk.vel.x * dt; sk.pos.y += sk.vel.y * dt; sk.pos.z += sk.vel.z * dt;
+                sk.yaw += sk.vyaw * dt;
+                sk.vyaw *= Math.exp(-1.6 * dt);
+            }
+            const surf = _crashFloorY(sk.pos.z) + sk.y0;
+            if (sk.pos.y <= surf || sk.resting) {
+                sk.pos.y = surf;
+                sk.resting = true;
+                const vH = Math.sqrt(sk.vel.x * sk.vel.x + sk.vel.z * sk.vel.z);
+                if (vH > 0.02) {
+                    const dec = Math.min(vH, (2.0 + 2.5 * 0.5) * dt);
+                    sk.vel.x -= sk.vel.x / vH * dec;
+                    sk.vel.z -= sk.vel.z / vH * dec;
+                    sk.pos.x += sk.vel.x * dt; sk.pos.z += sk.vel.z * dt;
+                } else { sk.vel.x = 0; sk.vel.z = 0; }
+            }
+        }
+        // ── Trailing spray while the body ploughs, scaled to speed ────────
+        R.maxSpeed = 0;
+        for (const pt of R.parts) {
+            const sp = _crashVLen(_crashVSub(pt.p, pt.prev)) / Math.max(dt, 1e-4);
+            if (sp > R.maxSpeed) R.maxSpeed = sp;
+        }
+        R.sprayT -= dt;
+        if (R.maxSpeed > 1.2 && R.sprayT <= 0) {
+            R.sprayT = 0.12;
+            _spawnSnowBurst(R.torso.x, R.torso.y - 0.35, R.torso.z, 14, Math.min(2.2, R.maxSpeed / 6));
+        }
+        // ── Write driver transforms (root-local, bones follow as always) ──
+        const writeSeg = function (name, pTop, pBot) {
+            const n = character.meshes[name];
+            if (!n) return;
+            const cx = (pTop.x + pBot.x) / 2, cy = (pTop.y + pBot.y) / 2, cz = (pTop.z + pBot.z) / 2;
+            const d = _crashVSub(pTop, pBot);
+            const l = _crashVLen(d);
+            const dirW = _crashV(d.x / l, d.y / l, d.z / l);
+            const rel = _crashVSub(_crashV(cx, cy, cz), rootPos);
+            const loc = _crashQRotV(qRootInv, rel);
+            n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
+            const dirL = _crashQRotV(qRootInv, dirW);
+            // Invert Rx(rx)·Rz(rz)·(0,1,0) = dirL for rx, rz (ry = 0).
+            const crz = Math.sqrt(Math.max(0, 1 - dirL.x * dirL.x));
+            const rz = Math.atan2(-dirL.x, crz);
+            const rx = Math.atan2(dirL.z, dirL.y);
+            n.rotation.x = rx; n.rotation.z = rz;
+        };
+        const P = R.byName;
+        writeSeg('torso', P.torsoTop.p, P.torsoBottom.p);
+        writeSeg('head', P.headTop.p, P.neck.p);
+        writeSeg('upperArmL', P.shL.p, P.elbowL.p);
+        writeSeg('lowerArmL', P.elbowL.p, P.wristL.p);
+        writeSeg('upperArmR', P.shR.p, P.elbowR.p);
+        writeSeg('lowerArmR', P.elbowR.p, P.wristR.p);
+        writeSeg('upperLegL', P.hipL.p, P.kneeL.p);
+        writeSeg('lowerLegL', P.kneeL.p, P.ankleL.p);
+        writeSeg('upperLegR', P.hipR.p, P.kneeR.p);
+        writeSeg('lowerLegR', P.kneeR.p, P.ankleR.p);
+        // Torso world position for the camera ease + spray.
+        R.torso = _crashV((P.torsoTop.p.x + P.torsoBottom.p.x) / 2,
+                          (P.torsoTop.p.y + P.torsoBottom.p.y) / 2,
+                          (P.torsoTop.p.z + P.torsoBottom.p.z) / 2);
+        for (const sk of R.skis) {
+            const n = sk.node;
+            const eps2 = 0.05;
+            const s2 = Math.min(1.2, Math.abs(terrainRootY(sk.pos.z + eps2) - terrainRootY(sk.pos.z - eps2)) / (2 * eps2));
+            const qSki = _crashQMul(_crashQAxis(1, 0, 0, Math.atan(s2)), _crashQAxis(0, 1, 0, sk.yaw));
+            const qL = _crashQMul(qRootInv, qSki);
+            n.rotationQuaternion = new BABYLON.Quaternion(qL.x, qL.y, qL.z, qL.w);
+            const rel = _crashVSub(sk.pos, rootPos);
+            const loc = _crashQRotV(qRootInv, rel);
+            n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
+        }
+    }
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
@@ -3861,6 +4209,15 @@ function _startGame() {
                 }
                 crashPieces = [];
                 character.root.setEnabled(true);
+                ragdoll = null;
+
+                // The ragdoll wrote ski rotationQuaternions (flat slide to
+                // rest); clear them so applyPose's Euler writes drive the
+                // skis again on the next run.
+                for (const nm of ['skiL', 'skiR']) {
+                    const m = character.meshes[nm];
+                    if (m) m.rotationQuaternion = null;
+                }
 
                 // Put the skinned body back and re-hide the drivers it replaced.
                 // Skis are equipment and stay visible either way.
@@ -5199,120 +5556,27 @@ function _startGame() {
                 state.flipAngle, omega, state.flipDir, dt,
                 { clampToFullRotation: singleLayoutMode && !_trampolineMode });
         }
-        // ── Crash: ragdoll ────────────────────────────────────────────────
+        // ── Crash: coherent ragdoll (P11) ─────────────────────────────────
+        // The crash is display (ADR-0002): the engine already decided the
+        // landing failed. The skinned body STAYS visible and keeps following
+        // the driver bones exactly as in normal play — the ragdoll now writes
+        // the driver transforms for the crash duration (applyPose and the
+        // root-rotation blocks are gated off while crashActive). No legacy
+        // solid is ever re-shown; character.root stays enabled.
         if (state.crashed && !crashActive) {
             crashActive = true;
             crashTimer  = 0;
-            const floorY = _poolDiveMode
-                ? poolSurfaceY
-                : (_trampolineMode || _trampolineMatMode)
-                    ? (TRAMPOLINE_Y - FOOT_OFFSET)
-                    : terrainRootY(state.posZ) - FOOT_OFFSET;
-
-            // BUG-001 fix: gloveL/gloveR are stored as { mesh, halfH } wrappers
-            // (see buildCharacter) rather than bare meshes, so calling mesh APIs
-            // on every character.meshes value threw TypeError here. The throw was
-            // swallowed by the frame-level try/catch, and because crashActive was
-            // already set the ragdoll never retried — no crash animation ever ran.
-            // Resolve the part list once so both passes agree on it.
-            const ragdollParts = Object.keys(character.meshes)
-                .map(name => {
-                    const entry = character.meshes[name];
-                    return { name, mesh: (entry && entry.mesh) ? entry.mesh : entry };
-                })
-                .filter(p => p.mesh && typeof p.mesh.computeWorldMatrix === 'function');
-
-            // Pass 1: compute every mesh's world position BEFORE any detachment.
-            // Must walk the full parent chain, so use getAbsolutePosition() not rootMatrix.
-            const worldPositions = {};
-            character.root.computeWorldMatrix(true);
-            for (const { name, mesh } of ragdollParts) {
-                mesh.computeWorldMatrix(true);
-                worldPositions[name] = mesh.getAbsolutePosition().clone();
-            }
-
-            // ── Make the ragdoll VISIBLE ────────────────────────────────────
-            // The pieces that tumble are the DRIVER solids, and the continuous
-            // skinned body hid every one of them when it loaded — they are the
-            // articulation now, not the thing you see. So the crash detached a
-            // dozen invisible objects, disabled the root the visible body hangs
-            // off, and the athlete vanished mid-air leaving only the skis, which
-            // survived because they are equipment and were never hidden.
-            //
-            // The skinned body cannot come apart: its bones follow the drivers,
-            // so flinging the drivers in twelve directions would stretch one
-            // continuous skin between them. The parts ARE the crash, so they are
-            // shown and the skinned body is hidden for its duration.
-            for (const { mesh } of ragdollParts) mesh.isVisible = true;
-            for (const m of scene.meshes) {
-                if (!m.name) continue;
-                if (m.name.startsWith('athleteBody')) m.isVisible = false;
-                else if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
-                    m.isVisible = true;      // detail parented to a tumbling piece
-                }
-            }
-
-            // Pass 2: detach and launch each piece independently.
-            for (const { name, mesh } of ragdollParts) {
-                const origPos  = mesh.position.clone();
-                const origQuat = mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null;
-                const origRot  = mesh.rotation ? mesh.rotation.clone() : new BABYLON.Vector3();
-                mesh.parent = null;
-                mesh.position.copyFrom(worldPositions[name]);
-                mesh.rotationQuaternion = null;
-                mesh.rotation.set(
-                    (Math.random() - 0.5) * 1.0,
-                    (Math.random() - 0.5) * 1.0,
-                    (Math.random() - 0.5) * 1.0
-                );
-                const angle   = Math.random() * Math.PI * 2;
-                // Pool entry: pieces burst outward from water surface with a splash pop
-                const outward = _poolDiveMode
-                    ? (1.5 + Math.random() * 3.5)
-                    : (2.0 + Math.random() * 5.0);
-                const upVy = _poolDiveMode
-                    ? (3.0 + Math.random() * 5.0)
-                    : (2.0 + Math.random() * 7.0);
-                crashPieces.push({
-                    mesh, origPos, origQuat, origRot,
-                    vx: Math.cos(angle) * outward,
-                    vy: upVy,
-                    vz: Math.sin(angle) * outward * 0.7 + (state.vz || 0) * 0.35,
-                    rotVx: (Math.random() - 0.5) * 24,
-                    rotVy: (Math.random() - 0.5) * 24,
-                    rotVz: (Math.random() - 0.5) * 24,
-                    floorY, bounces: 0,
-                });
-            }
-            character.root.setEnabled(false);
+            try {
+                ragdoll = _crashRagdollInit();
+                _spawnSnowBurst(ragdoll.torso.x, ragdoll.torso.y - 0.3, ragdoll.torso.z,
+                    70, 1.2);
+            } catch (e) { window._crashErr = String((e && e.stack) || e); ragdoll = null; }
         }
-        if (crashActive) {
+        if (crashActive && ragdoll) {
             crashTimer += dt;
-            for (const p of crashPieces) {
-                p.vy -= GRAVITY * dt;
-                p.mesh.position.x += p.vx * dt;
-                p.mesh.position.y += p.vy * dt;
-                p.mesh.position.z += p.vz * dt;
-                p.mesh.rotation.x += p.rotVx * dt;
-                p.mesh.rotation.y += p.rotVy * dt;
-                p.mesh.rotation.z += p.rotVz * dt;
-                if (p.mesh.position.y < p.floorY) {
-                    p.mesh.position.y = p.floorY;
-                    if (p.bounces < 2 && Math.abs(p.vy) > 1.5) {
-                        p.vy = Math.abs(p.vy) * 0.32;
-                        p.vx *= 0.55; p.vz *= 0.55;
-                        p.rotVx *= 0.45; p.rotVy *= 0.45; p.rotVz *= 0.45;
-                        p.bounces++;
-                    } else {
-                        p.vy = 0;
-                        p.vx *= Math.max(0, 1 - 4 * dt);
-                        p.vz *= Math.max(0, 1 - 4 * dt);
-                        p.rotVx *= Math.max(0, 1 - 5 * dt);
-                        p.rotVy *= Math.max(0, 1 - 5 * dt);
-                        p.rotVz *= Math.max(0, 1 - 5 * dt);
-                    }
-                }
-            }
+            try {
+                _crashRagdollStep(ragdoll, dt);
+            } catch (e) { window._crashErr = String((e && e.stack) || e); ragdoll = null; }
         }
 
         // ── Spin ──────────────────────────────────────────────────────────
@@ -5671,7 +5935,7 @@ function _startGame() {
             _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u,
                                   hop: _hop, flexK: _k, drop: _hopDrop,
                                   yawFrac: HOP_TURN.yawFrac(_u) };
-        } else if (character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
+        } else if (!crashActive && character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
             // Hand the skis back to the pose solver's euler rotations
             character.meshes.skiL.rotationQuaternion = null;
             character.meshes.skiR.rotationQuaternion = null;
@@ -5681,8 +5945,17 @@ function _startGame() {
         if (firstPersonMode) _updateFpCamera(dt);
 
         // ── Camera follow — track character position; free mouse; C lerps smoothly ──
-        camera.target.y = _visRootY;
-        camera.target.z = state.posZ;
+        if (crashActive && ragdoll) {
+            // Camera eases to the tumbling body, then rests on it (P11): lerp
+            // the follow target toward the ragdoll torso instead of the frozen
+            // root, so the athlete stays framed while sliding to rest.
+            const _ck = Math.min(1, 2.5 * dt);
+            camera.target.y += (ragdoll.torso.y - 0.3 - camera.target.y) * _ck;
+            camera.target.z += (ragdoll.torso.z - camera.target.z) * _ck;
+        } else {
+            camera.target.y = _visRootY;
+            camera.target.z = state.posZ;
+        }
         if (_poolDiveMode) camera.target.x = POOL_DIVE_PLATFORM_X;
         // Smooth C-key alpha lerp (finishes in ~0.5s then stops fighting mouse)
         if (_camTargetAlpha !== null) {
