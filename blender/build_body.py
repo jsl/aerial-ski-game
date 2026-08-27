@@ -1838,6 +1838,121 @@ def hand_ratio_gate(body):
             f'the hard gate {HAND_RATIO_GATE[0]:.2f}-{HAND_RATIO_GATE[1]:.2f}')
 
 
+BIDELTOID_GATE = 0.41                 # hard ceiling (m)
+BIDELTOID_TARGET = (0.38, 0.40)       # author's target band at standing 1.515
+CAP_OUTER_X = 0.198                   # post-fix outboard limit about the bone plane
+
+
+def narrow_shoulders(body):
+    """
+    Scale the outboard deltoid-cap / upper-arm residue onto the anatomical cap.
+
+    Measured on the final mesh (pre-fix): the deltoid band's outer verts reach
+    |x| 0.212..0.240 across z +0.10..+0.16 — 4..6.5 cm outboard of the arm
+    bone plane (±0.175), while the strict arm cloud's outer face already sits
+    at 0.205 (the armgroup centroid is 2 cm INBOARD of its bone). That
+    outboard residue is the A-pose shoulder corner dragged outboard through
+    the armature pose and the settle, and it is the whole "shoulders too big"
+    read: cap rows 0.43-0.48 wide against a 0.38-0.40 target.
+
+    Fix, per side, per 1 cm z row across the cap zone (shoulder joint -7 cm to
+    +9 cm): verts OUTBOARD of the bone plane are pulled back about that plane
+    so the row's outer face lands on CAP_OUTER_X (0.198 -> bideltoid 0.396,
+    mid-target band); inboard verts (the torso face, the arm-torso gap) never
+    move. Row factors are 5-row moving-averaged so the correction field is
+    smooth in z — no step where the spike row meets the rows beside it — and
+    fade to no-op at both zone ends, so the trapezius slope above and the
+    biceps/elbow below keep their surfaces. The arm-torso GAP is preserved
+    (outboard-only moves widen nothing).
+    """
+    n_moved = 0
+    for s, side in ((-1, 'L'), (1, 'R')):
+        x_b = s * 0.175
+        sh_z = bl(f'upperArm{side}').z + SEGMENTS[f'upperArm{side}']['h'] / 2
+        z_lo, z_hi = sh_z - 0.07, sh_z + 0.09
+        rows = {}
+        for v in body.data.vertices:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+                continue
+            k = round(v.co.z / 0.01)
+            rows[k] = max(rows.get(k, 0.0), s * v.co.x)
+        if not rows:
+            log(f'  narrow_shoulders {side}: no outboard verts in zone — skipped')
+            continue
+        ks = sorted(rows)
+        # target outer per row: cap zone rows -> CAP_OUTER_X, fading to the
+        # row's own measured extent at both zone ends (no-op there).
+        tgt = {}
+        for k in ks:
+            z = k * 0.01
+            t_cap = CAP_OUTER_X
+            if z > sh_z + 0.05:
+                t_cap = CAP_OUTER_X + (z - (sh_z + 0.05)) / 0.04 * max(
+                    0.0, rows[k] - CAP_OUTER_X)
+            if z < sh_z - 0.05:
+                t_cap = CAP_OUTER_X + ((sh_z - 0.05) - z) / 0.02 * max(
+                    0.0, rows[k] - CAP_OUTER_X)
+            tgt[k] = min(rows[k], t_cap)
+        # 5-row moving average on the target field (smooth in z).
+        sm = {}
+        for k in ks:
+            win = [tgt[j] for j in ks if abs(j - k) <= 2]
+            sm[k] = sum(win) / len(win)
+        for v in body.data.vertices:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+                continue
+            k = round(v.co.z / 0.01)
+            out = sm.get(k)
+            if out is None or out >= rows[k]:
+                continue
+            # row factor in PLANE-OFFSET space: the outer face (at rows[k]
+            # outboard of the ORIGIN, i.e. rows[k]-0.175 past the bone plane)
+            # lands `out`-0.175 past it. Same number for both sides — rows[]
+            # already carries the side sign via s * v.co.x.
+            f = (out - 0.175) / (rows[k] - 0.175) if rows[k] > 0.175 else 1.0
+            v.co.x = x_b + (v.co.x - x_b) * f
+            n_moved += 1
+        log(f'  narrow_shoulders {side}: rows {ks[0]*0.01:+.2f}..{ks[-1]*0.01:+.2f}, '
+            f'worst outboard {max(rows.values()):.3f} -> {CAP_OUTER_X:.3f}')
+    log(f'narrow_shoulders: {n_moved} outboard verts rescaled about the bone planes')
+
+
+def bideltoid_report(body):
+    """
+    Bideltoid breadth: the widest 1 cm slice across the deltoid band.
+
+    Shoulder joints sit at bl('upperArm*').z + SEGMENTS['upperArm*']['h'] / 2
+    (the upper arm bone's head); the deltoid cap wraps that joint and the
+    trapezius tops out at the torso's own top. The scan runs 1 cm rows from
+    5 cm below the joint to 9 cm above it — across the cap AND the trapezius —
+    and reports the worst row, with the per-row profile logged so a wide row
+    can be attributed to the cap, the trapezius slope or the arm shaft itself.
+    """
+    sh_z = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
+    z_lo, z_hi = sh_z - 0.05, sh_z + 0.09
+    rows = {}
+    for v in body.data.vertices:
+        if not (z_lo <= v.co.z <= z_hi):
+            continue
+        k = round(v.co.z / 0.01)
+        e = rows.setdefault(k, [1e9, -1e9])
+        e[0] = min(e[0], v.co.x)
+        e[1] = max(e[1], v.co.x)
+    worst_w, worst_z = 0.0, None
+    for k in sorted(rows):
+        z = k * 0.01
+        w = rows[k][1] - rows[k][0]
+        tag = ' <-' if w > worst_w else ''
+        log(f'  deltoid slice z={z:+.2f} width {w:.3f} '
+            f'(x {rows[k][0]:+.3f}..{rows[k][1]:+.3f}){tag}')
+        if w > worst_w:
+            worst_w, worst_z = w, z
+    log(f'BIDELTOID summary: {worst_w:.3f} m at z={worst_z:+.2f} '
+        f'(target {BIDELTOID_TARGET[0]:.2f}-{BIDELTOID_TARGET[1]:.2f}, '
+        f'gate <= {BIDELTOID_GATE:.2f})')
+    return worst_w, worst_z
+
+
 def leg_profile(body, tag):
     """
     Width of one leg every 2 cm from hip to sole, checked for DIPS and STEPS.
@@ -3419,6 +3534,13 @@ def main():
     seat_soles(body)
     align_boots(body, joints)
     prof = leg_profile(body, 'final')
+    narrow_shoulders(body)
+    bide_w, bide_z = bideltoid_report(body)
+    if bide_w > BIDELTOID_GATE:
+        raise SystemExit(
+            f'[body] bideltoid gate FAILED: {bide_w*1000:.0f} mm at z='
+            f'{bide_z:+.2f} (gate {BIDELTOID_GATE*1000:.0f} mm, target '
+            f'{BIDELTOID_TARGET[0]*1000:.0f}-{BIDELTOID_TARGET[1]*1000:.0f} mm)')
     # Straight-arm gates (reviewer order iter 23/24): collinearity <=1 cm,
     # forearm-hand join <=1 cm, hand axis within 10 deg of the forearm,
     # elbow cross-section step <=5 mm. GATE MODE: this iteration lands them
