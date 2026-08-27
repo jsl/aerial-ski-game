@@ -71,7 +71,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables |
-| P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7, re-verified iter 13 with bake off (corridor 0.7949 ≥ flanks 0.7918/0.8058) |
+| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.7986 > corridor 0.7949 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7, re-verified iters 13 and 15 (corridor 0.7949 ≥ flanks 0.7918/0.8058) |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
 | P5 | Snow surfaces | open | |
@@ -137,6 +137,96 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 15 — Review-only: measured audit; order-item-3 holds, no regressions, re-prioritisation
+
+No features. Self-review of iter 14 first (commit 641fcab touches only
+`docs/RENDER-PROGRESS.md` + the new `tools/clearance-compare.js`): working tree
+was clean, no reviewer scratch-bake files, `npm run test:unit` 74/74 and
+`npm run test:golden` 30/30 reproduce on HEAD. Full `./tests/run-all.sh` on the
+landed tree: **ALL GREEN** — unit + live-diff + golden 30/30 + browser +
+mutation + coverage + drive **42 passed / 2 skipped** (7.8 m; iter-10's recorded
+SwiftShader timing flake did not recur). Shots regenerated (`look`) and
+inspected directly. I can view PNGs.
+
+**What reads wrong now (measurements; review-measure + grey-ramp harnesses on
+the shared scene camera)**
+
+1. **Sky is still brighter than every snow surface (P2 remainder, top standing
+   delta).** sky **0.7986** vs corridor 0.7949, flankNear 0.7918, inrun 0.7886,
+   kickerFace 0.7655. The footage wants snow the brightest surface in frame;
+   nothing has moved here since iter 5's 0.799 baseline. Needs the sun disc /
+   fog re-tune / post 1.6→~1.2 rig work, not more snow tuning.
+2. **Athlete shadow holds (P2 quick win intact).** Under-figure terrain
+   **0.1564** vs ring max 0.7818 → **80 % darker under foot** (gate ≥ 15 %;
+   shadows.spec's own probe reported 79 % at iter 8). Note for anyone reading
+   REVIEW_MEASURE output: its printed `shadow.dropFrac` 0.0275 is the ring's
+   own max−min spread, not the shadow contrast — use `underAthlete` vs
+   `ringMax`. Every near tree still lays a distinct shadow in `scene.png`.
+3. **Grey-ramp parity holds on the authoritative gate** (projected corridor
+   box): corridor **0.7949 ≥ darkest flank 0.7918** (far 0.8058), inrun 0.7886,
+   kickerFace 0.7655, skyFrac 0 — iter 13's numbers reproduce.
+4. **Found while measuring: review-measure's duplicate "corridor" metric is
+   stale, not the scene.** Its fixed fractional screen box reads corridor
+   **0.7666** (−0.025 vs flankNear) — a pick probe (temp spec, run then
+   deleted) shows that box samples **`wInrun` ×8 / `wStartPlat` ×1**
+   (picked points z −12…−19) — the lsMat FILLS, not the ribbon. This is the
+   same drift grey-ramp.spec itself had until iter 13's projected-box fix; the
+   diagnosis machinery exists, the port just never happened. Non-gating spec,
+   so the suite stayed green throughout. Fix next iteration: replace that one
+   box with grey-ramp's projection of a real corridor point (~10 lines).
+5. **Seam stays closed** from the ready view (kicker-face skyFrac 0); the
+   row-scan worst row remains the horizon-adjacent y=0.40 (16.3 % real sky),
+   documented caveat since iter 5.
+6. **Face/goggles read**: face-region luminance 0.6821, darkFrac 0 — skin
+   below the brim in `figure_front.png`, helmet from behind in `figure.png`.
+7. **Known residuals all confirmed in the fresh shots, none new** (each already
+   queued): hands hang clearly forward of the thigh line in the front view (P8
+   bind carry-forward); shoulders read broad/puffy (the APPROVED proportions
+   rebaseline, still queued as its own physics commit); bib is a faint pale
+   patch with no legible digits at look distance (P7 bib 30); skis are black
+   flat slats, no upturned tips or topsheet graphic (queued ski-styling item);
+   tree trunks hexagonal + low-poly cone foliage — **the interim tessellation
+   stopgap is now owed since iteration 5 and noted by three reviews**; flat sky
+   + fog band + cone peaks (P2/P6); venue undressed — no B-net/wands/flag/deck/
+   coaches (P3); kicker's red edge lines read as floating brackets from this
+   angle (P3 will wrap the face in panels); landing is smooth white, no chop
+   texture (P5).
+
+**Regressions:** none found. Unit/golden/drive gates green everywhere;
+lightmap stays off with the black-band gate passing (baked.spec); terrain.json
+regenerated by the suite proved numerically identical to HEAD (max position/
+normal delta 0.0 over all 203 meshes) though not byte-identical — extract-
+terrain's float serialisation is not text-reproducible across runs (minor
+tooling nit, recorded only); restored to keep the tree byte-stable.
+
+**Re-prioritised list for the next iterations**
+
+1. **Lightmap rebake surgery** (reviewer order item 4, unchanged): entry-12
+   post-unwrap vertex-split fixup → rebake → flip `_bakeLightmapEnabled` to
+   true in the SAME commit, restore baked.spec on-state assertions, ASSET_V
+   8→9; re-run grey-ramp/shadows/look against the bake ON.
+2. **B-net fencing** (author pull-forward) — instanced posts + alpha-cut strip
+   both edges, per the pinned acceptance.
+3. **APPROVED proportions rebaseline physics commit + ONE Blender rebuild
+   bundle**: arm x ±0.175, torso 36→31–32 % / legs →51 %; suit shell + folds,
+   hands-forward bind offset (finding 7), straight-arm chain check, legible
+   bib 30, styled 155 cm skis with binding (the `APPROVED: ski length`
+   line rides in the same commit).
+4. **Interim tree trunks stopgap** (tessellation ≥16, flare, snow collar) —
+   trivial, third time queued; do it inside whichever iteration next touches
+   the scene.
+5. **P2 sky/sun remainder** so snow beats the 0.7986 sky.
+6. Small mechanic ports folded along: review-measure corridor box (finding 4);
+   watch body.spec/game.spec SwiftShader charge/deform timing (dormant).
+7. Then P10 free-look, P11 coherent crash, P1 slice 2 (flank/skirt closure),
+   P3–P6, P9 night mode.
+
+**Open questions for the reviewer**
+- None new. Standing: entry-12's four-step rebake plan sanity glance (accepted
+  ordering there would still help); residual engine-side negatives from entry
+  14 (kicker-corner −0.0839, ride-out −0.0775) remain available under their
+  pre-approved remediation paths whenever the author wants them closed.
 
 ### 14 — Reviewer order 3: `main` vs branch-before vs branch-after whole-run clearance tables
 
