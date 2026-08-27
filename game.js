@@ -2002,6 +2002,14 @@ function _startGame() {
         return r;
     };
 
+    // Hop-turn phase schedule for the drive spec (fractions of READY_TURN_DUR;
+    // see the HOP_TURN note at READY_TURN_DUR for why the author's 0.95 s
+    // schedule is scaled into the physics-locked 0.7 s turn).
+    window._hopTurnPhases = function () {
+        return { dur: READY_TURN_DUR, crouchEnd: HOP_TURN.crouchEnd, takeoff: HOP_TURN.takeoff,
+                 touchdown: HOP_TURN.touchdown, hopHeight: HOP_TURN.hopHeight, kMax: HOP_TURN.kMax };
+    };
+
     window.applySkierColors = function() {
         function hexToC3(hex) {
             return new BABYLON.Color3(
@@ -3540,6 +3548,46 @@ function _startGame() {
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
+    // ── Hop-turn phase schedule (author spec, 2026-08-26) ────────────────────
+    // The turn to face downhill is a HOP: crouch (knees fold, hips drop, arms
+    // swing back) → extension (legs drive, skis leave the snow) → airborne
+    // (root lifted on a sine arc while the body+skis rotate 90° about the
+    // world vertical) → touchdown → knee absorption → settle. The author's
+    // nominal durations (0.30 / 0.15 / 0.25 / 0.25 s, + settle) sum to 0.95 s,
+    // but READY_TURN_DUR is locked at 0.7 s by the golden-trace contract (the
+    // recorded ready phase would shift every flight keyframe otherwise), so
+    // the four phases are scaled proportionally into the fixed turn
+    // (× 0.7/0.95 ≈ 0.737 — inside the ±30% acceptance band per phase); the
+    // settle tail is folded into the absorb envelope's release. Display only
+    // (ADR-0002): physics state is never touched here.
+    const HOP_TURN = (function () {
+        const nomSum = 0.95;                        // author's nominal total, s
+        const e0 = 0.30 / nomSum;                   // crouch end (turn fraction)
+        const e1 = e0 + 0.15 / nomSum;              // takeoff
+        const a1 = e1 + 0.25 / nomSum;              // touchdown
+        const sm = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+        const HOP_H = 0.135;                        // peak ski lift, m (author: 10–15 cm)
+        const K_MAX = 1.2;                          // crouch knee-fold drive (≈89° knee)
+        return {
+            crouchEnd: e0, takeoff: e1, touchdown: a1, hopHeight: HOP_H, kMax: K_MAX,
+            // fraction of the 90° yaw done at u: 0 on the snow, smooth through
+            // the airborne window, complete at touchdown (skis land pointing
+            // down the fall line)
+            yawFrac: (u) => (u <= e1) ? 0 : (u >= a1 ? 1 : sm((u - e1) / (a1 - e1))),
+            // crouch envelope: rises through the crouch, releases through the
+            // extension; drives the knee fold, the hip drop and the arm swing
+            crouchN: (u) => (u <= e0) ? sm(u / e0)
+                          : (u <= e1 ? 1 - sm((u - e0) / (e1 - e0)) : 0),
+            // absorb envelope: knee fold peaking just after touchdown,
+            // fully released by 72% of the window so every rendered frame
+            // (≥ 20 fps quantization) reaches zero before the u = 1 hand-back
+            absorbN: (u) => (u <= a1 || u >= 1) ? 0
+                          : Math.sin(Math.PI * Math.min(1, (u - a1) / (1 - a1) * 1.39)),
+            // root lift while airborne (sine arc, 0 at takeoff and touchdown)
+            hop: (u) => (u <= e1 || u >= a1) ? 0
+                      : HOP_H * Math.sin(Math.PI * (u - e1) / (a1 - e1)),
+        };
+    })();
     // Ready-stance diagnostics (read by window._readyStanceProbe, drive-tested)
     const _readyStance = { last: null };
     // Ski half-dims memo (from SEGMENTS; skis are the physics driver boxes)
@@ -5439,9 +5487,11 @@ function _startGame() {
         // ── Character rotation ─────────────────────────────────────────────
         if (!crashActive) {
             // qFace turns the character to face +Z (downhill direction).
-            // In readyState the character starts facing sideways (+π/2) and smoothly
-            // rotates to face downhill (0) as readyTurnT goes 0→1.
-            const readyYaw = (readyState && !_poolDiveMode) ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
+            // In readyState the character starts facing sideways (+π/2). The
+            // hop turn (author spec) keeps that yaw until takeoff and rotates
+            // the 90° about the world vertical during the airborne window, so
+            // the skis land pointing down the fall line (HOP_TURN.yawFrac).
+            const readyYaw = (readyState && !_poolDiveMode) ? (1.0 - HOP_TURN.yawFrac(readyTurnT)) * (Math.PI / 2) : 0.0;
             const _faceBase = (_poolDiveMode && poolDiveFaceBack) ? 0.0 : Math.PI;
             const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _faceBase + readyYaw);
             if (state.grounded) {
@@ -5505,12 +5555,13 @@ function _startGame() {
             // heading (both spans of the bottom face stay in-plane throughout).
             // Φ = π + readyYaw keeps the visual tip (local −z, same as the boot
             // toe) co-aligned: pre-turn φ=3π/2 puts tips across-hill beside the
-            // boots; readyTurnT→1 brings them down the fall line with no bind.
+            // boots; the hop's airborne rotation brings them down the fall line
+            // by touchdown, with no bind.
             // (Iter-28 fix: the old qFlat = Rx(_slope) alone pinned the skis'
             // WORLD orientation to the fall line — the conjugate composition
             // then cancelled the root's readyYaw, which is why the skis never
             // turned with the body.)
-            const _skiYaw = Math.PI + ((1.0 - readyTurnT) * (Math.PI / 2));
+            const _skiYaw = Math.PI + ((1.0 - HOP_TURN.yawFrac(readyTurnT)) * (Math.PI / 2));
             const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope)
                 .multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _skiYaw));
             const qRoot  = character.root.rotationQuaternion;
@@ -5527,11 +5578,15 @@ function _startGame() {
             // higher in the body frame with the L knee bent — the boots stay
             // seated because each ankle translates rigidly with its ski.
             const _sideGap = Math.abs(character.meshes.skiL.position.x - character.meshes.skiR.position.x);
-            const _delta   = _sideGap * Math.tan(_slope) * (1.0 - _blend);
+            // Fade the side-slope height difference with the yaw (not the raw
+            // turn progress): it exists only while the skis lie across the
+            // hill, and is gone by touchdown so both skis seat level.
+            const _delta   = _sideGap * Math.tan(_slope) * (1.0 - HOP_TURN.yawFrac(_u));
             character.meshes.skiL.position.y  += _delta;
             character.meshes.lowerLegL.position.y += _delta;
-            // Uphill-leg knee/hip flexion for the stance look (fades with the turn)
-            const _legF = 0.26 * (1.0 - _blend);
+            // Uphill-leg knee/hip flexion for the stance look (fades with the
+            // hop's yaw: the side stance is gone once the skis face downhill)
+            const _legF = 0.26 * (1.0 - HOP_TURN.yawFrac(_u));
             if (_legF > 0.001) {
                 const _ul = character.meshes.upperLegL, _ll = character.meshes.lowerLegL;
                 _ul.rotation.x += 0.45 * _legF;
@@ -5565,7 +5620,57 @@ function _startGame() {
                 }
                 character.root.position.y += 0.002 - _worst;
             }
-            _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u };
+            // ── Hop-turn overlay (author spec, 2026-08-26; display only) ──────
+            // Crouch/absorb: both knees fold about pinned ankles (each shin
+            // bottom stays over its ski centre and on the ski top, so the
+            // boots never leave the skis), the root drops by the exact leg
+            // shortening and both skis rise by the same amount in body frame —
+            // they stay seated where the loop above put them. Airborne: the
+            // root lifts on the hop arc, so the skis leave the snow with it.
+            // Arms: down/back swing with the crouch, slight out-swing at the
+            // apex — the same delta on upper and lower arm keeps the elbow
+            // closed and the glove rides the wrist.
+            const _crN = HOP_TURN.crouchN(_u);
+            const _abN = HOP_TURN.absorbN(_u);
+            const _k   = HOP_TURN.kMax * (_crN + 0.7 * _abN);
+            let _hopDrop = 0;
+            if (_k > 0.001) {
+                const _aH = 0.45 * _k, _aK = 0.85 * _k;   // hip fwd / knee back, rad
+                _hopDrop = 0.36 * (2 - Math.cos(_aH) - Math.cos(_aK)); // leg shortening
+                for (const _side of ['L', 'R']) {
+                    const _ul = character.meshes['upperLeg' + _side];
+                    const _ll = character.meshes['lowerLeg' + _side];
+                    const _sk = character.meshes['ski' + _side];
+                    const _rxU0 = _ul.rotation.x, _rxL0 = _ll.rotation.x;
+                    _ul.rotation.x = _rxU0 + _aH;
+                    _ll.rotation.x = _rxL0 - _aK;
+                    _ll.position.z += 0.18 * (Math.sin(_ll.rotation.x) - Math.sin(_rxL0));
+                    _ll.position.y += _hopDrop + 0.18 * (Math.cos(_rxL0) - Math.cos(_ll.rotation.x));
+                    _sk.position.y += _hopDrop;
+                    _ul.position.y = _ll.position.y + 0.18 * Math.cos(_ll.rotation.x) + 0.18 * Math.cos(_ul.rotation.x);
+                    _ul.position.z = _ll.position.z + 0.18 * Math.sin(_ll.rotation.x) + 0.18 * Math.sin(_ul.rotation.x);
+                }
+                character.root.position.y -= _hopDrop;
+            }
+            const _hop = HOP_TURN.hop(_u);
+            if (_hop > 0.0001) character.root.position.y += _hop;
+            if (_crN > 0.01) {
+                const _sw = 0.5 * _crN;
+                for (const _side of ['L', 'R']) {
+                    character.meshes['upperArm' + _side].rotation.x -= _sw;
+                    character.meshes['lowerArm' + _side].rotation.x -= _sw;
+                }
+            }
+            if (_hop > 0.0001) {
+                const _out = 0.3 * (_hop / HOP_TURN.hopHeight);
+                character.meshes.upperArmL.rotation.z += _out;
+                character.meshes.lowerArmL.rotation.z += _out;
+                character.meshes.upperArmR.rotation.z -= _out;
+                character.meshes.lowerArmR.rotation.z -= _out;
+            }
+            _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u,
+                                  hop: _hop, flexK: _k, drop: _hopDrop,
+                                  yawFrac: HOP_TURN.yawFrac(_u) };
         } else if (character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
             // Hand the skis back to the pose solver's euler rotations
             character.meshes.skiL.rotationQuaternion = null;
