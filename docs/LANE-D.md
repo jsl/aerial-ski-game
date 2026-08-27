@@ -113,3 +113,42 @@ shape; landing absorption (7841); golden-trace comparison (task 3); proposals (t
 Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. New file
 `tools/pose/metrics.js`; `tools/pose_vs_physics.js` + `docs/POSE-VS-PHYSICS.md` updated.
 `reference/pose/*/athlete_metrics.json` are local-only (gitignored), like the tracks.
+
+### 3 — Kinematics 1: arm-sweep timing into the lip (3768); crouch/tuck/absorption ruled not derivable, with evidence
+Implemented the next slice of task item 2. New `tools/pose/kine.js`: re-joins the tracked
+person's full COCO-17 keypoints per frame via the track's `person` index (the track file
+stores only hip/shoulder midpoints) and derives interior joint angles (back, hip, knee;
+deg, image plane) plus torso-normalised heights (wrist vs shoulder/knee, hip vs ankle) —
+no px/m scale assumption enters any number. A sweep detector finds a sustained ≥ 0.6-torso
+wrist rise over 8 frames inside a caller-set window. `tools/pose_vs_physics.js` writes
+`reference/pose/<clip>/athlete_kine.json` (local) and regenerates a new doc section
+"Kinematics (iteration 3)" with a sweep table, a ruled-out table (evidence + what would fix
+each) and a P7-usable summary.
+
+Numbers: IMG_3768 arms quiet f48–59 (wr/sh −0.99 ± 0.07 torso), sweep f58 ± 3 → f80,
+wrists cross shoulder level f70 ± 1, peak +1.05 torso (overhead by the ears), duration
+0.73 s; takeoff estimated f81 ± 3 (person re-locks f80–82, wrist keypoints drop out f81,
+hip image-motion turns downward from f82) → sweep leads the lip by ~0.8 s. Flight is
+layout: hip/ankle 1.27–1.41 torso constant f82–176, knee 175–180° (no tuck). IMG_7841
+touchdown f82 ± 2 (back 93° → 49° → 54° airborne → 2° grounded; torso collapses 53 → 15 px
+across the touchdown); ride-out knee/hip angles 167–180° at 14–15 px torso = pose floor →
+absorption NOT derivable. IMG_3765: no sweep resolvable (wrists die f71), ascent visible
+f72–81 (5.8–22.6 px/frame, hip angle dips to 148°). Ruled-out items each carry the
+re-extraction window that would fix them.
+
+Verification: `node tools/pose_vs_physics.js` end to end from the repo root; all
+iteration-1/2 numbers reproduced identically (coverage 64.8/95/73.2/100/95.5/100/67.2%,
+θ excursions and rotation intervals unchanged); sheets re-rendered 7/7. Sweep numbers
+cross-checked against a manual read of the per-frame series (scratch script under
+`~/aerial-agents/scratch/lane-D/`).
+
+Open: rotation-aware re-extraction of the flight windows is blocked in this environment —
+no source videos, no `extract_all.py`, no `reference/frames/` exist here (checked
+worktree + `lane-A` + `stable`); only the committed-style keypoints/overlays were copied
+in. Airtime, takeoff/landing frames, flip counts, single/double (task 2 remainder), the
+golden-trace comparison (task 3) and proposals (task 4) remain. Crouch depth additionally
+needs a profile view or side re-extraction (behind-view geometry, evidenced above).
+
+Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. New file
+`tools/pose/kine.js`; `tools/pose_vs_physics.js` + `docs/POSE-VS-PHYSICS.md` updated.
+`reference/pose/*/athlete_kine.json` are local-only (gitignored), like tracks/metrics.
