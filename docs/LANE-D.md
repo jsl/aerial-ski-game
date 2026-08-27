@@ -48,3 +48,32 @@ ends with a commit and an entry below.
 - (none yet)
 
 ## Progress
+
+### 1 — Athlete tracker + per-clip tracks, overlay sheets, study doc skeleton
+Implemented task item 1. `tools/pose_vs_physics.js` (node, no deps) now reads all seven
+clips from `reference/pose/<clip>/keypoints.json`, tracks the athlete
+(`tools/pose/track.js`: score < 0.5 missing; nearest-hip continuity with step and
+size-ratio gates; rescue gates after 5 lost frames for airborne re-entry; seeds re-run
+from every usable person every ~15th frame, best run by hip-travel + coverage +
+confidence; gaps <= 3 interpolated; 3-tap median smoothing), writes
+`reference/pose/<clip>/athlete_track.json` (local), renders per-clip review sheets
+`overlay_sheet_track.jpg` via `tools/pose/overlay_track.py` (venv python + cv2, skipped
+gracefully when the venv is absent), and regenerates `docs/POSE-VS-PHYSICS.md`
+(method, scale assumption 155 cm ski / ~1.7 m athlete with ±15–20% uncertainty, per-clip
+track-quality table, known issues).
+
+Verification: `node tools/pose_vs_physics.js` runs end to end from the repo root.
+Coverage (tracked/frames): IMG_3396 92/142 (64.8%), IMG_3520 226/238 (95%), IMG_3523
+230/314 (73.2%), IMG_3523_hop 96/96 (100%), IMG_3765 107/112 (95.5%), IMG_3768 179/179
+(100%), IMG_7841 86/128 (67.2%). Sheets for all 7 clips inspected: IMG_3520/3523/
+3523_hop/3765/3768 verified on the athlete (3768 stays on the athlete through in-run,
+arm sweep, flight, ride-out); IMG_3396 and IMG_7841 partially track bystanders
+(known-issues section in the study doc documents exactly where and why).
+
+Open: task items 2–4 (per-clip metrics, golden-trace comparison, physics proposals);
+3396/7841 track quality; `reference/` had to be copied into this worktree from the main
+checkout (gitignored, not committed) — merge needs nothing from it.
+
+Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. The
+only committed artefacts are `tools/pose_vs_physics.js`, `tools/pose/{track.js,
+overlay_track.py}` and `docs/POSE-VS-PHYSICS.md`.
