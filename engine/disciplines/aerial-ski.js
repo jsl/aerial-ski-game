@@ -59,18 +59,21 @@ function terrainRootY(z, cfg) {
     if (z <= KICKER_END_Z) return kickerBezY(z, cfg);
     const _backFaceEndZ   = KICKER_END_Z + 0.5;
     const _landingStartZ  = LANDING_START_Z;
-    // Landing: flat at tableY, C1 knuckle blend into the straight slope,
-    // C1 roll-out blend into the flat outrun (see landingBlendsFit note).
-    if (z <= _landingStartZ) return tableY;
-    const _knuckleEndZ = _landingStartZ + cfg.LANDING_TRANS_LEN;
-    if (!landingBlendsFit(cfg)) {
-        if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
-        return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
+    // Landing: flat at tableY, C1 knuckle fillet into the straight slope,
+    // C1 roll-out fillet into the flat outrun (see landingFits note).
+    // Piecewise splits sit on the FILLET TANGENCY points (ltArc.T1z/T2z,
+    // loArc.T1z/T2z) — handing off anywhere else would step across the gap
+    // between the old lines and the circle.
+    if (landingFits(cfg)) {
+        if (z <= cfg.ltArc.T1z) return tableY;
+        if (z <= cfg.ltArc.T2z) return landKnuckleArcY(z, cfg);
+        const _mLand = Math.tan(LANDING_ANGLE);
+        const _yFlat = tableY - (OUTRUN_Z - _landingStartZ) * _mLand;
+        if (z <= cfg.loArc.T1z) return tableY - (z - _landingStartZ) * _mLand;
+        if (z <= cfg.loArc.T2z) return landRollOutArcY(z, cfg);
+        return _yFlat; // flat outrun
     }
-    if (z <= _knuckleEndZ) return landTransBezY(z, cfg);
-    const _rollOutStartZ = OUTRUN_Z - cfg.OUTRUN_TRANS_LEN;
-    if (z <= _rollOutStartZ) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
-    if (z <= OUTRUN_Z) return landOutBezY(z, cfg);
+    if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
     return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
 }
 
@@ -92,42 +95,47 @@ function terrainAccelZ(z, cfg) {
 
 // C1 landing-profile joins (APPROVED: C1-smooth run profile, RENDER-PROGRESS).
 // The raw profile creases 0deg -> 40deg at LANDING_START_Z (knuckle) and
-// 40deg -> 0deg at OUTRUN_Z (roll-out into the outrun). Both joins are now
-// cubic beziers whose end tangents match their neighbours exactly, so the
-// sampled surface is C1 everywhere except the intended cliff behind the lip.
-// All levels and horizontal extents are pinned (table height, landing angle,
-// OUTRUN_Z position, flat levels); the curvature each blend needs in excess
-// of the nominal slope is bounded (~50deg / ~46deg peaks across ~1.5 m) and
-// reported in docs/RENDER-PROGRESS.md entry 11.
-function landTransBezY(z, cfg) {
-    const _ltBP = cfg.ltBP;
-    let lo = 0, hi = 1;
-    for (let _i = 0; _i < 14; _i++) {
-        const _m = (lo + hi) * 0.5, _u = 1 - _m;
-        (_u*_u*_u*_ltBP[0][0] + 3*_u*_u*_m*_ltBP[1][0] + 3*_u*_m*_m*_ltBP[2][0] + _m*_m*_m*_ltBP[3][0] < z)
-            ? (lo = _m) : (hi = _m);
-    }
-    const _t = (lo + hi) * 0.5, _u = 1 - _t;
-    return _u*_u*_u*_ltBP[0][1] + 3*_u*_u*_t*_ltBP[1][1] + 3*_u*_t*_t*_ltBP[2][1] + _t*_t*_t*_ltBP[3][1];
+// 40deg -> 0deg at OUTRUN_Z (roll-out into the outrun). Iteration-11 built
+// both blends as endpoint-PINNED cubic beziers; with the end slopes pinned the
+// interior slope MUST peak at >= 1.5x the secant (measured -49.8 deg / -45.9 deg
+// and a 53.7 cm bulge) — a two-point Hermite cannot do better, so the endpoints
+// must float. Both joins are now TANGENT FILLET CIRCLES: one circle per corner,
+// tangent to both joining lines. That construction mathematically cannot
+// overshoot — slope stays strictly inside [min(a,b), max(a,b)], is monotone
+// through each blend (single curvature sign), and the surface sits inside the
+// air wedge between the lines. Cost: the blend consumes a small footprint
+// R*tan(LANDING_ANGLE/2) on each line (tangency points move; all LEVELS are
+// byte-preserved — table height, straight-line landing segments, flat outrun
+// level), which moves the landing point slightly up-slope (~cm scale with
+// R_KNUCKLE=1) — pre-approved by the reviewer ("a small landing-point shift
+// from rounding the knoll is expected and acceptable"). Arc descriptors arrive
+// in cfg.ltArc / cfg.loArc, precomputed by game.js:
+//   ltArc = {T1z, T2z, cx, cy, R}   knuckle (centre BELOW tableY)
+//   loArc = {T1z, T2z, cx, cy, R}   roll-out (centre ABOVE yFlat)
+// Both join their neighbouring straight lines EXACTLY (construction tangency),
+// so sampled terrainRootY is C1 everywhere except the intended cliff behind
+// the kicker lip.
+function landKnuckleArcY(z, cfg) {
+    const A = cfg.ltArc;
+    const dz = z - A.cx;
+    return A.cy + Math.sqrt(A.R * A.R - dz * dz); // upper branch of the circle
 }
 
-function landOutBezY(z, cfg) {
-    const _loBP = cfg.loBP;
-    let lo = 0, hi = 1;
-    for (let _i = 0; _i < 14; _i++) {
-        const _m = (lo + hi) * 0.5, _u = 1 - _m;
-        (_u*_u*_u*_loBP[0][0] + 3*_u*_u*_m*_loBP[1][0] + 3*_u*_m*_m*_loBP[2][0] + _m*_m*_m*_loBP[3][0] < z)
-            ? (lo = _m) : (hi = _m);
-    }
-    const _t = (lo + hi) * 0.5, _u = 1 - _t;
-    return _u*_u*_u*_loBP[0][1] + 3*_u*_u*_t*_loBP[1][1] + 3*_u*_t*_t*_loBP[2][1] + _t*_t*_t*_loBP[3][1];
+function landRollOutArcY(z, cfg) {
+    const A = cfg.loArc;
+    const dz = z - A.cx;
+    return A.cy - Math.sqrt(A.R * A.R - dz * dz); // lower branch of the circle
 }
 
-// True when the caller supplied the two landing-blend control-point arrays and
-// they fit the available landing span (custom worlds can shorten it).
-function landingBlendsFit(cfg) {
-    if (!cfg.ltBP || !cfg.loBP || !cfg.OUTRUN_TRANS_LEN || !cfg.LANDING_TRANS_LEN) return false;
-    return cfg.LANDING_START_Z + cfg.LANDING_TRANS_LEN <= cfg.OUTRUN_Z - cfg.OUTRUN_TRANS_LEN;
+// True when the caller supplied both arc descriptors and they fit the landing
+// span: the knuckle fillet must start down-table of the kicker back wall and
+// its exit-tangency must not reach the roll-out's entry-tangency (custom
+// worlds can shorten everything).
+function landingFits(cfg) {
+    if (!cfg.ltArc || !cfg.loArc) return false;
+    if (!(cfg.ltArc.R > 0 && cfg.loArc.R > 0)) return false;
+    if (cfg.ltArc.T1z < cfg.KICKER_END_Z) return false;
+    return cfg.ltArc.T2z <= cfg.loArc.T1z;
 }
 
 // ── Physics config factory ───────────────────────────────────────────────────
@@ -154,7 +162,7 @@ function makePhysicsConfig(opts) {
     };
 }
 
-const api = { makePhysicsConfig, transBezY, kickerBezY, landTransBezY, landOutBezY, landingBlendsFit, terrainRootY, terrainAccelZ };
+const api = { makePhysicsConfig, transBezY, kickerBezY, landKnuckleArcY, landRollOutArcY, landingFits, terrainRootY, terrainAccelZ };
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

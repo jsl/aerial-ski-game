@@ -630,7 +630,7 @@ const KICKER_START_Z = FLAT_Z + 10.0;  // kicker curve begins here — 10 m flat
 const TRANS_LEN     = 3.0;             // transition extends this far before AND after FLAT_Z
 const TRANS_START_Z = FLAT_Z - TRANS_LEN; // inrun ends here
 const TRANS_END_Z   = FLAT_Z + TRANS_LEN; // flat table begins here
-const LANDING_TRANS_LEN = 4.0;         // bezier curve from flat table into landing slope
+const LANDING_TRANS_LEN = 4.0;         // knuckle-blend dense-sampling zone (iter-13: the fillet's own footprint is smaller; the zone just brackets it)
 const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -51.0 : _worldParam === 'quad' ? -41.8 : _worldParam === 'triple' ? -27.8 : _worldParam === 'single' ? -12.3 : -19.3;
 
 // ── Kicker bezier control points (computed once at load) ─────────────────────
@@ -656,30 +656,42 @@ const _kBP    = [
 ];
 
 // ── C1 landing-profile blends (APPROVED: C1-smooth run profile) ──────────────
-// Knuckle (table → 40° landing) over LANDING_TRANS_LEN, roll-out (40° landing
-// → flat outrun) over OUTRUN_TRANS_LEN at the bottom of the slope. End tangents
-// match the neighbours exactly so terrainRootY is C1 across both joins. All
-// levels/horizontal extents are pinned to the old profile — the only surface
-// change is curvature inside the two blend spans (bulge ≤ 0.54 m above the old
-// line near the knuckle, none on the roll-out). Handle ratios tuned in
-// /data/aerial-agents/scratch/iter-11/blend-probe4.js.
-const _ltBP = [
-    [LANDING_START_Z,                        _KBP_tY],
-    [LANDING_START_Z + LANDING_TRANS_LEN * 0.36,        _KBP_tY],
-    [LANDING_START_Z + LANDING_TRANS_LEN - LANDING_TRANS_LEN * 0.9 * Math.cos(LANDING_ANGLE),
-     _KBP_tY - LANDING_TRANS_LEN * Math.tan(LANDING_ANGLE) + LANDING_TRANS_LEN * 0.9 * Math.sin(LANDING_ANGLE)],
-    [LANDING_START_Z + LANDING_TRANS_LEN,    _KBP_tY - LANDING_TRANS_LEN * Math.tan(LANDING_ANGLE)],
-];
-const OUTRUN_TRANS_LEN = 10.5;   // horizontal span of the roll-out bezier (~12 m of arc)
-const _rollOutStartZ   = OUTRUN_Z - OUTRUN_TRANS_LEN;
-const _rollOutY        = _KBP_tY - (_rollOutStartZ - LANDING_START_Z) * Math.tan(LANDING_ANGLE);
-const _loBP = [
-    [_rollOutStartZ,                          _rollOutY],
-    [_rollOutStartZ + OUTRUN_TRANS_LEN * 0.5 * Math.cos(LANDING_ANGLE),
-     _rollOutY       - OUTRUN_TRANS_LEN * 0.5 * Math.sin(LANDING_ANGLE)],
-    [OUTRUN_Z - OUTRUN_TRANS_LEN * 0.25,      _KBP_tY - (OUTRUN_Z - LANDING_START_Z) * Math.tan(LANDING_ANGLE)],
-    [OUTRUN_Z,                                _KBP_tY - (OUTRUN_Z - LANDING_START_Z) * Math.tan(LANDING_ANGLE)],
-];
+// Iteration-11 built both joins as endpoint-pinned cubic beziers; with the end
+// slopes pinned the interior slope necessarily peaks ≥ 1.5× the secant — the
+// measured −49.8°/−45.9° and a 53.7 cm bulge the reviewer rejected. Both joins
+// are now TANGENT FILLET CIRCLES (one circle per corner, tangent to both lines):
+// cannot overshoot, slope strictly inside [min(a,b), max(a,b)], monotone,
+// inside the air wedge. Levels are byte-preserved everywhere outside each arc;
+// each blend "spends" a footprint R·tan(LANDING_ANGLE/2) on its two lines.
+// Radii: knuckle R=1.0 m — a crisp cut like the footage's knoll edge (peak
+// deviation vs the old crease ≈ +7 cm above / −7 cm into it); roll-out R=14 m —
+// compression arc ≈ 9.8 m, in the author's requested 8–12 m band.
+// Descriptors consumed by engine/disciplines/aerial-ski.js landKnuckleArcY /
+// landRollOutArcY.
+const _landM    = Math.tan(LANDING_ANGLE);
+const _landHalfT = Math.tan(LANDING_ANGLE / 2);
+const R_KNUCKLE = 1.0;
+const R_ROLL_OUT = 14.0;
+// Knuckle fillet: corner (LSZ, tableY), flat enters along +z, exits down the
+// landing line; centre directly below the flat tangency point.
+const _ltArc = {
+    R:   R_KNUCKLE,
+    cx:  LANDING_START_Z - R_KNUCKLE * _landHalfT,
+    cy:  _KBP_tY - R_KNUCKLE,
+    T1z: LANDING_START_Z - R_KNUCKLE * _landHalfT,
+    T2z: LANDING_START_Z + R_KNUCKLE * _landHalfT * Math.cos(LANDING_ANGLE),
+};
+// Roll-out fillet: corner (OUTRUN_Z, yFlat), landing line enters from up-slope,
+// flat outrun resumes past the far tangency at the SAME level as before.
+const OUTRUN_TRANS_LEN = 10.5;         // roll-out-blend dense-sampling zone (iter-13: the R=14 fillet spans ~10.2 m; kept as the zone extent)
+const _rollOutCornerY = _KBP_tY - (OUTRUN_Z - LANDING_START_Z) * _landM;
+const _loArc = {
+    R:   R_ROLL_OUT,
+    cx:  OUTRUN_Z + R_ROLL_OUT * _landHalfT,
+    cy:  _rollOutCornerY + R_ROLL_OUT,
+    T1z: OUTRUN_Z - R_ROLL_OUT * _landHalfT * Math.cos(LANDING_ANGLE),
+    T2z: OUTRUN_Z + R_ROLL_OUT * _landHalfT,
+};
 
 // ── Terrain config for the shared discipline module ────────────────────────
 // engine/disciplines/aerial-ski.js takes geometry as CONFIG rather than reading
@@ -691,7 +703,7 @@ const _terrainCfg = {
         : _poolDiveMode ? 'pool' : 'ski',
     SLOPE_ANGLE, SLOPE_START_Z, FLAT_Z, TRANS_START_Z, TRANS_END_Z,
     KICKER_START_Z, KICKER_END_Z, LANDING_START_Z, OUTRUN_Z, LANDING_ANGLE,
-    LANDING_TRANS_LEN, OUTRUN_TRANS_LEN, ltBP: _ltBP, loBP: _loBP,
+    LANDING_TRANS_LEN, OUTRUN_TRANS_LEN, ltArc: _ltArc, loArc: _loArc,
     MAT_LAND_START_Z, MAT_LAND_END_Z, TRAMPOLINE_Y,
     tBP: _tBP, kBP: _kBP,
 };
@@ -1967,9 +1979,9 @@ function _startGame() {
             [TRANS_END_Z,        KICKER_START_Z,                0.35],  // table
             [KICKER_START_Z,     KICKER_END_Z,                  0.08],  // kicker curve
             [KICKER_END_Z,       LANDING_START_Z,               0.08],  // lip → wall → landing bowl start
-            [LANDING_START_Z,    LANDING_START_Z + LANDING_TRANS_LEN, 0.10], // C1 knuckle blend
-            [LANDING_START_Z + LANDING_TRANS_LEN, OUTRUN_Z - OUTRUN_TRANS_LEN, 0.50], // straight landing
-            [OUTRUN_Z - OUTRUN_TRANS_LEN, OUTRUN_Z,             0.12],  // C1 roll-out blend
+            [_ltArc.T1z,                 _ltArc.T2z + 1.0,          0.10], // C1 knuckle fillet (+line margin)
+            [_ltArc.T2z + 1.0,           OUTRUN_Z - OUTRUN_TRANS_LEN, 0.50], // straight landing
+            [OUTRUN_Z - OUTRUN_TRANS_LEN, _loArc.T2z + 0.5,         0.12],  // C1 roll-out fillet
             [OUTRUN_Z,           OUTRUN_Z + 90,                 1.00],  // outrun
         ];
         const zs = [];
@@ -1983,8 +1995,8 @@ function _startGame() {
         // 14 mm artefact at the start plateau join).
         const JOINS = [
             SLOPE_START_Z, TRANS_START_Z, TRANS_END_Z, KICKER_START_Z,
-            KICKER_END_Z, LANDING_START_Z, LANDING_START_Z + LANDING_TRANS_LEN,
-            OUTRUN_Z - OUTRUN_TRANS_LEN, OUTRUN_Z,
+            KICKER_END_Z, LANDING_START_Z, _ltArc.T1z, _ltArc.T2z,
+            _loArc.T1z, _loArc.T2z, OUTRUN_Z,
         ];
         zs.push(...JOINS);
         zs.sort((a, b) => a - b);
