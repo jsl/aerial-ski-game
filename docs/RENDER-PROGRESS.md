@@ -244,8 +244,20 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ### 38 — P11 closed to enforced gates: pen gate was an instrument defect on the slope + head-axis re-solve + hard length projection (commit this tree)
 
-Tree started clean at `8f29dba` (entry 37). Unit of work: entry 37's two open
-items — the penetration gate (spec `test.fixme`) and the crash eyeball.
+Tree started clean at `8f29dba` (entry 37); a docs-only commit `a4387cd`
+(a reviewer line, 16:05) landed mid-session before any of this session's
+edits. Unit of work: entry 37's two open items — the penetration gate
+(spec `test.fixme`) and the crash eyeball.
+
+**Response to the reviewer line (16:05):** its item (1) — pen fix, un-fixme
+the P11 spec, audit-confirm `state` identity, commit — is exactly what this
+entry delivers. On the audit: this session's audit compared the NEW code
+against the entry-37 traces (which were themselves audited in entry 37
+against pre-37 code): **`state` byte-identical ×30 in both audits**, so the
+re-capture chain is clean end to end — no physics leak. Its item (2) — P2
+sky/sun starts — is queued as the NEXT iteration's unit (this session was at
+its 45-minute mark when the line was read; a half-sky would violate the
+working-slice rule). No further crash work is queued.
 
 **Root cause of the pen gate (falsifies the entry-37 diagnosis).** The spec
 computed `surf = _crashFloorY(bottomEndpoint.z)` and applied it to BOTH
@@ -299,10 +311,12 @@ skis + bindings, face/goggles/helmet read, arms at the sides; no visual
 regression (the crash path is not framed by the look cameras).
 
 **Open for the reviewer**
-- The crash-moment EYEBALL is still owed (entry 36/37 item): the look
-  cameras frame the ready state only. The ragdoll visuals changed twice
-  since the last eyes-on (iter-37 arm un-flip, this iteration's head-axis
-  re-solve); propose a crash-time capture next iteration.
+- The crash-moment EYEBALL is still owed (entries 36–38): the look cameras
+  frame the ready state only, and the ragdoll visuals changed twice since
+  the last eyes-on (iter-37 arm un-flip; this iteration's head-axis
+  re-solve). Per the reviewer's 16:05 queue it stays parked — P2 sky/sun is
+  next — but it should ride along with the P12 quality pass's before/after
+  shots at the latest.
 - The trace re-capture is again node-census-only with `state` byte-identical
   ×30 — confirm it stands without a fresh APPROVED line.
 - Instrument correction note: the pen gate's semantics changed from
