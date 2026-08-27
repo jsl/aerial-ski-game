@@ -19,8 +19,9 @@ const path = require('node:path');
 // Static scenery only. Anything parented to skierRoot moves and cannot be
 // lightmapped; anything dynamic (particles, trails) likewise.
 const STATIC_PREFIXES = [
-    'terrainCorridor',                                  // P1 slice 1: single continuous corridor ribbon
-    'wInrun', 'wTable', 'wLanding', 'wOutrun', 'wStartPlat', 'wUpperMtn',
+    'terrainCorridor',                                  // P1 slice 1+2: continuous corridor + flank field (one mesh)
+    'terrainSkirt', 'terrainBase',                      // slice 2 solid-ground closure
+    'wUpperMtn',
     'pk_body_', 'pk_cap_', 'kicker_fill_', 'kickerFill', 'kickerBackFace', 'tr_', 'rock', 'corner',
 ];
 

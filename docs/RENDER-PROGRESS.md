@@ -74,7 +74,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
-| P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables, **slice 2 flank continuity (reviewer order-17 half, moved to 18 — diagnosis notes in entry 17)** |
+| P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open** |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js` |
@@ -142,6 +142,92 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 18 — P1 slice 2: one continuous solid ground — flank field joins the ribbon without a seam
+
+Reviewer order-17b, deferred from iteration 17 ("build the flanks as the lateral
+extension of the same ribbon — shared vertices/normals, banks fading into the
+flank slope, skirts/base for solidity"). Scratch dir
+`~/aerial-agents/scratch/iter-18/` holds measurement logs only.
+
+**What changed (`game.js`; no `engine/`, physics untouched)**
+- The corridor block now samples a 35-column grid extending laterally to
+  **±55 m** on SHARED rings: corridor (`|x| ≤ 5`, still the exact
+  `terrainRootY(z) − FOOT_OFFSET`) and flanks are ONE surface — the same
+  vertices/rows cross x=±5, so normals are averaged across the corridor edge by
+  construction and no dihedral can exist there. z-extent grew to
+  `[SLOPE_START_Z−56, OUTRUN_Z+170]`: the plateau behind the start (wStartPlat's
+  job) and the far valley floor (wOutrun's job) are part of the field.
+- Field profile `_fieldTopY(x,z)` = physics surface + a soft push-out windlip
+  (**+11 cm** crest just outside the fence line, x ∈ 5..12 m, smoothstep in/out)
+  easing back to open snowfield — the banks along the landing edges per
+  IMG_3523/7841. Max berm slope ≈ 3.9°.
+- **Solid-ground contract:** new `terrainSkirt` extrudes every open field edge
+  down to a base at `floorY − 60 m`, capped by a `terrainBase` disc;
+  `snowMat.backFaceCulling = false` gives the snow-coloured-underside last line
+  of defence.
+- Retired meshes: `wInrun`, `wTable`, `wLanding`, `wOutrun`, `wStartPlat`,
+  `corner_inrun_trans`, `corner_trans_table`, `corner_table_landing`,
+  `corner_landing_outrun`. Kept: `wUpperMtn` — its top edge lies ABOVE field
+  level everywhere they overlap, so removing it would show sky over the start
+  shoulders; overlap verified by the footprint sweep.
+- Consumers ported: trees plant against `_fieldTopY` (bases follow the berm),
+  b-net ground regex `^(terrainCorridor|wUpperMtn|terrainSkirt)`, grey-ramp draw
+  region regex, extract-terrain STATIC_PREFIXES, baked.spec mesh list.
+- New permanent gate (reviewer's order-17 acceptance): facet normals either side
+  of the corridor edge within 5°, swept z=−38..88 excluding the kicker-wall
+  span; plus extended-footprint miss sweep, skirt/base/double-sided assertions,
+  logged as FIELD_SEAM.
+- rig.spec run-start wait 8 s → 30 s (entry-10 SwiftShader load-flake class; the
+  wider field adds software-rasterised triangles under the test GPU).
+
+**Verification numbers**
+- FIELD_SEAM: verts 22,050 / tris 42,636 (one mesh, one draw call); worst
+  corridor-edge dihedral **1.90° at x=1, z=16.0** (avg 0.85°, limit 5°); outer
+  footprint misses **0** (9 columns × ~73 stations out to ±55 m); skirtVerts
+  2,660; base present; backFaceCulling false. Legacy gates unchanged-green:
+  visual-vs-physics ≤ 2 cm, crease delta ≤ 2.5°.
+- `npm run test:unit` **74/74**. `npm run test:golden`: audited before capture —
+  divergence census ONLY `nodes.corner_*` absent + one tree seat
+  (`fl_132` +0.94 mm from the windlip plant function); every `state.*` byte-
+  identical → scene-census rebaseline per ADR-0005, then **30/30**.
+- Drive coverage on this tree: every touched/affected spec green —
+  terrain-corridor **3/3** (incl. the new FIELD_SEAM gate), baked, extract-
+  terrain, grey-ramp, materials, textures, shadows, kicker-faces (block gate
+  re-proved on the merged field), venue-dressing (b-net seat/reseat contract),
+  ready-stance, body, look, and rig ×2 after the wait fix. A confirmation
+  full-suite rerun was still executing at the session deadline; the earlier
+  full run this session was 44 passed / 2 skipped / 1 failed, the one failure
+  being rig's 8 s load-wait (fixed above, then green twice standalone).
+- Shots inspected directly: `scene.png` — continuous snowfield from corridor to
+  flanks, NO seam band and NO sky-through gaps anywhere inside the footprint;
+  fence hugging the field, trees seated on the windlip, athlete + CSM shadow
+  intact. `figure_front.png`/`figure.png` — athlete unchanged; documented
+  residuals stand (hands-forward ready crouch, faint bib digits, black ski
+  slats — queued in the 18–19 Blender bundle with the APPROVED rebaseline).
+- `index.html` scripts `?v=11 → 12`. `ASSET_V` unchanged (no `assets/`
+  regeneration). Frame-rate note: corridor tris ~3.5 k → 42.6 k as a single
+  static mesh (~0.15 MB VRAM, still 1 draw call); SwiftShader drive fps stayed
+  8–10 (all timing-sensitive specs pass after the documented wait fix).
+
+**Open / next**
+1. **19: the Blender rebuild bundle** — straight arms, loose suit, cranium/brim
+   wrap check, bib 30, 155 cm mogul skis + binding, together with the APPROVED
+   proportions/shoulder/ski-length physics rebaseline (own physics commit first,
+   golden rebaseline per ADR-0005, then the rebuild against the new segments).
+   If it does not fit one session: land the physics commit first, rebuild second.
+2. **20: review.** Rebake surgery (entry-12 four-step plan) stays the
+   spare-budget filler; lightmap stays off until it lands.
+
+**Open questions for the reviewer**
+- wUpperMtn kept deliberately: slice-3 could fold it into the ribbon too
+  (extend XC beyond −56 m behind the start and drop the box), but its paper-slope
+  reads correctly today and the footprint sweep proves no sky shows between
+  them — flagging in case you want the mesh count lower anyway.
+- Tree scatter sits ON the ±11 cm windlip ring around the landing bowl (x > 12 m
+  is untouched field). If the author prefers a flat approach beside the outrun,
+  shrinking _BERM_H to zero is a two-line change — visual call, not measured off
+  the footage yet.
 
 ### 17 — Reviewer order 17 (part): kicker block faces read snow again — root cause in the light rig, not a material
 

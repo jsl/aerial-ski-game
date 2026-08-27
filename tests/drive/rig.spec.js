@@ -278,7 +278,11 @@ test('bind equals driver and the figure faces -z', async ({ page }) => {
     // (POSE_UNTUCKED): readyState has flipped, the ready block is off, and the
     // drivers sit exactly on the pose tables the binds were written against.
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 8000 });
+    // 30 s: under SwiftShader the first in-run frames render at single-digit
+    // fps (iter-10 flake class) and slice-2's widened field adds software-
+    // rasterised triangles — charge/turn timing is the fragile edge, not the
+    // rig being measured.
+    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 30000 });
     await page.waitForTimeout(250);
 
     const r = await page.evaluate(() => {

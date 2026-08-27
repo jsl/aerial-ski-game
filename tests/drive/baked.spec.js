@@ -58,7 +58,10 @@ test('the stale lightmap stays OFF and no _baked material reaches terrain', asyn
             out.meshMats[n] = m && m.material ? m.material.name : null;
         }
         return out;
-    }, ['terrainCorridor', 'wLanding', 'wInrun', 'corner_trans_table']);
+    // slice 2 retired the w*/corner_ flank fills; wUpperMtn is the only
+    // remaining non-corridor static terrain, kickerFill/kickerBackFace the
+    // block interiors — none may carry a _baked material while OFF.
+    }, ['terrainCorridor', 'kickerFill', 'kickerBackFace', 'wUpperMtn']);
 
     expect(info.enabled, 'the temporary bake off-switch was flipped without the ' +
         'rebake landing — restore baked.spec.js\'s on-state assertions first').toBe(false);

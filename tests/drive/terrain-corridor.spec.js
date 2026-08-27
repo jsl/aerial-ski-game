@@ -110,3 +110,96 @@ test('corridor ribbon does not expose sky inside its footprint', async ({ page }
     });
     expect(miss, 'columns where nothing was hit inside the corridor footprint').toBe(0);
 });
+
+// ── P1 slice 2 gates ─────────────────────────────────────────────────────────
+// Reviewer order-17b: "no normal discontinuity > 5° across the corridor edge
+// except at the kicker's vertical walls". The flanks are part of the same mesh
+// now (shared rings/columns), so the corridor→field join must be seamless —
+// measured as the angle between world-space FACET normals either side of
+// x = ±5, swept along the whole run. Also extended-footprint coverage (the
+// field now runs to ±55 m) and the plan's solid-ground requirements
+// (skirt + base plane + double-sided snow).
+test('field joins its flanks without a normal seam; ground is solid', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function',
+        null, { timeout: 30_000 });
+
+    const res = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const ribbon = scene.getMeshByName('terrainCorridor');
+        const skirt = scene.getMeshByName('terrainSkirt');
+        const base = scene.getMeshByName('terrainBase');
+        if (!ribbon) return { fatal: 'terrainCorridor mesh missing' };
+        const mat = ribbon.material;
+        const cfg = window._terrainCfg;
+        const rootY = window.AerialEngine.aerialSki.terrainRootY;
+
+        const down = new BABYLON.Vector3(0, -1, 0);
+        const facetNormalAt = (x, z) => {
+            const o = new BABYLON.Vector3(x, rootY(z, cfg) + 4, z);
+            const p = scene.pickWithRay(new BABYLON.Ray(o, down), m => m === ribbon);
+            if (!p || !p.hit || !p.getNormal) return null;
+            return p.getNormal(true);          // world-space flat (facet) normal
+        };
+        const degBetween = (a, b) => {
+            const d = BABYLON.Vector3.Dot(a, b) / (a.length() * b.length());
+            return Math.acos(Math.min(1, Math.max(-1, d))) * 180 / Math.PI;
+        };
+
+        // Dihedral across the corridor edge, swept along z. The kicker block
+        // (width 3.4, centred) never reaches x=±4.35, so its vertical walls
+        // cannot pollute these picks; wallBand rows excluded defensively anyway.
+        const KEZ = cfg.KICKER_END_Z, LSZ = cfg.LANDING_START_Z;
+        let worst = 0, worstAt = null, sum = 0, n = 0;
+        for (let z = -38; z <= 88; z += 1.0) {
+            if (z > KEZ - 0.85 && z < LSZ) continue;   // kicker-wall span
+            for (const s of [1, -1]) {
+                const nIn = facetNormalAt(s * 4.35, z), nOut = facetNormalAt(s * 5.35, z);
+                if (!nIn || !nOut) continue;
+                const d = degBetween(nIn, nOut);
+                sum += d; n++;
+                if (d > worst) { worst = d; worstAt = `x${s} z=${z.toFixed(1)}`; }
+            }
+        }
+
+        // Extended footprint: rays down every outer field column band must hit
+        // the ribbon (no gap to background anywhere inside the field).
+        let outerMisses = 0;
+        for (let z = -52; z <= 165; z += 3.0) {
+            for (const x of [-54, -34, -16.5, -10, 5.7, 10, 16.5, 34, 54]) {
+                const o = new BABYLON.Vector3(x, rootY(z, cfg) + 40, z);
+                const p = scene.pickWithRay(new BABYLON.Ray(o, down), m => m === ribbon);
+                if (!p || !p.hit) outerMisses++;
+            }
+        }
+
+        return {
+            verts: ribbon.getTotalVertices(),
+            triangles: ribbon.getTotalIndices() / 3,
+            matName: mat ? mat.name : null,
+            backFaceCulling: mat ? !!mat.backFaceCulling : null,
+            avgDihedral: n ? +(sum / n).toFixed(3) : null,
+            worstDihedral: +worst.toFixed(2),
+            worstAt,
+            samples: n,
+            outerMisses,
+            skirtVerts: skirt && skirt.getTotalVertices ? skirt.getTotalVertices() : 0,
+            baseExists: !!base,
+        };
+    });
+
+    expect(res.fatal, res.fatal).toBeUndefined();
+    console.log('FIELD_SEAM ' + JSON.stringify(res));
+    test.info().annotations.push({ type: 'P1S2', description: JSON.stringify(res) });
+    expect(res.matName, 'corridor material').toBe('snowMat');
+    expect(res.backFaceCulling,
+        'snowMat must be double-sided (backFaceCulling false) so undersides shade as snow').toBe(false);
+    expect(res.samples).toBeGreaterThan(200);
+    expect(res.worstDihedral,
+        `normal seam across the corridor edge at ${res.worstAt}`)
+        .toBeLessThanOrEqual(5.0);
+    expect(res.outerMisses, 'rays that found no field surface outside the corridor').toBe(0);
+    expect(res.skirtVerts, 'perimeter skirt must exist and be populated')
+        .toBeGreaterThan(1000);
+    expect(res.baseExists, 'base plane must exist under the field').toBe(true);
+});

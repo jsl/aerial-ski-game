@@ -1957,6 +1957,11 @@ function _startGame() {
     snowMat.albedoColor = new BABYLON.Color3(0.89, 0.91, 0.94);
     snowMat.metallic    = 0.0;
     snowMat.roughness   = 0.46;   // packed piste, slightly rougher: scatters more, glares less
+    // P1 "the ground is solid": every terrain surface (corridor + field + skirt)
+    // shares this material and must shade snow even where only its underside can
+    // be seen (skirt inner faces seen from below a drift), so nothing can ever
+    // read as an unlit backface hole.
+    snowMat.backFaceCulling = false;
 
     // Snow's surface detail now comes from the general procedural texturing
     // pass (_applySurfaces) rather than a snow-specific one-off, so it gets an
@@ -1991,10 +1996,39 @@ function _startGame() {
     // curved zone (transition bezier, kicker curve, knuckle + roll-out blends),
     // with duplicated rows at hard breaks (kicker back wall) so shared-vertex
     // normals never smear across them.
+    //
+    // P1 slice 2 (this iteration): the corridor is no longer an 11-column strip
+    // abutting six separately-sloped flank boxes. XC extends laterally to ±55 m
+    // on SHARED rings, so corridor edge and flanks are one continuous surface —
+    // same vertices across x=±5, averaged normals, zero dihedral by
+    // construction (measured gate: tests/drive/terrain-corridor.spec.js).
+    // Outside the run there is a soft push-out windlip (+11 cm crest just past
+    // the fence line) easing back to open snowfield — the banks visible along
+    // the landing edges in IMG_3523/7841. The old wInrun/wTable/wLanding/
+    // wOutrun/wStartPlat boxes and the corner_* seam slabs are retired with
+    // this geometry; only wUpperMtn (distant backdrop paper-mountain behind
+    // the start, above field level everywhere it overlaps) remains.
+    const _BERM_H = 0.11;
+    const _fieldBerm = (ax) => {
+        if (ax <= 5) return 0;
+        const u = ax - 5;
+        const ss = (t) => { const c = Math.min(1, Math.max(0, t)); return c * c * (3 - 2 * c); };
+        return _BERM_H * ss(u / 2.4) * (1 - ss((u - 2.4) / 4.6));
+    };
+    // The ONE ground-height function for anything static that stands on snow:
+    // trees plant against it so their bases follow the windlip exactly.
+    const _fieldTopY = (x, z) => terrainRootY(z) - FOOT_OFFSET + _fieldBerm(Math.abs(x));
     {
-        const XC = [-5, -3.6, -2.6, -1.75, -0.85, 0, 0.85, 1.75, 2.6, 3.6, 5];
+        // Corridor columns (|x| ≤ 5, exact physics surface) then the banked
+        // shoulder out to the open field. Column spacing tightens over the
+        // windlip (max lateral slope 3.9°, facet normals stay within the 5°
+        // continuity gate).
+        const XC = [-55, -45, -35, -27, -21, -17, -14, -12.0, -10.7, -9.2, -7.9,
+            -5, -3.6, -2.6, -1.75, -0.85, 0, 0.85, 1.75, 2.6, 3.6, 5,
+            5.6, 6.7, 7.9, 9.2, 10.7, 12.0, 14, 17, 21, 27, 35, 45, 55];
         const profY = (z) => terrainRootY(z) - FOOT_OFFSET;
         const zones = [
+            [SLOPE_START_Z - 56, SLOPE_START_Z - 20,           2.00],  // upper plateau behind start (wStartPlat retired)
             [SLOPE_START_Z - 20, TRANS_START_Z,                 0.75],  // start plateau + in-run
             [TRANS_START_Z,      TRANS_END_Z,                   0.15],  // transition bezier
             [TRANS_END_Z,        KICKER_START_Z,                0.35],  // table
@@ -2004,6 +2038,7 @@ function _startGame() {
             [_ltArc.T2z + 1.0,           OUTRUN_Z - OUTRUN_TRANS_LEN, 0.50], // straight landing
             [OUTRUN_Z - OUTRUN_TRANS_LEN, _loArc.T2z + 0.5,         0.12],  // C1 roll-out fillet
             [OUTRUN_Z,           OUTRUN_Z + 90,                 1.00],  // outrun
+            [OUTRUN_Z + 90,      OUTRUN_Z + 170,                2.50],  // far valley floor (wOutrun retired)
         ];
         const zs = [];
         for (const [z0, z1, step] of zones) {
@@ -2052,7 +2087,7 @@ function _startGame() {
         for (const st of strips) {
             const first = base;
             for (const r of st) {
-                for (const x of XC) positions.push(x, profY(r.z), r.z);
+                for (const x of XC) positions.push(x, _fieldTopY(x, r.z), r.z);
                 base += XC.length;
             }
             for (let ri = 1; ri < st.length; ri++) {
@@ -2074,6 +2109,62 @@ function _startGame() {
         vd.applyToMesh(ribbon);
         ribbon.material = snowMat;
         ribbon.receiveShadows = true;
+
+        // ── The ground is solid: close every open edge of the field ──────────
+        // Perimeter skirt (outer columns + both end caps) extruded down to a
+        // common base well below the lowest playable point, capped by a base
+        // plane; snowMat has backFaceCulling=false, so even a pathological
+        // camera under a drift shades snow instead of showing a hole through
+        // the world.
+        {
+            const BASE_Y = terrainRootY(OUTRUN_Z) - FOOT_OFFSET - 60;
+            const rowZs = [];
+            for (const st of strips) for (const r of st) rowZs.push(r.z);
+            const ZMIN = rowZs[0], ZMAX = rowZs[rowZs.length - 1];
+
+            const edgeCol = (x) => rowZs.map((z) => ({ x, y: _fieldTopY(x, z), z }));
+            const edgeRowZ = (z) => XC.map((x) => ({ x, y: _fieldTopY(x, z), z }));
+            const dropToBase = (pts) => pts.map((p) => ({ x: p.x, y: BASE_Y, z: p.z }));
+
+            const sPos = [], sIdx = [];
+            const pushWall = (ptsA, ptsB) => {   // top rail + bottom rail → quad strip
+                const first = sPos.length / 3;
+                for (const p of ptsA) sPos.push(p.x, p.y, p.z);
+                for (const p of ptsB) sPos.push(p.x, p.y, p.z);
+                const n = ptsA.length;
+                for (let i = 0; i < n - 1; i++) {
+                    sIdx.push(first + i, first + n + i, first + i + 1,
+                              first + i + 1, first + n + i, first + n + i + 1);
+                }
+            };
+            pushWall(edgeCol(XC[0]), dropToBase(edgeCol(XC[0])));              // west wall
+            pushWall(edgeCol(XC[XC.length - 1]), dropToBase(edgeCol(XC[XC.length - 1]))); // east wall
+            const zminRow = edgeRowZ(ZMIN);
+            pushWall(zminRow, dropToBase(zminRow));                            // rear cap
+            const zmaxRow = edgeRowZ(ZMAX);
+            pushWall(zmaxRow, dropToBase(zmaxRow));                            // front cap
+
+            const skirt = new BABYLON.Mesh('terrainSkirt', scene);
+            const svd = new BABYLON.VertexData();
+            svd.positions = sPos;
+            svd.indices = sIdx;
+            const sNrm = [];
+            BABYLON.VertexData.ComputeNormals(sPos, sIdx, sNrm);
+            svd.normals = sNrm;
+            svd.applyToMesh(skirt);
+            skirt.material = snowMat;
+            skirt.receiveShadows = true;
+
+            // Base plane under everything, same snow underside contract.
+            try {
+                const floor = BABYLON.MeshBuilder.CreateDisc('terrainBase',
+                    { radius: 600, tessellation: 48 }, scene);
+                floor.rotation.x = Math.PI / 2;
+                floor.position.y = BASE_Y - 0.01;
+                floor.material = snowMat;
+                floor.receiveShadows = true;
+            } catch (e) { /* headless stub without CreateDisc: the field + skirt still close every view */ }
+        }
         window._terrainCorridorReady = true;
     }
 
@@ -2270,7 +2361,10 @@ function _startGame() {
             const trunkH  = 3.0 * s,  trunkR  = 0.26 * s;
             const foliageH = 10.5 * s, foliageR = 2.3 * s;
 
-            const ty = terrainRootY(tz) - FOOT_OFFSET;
+            // Plant against the SAME field function the terrain mesh samples:
+            // with the slice-2 windlip beside the corridor, a physics-only
+            // planting height would leave trunk bases floating above the berm.
+            const ty = _fieldTopY(tx, tz);
             const ti = (gx + xCells) * zCells + gz;
 
             // Interim stopgap (reviewer note, owed since iteration 5): rounded
@@ -2312,51 +2406,12 @@ function _startGame() {
     rockMat.specularColor = new BABYLON.Color3(0.04, 0.04, 0.04);
 
     const valleyFloorY = terrainRootY(OUTRUN_Z) - FOOT_OFFSET;  // lowest playable surface
-    const topPlatY     = terrainRootY(SLOPE_START_Z) - FOOT_OFFSET; // top of inrun start
 
-    // ── Wide terrain fills — the jump corridor is 10 units wide; these extend
-    //    the same slope angles out to 110 units on each side so there's no void ─
-    // Inrun slope
-    {
-        const midZ  = (SLOPE_START_Z + TRANS_START_Z) / 2;
-        const depth = (TRANS_START_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE);
-        const wb = BABYLON.MeshBuilder.CreateBox('wInrun', { width: 110, height: 1.6, depth }, scene);
-        wb.rotation.x = SLOPE_ANGLE;
-        wb.position.set(0, terrainRootY(midZ) - FOOT_OFFSET - 0.88, midZ + 0.12 * Math.sin(SLOPE_ANGLE));
-        wb.material = lsMat;
-    }
-    // Flat table (transition end → kicker)
-    {
-        const tableTopY = _KBP_tY - FOOT_OFFSET;
-        const depth = KICKER_END_Z + 1 - TRANS_END_Z;
-        const midZ  = (TRANS_END_Z + KICKER_END_Z + 1) / 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wTable', { width: 110, height: 1.6, depth }, scene);
-        wb.position.set(0, tableTopY - 0.88, midZ);
-        wb.material = lsMat;
-    }
-    // Landing slope
-    {
-        const depth = (OUTRUN_Z - LANDING_START_Z) / Math.cos(LANDING_ANGLE) + 2;
-        const landingMidZ = (LANDING_START_Z + OUTRUN_Z) / 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wLanding', { width: 110, height: 1.6, depth }, scene);
-        wb.rotation.x = LANDING_ANGLE;
-        wb.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.88 / Math.cos(LANDING_ANGLE), landingMidZ);
-        wb.material = lsMat;
-    }
-    // Flat outrun + beyond
-    {
-        const depth = 90 + 100;
-        const midZ  = OUTRUN_Z + depth / 2 - 10;
-        const wb = BABYLON.MeshBuilder.CreateBox('wOutrun', { width: 110, height: 1.6, depth }, scene);
-        wb.position.set(0, valleyFloorY - 0.88, midZ);
-        wb.material = lsMat;
-    }
-    // Upper start plateau (the flat area skiers stand on before the run)
-    {
-        const wb = BABYLON.MeshBuilder.CreateBox('wStartPlat', { width: 110, height: 1.6, depth: 55 }, scene);
-        wb.position.set(0, topPlatY - 0.88, SLOPE_START_Z - 27);
-        wb.material = lsMat;
-    }
+    // ── P1 slice 2 retired the six wide flank fills (wInrun/wTable/wLanding/
+    //    wOutrun/wStartPlat) and the four corner_* junction slabs: the widened
+    //    terrainCorridor field IS the ground now, continuous across the old
+    //    seams and sharing snowMat everywhere (the cyan-seam class cannot
+    //    recur). What stays is only the distant backdrop behind the start:
     // Upper mountain slope — continues the inrun angle upward behind the start gate.
     // This gives the impression the jump is midway down a much bigger mountain.
     {
@@ -2369,34 +2424,6 @@ function _startGame() {
         wb.rotation.x = SLOPE_ANGLE;
         wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
         wb.material = lsMat;
-    }
-
-    // ── Junction filler slabs (the "cyan seam" fix) ──────────────────────────
-    // The six w* flanks are separate boxes at different slope angles and their
-    // z-ranges do not meet: the whole TRANS zone has no flank slab at all, and
-    // nothing covers KICKER_END+1 → LANDING_START_Z beside the drop. From the
-    // ready camera that showed background through a full-width strip
-    // (measured: 12.2% sky-like pixels in the kicker region). These fillers
-    // bridge every junction generously; being slightly BELOW the corridor tops
-    // they never poke through the run. 'corner*' prefix keeps them in the
-    // extract-terrain STATIC_PREFIXES so future bakes cover them.
-    {
-        const seamSlab = (name, zMid, depth) => {
-            const s = BABYLON.MeshBuilder.CreateBox(name,
-                { width: 110, height: 4, depth }, scene);
-            s.position.set(0, terrainRootY(zMid) - FOOT_OFFSET - 2.2, zMid);
-            s.material = lsMat;
-            return s;
-        };
-        // in-run → transition junction
-        seamSlab('corner_inrun_trans', FLAT_Z - TRANS_LEN / 2, TRANS_LEN + 10);
-        // transition → table junction
-        seamSlab('corner_trans_table', FLAT_Z + TRANS_LEN / 2, TRANS_LEN + 12);
-        // table end → landing start: the gap that showed fog/sky through it
-        const gapMid = (KICKER_END_Z + 1 + LANDING_START_Z) / 2;
-        seamSlab('corner_table_landing', gapMid, LANDING_START_Z - (KICKER_END_Z + 1) + 12);
-        // landing → outrun join
-        seamSlab('corner_landing_outrun', OUTRUN_Z, 14);
     }
 
 
@@ -2417,7 +2444,9 @@ function _startGame() {
         const FOOT_CLEAR   = 0.02;  // bottom edge rides 0–5 cm above the snow
         const RAY_Y        = 80;
 
-        const groundRe = /^(terrainCorridor|wInrun|wTable|wLanding|wOutrun|wStartPlat|wUpperMtn|corner_)/;
+        // slice 2: the field is ONE mesh now; wUpperMtn stays for rays that
+        // reach past its rear edge behind the start.
+        const groundRe = /^(terrainCorridor|wUpperMtn|terrainSkirt)/;
         // Picking gives the TRUE snow height beside the corridor (the flank
         // fills sit slightly below the physics plane). Headless test
         // environments (golden harness / unit stubs) carry no real Ray or
