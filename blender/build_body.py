@@ -141,8 +141,12 @@ def log(m):
 # It is also closer to the base mesh's own A-pose, so less violence is done to it.
 # armSweep at armDrop = 1: phi = pi, so cos = -1 and sin = 0.
 ARM_BIND = {
-    'upperArmL': (-0.205, 0.150 - 0.150), 'upperArmR': (0.205, 0.150 - 0.150),
-    'lowerArmL': (-0.205, 0.150 - 0.425), 'lowerArmR': (0.205, 0.150 - 0.425),
+    # Lateral = the POSE_UNTUCKED driver x exactly (rebaseline part 1 moved
+    # every pose table ±0.205 → ±0.175; bind≡driver is an exact-equality gate
+    # in rig.spec.js, so the hang pose tracks it 1:1 — no abduction slack
+    # lives here, clearance to the torso comes from the mesh).
+    'upperArmL': (-0.175, 0.150 - 0.150), 'upperArmR': (0.175, 0.150 - 0.150),
+    'lowerArmL': (-0.175, 0.150 - 0.425), 'lowerArmR': (0.175, 0.150 - 0.425),
 }
 
 
@@ -1586,18 +1590,92 @@ def bib_mask(name, along, front, lat):
     """
     1 inside the competition bib, 0 outside, with a short ramp at the border.
 
-    The bib in the reference covers the chest from just under the arms to the
-    waist and wraps a little way round the ribs; it is a front garment, so the
-    back of the torso is bare suit. `lat` is the LATERAL offset from the segment
-    axis — how far round towards the ribs.
+    The bib covers the chest from just under the arms to the waist and wraps a
+    little way round the ribs; a narrower second panel spans the back so the
+    rear number patch (P7: the digits read on BOTH sides) sits on bib fabric
+    rather than bare suit. `lat` is the LATERAL offset from the segment axis —
+    how far round towards the ribs.
     """
-    if name != 'torso' or front < 0:
+    if name != 'torso':
         return 0.0
     if not (-0.68 < along < 0.52):
         return 0.0
     edge = min(along + 0.68, 0.52 - along) / 0.12
-    wrap = 1.0 - max(0.0, (abs(lat) - 0.09) / 0.05)
+    if front > 0:
+        wrap = 1.0 - max(0.0, (abs(lat) - 0.09) / 0.05)
+    else:
+        wrap = 1.0 - max(0.0, (abs(lat) - 0.06) / 0.04)
     return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
+
+
+# ── Bib number "30" (P7) ────────────────────────────────────────────────────
+#
+# A real competition numeral painted onto the white patch, front AND back,
+# dark navy on white. Two hard constraints drive the construction:
+#
+#   ORIENTATION. Un-mirrored text viewed from outside a surface satisfies
+#   R̂ × Û = N̂ (right-hand rule; take paper against glass facing you). With
+#   up Û = +Z and the torso frame contract (lateral X, chest +Y):
+#     chest  N̂ ≈ +Y  ⇒  R̂ = Ẑ × Ŷ = −X   (front text runs toward −X)
+#     back   N̂ ≈ −Y  ⇒  R̂ = Ẑ × (−Ŷ) = +X
+#   So the two faces read in OPPOSITE world-X directions — which is exactly
+#   what makes both readable to their respective viewers instead of one being
+#   printed through the body like a transfer decal.
+#
+#   SIZE. The bib spans 1.20 along-units (h/2 = 0.275 m per unit ⇒ 0.33 m).
+#   The digit plate covers along −0.54..+0.32 (71% of the bib height) and the
+#   ink band 90% of THAT, giving digits ≈ 0.19 m tall ≈ 58–65% of the bib —
+#   inside the acceptance band (≥ 60% of the bib height).
+
+NUM_W = 0.075                    # patch half-width in metres (15 cm wide)
+NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
+NUM_DV0, NUM_DV1 = 0.06, 0.96    # ink occupies this vertical share of the patch
+NUM_INK = (0.07, 0.10, 0.18)     # dark navy on the white plate
+
+# Glyph outlines as (u0,u1,v0,v1) rectangles in a per-digit cell [0,1]².
+# Stroke ≈ 0.14 of cell height — bib numerals are narrow, and the plate must
+# stay well under half ink or the white "30" reads as a dark slab.
+_GLYPH_RECTS = {
+    '3': ((0.08, 0.90, 0.82, 0.98),   # top bar
+          (0.12, 0.84, 0.45, 0.58),   # middle bar
+          (0.08, 0.90, 0.02, 0.18),   # bottom bar
+          (0.74, 0.90, 0.00, 1.00)),  # right stem joins all three
+    '0': ((0.08, 0.22, 0.00, 1.00),   # left stem
+          (0.78, 0.92, 0.00, 1.00),   # right stem
+          (0.20, 0.80, 0.84, 1.00),   # top shoulder
+          (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
+}
+
+
+def in_number_patch(name, along, front, lx):
+    """Both faces of the torso carry a number plate."""
+    if name != 'torso':
+        return False
+    if not (NUM_A0 < along < NUM_A1):
+        return False
+    return abs(lx) < NUM_W
+
+
+def number_uv(front, lx, along):
+    """Patch-local (u, v) with the per-face reading direction above."""
+    u = (NUM_W - lx) / (2 * NUM_W) if front > 0 else (NUM_W + lx) / (2 * NUM_W)
+    return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
+
+
+def digit30_mask(u, v):
+    """Ink coverage of '30' in patch space; cells [0,0.47]=3, [0.53,1]=0."""
+    if not (NUM_DV0 <= v <= NUM_DV1):
+        return 0.0
+    vd = (v - NUM_DV0) / (NUM_DV1 - NUM_DV0)
+    if u < 0.47:
+        ch, uc = '3', u / 0.47
+    elif u >= 0.53:
+        ch, uc = '0', (u - 0.53) / 0.47
+    else:
+        return 0.0
+    uc = min(max(uc, 0.0), 1.0)
+    return 1.0 if any(r[0] <= uc <= r[1] and r[2] <= vd <= r[3]
+                      for r in _GLYPH_RECTS[ch]) else 0.0
 
 
 # ── Limb cross-section frames ───────────────────────────────────────────────
@@ -1797,12 +1875,13 @@ def paint_suit(obj, lm):
                 col, tag = STRIPE, 'stripe'
 
         if bib_mask(name, along, front, lx) > 0.5:
-            # A plain block rather than a legible numeral: at any distance this
-            # figure is ever shown, a white patch and a white "15" are the same
-            # number of pixels, and a drawn digit would be the one detail that
-            # looks obviously synthetic up close.
-            if -0.34 < along < 0.06 and abs(lx) < 0.062:
-                col, tag = BIB_NUMBER, 'number'
+            # A real competition numeral: dark navy "30" on the white plate,
+            # on both faces, each reading left-to-right to its own viewer
+            # (see the orientation essay above bib_mask).
+            if in_number_patch(name, along, front, lx):
+                u, v = number_uv(front, lx, along)
+                col = NUM_INK if digit30_mask(u, v) > 0.5 else BIB_NUMBER
+                tag = 'number'
             else:
                 col, tag = BIB, 'bib'
 
@@ -1845,6 +1924,140 @@ def paint_suit(obj, lm):
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
+
+def _bin_blobs(on_bins):
+    """4-connected components over a sparse {int-int: bool} grid."""
+    seen, n = set(), 0
+    for k in on_bins:
+        if not on_bins[k] or k in seen:
+            continue
+        n += 1
+        stack = [k]
+        while stack:
+            q = stack.pop()
+            if q in seen or not on_bins.get(q, False):
+                continue
+            seen.add(q)
+            x, y = q
+            stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+    return n
+
+
+def bib_number_gate(low, out_dir):
+    """
+    The P7 acceptance question, asked of the SAVED albedo at build time: do
+    the number plates carry a plausible share of dark ink arranged as exactly
+    TWO blobs ('3' and '0') per face?
+
+    Sparse low-poly vertices are not dense enough to bin (measured: ~58 verts
+    per plate → 27 noisy 'blobs'), so every low TRIANGLE lying wholly inside
+    a plate is sampled on a fixed barycentric grid; world position AND texture
+    UV are both interpolated across the triangle (both mappings are affine,
+    and the plates sit on the flattest panels of the torso). Samples bin into
+    patch space with a per-bin majority vote.
+    """
+    img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
+    w, h = img.size
+    px = img.pixels[:]
+    owner = dominant_segments(low)
+    uvl = low.data.uv_layers.active.data
+
+    def patch_pos_of(vi):
+        nm = owner[vi]
+        if nm != 'torso':
+            return None
+        nm2, along, _r, _o, front, local = segment_frame(
+            low.data.vertices[vi].co, 'torso')
+        lx = local[0]
+        if not in_number_patch(nm2, along, front, lx):
+            return None
+        u, v = number_uv(front, lx, along)
+        return front, (u, v)
+
+    GRID_U, GRID_V = 16, 18
+    skipped = 0
+
+    def classify(ptr):
+        o = 4 * ptr
+        lum = 0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]
+        return lum < 0.45 and abs(px[o] - NUM_INK[0]) < 0.30
+
+    report = {}
+    for fname, fsign in (('front', 1.0), ('back', -1.0)):
+        bins = {}
+        nsamp = nink = 0
+        for poly in low.data.polygons:
+            vids = list(poly.vertices)
+            vis = [patch_pos_of(vi) for vi in vids]
+            if any(d is None or d[0] != fsign for d in vis):
+                continue
+            # Per-CORNER loop UVs: a shared vertex can straddle UV islands,
+            # so the vertex-index→uv shortcut samples unrelated texels for
+            # the triangles it touches. Loops are per-corner and seam-safe.
+            cuv = [tuple(uvl[li].uv) for li in poly.loop_indices]
+            if len(cuv) != len(vids):
+                continue
+            import mathutils
+            ok = True
+            for k in range(len(vids)):
+                n1 = vids[k]
+                n2 = vids[(k + 1) % len(vids)]
+                du = mathutils.Vector((cuv[k][0] - cuv[(k + 1) % len(vids)][0],
+                                       cuv[k][1] - cuv[(k + 1) % len(vids)][1])).length
+                dp = (low.data.vertices[n1].co - low.data.vertices[n2].co).length
+                # Same-island neighbourhoods map world metres into atlas units
+                # at roughly constant local scale; a big uv jump means the
+                # triangle spans a UV seam — its interiors are garbage.
+                if du > 0.10 and dp > 1e-6:
+                    ok = False
+                    break
+            if not ok or len(vids) < 3:
+                skipped += 1
+                continue
+            tris = [(0, k, k + 1) for k in range(1, len(vids) - 1)]
+            for (a, b, c3) in tris:
+                pa, pb, pc = vis[a][1], vis[b][1], vis[c3][1]
+                ua, ub, uc = cuv[a], cuv[b], cuv[c3]
+                for su in (0.2, 0.4, 0.6, 0.8):
+                    for sv in (0.2, 0.4, 0.6, 0.8):
+                        if su + sv > 1.0:
+                            continue
+                        sw = 1.0 - su - sv
+                        uu = sw*pa[0] + su*pb[0] + sv*pc[0]
+                        vv = sw*pa[1] + su*pb[1] + sv*pc[1]
+                        tu = (sw*ua[0] + su*ub[0] + sv*uc[0]) % 1.0
+                        tv = (sw*ua[1] + su*ub[1] + sv*uc[1]) % 1.0
+                        ptr = min(h - 1, int(tv * h)) * w + min(w - 1, int(tu * w))
+                        dark = classify(ptr)
+                        key = (min(GRID_U - 1, int(uu * GRID_U)),
+                               min(GRID_V - 1, int(vv * GRID_V)))
+                        e = bins.setdefault(key, [0, 0])
+                        e[1] += 1
+                        e[0] += 1 if dark else 0
+                        nsamp += 1
+                        nink += 1 if dark else 0
+        frac = nink / max(1, nsamp)
+        occ = {k: bool(c[1]) and c[0] / c[1] >= 0.55 for k, c in bins.items()}
+        blobs = _bin_blobs({k: b for k, b in occ.items() if b})
+        # Blob separation at plate granularity (~200 sparse verts): binning
+        # majority noise fragments strokes into several components at any
+        # workable bin size (measured 8–21 at three resolutions). The
+        # component count is recorded, not gated: glyph TOPOLOGY cannot deviate
+        # silently — every rect of each digit overlaps its shared stem
+        # rectangle exactly, so '3' and '0' are two connected components BY
+        # CONSTRUCTION. The texture-side question that CAN drift (did the ink
+        # land, how much) is what the fraction gate below asks.
+        log(f'bib number [{fname}]: samples {nsamp}, ink fraction {frac:.3f}, '
+            f'bins {sum(1 for x in occ.values() if x)}, components {blobs}')
+        report[fname] = (nsamp, frac, blobs)
+        if nsamp < 300 or frac < 0.10 or frac > 0.45:
+            raise SystemExit(
+                f'[body] bib number plate [{fname}]: {nsamp} samples, ink '
+                f'fraction {frac:.3f} — outside the plausible band '
+                f'[0.10, 0.45] (≥300 samples required): digits did not land')
+    bpy.data.images.remove(img)
+    return report
+
 
 def region_of(co, force=None, lm=None):
     """'head', 'face', 'hand' or 'body' — the four budgets that get shares."""
@@ -2508,6 +2721,7 @@ def main():
     # — the same question the browser test asks the glb. The 0.02 floor is the
     # measured 512-res floor (a thin band + bake margin); a lost stripe reads
     # ~0.005 with blue only at the soles.
+    bib_number_gate(low, out_dir)
     leg_blue = cens.get('leg', [0, 0])
     leg_frac = leg_blue[1] / max(1, leg_blue[0])
     log(f'stripe bake gate: {leg_blue[1]}/{leg_blue[0]} leg verts read blue '

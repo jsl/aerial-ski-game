@@ -867,7 +867,7 @@ function _startGame() {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=8';
+    const ASSET_V = '?v=9';
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -4093,9 +4093,21 @@ function _startGame() {
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
     scene.registerBeforeRender(() => { try {
-        const rawDt = engine.getDeltaTime() / 1000; // seconds
+        const rawWallDt = engine.getDeltaTime() / 1000; // seconds
+        // CLAMP, DON'T SKIP. Under catastrophic render stalls (SwiftShader
+        // drive-suite measurements: sustained ~1 fps, rawWallDt ~1 s) a
+        // wholesale skip freezes the simulation ENTIRELY — inputs settle but
+        // nothing ever advances, which is the entry-18→21 waitForFunction
+        // timeout class reproduced live (readyTurnT stuck at 0.001 across
+        // dozens of rendered frames, posZ frozen). Processing a stalled
+        // frame as a capped 0.1 s step keeps progress going at slow motion
+        // with the same integration behaviour a busy-but-alive 8–10 fps
+        // frame already gets (the old guard silently skipped only those
+        // >100 ms, while historic 8–12 fps frames sat right ON the line).
+        // Physics content of a single step is unchanged everywhere else.
+        const rawDt = Math.min(Math.max(rawWallDt, 0), 0.1);
         const dt = rawDt * (window._tutorialTimeScale !== undefined ? window._tutorialTimeScale : 1.0);
-        if (paused || rawDt <= 0 || rawDt > 0.1) return; // skip when paused / stalled
+        if (paused || rawWallDt <= 0) return; // skip when paused / non-monotonic
 
         // ── Replay playback ────────────────────────────────────────────────
         if (replayActive) {
