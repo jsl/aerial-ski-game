@@ -102,6 +102,79 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Iterations
 
+### 11 — C1 landing profile (APPROVED physics) + P1 slice 1 corridor ribbon
+
+Two commits: an own-commit physics change under `APPROVED: C1-smooth run profile`,
+then the renderer ribbon. Scratch work in `/data/aerial-agents/scratch/iter-11/`
+(swept except the audit/probe scripts, which document the numbers).
+
+**What changed — commit 1 (physics, ad014c3)**
+- Slope scan of `terrainRootY` (0.005 m eps): the only true discontinuities are
+  **0 deg -> 40 deg at z=28.7 (LANDING_START_Z)** and **40 deg -> 0 deg at z=63.7
+  (OUTRUN_Z)**. Both now cubic beziers with exact end-tangent matches:
+  `landTransBezY` (knuckle, span LANDING_TRANS_LEN=4) and `landOutBezY`
+  (roll-out, span OUTRUN_TRANS_LEN=10.5, arc ~12.2 m — the 8-12 m the author
+  asked for), with `landingBlendsFit` guard + legacy fallback. All levels and
+  horizontal extents PINNED: tableY/lipY/landing angle/OUTRUN_Z byte-equal.
+- Curvature inside blends is bounded and REPORTED (not hidden): peak local slope
+  ~-49.8 deg across ~1.5 m in the knuckle blend (bulge 0.537 m above the old
+  line at z=29.75), ~-45.9 deg peak on the roll-out (zero lift above the old
+  line). This transient overshoot is inherent when both endpoints of each blend
+  are pinned on the flat/40-deg lines; handle ratios tuned in scratch
+  `blend-probe4.js`.
+- Golden rebaseline per ADR-0005, audited BEFORE re-capture (scratch
+  `audit-c1.js`): airtime 2.300 s byte-identical in every scenario; finalPosZ
+  -0.23..-0.64 m (ride-out on the new roll-out); frame-0 divergence confined to
+  `fl_*` tree nodes seating on the smoothed profile (scene content, not physics);
+  pool scenarios diverge only in pool-floor node seating.
+
+**What changed — commit 2 (renderer, 850afbb)**
+- ONE `terrainCorridor` mesh replaces slopeBox, 16 trans_seg_*, flatTable,
+  flatTableFull, landing, outrun, start (45 boxes -> 1). Every vertex from
+  `terrainRootY(z) - FOOT_OFFSET`; adaptive spacing (0.08-0.15 m through the
+  kicker/knuckle/roll-out, <=0.25 m everywhere curved); exact rings at every
+  physics branch join; >20 deg slope breaks get duplicated rings so shared
+  normals never smear across the kicker back wall. The 4.7 cm slopeBox face
+  defect and the slab chord/gap errors died with the removed meshes.
+- `tests/drive/terrain-corridor.spec.js` (new): 0.25 m ray-cast sweep at 3
+  columns over z=-39..89 — pick y within 2 cm of physics (the
+  skier-disappears-into-snow class); mesh-vs-physics turn-angle delta gate
+  <=2.5 deg (renderer-seam detector that ignores real physics curvature); zero
+  footprint misses. The airborne kicker back-wall span (KEZ..LSZ) is excluded
+  from both gates — a z-heightfield necessarily slants there and the athlete is
+  always airborne over it; the physics-owned 22 deg start-plateau join is inside
+  tolerance by construction.
+- baked.spec RECEIVERS and extract-terrain prefixes updated to the new scene;
+  index.html ?v=7; commit 3 (c47202c) preps the lightmap rebake (below).
+
+**Verification**
+- `npm run test:unit` pass; `npm run test:golden` 30/30 after the ADR-0005
+  re-capture; terrain-corridor 2/2 (worst physics-surface delta < 2 cm, worst
+  physics-mismatched turn < 2.5 deg, zero footprint misses); extract-terrain
+  regenerates cleanly (terrainCorridor + fills + backface).
+- Shots regenerated and inspected (`look`): ribbon, kicker block and red edge
+  lines all correct in silhouette; **BUT see the open defect below**.
+
+**OPEN DEFECT (convicted, fix queued for iter 12)**
+With the slabs gone, wInrun's top face (previously hidden under start/slope
+boxes from the ready camera) shows through with the STALE baked lightmap:
+ready-view black coverage 9.29% -> 0.09% when the lsMat_baked clone is stripped.
+The bake encodes shadows of the now-removed slabs. Iter 12: (1) flip the
+ribbon's triangle winding in the game.js builder — the rebake's signed-volume
+assert rejects it as inside-out in Blender terms while the game-side normals
+are correct and up; re-verify normals stay up in-game; (2) rerun
+`bake_lightmap.py` (RECEIVER_PREFIXES already updated to terrainCorridor + w*,
+terrain.json already regenerated); (3) ASSET_V 8 -> 9; (4) re-run grey-ramp +
+shadows + look.
+
+**Open / next**
+- Iter 12: the rebake (a crisp ~20 min path, exact steps above), then P1
+  slice 2 (lateral blend into the flanks / skirts, closing the cyan-seam class
+  properly) or P10/P11 per the reviewer order.
+- The physics-owned 22 deg start join (flat plateau -> in-run) is C0 but not C1;
+  recorded per plan rule (renderer reproduces physics exactly there).
+
+
 ### 0 — baseline (reviewer)
 - Branch created from `worktree-blender-assets` at `69d1655`; audit committed in `54f73d0`.
 - Baseline shots: `docs/analysis-2026-08-26/img/scene.jpg`, `fix_before.jpg`.
