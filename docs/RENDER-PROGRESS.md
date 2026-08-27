@@ -109,6 +109,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
+| — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -238,6 +239,104 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 35 — Review-only: iteration 34's uncommitted hop turn audited, landed and verified; full-suite review with measurements; re-prioritised queue
+
+**Recovery of the killed iteration 34 (reviewer 13:40 instruction).** The session
+started with an uncommitted tree: `game.js` (hop turn), new
+`tests/drive/hop-turn.spec.js`, 21 modified golden traces, no docs entry, no
+`?v=` bump (the session had died on a stale webServer during verification; no
+stale `http.server 8099` exists now — checked). Done, in order:
+
+1. **Audit before commit** (`node tests/golden/audit-ready-stance.js` with the
+   HEAD traces in `~/aerial-agents/scratch/iter-35/pre-hop-traces/`):
+   **physics `state` byte-identical in all 30 scenarios**; node diffs confined
+   to the athlete hierarchy (skierRoot, skis + toe/heel/brake, boots/buckles,
+   legs, arms, torso, head, visor) **only through f=45** (the 0.7 s turn);
+   `aerial-idle` (ready never ends) diffs persist by design, as in iteration 9.
+   The `d` digest chain shifts on every later keyframe because it is chained
+   FNV-1a over node state — expected. `engine/` untouched (ADR-0002
+   display-only). This satisfies `APPROVED: hop-turn trace re-capture,
+   provided state is identical`.
+2. **Trace re-capture direction fixed.** The tree's traces had been captured
+   before the session's final `game.js` tweaks (18 of 21 failed verify). All 22
+   aerial scenarios re-captured from the committed code; the audit above is
+   live-vs-HEAD, so the approval's condition is checked against HEAD, not the
+   stale captures.
+3. **Committed** as d402539 (game.js + spec + traces + `index.html`
+   `game.js?v=19→20`), with the hop-turn schedule constants the author asked
+   for, scaled into the physics-locked 0.7 s ready turn (× 0.7/0.95 = 0.737,
+   inside the ±30 % band per phase): crouch 0.221 s → extension 0.111 s →
+   airborne 0.184 s (peak ski lift **0.135 m**, author band 10–15 cm) →
+   touchdown+absorb 0.184 s; yaw held across-hill until takeoff, 90° complete
+   at touchdown; knee folds pin the boots to the skis; hard-zone clearance
+   preserved.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30**; `hop-turn` + `ready-stance` drive specs **green**; `rig`/`body`/
+`game` specs: 45 passed / 2 failed / 2 skipped — the 2 failures are the
+**pre-existing iter-32 mismatches, numbers unchanged** (rig.spec:496 left hand
+x = 0.1534 vs gate 0.155; body.spec:112 shin stripe outboard blue 0.0 % — the
+known bake/spec-window mismatch); `./tests/run-all.sh`: unit PASS, golden PASS,
+browser PASS, mutation PASS, coverage PASS, **drive FAIL = only those two**
+(45/2/2).
+
+**Review findings (measurements from fresh `look` shots, 1100×850).**
+
+- **Hop turn:** no regression observed; the author's structure (crouch → hop →
+  90° → absorb, skis parallel, boots on skis) is enforced by the new spec's
+  rendered-signal gates (no penetration anywhere in the turn; yaw 0 until
+  takeoff; ≥ 0.99 yaw at touchdown; absorb fold ≤ 0.75 × crouch).
+- **P2 sky: the sky is TEAL, not deep blue, and snow loses to sky in the
+  figure-front framing.** scene.png sky top mean lum **0.5472** with rgb
+  (106, 149, 148) — g ≈ b (green-blue), no cumulus, no sun disc; corridor snow
+  0.8270 (snow brighter, Δ 0.28, good). But **figure_front.png: snow 0.7470 vs
+  sky 0.8070 — snow darker than sky** (Δ −0.060) in that camera; the P2
+  "snow is the brightest surface in frame" gate currently only holds in the
+  scene/figure framings (figure.png: snow 0.7612 vs sky 0.6420).
+- **No cyan seam** in any shot (0 rows with sky-coloured pixels inside the
+  footprint, whole-frame scan).
+- **P4 gap is now the biggest visual delta vs the footage:** both shots still
+  show the cone+trunk stopgap trees (dark green cones, brown trunks,
+  repeating silhouettes); the reference is bare deciduous walls + snow-loaded
+  conifers (P4 impostor work not started).
+- **P6 gap:** background is still pale triangular cone peaks; footage wants
+  low forested ridgelines (visible top-left in scene.png).
+- **P7 gaps:** the suit's blue is still a **pinstripe** down the leg/arm seam
+  (plan wants a broad panel); the bib "30" is not readable from
+  `figure_front.png` because the ready stance yaws the athlete 90° to that
+  camera — only a faint washed-out patch shows (darkFrac 0.319 in the bib box,
+  but no legible digits; the status board's "orientation straight-on check
+  open" is exactly this).
+- **Skis at distance read as a dark slat** in scene.png (the styled topsheet
+  needs its graphic to survive distance/mip — minor, note for P12).
+- Shots directory has stale diagnostic PNGs from 2026-08-26/27 bakes; not
+  regressed, just noise for the reviewer.
+
+**Re-prioritised queue (my proposal for 36+).** 1. **P11 coherent crash**
+(the 12:05 queue's next item; the author has seen the flying-boxes crash
+twice). 2. **P2 remainder** — real sky model (deep blue zenith, cumulus, sun
+disc ≈ 32°), then re-check snow>sky in ALL look cameras including
+figure_front. 3. **P12 quality pass** (resolution/MSAA/aniso/SSAO/post).
+4. **P4 forest** (impostor bake — largest remaining visual delta) and **P6
+horizon** (ridgelines) as the next visual block. 5. P5 snow surfaces, P3
+venue remainder (wands exist in-scene upper-left but knoll flag, judges'
+deck, coach figures missing), P7 remainder (broad panels + bib straight-on
+capture), P8 arm gates hard, P9 night mode, P10 free-look.
+
+**Open questions for the reviewer**
+
+- **Bib legibility acceptance vs the yawed ready stance:** the plan's
+  acceptance says "from `figure_front.png` at the look camera the digits are
+  readable by eye" — impossible while the look cameras frame the ready stance
+  (athlete yawed 90°). Options: (a) look spec captures the figure after the
+  hop turn (facing downhill), (b) a `?look=figure-straight` URL param rotates
+  the figure camera to the athlete's facing, or (c) accept the albedo-space
+  gates only. Say which and I will implement it with the P7 remainder.
+- **figure_front exposure:** is the snow-vs-sky gate meant to hold in every
+  look camera (it currently fails only there), or is figure_front exempt as a
+  close-up? I propose: hold in scene + figure; figure_front becomes a
+  subject-exposure shot (face/suit readability) after the P2 sky lands.
 
 ### 33 — APPROVED touchdown retune: the flip-rate drift was computeI's ski self-term, not the evaluator; three knife-edge outcomes restored with ski d = 1.55 kept (commit 1e20d31)
 
