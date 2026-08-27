@@ -69,7 +69,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
-| P1 | Continuous terrain | **slice 1 landed (iter 11)** | corridor ribbon from exact physics profile + C1/clearance gates; C1 landing profile physics landed under APPROVED (airtime identical, finalPosZ -0.23..-0.64 m); OPEN: stale-lightmap rebake for the exposed wInrun face (exact steps in entry 11) |
+| P1 | Continuous terrain | **slice 1 landed (iter 11)** | corridor ribbon from exact physics profile + C1/clearance gates; C1 landing profile physics landed under APPROVED (airtime identical, finalPosZ -0.23..-0.64 m); OPEN: stale-lightmap rebake — iter-11's winding-flip plan RETRACTED (measured, entry 12), replaced with a post-unwrap vertex-split fixup (steps in entry 12); C1 blends to be rebuilt non-overshooting per the iter-11 review (iter 13, same APPROVED) |
 | P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7 |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
@@ -87,6 +87,20 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Open questions for the reviewer
 
+- **Iteration 11 review, two confirmations requested (2026-08-26, entry 12).**
+  (a) The winding-flip rebake step queued at the end of entry 11 is retracted
+  with measurements (flip = 0 % up-facing in Blender space = black bake; the
+  negative volume is an open-mesh artefact). The replacement plan — a
+  post-unwrap vertex-split fixup in `bake_lightmap.py` plus the identical split
+  on the game side — touches the uv2 sidecar contract; a sanity look at the
+  four steps in entry 12 before iter 13 builds it would catch a wrong turn
+  early. `assets/` stays at ASSET_V 8 until it lands (the black ready-view band
+  from the stale maps therefore persists one more iteration).
+  (b) Iter-11 review items (non-overshooting C1 rebuild; `main` clearance
+  tables) are slotted first for iter 13 — confirm that ordering vs the rebake
+  is right given the author is watching the live tree (the black band is the
+  most visible defect; the C1 hump is the one they will feel).
+
 - The Blender exporter writes joint-node rotations of its own (−90°/+90° about
   X by bone group) that are NOT what Babylon ends up skinning with. The P0 fix
   therefore asserts the skin's `inverseBindMatrices` accessor directly:
@@ -103,6 +117,89 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 12 — Rebake diagnosis: no winding flip (measured); unit harness blend fix; rebake mechanics re-planned for iter 13
+
+The iteration-11 review (`5bcecd0`) landed mid-session; its two asks — the
+non-overshooting C1 rebuild and the missing `main` clearance-comparison table —
+are queued FIRST for iteration 13 (both under the standing
+`APPROVED: C1-smooth run profile`). This session's budget went to iter 11's
+queued rebake defect, which turned out to be misdiagnosed, plus a pre-existing
+unit-suite failure found on the way.
+
+**Self-review of iter 11: 7 pre-existing `npm run test:unit` failures on HEAD.**
+`terrain.test.js` compares the live game.js `terrainRootY`/`terrainAccelZ`
+against the `engine/disciplines/aerial-ski.js` mirror with strict equality, but
+its harness config was never given iter 11's `_ltBP`/`_loBP`/`OUTRUN_TRANS_LEN`
+— so the mirror silently took the legacy creased-profile fallback and every
+world failed at the blend joins (worst: rootY off by 0.0419 m at z=31.75 in
+`?world=quint`; accelZ 5.40 vs 0.01 m/s² at z=28.70 default). Fixed by passing
+the three missing values in `configFor` (tests only — no engine, no game.js).
+Suite now 73/73. The failure existed since ad014c3 and would have masked any
+future live-vs-mirror drift at exactly the joins the reviewer wants rebuilt.
+
+**The queued "flip the ribbon's winding" rebake step is wrong — measured, not
+assumed.** In Blender space (after the pipeline's mirror conversion
+(x,y,z)→(x,z,y), determinant −1): the corridor's current indices give
+**100.00 % up-facing faces, mean n·up +0.894**, and the flipped variant gives
+**0.00 % up-facing** — flipping would point every hemisphere bake ray into the
+ground and produce exactly the black bake `bake_lightmap.py`'s history warns
+about. The negative signed volume (−7316.84) that iter 11 convicted is
+displacement-about-origin: `signed_volume` is only defined for watertight
+meshes, and the ribbon is open (1096 boundary edges after position welding).
+Edge-weld probe: the six `w*` fills ARE closed (0 boundary edges after weld —
+their 24 verts are per-face duplicates); only `terrainCorridor` is genuinely
+open. `blender/bake_lightmap.py` now scopes the volume assert to watertight
+meshes and gates open receivers by the invariant a hemisphere bake actually
+needs (≥ 99.9 % up-facing, worst face n·up ≥ −0.001, logged census: corridor
+100.00 % up / mean 0.894). No winding was changed anywhere.
+
+**Rebake attempt 1 — blocked by `check_uv_consistency`:** the heightfield
+ribbon shares row vertices between quads (6039 verts / 10920 tris), so
+smart_project's per-corner UVs conflict on 510 corner events / 186 shared
+vertices (scattered rows: 210 events near z=−3.45, 60 at z=−32.82/−24.01/−6.81
+— seam rows where the unwrap folds). The old slab boxes never hit this: every
+box face arrives with private corners. The gate is correct — one lightmap UV
+per shared vertex cannot describe a seam.
+
+**Rebake attempt 2 — blocked by the atlas-fill gate.** The standard fix was
+tried first: re-emit the ribbon with per-triangle-private corners carrying the
+averaged normals computed on the shared topology (render-identical; the same
+convention the boxes already satisfy). That unwraps into 10,920 disconnected
+islands → atlas fill 9.8 % (< 25 % gate) — nothing would be readable. This
+game.js experiment was REVERTED (byte-identical tree re-verified via a fresh
+extract-terrain run: terrain.json unchanged); the pipeline gate did its job.
+
+**Consequence — iter 13 mechanics (supersedes entry 11's four steps):** the
+bake sidecar needs a post-unwrap vertex-split fixup inside `bake_lightmap.py`:
+(1) unwrap the shared-vertex ribbon as today; (2) split ONLY the vertices whose
+lightmap UVs conflict (Blender `bmesh` duplicate + relink, UVs stay per-corner);
+(3) write the sidecar from the split mesh's vertex order; (4) split the GAME
+mesh identically (same conflict criterion, same order) when stamping uv2, or
+better, have the game adopt the baked glb's split vertices with baked normals.
+Then the rebake, ASSET_V 8→9, grey-ramp/shadows/look re-run. Not attempted in
+this session's remaining window — it is surgery across the uv/export/game
+contract, and a half-landed version leaves the ribbon unwrapped or black.
+
+**Verification.** `npm run test:unit` 73/73 (7 real failures fixed);
+`npm run test:golden` 30/30 (physics untouched); extract-terrain green
+(terrain.json byte-identical after the revert — the expansion experiment left
+no residue); `look` regenerated and inspected: the stale-map black band is
+still present as expected (the maps on disk are still the old bake —
+`assets/` untouched, ASSET_V stays 8); ribbon, kicker block, trees, athlete
+otherwise unchanged from iter 11's shots. Working tree at commit: only
+`blender/bake_lightmap.py` + `tests/unit/terrain.test.js` + this doc.
+
+**Open / next (iter 13, in order).**
+1. C1 blend rebuild, non-overshooting (circular-arc tangent to both lines or
+   monotone Hermite), under `APPROVED: C1-smooth run profile`, with the
+   reviewer's three gates (slope within [min(a,b), max(a,b)] everywhere,
+   slope monotonic through each blend, surface on the correct side of both
+   lines) added to the profile audit; ADR-0005 audit + rebaseline; report
+   airtime / landing point / landing-speed deltas.
+2. The `main` vs branch-before vs branch-after clearance tables from the
+   23:50 feedback (still owed).
+3. The lightmap split-fixup + rebake above.
 
 ### 11 — C1 landing profile (APPROVED physics) + P1 slice 1 corridor ribbon
 

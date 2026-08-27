@@ -35,6 +35,14 @@ function configFor(sim, mode) {
         TRAMPOLINE_Y:     g('TRAMPOLINE_Y'),
         tBP:              g('_tBP'),
         kBP:              g('_kBP'),
+        // C1 landing-blend control points (iter 11): without these the
+        // discipline mirror falls back to the legacy creased profile and the
+        // live-vs-mirror strict equality fails around LANDING_START_Z /
+        // OUTRUN_Z (found by running the suite on HEAD in iteration 12).
+        ltBP:             g('_ltBP'),
+        loBP:             g('_loBP'),
+        LANDING_TRANS_LEN: g('LANDING_TRANS_LEN'),
+        OUTRUN_TRANS_LEN: g('OUTRUN_TRANS_LEN'),
     };
 }
 

@@ -134,10 +134,11 @@ def clear():
 
 def signed_volume(verts, faces):
     """
-    Positive when a closed mesh's normals point outward, negative when inward.
+    Positive when a CLOSED mesh's normals point outward, negative when inward.
 
     Unambiguous regardless of the mesh's orientation, tilt or shape, which is
-    exactly what the face-normal counting it replaces was not.
+    exactly what the face-normal counting it replaces was not. Only defined for
+    watertight meshes: see mesh_watertight.
     """
     total = 0.0
     for a, b, c in faces:
@@ -148,6 +149,70 @@ def signed_volume(verts, faces):
                   - ay * (bx * cz - bz * cx)
                   + az * (bx * cy - by * cx))
     return total / 6.0
+
+
+def mesh_watertight(p, idx):
+    """
+    True when every edge of the position-welded mesh is shared by exactly two
+    faces.
+
+    Closure must be decided on POSITION-welded vertices: Babylon builders emit
+    duplicated vertices per face (a box arrives as 24 vertices, not 8), and the
+    corridor ribbon duplicates rings at hard slope breaks for clean normals.
+    Index-level topology calls all of them open; welded topology separates the
+    closed fill boxes from the genuinely open ribbon (terrainCorridor keeps 1096
+    boundary edges after welding — its ends and sides).
+    """
+    canon = {}
+    ids = []
+    for i in range(0, len(p), 3):
+        k = (round(p[i], 4), round(p[i + 1], 4), round(p[i + 2], 4))
+        if k not in canon:
+            canon[k] = len(canon)
+        ids.append(canon[k])
+    edges = {}
+    for i in range(0, len(idx), 3):
+        a, b, c = ids[idx[i]], ids[idx[i + 1]], ids[idx[i + 2]]
+        if len({a, b, c}) < 3:
+            continue
+        for e in ((a, b), (b, c), (c, a)):
+            key = tuple(sorted(e))
+            edges[key] = edges.get(key, 0) + 1
+    return all(n >= 2 for n in edges.values())
+
+
+def sky_facing_census(verts, faces):
+    """
+    For an OPEN surface: fraction of faces pointing at the sky (+Z here — Blender
+    space; the game's Y-up maps onto it through the mirror conversion above),
+    their mean upward component, and the worst face's upward component.
+
+    The AO/shadow bakes trace rays into the hemisphere around each FACE normal,
+    so a downward-facing face samples light from under the ground and returns
+    black — this is the invariant a bake needs from terrain that has no closure
+    to test with signed_volume.
+    """
+    up, total = 0, 0
+    mean_up, worst = 0.0, 1.0
+    for a, b, c in faces:
+        ax, ay, az = verts[a]
+        bx, by, bz = verts[b]
+        cx, cy, cz = verts[c]
+        ux, uy, uz = bx - ax, by - ay, bz - az
+        vx, vy, vz = cx - ax, cy - ay, cz - az
+        nx = uy * vz - uz * vy
+        ny = uz * vx - ux * vz
+        nz = ux * vy - uy * vx
+        l = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if l < 1e-12:
+            continue
+        nz /= l
+        mean_up += nz
+        total += 1
+        if nz > 0:
+            up += 1
+        worst = min(worst, nz)
+    return up / max(total, 1), mean_up / max(total, 1), worst
 
 
 def build_geometry():
@@ -169,6 +234,16 @@ def build_geometry():
     misreports on a tilted slab. SIGNED VOLUME settles it in one number, and
     build_geometry now asserts on it so this cannot regress silently. See
     blender/diag_normals.py.
+
+    But signed volume is only DEFINED for watertight meshes. The P1 corridor
+    ribbon is an open surface, and its "volume" degenerates to displacement about
+    the origin: it measured −7316.84 while 100 % of its faces point at the sky
+    (mean n·up 0.894). Flipping its winding to appease the volume assert — as
+    iteration 11 queued — would flip every bake ray into the ground and produce
+    exactly the black bake this script's history warns about (measured both ways;
+    see the iteration-12 progress entry). Closed meshes keep the volume assert;
+    open meshes get the invariant a hemisphere bake actually needs: no face may
+    face away from the sky.
     """
     receivers, casters = [], []
     for m in DATA['meshes']:
@@ -178,11 +253,22 @@ def build_geometry():
         faces = [(idx[i], idx[i + 1], idx[i + 2]) for i in range(0, len(idx), 3)]
 
         vol = signed_volume(verts, faces)
-        if vol < 0:
-            raise SystemExit(
-                f'[bake] {m["name"]} rebuilt inside-out (signed volume {vol:.3f}). '
-                f'Every hemisphere ray would start inside the solid and every '
-                f'diffuse-style bake would return black.')
+        if mesh_watertight(p, idx):
+            if vol < 0:
+                raise SystemExit(
+                    f'[bake] {m["name"]} rebuilt inside-out (signed volume {vol:.3f}). '
+                    f'Every hemisphere ray would start inside the solid and every '
+                    f'diffuse-style bake would return black.')
+        else:
+            frac_up, mean_up, worst = sky_facing_census(verts, faces)
+            if worst < -1e-3 or frac_up < 0.999:
+                raise SystemExit(
+                    f'[bake] {m["name"]} is open and does not uniformly face the sky '
+                    f'(up-facing {frac_up * 100:.2f} %, mean n·up {mean_up:.3f}, worst '
+                    f'n·up {worst:.4f}). Hemisphere rays sample around the face normal, '
+                    f'so down-facing terrain bakes black.')
+            log(f'{m["name"]}: open mesh — signed volume {vol:.2f} not used; '
+                f'up-facing {frac_up * 100:.2f} %, mean n·up {mean_up:.3f}')
 
         mesh = bpy.data.meshes.new(m['name'])
         mesh.from_pydata(verts, [], faces)
