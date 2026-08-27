@@ -48,6 +48,24 @@ test('venue dressing: B-net posts seated on the snow, net edge 0–5 cm above it
         const minClear = Math.min(...clear);
         const maxClear = Math.max(...clear);
 
+        // Fence-scale contract (reviewer order item 3): net top ≤ 1.3 m above
+        // the local snow along the whole run, posts ≤ 6 cm across.
+        const topClears = d.samples.filter((s) => s.yTop !== undefined)
+            .map((s) => s.yTop - pickGround(s.x, s.z));
+        const postSrc0 = scene.getMeshByName('bnetPost');
+        // Thin-instance sources carry a UNION bounding box over every
+        // instance matrix (the run's whole length), so measure the SOURCE
+        // CYLINDER's own vertex radius in its local frame.
+        let postDiam = null;
+        if (postSrc0) {
+            const pp = postSrc0.getVerticesData(BABYLON.VertexBuffer.PositionKind) || [];
+            let rad = 0;
+            for (let i = 0; i < pp.length; i += 3) {
+                rad = Math.max(rad, Math.hypot(pp[i], pp[i + 2]));
+            }
+            postDiam = +(rad * 2).toFixed(4);
+        }
+
         const stripL = scene.getMeshByName(d.strips[0]);
         const stripR = scene.getMeshByName(d.strips[1]);
         const postSrc = scene.getMeshByName('bnetPost');
@@ -70,6 +88,13 @@ test('venue dressing: B-net posts seated on the snow, net edge 0–5 cm above it
                         BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST),
             },
             postThinInstances: postSrc ? postSrc.thinInstanceCount : 0,
+            postDiam,
+            topClear: topClears.length ? {
+                n: topClears.length,
+                min: Math.min(...topClears),
+                max: Math.max(...topClears),
+            } : null,
+
             cfgSlopeStartZ: window._terrainCfg.SLOPE_START_Z,
             cfgOutrunZ: window._terrainCfg.OUTRUN_Z,
         };
@@ -93,6 +118,18 @@ test('venue dressing: B-net posts seated on the snow, net edge 0–5 cm above it
         .toBeGreaterThanOrEqual(-0.005);
     expect(r.maxClear, `strip floats ${r.maxClear} above snow`)
         .toBeLessThan(0.051);
+
+    // Fence scale: net top ≤ 1.3 m over the snow everywhere (author spec 1.2 m
+    // minus the sag), posts ≤ 6 cm across — the fence must read as dressing,
+    // not architecture, against a 1.7 m athlete.
+    expect(r.postDiam !== null, 'bnetPost source mesh missing').toBe(true);
+    expect(r.postDiam, `post is ${r.postDiam} m across`).toBeLessThanOrEqual(0.062);
+    expect(r.topClear.n).toBeGreaterThan(100);
+    expect(r.topClear.max, `net top reaches ${r.topClear.max} m above the snow`)
+        .toBeLessThan(1.31);
+    expect(r.topClear.min, `net top sags to ${r.topClear.min} m above the snow`)
+        .toBeGreaterThan(1.09);
+
 
     // Span covers from the top of the in-run past the end of the out-run.
     expect(Math.abs(r.spanZ[0] - r.cfgSlopeStartZ)).toBeLessThan(0.01);

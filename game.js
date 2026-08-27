@@ -155,6 +155,185 @@ function makePBR(name, scene) {
     return m;
 }
 
+var _styledSkiAssets = null;   // shared topsheet atlas + materials for both skis
+
+// ── Styled visual skis (P7/reviewer bundle item) ────────────────────────────
+// Each ski's PHYSICS driver stays a flat box (body-model: w 0.08 × h 0.03 ×
+// d 1.55) — the contact model, ready-stance seating and every clearance gate
+// measure that box, so this builds RENDERED equipment in its place: a real
+// mogul/aerials silhouette with sidecut (tip ≈95 / waist ≈70 / tail ≈85 mm),
+// a rounded shovel rising ≈5.5 cm over the front ≈18 cm, a slightly lifted
+// flat tail, thickness 1.6 cm underfoot tapering to ≈1 cm, a generic painted
+// topsheet (DynamicTexture — colours and shapes only, no marks), dark
+// sidewalls, a matte base, plus toe/heel binding pieces and a brake bar.
+//
+// Invariants the drive specs hold (rig.spec.js "styled skis"):
+//   • every vertex sits ON or ABOVE the driver box bottom plane y=-seg.h/2 —
+//     the rocker only LIFTS material off the snow, so the pitched-ski worst
+//     case cannot dig deeper than the old full-thickness slab could;
+//   • bounding length along z == seg.d ±0.01 m (equals the physics ski);
+//   • the highest vertex is on the shovel, at the LEADING (−z) end;
+//   • toe piece forward of heel piece, both centred on the ski's x axis.
+// The builders used here (BABYLON.Mesh + hand-built VertexData) follow the
+// terrainCorridor precedent so partial headless stubs boot unchanged.
+function _buildStyledSki(scene, driver, seg, assets) {
+    const L      = seg.d;
+    const BOT    = -seg.h / 2;          // snow plane — hard floor for every vertex
+    const HW_TIP = 0.0475, HW_WAIST = 0.035, HW_TAIL = 0.0425;
+    const TIP_RISE = 0.055, TIP_SPAN = 0.18;
+    const TAIL_LIFT = 0.014, TAIL_SPAN = 0.10;
+
+    function profile(z) {
+        const az = Math.abs(z);
+        let hw;
+        if (z < 0) {
+            const u = Math.min(1, az / (L * 0.42));
+            hw = HW_WAIST + (HW_TIP - HW_WAIST) * Math.pow(u, 1.15);
+            if (az > L / 2 - 0.07) {
+                const r = Math.max(0, (L / 2 - az) / 0.07);
+                hw *= 0.62 + 0.38 * Math.sqrt(r);
+            }
+        } else {
+            const u = Math.min(1, az / (L * 0.40));
+            hw = HW_WAIST + (HW_TAIL - HW_WAIST) * Math.pow(u, 1.25);
+            if (az > L / 2 - 0.05) {
+                const r = Math.max(0, (L / 2 - az) / 0.05);
+                hw *= 0.70 + 0.30 * Math.sqrt(r);
+            }
+        }
+        let lift = 0;
+        const zTipContact = -L / 2 + TIP_SPAN;
+        if (z < zTipContact) {
+            const s = (zTipContact - z) / TIP_SPAN;
+            lift = TIP_RISE * Math.pow(s, 1.8);
+        }
+        const zTailStart = L / 2 - TAIL_SPAN;
+        if (z > zTailStart) {
+            const s = (z - zTailStart) / TAIL_SPAN;
+            lift += TAIL_LIFT * s * s;
+        }
+        const th = 0.009 + 0.0075 * Math.exp(-(z * z) / (2 * 0.22 * 0.22));
+        return { hw, bot: BOT + lift, top: BOT + lift + th };
+    }
+
+    // Shared per-page resources: one atlas + one material pair for both skis.
+    if (!assets.tex) {
+        const tex = new BABYLON.DynamicTexture('skiTopTex',
+            { width: 512, height: 512 }, scene, false);
+        const c = tex.getContext();
+        c.fillStyle = '#eef1f4'; c.fillRect(0, 0, 512, 512);
+        // Sidewall strips run the full length at both edges.
+        c.fillStyle = '#17191d';
+        c.fillRect(0, 0, 42, 512); c.fillRect(470, 0, 42, 512);
+        // Matte base zone: the base/cap faces carry uv v ∈ [0.76, 0.96],
+        // i.e. canvas y ∈ [20, 123] (GL v grows up, canvas y grows down).
+        c.fillStyle = '#101114'; c.fillRect(42, 20, 428, 104);
+        // Topsheet graphic: strong band on the shovel + accent pinstripe.
+        // Canvas y grows DOWN while UV v grows UP, so draw accordingly.
+        c.fillStyle = '#14568c'; c.fillRect(42, 402, 428, 84);
+        c.fillStyle = '#c94f36'; c.fillRect(42, 380, 428, 14);
+        // Generic mark: white diamonds inside the band (no lettering/mirroring).
+        c.fillStyle = '#eef1f4';
+        for (let k = 0; k < 4; k++) {
+            const cx = 120 + k * 90, cy = 444, r = 11;
+            c.beginPath();
+            c.moveTo(cx, cy - r); c.lineTo(cx + r, cy);
+            c.lineTo(cx, cy + r); c.lineTo(cx - r, cy);
+            c.closePath(); c.fill();
+        }
+        tex.update(false);
+
+        const bodyMat = makePBR('skiVis_mat', scene);
+        bodyMat.albedoTexture = tex;
+        bodyMat.albedoColor   = new BABYLON.Color3(1, 1, 1);
+        bodyMat.metallic      = 0;
+        bodyMat.roughness     = 0.42;
+
+        const bindMat = makePBR('skiBind_mat', scene);
+        bindMat.diffuseColor  = new BABYLON.Color3(0.13, 0.13, 0.145);
+        bindMat.specularColor = new BABYLON.Color3(0.45, 0.45, 0.50);
+        bindMat.specularPower = 45;
+        assets.bodyMat = bodyMat; assets.bindMat = bindMat;
+    }
+
+    // Cross-sections nose → tail.
+    const N = 22, S = [];
+    for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        S.push(Object.assign({ z: -L / 2 + t * L }, profile(-L / 2 + t * L)));
+    }
+
+    // Top-face v coordinate of a station: arc-length-ish parameter into the
+    // topsheet field [0.02, 0.72]; everything else lands in the dark zones.
+    const V0 = 0.02, V1 = 0.72, EL = 0.08, EH = 0.92;
+    const va = [], vb = [];
+    for (let i = 0; i < N; i++) va.push(V0 + (V1 - V0) * i / (N - 1));
+
+    const P = [], U = [], I = [];
+    let nv = 0;
+    function quad(p0, p1, p2, p3, uv0, uv1, uv2, uv3) {
+        P.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2],
+               p2[0], p2[1], p2[2], p3[0], p3[1], p3[2]);
+        U.push(uv0[0], uv0[1], uv1[0], uv1[1], uv2[0], uv2[1], uv3[0], uv3[1]);
+        I.push(nv, nv + 1, nv + 2, nv, nv + 2, nv + 3);
+        nv += 4;
+    }
+    const DARK = [[0.04, 0.86]];
+    for (let i = 0; i < N - 1; i++) {
+        const a = S[i], b = S[i + 1];
+        const axl = -a.hw, axr = a.hw, bxl = -b.hw, bxr = b.hw;
+        quad([axr, a.top, a.z], [axl, a.top, a.z], [bxl, b.top, b.z], [bxr, b.top, b.z],
+             [EL, va[i]], [EH, va[i]], [EH, va[i + 1]], [EL, va[i + 1]]);          // top ↑y
+        quad([axl, a.bot, a.z], [axr, a.bot, a.z], [bxr, b.bot, b.z], [bxl, b.bot, b.z],
+             [0.12, 0.79], [0.88, 0.79], [0.88, 0.93], [0.12, 0.93]);               // base ↓y
+        quad([axl, a.bot, a.z], [bxl, b.bot, b.z], [bxl, b.top, b.z], [axl, a.top, a.z],
+             DARK[0], DARK[0], DARK[0], DARK[0]);                                   // left ←x
+        quad([axr, a.bot, a.z], [axr, a.top, a.z], [bxr, b.top, b.z], [bxr, b.bot, b.z],
+             DARK[0], DARK[0], DARK[0], DARK[0]);                                   // right →x
+    }
+    // End caps: nose (outward −z) and tail (outward +z).
+    const f = S[0], k = S[N - 1];
+    quad([-f.hw, f.bot, f.z], [-f.hw, f.top, f.z], [f.hw, f.top, f.z], [f.hw, f.bot, f.z],
+         DARK[0], DARK[0], DARK[0], DARK[0]);
+    quad([k.hw, k.bot, k.z], [k.hw, k.top, k.z], [-k.hw, k.top, k.z], [-k.hw, k.bot, k.z],
+         DARK[0], DARK[0], DARK[0], DARK[0]);
+
+    const vis = new BABYLON.Mesh(seg.name + '_vis', scene);
+    const vd = new BABYLON.VertexData();
+    vd.positions = P;
+    vd.indices   = I;
+    vd.uvs       = U;
+    vd.normals   = new Array(P.length);
+    BABYLON.VertexData.ComputeNormals(P, I, vd.normals);
+    vd.applyToMesh(vis);
+    vis.material = assets.bodyMat;
+    vis.parent   = driver;
+
+    // Binding under the boot line: toe piece ahead of the boot footprint,
+    // heel piece behind it, brake bar spread across the tail deck.
+    const toeH = 0.032, heelH = 0.034;
+    const toeY = profile(-0.205).top + toeH / 2;
+    const heelY = profile(0.245).top + heelH / 2;
+    const brakeY = profile(0.315).top + 0.004;
+
+    const toe = BABYLON.MeshBuilder.CreateBox(seg.name + '_toe',
+        { width: 0.078, height: toeH, depth: 0.13 }, scene);
+    toe.parent = driver; toe.position.set(0, toeY, -0.205);
+    toe.material = assets.bindMat;
+
+    const heel = BABYLON.MeshBuilder.CreateBox(seg.name + '_heel',
+        { width: 0.09, height: heelH, depth: 0.115 }, scene);
+    heel.parent = driver; heel.position.set(0, heelY, 0.245);
+    heel.material = assets.bindMat;
+
+    const brake = BABYLON.MeshBuilder.CreateBox(seg.name + '_brake',
+        { width: 0.20, height: 0.0075, depth: 0.05 }, scene);
+    brake.parent = driver; brake.position.set(0, brakeY, 0.315);
+    brake.material = assets.bindMat;
+
+    return vis;
+}
+
 function buildCharacter(scene) {
     // Root TransformNode sits at the whole-body center of mass.
     // The flip rotation is applied to root; all segments move with it.
@@ -245,6 +424,20 @@ function buildCharacter(scene) {
         mesh.material = mat;
 
         meshes[n] = mesh;
+
+        // ── Styled ski equipment (renderer-side; ADR-0002) ────────────────
+        // The physics driver box stays exactly as authored — it is never
+        // rendered again, it only carries the pose transforms the styled
+        // geometry follows as children. Ski visuals are skipped entirely in
+        // trampoline/pool worlds (skis are hidden there), so those scenes'
+        // node censuses stay byte-identical.
+        if ((n === 'skiL' || n === 'skiR') &&
+            !_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
+            mesh.isVisible = false;
+            _buildStyledSki(scene, mesh, seg,
+                (_styledSkiAssets = _styledSkiAssets || {}));
+        }
+
 
         // ── Per-segment detail meshes ────────────────────────────────────
         if (n === 'head') {
@@ -2474,7 +2667,9 @@ function _startGame() {
         const bc = bnetTex.getContext();
         bc.clearRect(0, 0, 128, 128);
         bc.strokeStyle = 'rgb(58,110,222)';
-        bc.lineWidth = 7;
+        // Thinner rope strands (reviewer order item 3: the weave read heavier
+        // than IMG_3523; 7 px on the 128 px tile ≈ 3 cm rope at 1.2 m scale).
+        bc.lineWidth = 5;
         bc.beginPath();
         for (let i = 0; i <= 4; i++) {
             const p = i * 32;
@@ -2572,7 +2767,12 @@ function _startGame() {
                         // through the raised local snow (measured: sink −0.59 m
                         // at the table→landing boundary).
                         const g = groundUnderRow(z);
-                        const lift = POST_H - 0.04 - SAG * Math.sin(Math.PI * t);
+                        // Fence-scale contract (reviewer order item 3): the
+                        // net's TOP edge sits NET_H above the local snow,
+                        // sagging SAG toward mid-span — the old construction
+                        // hung it off POST_H (≈1.4 m), reading a size class
+                        // bigger than IMG_3523/7841.
+                        const lift = NET_H - SAG * Math.sin(Math.PI * t);
                         rows.push({
                             z,
                             wireY: g + lift,
@@ -2580,7 +2780,8 @@ function _startGame() {
                             u: (uLen + t * len) / TILE,
                             g,
                         });
-                        samplesOut.push({ x: d.x, z, g, yBot: g + FOOT_CLEAR });
+                        samplesOut.push({ x: d.x, z, g,
+                            yBot: g + FOOT_CLEAR, yTop: g + lift });
                     }
                     uLen += len;
                 }
@@ -2631,7 +2832,7 @@ function _startGame() {
 
         // Thin instances: one source cylinder, one draw call for every post.
         postSrc = BABYLON.MeshBuilder.CreateCylinder('bnetPost',
-            { height: POST_H, diameterBottom: 0.07, diameterTop: 0.05, tessellation: 8 }, scene);
+            { height: POST_H, diameterBottom: 0.058, diameterTop: 0.042, tessellation: 8 }, scene);
         postSrc.material = postMat;
         setPostMatrices(window._bnetDebug.posts);   // seed matrices, pre-reseat
 

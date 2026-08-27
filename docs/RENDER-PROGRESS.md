@@ -88,12 +88,12 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iters 15, 20** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open**; iter 20: reproduces (corridor 0.8210, inrun 0.8235, kicker 0.8017, flanks 0.8268/0.8276 vs sky 0.7986; shadow drop 79.8%) — margins thin, widen in the P2 remainder |
-| P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; open: wands, knoll flag, judges' deck, coach figures |
+| P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js` |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
-| P7 | Flight pose / suit | **bib 30 landed (iter 21)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open |
+| P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
@@ -104,7 +104,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
-| — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20)** | the ONE Blender rebuild bundle (straight arms, loose suit, cranium/brim, bib 30, 155 cm styled skis + binding) + rebaseline part 2 (torso/legs, pending entry-19 construction approval) → iter 21/22; drive-spec body-link race fix → **21 (part: waits + the real root cause, the dt-skip freeze)** |
+| — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 
 ## Open questions for the reviewer
 
@@ -189,6 +189,72 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 22 — Styled 155 cm mogul skis + bindings replace the black slats (P7/reviewer bundle); fence scale pinned to spec
+
+Reviewer order items 2–3 remainder. One commit; scratch `~/aerial-agents/scratch/iter-22/`
+unused (all verification via the committed specs). No `assets/` regeneration → **ASSET_V
+stays 9**; `index.html` scripts `?v=14→15` (game.js touched).
+
+**Styled skis (`game.js`, renderer-side only — ADR-0002).** `_buildStyledSki` builds, per ski,
+one custom `VertexData` body parented to the invisible physics driver box (terrainCorridor
+builder precedent so partial headless stubs boot), plus toe/heel/brake boxes: sidecut
+tip 95 / waist 70 / tail 85 mm, rounded shovel rising **5.5 cm over the front 18 cm**
+(slope-growing power curve), tail lift 1.4 cm over the last 10 cm, thickness 1.65 cm
+underfoot tapering to ≈0.9 cm at the ends, generic painted topsheet (DynamicTexture atlas:
+white field + steel-blue band with white diamond marks + vermilion pinstripe near the
+shovel — no lettering to mirror), dark sidewall strips and a matte-black base zone.
+The driver boxes stay exactly as authored (`w .08 × h .03 × d 1.55`) — contact model,
+ready-stance seating and every clearance gate still measure them. Ski visuals are skipped in
+trampoline/trampoline-mat/pool modes, so those scenes' traces stayed byte-stable.
+
+Penetration envelope note (measured, not assumed): `rig.spec.js` asserts min vertex y ==
+−0.015 = the driver box bottom plane EXACTLY — the rocker only lifts material off the snow,
+so a pitched ski's worst case cannot dig deeper than the old full-thickness slab. The new
+gates: length `1.55 ± 0.01` (measured **1.5500** both sides), no vertex below the snow plane
+(measured −0.0150), highest vertex on the shovel at the LEADING (−z) end ≥3 cm over the waist
+deck (measured rise **4.76 cm** at z=−0.775), graphic texture present, toe ahead of heel along
+−z, binding pieces centred (|x| = 0). Found while verifying and fixed in-session: the base
+faces' atlas v-range pointed at the white field, not the black row — undersides would have
+flashed white in flight; base zone repainted onto the sampled band and re-shot.
+
+**Fence scale (reviewer order item 3, geometry fix + permanent gates).** Measured first: the
+net's TOP edge hung at `POST_H − 0.04` ≈ **1.39–1.46 m** above the snow (the authored NET_H
+1.20 was never wired into the strip), and posts measured Ø7 cm at the base. Fix: top wire now
+rides `NET_H − sag` (**≤1.20 m**, sag 7 cm toward mid-span ⇒ 1.13–1.20 band), posts tapered
+Ø5.8→4.2 cm, rope strands 7→5 px on the 128 px tile (~3 cm rope at net scale). New gates in
+venue-dressing.spec.js: post diameter ≤ 6.2 cm measured from the source cylinder's local
+vertices (the thin-instance bounding box is a whole-run UNION — first attempt read 12.458 m),
+net-top clearance ∈ [1.09, 1.31] m over freshly picked ground at every net station (>100
+asserted on both edges).
+
+**Verification.** `npm run test:unit` **74/74** (ALLOWED_FUNCTIONS gains `_buildStyledSki`,
+renderer). Golden: pre-capture audit showed the divergence is census-only — 22 aerial
+scenarios gain `skiL/R_vis/_toe/_heel/_brake` present + `skiL/R.hidden true` at frame 0;
+**zero `state.*` deltas anywhere**; trampoline/pool byte-identical by the mode gate. Census-
+only rebaseline per ADR-0005 (iter-6/16 precedent) → **30/30**. Drive on this tree: rig
+**8/8**, venue-dressing 1/1 (incl. new fence gates), shadows+baked+ready-stance+terrain-
+corridor batch 9/9 (ski casters intact — children join via the getChildMeshes sweep; seating
+still measured on the drivers). Shots regenerated and inspected directly (I can view PNGs):
+`figure_front.png`/`figure.png` show the navy shovel graphic with white diamonds under the
+boot line, heel piece behind the boot, bib 30 legible front/back; `scene.png` fence reads
+lighter and lower, no long black slat under the athlete. Bind gates, stripe gate, sole-on-ski
+gate all unchanged-green in the same rig run.
+
+**Open / next**
+1. Straight-arm elbow surgery (P8/reviewer item 43), loose-suit shell + folds, cranium/brim
+   wrap re-check — the Blender half of the bundle (needs its own build session).
+2. Rebaseline part 2 (torso/legs) still pending entry-19 construction approval; second
+   rebuild if segments change.
+3. game.spec full-run + athlete-wired standalone confirmation rides the next mixed suite run.
+
+**Open questions for the reviewer**
+- Topsheet colouring is a strong steel-blue band on white per "white/black base with a strong
+  colour band"; the author may want the band's hue/placement changed once seen live — one
+  constant block in `_buildStyledSki`.
+- The crash path leaves skis attached to their detached drivers (children follow parents);
+  bindings releasing (P11 scope) will change that deliberately later.
+
 
 ### 21 — Rebuild lands binds on the approved tables; legible bib 30 (P7); the wait-class root cause was the dt-skip freeze, not only the input race
 

@@ -613,3 +613,90 @@ test('hands hang beside the thighs and shins sit on their ski lines', async ({ p
     expect(r.shins.R.lat, `right shin ${r.shins.R.dx} m off its ski centreline`)
         .toBeLessThan(0.04);
 });
+
+test('styled skis: shaped geometry replaces the slats, boot line carries a binding', async ({ page }) => {
+    // The renderer-side ski bundle (reviewer inspection order 2, iter 21→22):
+    // each physics driver box (body-model w 0.08 × h 0.03 × d 1.55) is no
+    // longer the rendered equipment — an invisible driver carries styled
+    // children. Gates, all in DRIVER-LOCAL space so nothing depends on the
+    // ready stance's yaw/roll:
+    //   1. length == physics ski length ±0.01 m;
+    //   2. NO vertex below the driver box's bottom plane — the rocker only
+    //      lifts material off the snow, so pitched-ski penetration cannot get
+    //      worse than the old full-thickness slab (clearance envelope);
+    //   3. highest vertex sits on the shovel at the LEADING (−z) end and ≥3 cm
+    //      above the waist deck;
+    //   4. the graphic topsheet material exists with its atlas texture;
+    //   5. toe piece ahead of heel piece along −z, both within 1 cm of the
+    //      ski centreline laterally, both above the body deck (bound).
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const out = {};
+        for (const side of ['L', 'R']) {
+            const drv = scene.getMeshByName('ski' + side);
+            const vis = scene.getMeshByName('ski' + side + '_vis');
+            if (!drv || !vis) { out[side] = { missing: true }; continue; }
+            vis.computeWorldMatrix(true);
+            drv.computeWorldMatrix(true);
+            const bb = vis.getBoundingInfo().boundingBox.extendSize;
+
+            const pos = vis.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            let minY = Infinity, maxY = -Infinity, maxZatY = null,
+                waistTop = -Infinity, fwd = Infinity, aft = -Infinity;
+            if (pos) {
+                for (let i = 0; i < pos.length; i += 3) {
+                    const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+                    if (y < minY) minY = y;
+                    if (y > maxY) { maxY = y; maxZatY = z; }
+                    if (Math.abs(z) < 0.15 && y > waistTop) waistTop = y;
+                    if (y < -0.005 && z > aft) aft = z;
+                    if (y < -0.005 && z < fwd) fwd = z;
+                }
+            }
+
+            const toe = scene.getMeshByName('ski' + side + '_toe');
+            const heel = scene.getMeshByName('ski' + side + '_heel');
+            out[side] = {
+                driverVisible: drv.isVisible,
+                verts: vis.getTotalVertices(),
+                lenZ: +(bb.z * 2).toFixed(4),
+                hasTex: !!(vis.material && vis.material.albedoTexture),
+                bottomPlane: +minY.toFixed(4),
+                tipRise: +(maxY - waistTop).toFixed(4),
+                tipZ: maxZatY === null ? null : +maxZatY.toFixed(4),
+                contactFwd: fwd === Infinity ? null : +fwd.toFixed(4),
+                toeX: toe ? +toe.position.x.toFixed(4) : null,
+                heelX: heel ? +heel.position.x.toFixed(4) : null,
+                toeZ: toe ? +toe.position.z.toFixed(4) : null,
+                heelZ: heel ? +heel.position.z.toFixed(4) : null,
+            };
+        }
+        return out;
+    });
+
+    console.log('SKIS ' + JSON.stringify(r));
+    for (const side of ['L', 'R']) {
+        const m = r[side];
+        expect(m.missing || false, `no styled ski built for ${side}`).toBe(false);
+        expect(m.driverVisible, `driver ${side} must be hidden under the styled ski`).toBe(false);
+        expect(m.verts, `empty visual mesh on ${side}`).toBeGreaterThan(50);
+        expect(m.lenZ, `styled ski ${side} is ${m.lenZ} m long`).toBeGreaterThan(1.54);
+        expect(m.lenZ, `styled ski ${side} is ${m.lenZ} m long`).toBeLessThan(1.56);
+        // Driver box half-height is 0.015 m; the body floor must sit there.
+        expect(m.bottomPlane, `a vertex of ${side} digs ${m.bottomPlane} m below the snow plane`)
+            .toBeGreaterThan(-0.017);
+        expect(m.tipRise, `${side} shovel rises only ${m.tipRise} m over the waist deck`)
+            .toBeGreaterThan(0.03);
+        expect(m.tipZ, `highest point of ${side} is not at the leading end (z=${m.tipZ})`)
+            .toBeLessThan(-0.20);
+        expect(m.hasTex, `${side} topsheet carries no graphic texture`).toBe(true);
+        // Binding present, ordered toe→tail, centred on the ski axis.
+        expect(m.toeX !== null && m.heelX !== null, `${side} binding pieces missing`).toBe(true);
+        expect(Math.abs(m.toeX), `${side} toe off centre`).toBeLessThan(0.01);
+        expect(Math.abs(m.heelX), `${side} heel off centre`).toBeLessThan(0.01);
+        expect(m.toeZ, `${side} toe piece is not forward of the heel`)
+            .toBeLessThan(m.heelZ);
+    }
+});

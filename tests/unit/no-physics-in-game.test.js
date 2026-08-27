@@ -31,6 +31,7 @@ const ALLOWED_FUNCTIONS = {
     applyGamepadLateral: 'repositions arm meshes — renderer',
     _startGame:          'scene/loop orchestration — wiring, not simulation',
     makePBR:             'material factory — a StandardMaterial->PBR compat shim, renderer',
+    _buildStyledSki:     'styled ski geometry/texture factory, parents children to the physics drivers — renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
