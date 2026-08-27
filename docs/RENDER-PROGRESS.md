@@ -100,7 +100,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: settle-v2 + straighten-v2 verified at geometry level in iter-26 probes (forearm residual 4.2 mm) but NOT landed — two arm-gate metrics + leg-profile fingertip pollution block the build (entry 26); repair first of 27** |
-| — | Iteration-23 mandatory item 2 | **BASELINE MEASURED (iter 25); fix + gates first of 27** | ready state: skis lie ALONG the fall line (pairVsFall 0°, expected ≈90°) — readyYaw/turn never reaches the ski drivers; boot-cluster vs ski yaw 20.7–22.7° both states (gate ≤5°); numbers + interpretation in entry 25 |
+| — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); boot yaw open** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; boot-vs-ski ~21° bind residual NOT fixable renderer-side this window — rebuild note in entry 28 |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -219,6 +219,88 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 28 — Ski drivers follow readyYaw (mandatory item 1 of the next-work-iteration order): composition fixed, seating re-derived, permanent heading gates; boot-yaw item documented for the rebuild; hop turn NOT started
+
+Reviewer order (08:25–08:27): ski alignment ONLY, then hop turn; no arm work. Item 1
+landed and verified; item 2 (boot ∥ ski ≤ 5°) measured but NOT landable renderer-side
+this window (numbers + mechanism note below); item 3 (hop turn from keypoints) not
+started — first of 29 alongside the arm-repair session. Scratch
+`~/aerial-agents/scratch/iter-28/` keeps `traces-old/` (pre-capture HEAD traces) +
+`audit28.js` (buggy first audit; the numbers below come from the corrected inline
+walker).
+
+**Root cause + fix (`game.js`, ready-stance seating block).** Entry-26's failed
+attempt (`qFlatY = Ry(readyYaw) × qFlat`) composed yaw OUTSIDE the pitch: the ski
+ended banked ~68° (deck normal carried a sinθ horizontal component), its bottom face
+no longer coincided with the slope plane, and the 20-sample seat read a 0.58 m
+misfit — that number was the bank geometry, not "authored-around frames" mystique.
+The correct construction is `qFlat = Rx(_slope) · Ry(π + readyYaw)` (yaw INSIDE):
+once the ski length points across the hill, world X is its own long axis, so the
+outer Rx rolls it about that axis and BOTH spans of the bottom face stay in the
+slope plane for EVERY heading (verified analytically: n·ẑ_col = n·x̂_col = 0
+identically in φ). `φ = π + readyYaw` pins tips (local −z, same as boot toe) to +x
+pre-turn and +z downhill at handoff; `qLocal = qRoot⁻¹ × qFlat` stays constant
+through the turn and → Rx(−θ)·Ry(π) at the handoff. Everything else in the block
+was already root-frame-consistent and survived unchanged: the δ side-gap lift
+(pair separation ±0.075 maps along the fall line via the ROOT yaw — independent of
+ski heading), the L-leg flexion coupling, the two-pass +2 mm seat, and the corner
+sampling (qRoot × qLocal ≡ target by construction).
+
+**Measured (drive probes + permanent gates).** Pre-turn tip headings 90.00°/90.00°
+from the fall line (was ≈0° = along); post-turn 0.00°/0.00°; both skis identical;
+root yaw −90° → 180° as before. Permanent gates added to `ready-stance.spec.js`:
+pair across ≤ 8° of across pre-turn, ≤ 8° of the fall line post-turn, measured as
+the ski axis projected on the TERRAIN PLANE (the horizontal projection degenerates
+once the root carries the 22° pitch — the naive atan2(z,x) reads 90° at handoff).
+
+**Boot ∥ ski (item 2) — NOT landed; rebuild note.** Rendered-truth multi-pick
+raycast clusters above each ski (toe/heel binding anchors): post-turn residual
+L +3.3° / R −3.3° (mirrored), ready-state L +21.6° — but the instrument is not
+gate-grade yet: post-turn cluster anisotropy 0.42–0.51 (near-degenerate PCA axis,
+values flap by construction), ready-R column body-occluded (13–18 hits vs 99–187),
+and an in-page rotation.y calibration sweep (−30°..30°, knee-pivot-compensated
+driver-frame correction = absolute `rotation.y` + centre-offset re-rotation about
+the knee, root-local conventions as the pike fixup) showed no reliable response in
+the window available. A first vertex-skinning probe (linear blend via
+`bone.getFinalMatrix()`) reconstructed poses ~8 m off the node frames — loader
+bind conventions; do not reuse that path for measurement without fixing it. The
+mechanism itself is sound (boots are skin-weighted to `lowerLeg*`; `applyPose`
+never writes `rotation.y`, so a set-yaw persists) but needs its own verification
+cycle for the pivot-frame coupling; OR it dies with the rebuild that re-bakes the
+boot clusters on axis. Gate deliberately NOT added (a failing gate must not ship);
+entry-25's "20.7–22.7° both states" baseline stands re-contextualised by the
+numbers above.
+
+**Verification.** `npm run test:unit` **74/74**; `ready-stance` green incl. the two
+new gates; `rig` **7/7** (styled-ski gates unchanged: len 1.5500, bottom plane
+−0.015, tip rise 4.76 cm); golden **30/30 after an audited re-capture** — 22 trace
+files changed, and the corrected field walker shows: **zero `state.*` diffs in any
+scenario**, pool/trampoline byte-identical, and every other change confined to
+frame 0's ready-state sample (`skiL`/`skiR` quats + their toe/heel/brake binding
+children's world positions) — the exact class of the standing
+`APPROVED: ready-stance trace re-capture, provided flight/landing fields are
+byte-identical`. `look` regenerated and inspected directly (I can view PNGs):
+`figure_front.png` — skis now run ACROSS the hill under the boots with the navy
+graphic + bindings perpendicular to the fall line (entry-25's "skis run into the
+distance while boots point across" is gone); `scene.png` — ready stance reads as a
+ski line across the corridor between the fence lines; trees/fence/kicker/shadows
+unchanged. `index.html` scripts `?v=15 → 16` (game.js touched). `ASSET_V`
+unchanged (no `assets/` regeneration). No `engine/` edits. Drive specs NOT rerun
+standalone this session: terrain-corridor, venue-dressing, shadows, baked,
+grey-ramp (game.js change is confined to the ready-state block they don't
+measure; full suite rides the next mixed run).
+
+**Open questions for the reviewer**
+- Boot-yaw disposition: spend a dedicated window landing the knee-pivot
+  driver-frame correction (mechanism + numbers above), or fold the ~21° boot bake
+  into the arm-repair rebuild (one Blender session closes both)? My recommendation:
+  fold into the rebuild — one bake fixes the geometry at the source instead of a
+  permanent per-frame display compensation, and the ARM GATES session already
+  rebuilds the athlete.
+- The instrument debt is recorded (multi-pick cluster PCA + anisotropy floor);
+  if you want the ≤5° gate before the rebuild lands, say so and I will harden the
+  probe (vertex-level ownership instead of raycast clusters) as its own slice.
 
 ### 26 — Mandatory item 1 (arm-chain repair) root-caused to arithmetic + two gate-design defects; NOT landed; item 2 unstarted — both first of 27
 

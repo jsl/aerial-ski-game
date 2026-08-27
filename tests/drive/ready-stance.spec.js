@@ -11,6 +11,12 @@
 // gated at 9 cm until P1 reconciles the run's visual seating).
 const { test, expect } = require('@playwright/test');
 
+// Angular distance of heading a (deg) from target deg, folded to [0,180].
+const foldDistTo = (a, target) => {
+    let d = ((a - target) % 360 + 540) % 360 - 180;
+    return Math.abs(d);
+};
+
 test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at sides; turn returns in-run posture', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
@@ -70,6 +76,29 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
         };
         const hipZL = scene.getMeshByName('upperLegL').position.z;
         const hipZR = scene.getMeshByName('upperLegR').position.z;
+        // Ski drivers must carry the body's readyYaw (iter-28 fix): with the
+        // old qFlat = Rx(_slope) target the conjugate composition cancelled the
+        // root's yaw entirely and the skis sat along the fall line in BOTH
+        // states. Now qFlat = Rx(_slope)·Ry(π + readyYaw) so the composite
+        // world orientation contains the yaw. Heading is measured as the ski
+        // long-axis projected onto the TERRAIN PLANE (horizontal projection
+        // degenerates once the root carries the 22° pitch) — 0° = down the
+        // fall line, ±90° = across the hill. Tip = local −z.
+        const _sl = (probe.last && probe.last.slope) || 0;
+        const _sp = Math.sin(_sl), _cp = Math.cos(_sl);
+        const F = { x: 0, y: -_sp, z: _cp };      // downhill along the surface
+        const A = { x: 1, y: 0, z: 0 };           // across the hill
+        const skiHeadDeg = {};
+        for (const nm of ['skiL', 'skiR']) {
+            const sk = scene.getMeshByName(nm);
+            const qS = sk.rotationQuaternion
+                ? sk.rotationQuaternion
+                : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, sk.rotation.x || 0);
+            const tipW = rot(qRoot, rot(qS, { x: 0, y: 0, z: -1 }));
+            const pF = tipW.x * F.x + tipW.y * F.y + tipW.z * F.z;
+            const pA = tipW.x * A.x + tipW.y * A.y + tipW.z * A.z;
+            skiHeadDeg[nm] = Math.atan2(pA, pF) * 180 / Math.PI;
+        }
         return {
             readyState: g.readyState,
             readyTurnT: g.readyTurnT !== undefined ? g.readyTurnT : probe.readyTurnT,
@@ -78,6 +107,7 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
             flexL, flexR,
             handHipZL: Math.abs(handZ('lowerArmL') - hipZL),
             handHipZR: Math.abs(handZ('lowerArmR') - hipZR),
+            skiHeadDeg,
         };
     });
 
@@ -92,6 +122,14 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
         }
     }
     expect(ready.skiRollDeg, 'ski rolled flat onto the slope plane').toBeLessThanOrEqual(2);
+    // iter-28 gates: the pair lies ACROSS the hill beside the boots while
+    // waiting (measured 90.00°/90.00° on the fixed tree; was ≈0°).
+    for (const nm of ['skiL', 'skiR']) {
+        const a = ready.skiHeadDeg[nm];
+        const distAcross = Math.min(foldDistTo(a, 90), foldDistTo(a, -90));
+        expect(distAcross, `${nm} pair lies across the hill before the turn (≤8° of across)`)
+            .toBeLessThanOrEqual(8);
+    }
     expect(ready.torsoTiltDeg, 'torso vertical in world while waiting').toBeLessThanOrEqual(3);
     expect(ready.flexL - ready.flexR, 'uphill knee flexes ≥ 10° more than downhill')
         .toBeGreaterThanOrEqual(10 * Math.PI / 180);
@@ -107,14 +145,53 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const probe = window._readyStanceProbe();
         const flex = (t, s) => Math.abs(t.rotation.x - s.rotation.x);
+        // same terrain-plane heading helper as the ready block (evaluate
+        // scope is separate); 0° = down the fall line, ±90° = across
+        const probeSlope = (probe.last && probe.last.slope) || 0;
+        const sp = Math.sin(probeSlope), cp = Math.cos(probeSlope);
+        const F = { x: 0, y: -sp, z: cp };
+        const skiHeadDeg = {};
+        for (const nm of ['skiL', 'skiR']) {
+            const sk = scene.getMeshByName(nm);
+            if (!sk) continue;
+            const qS = sk.rotationQuaternion
+                ? sk.rotationQuaternion
+                : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, sk.rotation.x || 0);
+            const rot = (q, v) => {
+                const px = q.w * v.x + q.y * v.z - q.z * v.y;
+                const py = q.w * v.y + q.z * v.x - q.x * v.z;
+                const pz = q.w * v.z + q.x * v.y - q.y * v.x;
+                const pw = -q.x * v.x - q.y * v.y - q.z * v.z;
+                return {
+                    x: px * q.w + pw * -q.x + py * -q.z - pz * -q.y,
+                    y: py * q.w + pw * -q.y + pz * -q.x - px * -q.z,
+                    z: pz * q.w + pw * -q.z + px * -q.y - py * -q.x,
+                };
+            };
+            const root = scene.getMeshByName('skierRoot') || scene.getNodeByName('skierRoot');
+            const tipW = rot(root.rotationQuaternion, rot(qS, { x: 0, y: 0, z: -1 }));
+            const pF = tipW.x * F.x + tipW.y * F.y + tipW.z * F.z;
+            const pA = tipW.x; // across unit is world X
+            skiHeadDeg[nm] = Math.atan2(pA, pF) * 180 / Math.PI;
+        }
         return {
             readyTurnT: probe.readyTurnT,
             skiL: probe.skis.skiL, skiR: probe.skis.skiR,
             flexL: flex(scene.getMeshByName('upperLegL'), scene.getMeshByName('lowerLegL')),
             flexR: flex(scene.getMeshByName('upperLegR'), scene.getMeshByName('lowerLegR')),
+            skiHeadDeg,
         };
     });
     expect(after.readyTurnT, 'turn animation completed').toBe(1);
+    // iter-28 gates: skis point down the fall line after the turn (measured
+    // ≈0°/0° on the fixed tree; the pose hand-back keeps them there).
+    for (const nm of ['skiL', 'skiR']) {
+        if (after.skiHeadDeg[nm] === undefined) continue; // hand-off state
+        const a = after.skiHeadDeg[nm];
+        const distFall = Math.min(foldDistTo(a, 0), foldDistTo(a, 180));
+        expect(distFall, `${nm} points down the fall line after the turn (≤8° of fall line)`)
+            .toBeLessThanOrEqual(8);
+    }
     for (const ski of ['skiL', 'skiR']) {
         const s = after[ski];
         expect(s.samples.length, `${ski} still sampled`).toBe(5);

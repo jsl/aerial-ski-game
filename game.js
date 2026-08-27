@@ -5497,10 +5497,25 @@ function _startGame() {
             const _rEps  = 0.05;
             const _rDydz = (terrainRootY(state.posZ + _rEps) - terrainRootY(state.posZ - _rEps)) / (2 * _rEps);
             const _slope = Math.atan(Math.abs(_rDydz));   // slope magnitude at the athlete
-            // World-space orientation of a ski lying flat on the slope plane.
-            const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope);
+            // World-space target for each ski: lie flat ON the slope plane AND
+            // follow the body through the ready turn. Compose yaw INSIDE the
+            // pitch (Rx∘Ry): once the ski length points across the hill, world X
+            // is its own long axis, so the outer Rx rolls it about that axis and
+            // the bottom plane coincides exactly with the slope plane for EVERY
+            // heading (both spans of the bottom face stay in-plane throughout).
+            // Φ = π + readyYaw keeps the visual tip (local −z, same as the boot
+            // toe) co-aligned: pre-turn φ=3π/2 puts tips across-hill beside the
+            // boots; readyTurnT→1 brings them down the fall line with no bind.
+            // (Iter-28 fix: the old qFlat = Rx(_slope) alone pinned the skis'
+            // WORLD orientation to the fall line — the conjugate composition
+            // then cancelled the root's readyYaw, which is why the skis never
+            // turned with the body.)
+            const _skiYaw = Math.PI + ((1.0 - readyTurnT) * (Math.PI / 2));
+            const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope)
+                .multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _skiYaw));
             const qRoot  = character.root.rotationQuaternion;
-            // Ski-local roll that composes with the (yawed) root to qFlat.
+            // Ski-local roll+heading residual that composes with the yawed
+            // root to the world target (qRoot × qFlat ≡ target by construction).
             const qLocal = qRoot.conjugate().multiply(qFlat);
             const _u     = readyTurnT;
             const _blend = _u * _u * (3 - 2 * _u);        // smoothstep handoff
