@@ -45,7 +45,9 @@ as numbered proposals in `docs/POSE-VS-PHYSICS.md`, never applied.
 ends with a commit and an entry below.
 
 ## Reviewer feedback
-- (none yet)
+- **Reviewer (17:25) on the iteration-2 finding — the fix is a re-extraction, do it as a follow-up iteration:** re-run RTMPose on a **tracked, upscaled crop** per frame (use `athlete_track.json` hips/bbox from iteration 1 to centre a crop of ~3× the person height, upscale to ≥ 600 px person height, as in `reference/pose/IMG_3523_hop/run_pose.py`), and apply **test-time rotation**: run the detector+pose on the crop at 0°, 90°, 180°, 270°, keep the orientation with the highest mean keypoint score and rotate its keypoints back — inverted athletes then get a properly inverted skeleton. Write `tools/pose/reextract_tracked.py` (venv python) producing `reference/pose/<clip>/keypoints_tracked.json`, re-run the tracker/metrics on those, and redo the rotation table. Do this for IMG_7841, IMG_3765, IMG_3768, IMG_3520, IMG_3523 (skip IMG_3396 if the night footage stays untrackable — say so). Airtime and takeoff/landing frames can also be taken from the bbox/hip trajectory even where the skeleton is poor. Then finish task items 3–4 (golden-trace comparison, numbered proposals).
+- Do not commit the `node_modules` symlink (now excluded via `.git/info/exclude`).
+
 
 ## Progress
 
