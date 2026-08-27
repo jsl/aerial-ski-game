@@ -18,8 +18,11 @@
 const { test, expect } = require('@playwright/test');
 
 // Enough of the receiver set to prove the sidecar is being matched by name,
-// including one of the wide flanking slabs and one transition segment.
-const RECEIVERS = ['landing', 'outrun', 'slope', 'wLanding', 'trans_seg_8'];
+// including a wide flanking slab and a junction filler. The P1 corridor ribbon
+// is deliberately NOT lightmapped (it samples terrainRootY directly and keeps
+// the bright plain snowMat), so its predecessor names were removed from the
+// atlas here.
+const RECEIVERS = ['wLanding', 'wInrun', 'corner_trans_table'];
 
 async function boot(page) {
     await page.goto('/index.html');

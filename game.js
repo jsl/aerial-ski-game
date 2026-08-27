@@ -705,6 +705,9 @@ const _physicsCfg = AerialEngine.aerialSki.makePhysicsConfig({
 
 const terrainRootY  = (z) => AerialEngine.aerialSki.terrainRootY(z, _terrainCfg);
 const terrainAccelZ = (z) => AerialEngine.aerialSki.terrainAccelZ(z, _terrainCfg);
+// Probe access for tests/drive/terrain-corridor.spec.js (and any future surface
+// checks); plain data, no behaviour attached.
+window._terrainCfg = _terrainCfg;
 // Binary-search for bezier parameter t where bz(t)≈z, return by(t).
 
 
@@ -1933,49 +1936,101 @@ function _startGame() {
 
     const kickerWidth = 3.4; // all hills use double width
 
-    // Straight inrun slope (SLOPE_START_Z → TRANS_START_Z)
-    const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
-        { width: 10, height: 1.2, depth: (TRANS_START_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
-    slopeBox.rotation.x = SLOPE_ANGLE;
-    // KNOWN DEFECT, documented (P1 reconciles it): the centre offset is -0.6,
-    // not -0.6/cos(SLOPE_ANGLE), so this tilted box's top face sits 4.7 cm
-    // ABOVE the physics surface plane. The cos-corrected centre was tried
-    // (iteration 9) and the corridor top face rendered near-black (grey-ramp
-    // corridor 0.7778 -> 0.06-0.10); mechanism unattributed within the
-    // iteration's budget — bake UV2 length-guard ruled out, ski/tree caster
-    // lists ruled out, the ready-stance block ruled out. Reverted; the P1
-    // continuous-terrain rebuild replaces this box entirely.
-    slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + TRANS_START_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + TRANS_START_Z) / 2);
-    slopeBox.material = snowMat;
-
-    // Transition curve (TRANS_START_Z → TRANS_END_Z) — segmented to follow bezier visually
+    // ── P1 slice 1: ONE continuous corridor ribbon sampled from the exact physics profile ──
+    // Replaces slopeBox, the 16 trans_seg_* boxes, flatTable, flatTableFull,
+    // landing, outrun and start. Every vertex y comes from
+    // terrainRootY(z) - FOOT_OFFSET — the same function the physics rides — so
+    // surface and physics can no longer disagree along z (the old slabs were
+    // rotated boxes with chord/gap errors; the documented 4.7 cm slopeBox face
+    // defect died with it). Sample spacing is adaptive: ≤0.25 m through every
+    // curved zone (transition bezier, kicker curve, knuckle + roll-out blends),
+    // with duplicated rows at hard breaks (kicker back wall) so shared-vertex
+    // normals never smear across them.
     {
-        const N_TRANS = 16;
-        for (let ti = 0; ti < N_TRANS; ti++) {
-            const z0 = TRANS_START_Z + (ti / N_TRANS) * TRANS_LEN * 2;
-            const z1 = TRANS_START_Z + ((ti + 1) / N_TRANS) * TRANS_LEN * 2;
-            const zm = (z0 + z1) / 2;
-            const y0 = terrainRootY(z0) - FOOT_OFFSET;
-            const y1 = terrainRootY(z1) - FOOT_OFFSET;
-            const dz = z1 - z0, dy = y1 - y0;
-            const segLen = Math.sqrt(dz*dz + dy*dy);
-            const angle  = Math.atan2(dy, dz);
-            const seg = BABYLON.MeshBuilder.CreateBox('trans_seg_' + ti,
-                { width: 10, height: 1.2, depth: segLen + 0.02 }, scene);
-            seg.rotation.x = -angle;
-            seg.position.set(0,
-                terrainRootY(zm) - FOOT_OFFSET - 0.6 * Math.cos(angle),
-                zm + 0.6 * Math.sin(angle));
-            seg.material = snowMat;
+        const XC = [-5, -3.6, -2.6, -1.75, -0.85, 0, 0.85, 1.75, 2.6, 3.6, 5];
+        const profY = (z) => terrainRootY(z) - FOOT_OFFSET;
+        const zones = [
+            [SLOPE_START_Z - 20, TRANS_START_Z,                 0.75],  // start plateau + in-run
+            [TRANS_START_Z,      TRANS_END_Z,                   0.15],  // transition bezier
+            [TRANS_END_Z,        KICKER_START_Z,                0.35],  // table
+            [KICKER_START_Z,     KICKER_END_Z,                  0.08],  // kicker curve
+            [KICKER_END_Z,       LANDING_START_Z,               0.08],  // lip → wall → landing bowl start
+            [LANDING_START_Z,    LANDING_START_Z + LANDING_TRANS_LEN, 0.10], // C1 knuckle blend
+            [LANDING_START_Z + LANDING_TRANS_LEN, OUTRUN_Z - OUTRUN_TRANS_LEN, 0.50], // straight landing
+            [OUTRUN_Z - OUTRUN_TRANS_LEN, OUTRUN_Z,             0.12],  // C1 roll-out blend
+            [OUTRUN_Z,           OUTRUN_Z + 90,                 1.00],  // outrun
+        ];
+        const zs = [];
+        for (const [z0, z1, step] of zones) {
+            const n = Math.max(1, Math.ceil((z1 - z0) / step));
+            for (let i = 0; i < n; i++) zs.push(z0 + ((z1 - z0) * i) / n);
         }
-    }
+        zs.push(zones[zones.length - 1][1]);
+        // Exact rings at every physics branch boundary: without them the joint
+        // interpolates across whatever quad happens to straddle it (measured
+        // 14 mm artefact at the start plateau join).
+        const JOINS = [
+            SLOPE_START_Z, TRANS_START_Z, TRANS_END_Z, KICKER_START_Z,
+            KICKER_END_Z, LANDING_START_Z, LANDING_START_Z + LANDING_TRANS_LEN,
+            OUTRUN_Z - OUTRUN_TRANS_LEN, OUTRUN_Z,
+        ];
+        zs.push(...JOINS);
+        zs.sort((a, b) => a - b);
 
-    // Flat table — extends from transition all the way to the back-face block
-    const _tableTopY = _KBP_tY - FOOT_OFFSET;
-    const flatTableBox = BABYLON.MeshBuilder.CreateBox('flatTable',
-        { width: 10, height: 1.2, depth: KICKER_END_Z + 0.5 - TRANS_END_Z }, scene);
-    flatTableBox.position.set(0, _tableTopY - 0.6, (TRANS_END_Z + KICKER_END_Z + 0.5) / 2);
-    flatTableBox.material = snowMat;
+        const positions = [], indices = [];
+        const DEG = Math.PI / 180;
+        const eps = 0.01;
+        const slopeAt = (z) => Math.atan(
+            (profY(Math.min(z + eps, OUTRUN_Z + 89)) - profY(Math.max(z - eps, SLOPE_START_Z - 19))) / (2 * eps));
+        const rows = zs.map((z) => ({ z, slope: slopeAt(z) }));
+
+        // Strips: consecutive rings wound together. At a hard break (>20 deg
+        // slope change) the last ring is duplicated so both sides carry their
+        // own shared normals instead of smearing across the joint.
+        const strips = [];
+        let cur = [];
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            if (!cur.length) { cur.push(r); continue; }
+            const p = cur[cur.length - 1];
+            if (Math.abs(r.slope - p.slope) > 20 * DEG) {
+                strips.push(cur);
+                const dup = { z: p.z, slope: p.slope, dup: true };
+                cur = [dup, r];
+            } else {
+                cur.push(r);
+            }
+        }
+        if (cur.length) strips.push(cur);
+
+        let base = 0;
+        for (const st of strips) {
+            const first = base;
+            for (const r of st) {
+                for (const x of XC) positions.push(x, profY(r.z), r.z);
+                base += XC.length;
+            }
+            for (let ri = 1; ri < st.length; ri++) {
+                const a = first + (ri - 1) * XC.length, b = first + ri * XC.length;
+                for (let c = 0; c < XC.length - 1; c++) {
+                    indices.push(a + c, a + c + 1, b + c,
+                                 a + c + 1, b + c + 1, b + c);   // CCW seen from above (+y)
+                }
+            }
+        }
+
+        const ribbon = new BABYLON.Mesh('terrainCorridor', scene);
+        const vd = new BABYLON.VertexData();
+        vd.positions = positions;
+        vd.indices = indices;
+        const normals = [];
+        BABYLON.VertexData.ComputeNormals(positions, indices, normals);
+        vd.normals = normals;
+        vd.applyToMesh(ribbon);
+        ribbon.material = snowMat;
+        ribbon.receiveShadows = true;
+        window._terrainCorridorReady = true;
+    }
 
     // Kicker bezier — uses exact same _kBP control points as physics → mesh matches surface.
     // P0/P1 at table height → flat entry, steepens continuously, no dip below table.
@@ -2124,36 +2179,6 @@ function _startGame() {
         edgeTubeR.material = cornerMat;
     }
 
-    const _backFaceEndZv  = KICKER_END_Z + 0.5;
-    const _landingStartZv = LANDING_START_Z;
-    // One flat table slab covering from transition end all the way to start of landing slope
-    const flatTableFullBox = BABYLON.MeshBuilder.CreateBox('flatTableFull',
-        { width: 10, height: 1.2, depth: _landingStartZv - TRANS_END_Z }, scene);
-    flatTableFullBox.position.set(0, _KBP_tY - FOOT_OFFSET - 0.6, (TRANS_END_Z + _landingStartZv) / 2);
-    flatTableFullBox.material = snowMat;
-    const landingMidZ = (_landingStartZv + OUTRUN_Z) / 2;
-    const landingDepth = OUTRUN_Z - _landingStartZv;
-    const landingBox = BABYLON.MeshBuilder.CreateBox('landing',
-        { width: 10, height: 1.2, depth: landingDepth / Math.cos(LANDING_ANGLE) }, scene);
-    landingBox.rotation.x = LANDING_ANGLE;
-    landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), landingMidZ);
-    landingBox.material = snowMat;
-
-    // Flat outrun (90 units long)
-    const OUTRUN_LEN  = 90;
-    const outrunMidZ  = OUTRUN_Z + OUTRUN_LEN / 2;
-    const outrunBox = BABYLON.MeshBuilder.CreateBox('outrun',
-        { width: 10, height: 1.2, depth: OUTRUN_LEN }, scene);
-    outrunBox.position.set(0, terrainRootY(OUTRUN_Z) - FOOT_OFFSET - 0.6, outrunMidZ);
-    outrunBox.material = snowMat;
-
-
-    // Flat start area (behind slope start)
-    const startBox = BABYLON.MeshBuilder.CreateBox('start',
-        { width: 10, height: 1.2, depth: 20 }, scene);
-    startBox.position.set(0, -FOOT_OFFSET - 0.6, SLOPE_START_Z - 9);
-    startBox.material = snowMat;
-
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
     {
     const tkMat = makePBR('trunkMat', scene);
@@ -2258,7 +2283,8 @@ function _startGame() {
     }
     // Landing slope
     {
-        const depth = landingDepth / Math.cos(LANDING_ANGLE) + 2;
+        const depth = (OUTRUN_Z - LANDING_START_Z) / Math.cos(LANDING_ANGLE) + 2;
+        const landingMidZ = (LANDING_START_Z + OUTRUN_Z) / 2;
         const wb = BABYLON.MeshBuilder.CreateBox('wLanding', { width: 110, height: 1.6, depth }, scene);
         wb.rotation.x = LANDING_ANGLE;
         wb.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.88 / Math.cos(LANDING_ANGLE), landingMidZ);
@@ -2266,7 +2292,7 @@ function _startGame() {
     }
     // Flat outrun + beyond
     {
-        const depth = OUTRUN_LEN + 100;
+        const depth = 90 + 100;
         const midZ  = OUTRUN_Z + depth / 2 - 10;
         const wb = BABYLON.MeshBuilder.CreateBox('wOutrun', { width: 110, height: 1.6, depth }, scene);
         wb.position.set(0, valleyFloorY - 0.88, midZ);
