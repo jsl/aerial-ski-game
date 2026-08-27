@@ -781,9 +781,19 @@ function _startGame() {
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
-    hemi.intensity   = 0.18; // IBL now supplies the ambient fill (see environmentTexture);
-                         // leaving this at 0.45 double-counted it and blew the image out
-    hemi.groundColor = new BABYLON.Color3(0.18, 0.22, 0.30); // cool shadow fill from below
+    hemi.intensity   = 0.42; // IBL supplies part of the fill (see environmentTexture);
+                         // this split re-tuned in iter 17 (kicker faces, below)
+    // Sky fill is COOL (blue dome) — and the ground term is a bright snow
+    // bounce, not a dark cave floor. A snowfield's vertical faces (the kicker
+    // block's side/back walls) receive almost none of the hemi SKY term
+    // (dot(n, up) clamps to 0) and no direct sun, so their look used to be
+    // dominated by the IBL horizon band — which is warm: the block rendered
+    // plywood-tan instead of shaded white snow (iter-17 probe: face r−b ≈
+    // +0.03 warm; with this rig b−r ≈ −0.02 cool, luminance inside the snow
+    // band). A real snowfield bounces ~albedo-0.9 light onto verticals from
+    // every side; groundColor is that bounce.
+    hemi.diffuse     = new BABYLON.Color3(0.85, 0.92, 1.0);
+    hemi.groundColor = new BABYLON.Color3(0.40, 0.46, 0.55);
 
     // Directional sun light — afternoon angle from upper-left-back
     const sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.35, -1, 0.45), scene);
@@ -842,8 +852,13 @@ function _startGame() {
         scene.environmentTexture = BABYLON.CubeTexture.CreateFromPrefilteredData(
             'assets/environment.env', scene);
         // Tuned against the existing hemi+sun rig rather than replacing it: the
-        // directional sun still casts the shadows, IBL supplies the ambient fill.
-        scene.environmentIntensity = 0.45;
+        // directional sun still casts the shadows, IBL supplies part of the
+        // ambient fill. Iter 17: 0.45 → 0.32 — the env's horizon band is warm
+        // and it is the ONLY light vertical faces were getting (hemi's sky term
+        // zeroes on horizontal normals), which painted the kicker block's
+        // side/back walls plywood-tan. The cool hemi rig above now carries the
+        // vertical fill; measured A/B in tests/drive + RENDER-PROGRESS entry 17.
+        scene.environmentIntensity = 0.32;
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }

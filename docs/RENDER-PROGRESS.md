@@ -74,9 +74,10 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
-| P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables |
-| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.7986 > corridor 0.7949 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7, re-verified iters 13 and 15 (corridor 0.7949 ≥ flanks 0.7918/0.8058) |
+| P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables, **slice 2 flank continuity (reviewer order-17 half, moved to 18 — diagnosis notes in entry 17)** |
+| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open** |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; open: wands, knoll flag, judges' deck, coach figures |
+| — | Reviewer order 17: kicker block faces | **landed (iter 17)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js` |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
@@ -141,6 +142,94 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 17 — Reviewer order 17 (part): kicker block faces read snow again — root cause in the light rig, not a material
+
+Order-17 was kicker faces + ribbon–flank continuity. The faces item turned out
+to be a deep root-cause fix and consumed the session; **flank continuity (P1
+slice 2) did not start** and moves to 18 with diagnosis notes below. Scratch
+dir unused (probes ran as temp specs in-tree, deleted before commit).
+
+**Kicker faces — diagnosis (measure first paid off).** Every hypothesis about a
+tan material was wrong: a pick probe through the beige band named
+`terrainCorridor` / `kicker_fill_*` / `kickerBackFace` — **all snowMat**, world
+normal exactly (−1, 0, 0). Light-deletion A/B on the face box (mean rgb):
+baseline **(0.554, 0.515, 0.521)** — warm (r−b +0.033), lum ≈ 0.52, i.e.
+plywood. IBL off → lum −0.26 (still warm); sun off / hemi off → still warm ⇒
+the warmth rides the IBL. Sun-only with all shadows removed: face gets
+**0.39×** the flat-snow diffuse (consistent with n·l ≈ 0.30–0.39 for the sun
+direction). SSAO off → no change (innocent); bump off → no change. Root cause:
+the block's VERTICAL faces receive ~zero hemispheric SKY term (dot(n, dir) ≤ 0
+for the up-biased hemi), a 0.30–0.39 share of direct sun, and everything else
+from the env map's warm horizon band at intensity 0.45 plus the old dark
+groundColor (0.18, 0.22, 0.30) × 0.18. Flat snow, lit by sun + sky term, never
+showed the defect — which is why only the block read plywood.
+
+**Fix (`game.js`, renderer lighting only).** hemi intensity 0.18 → **0.42**,
+diffuse cooled to (0.85, 0.92, 1.0), groundColor is now a snow-bounce
+(0.40, 0.46, 0.55) instead of a cave floor; `environmentIntensity` 0.45 →
+**0.32**. In-page sweep chose the split: env 0.28–0.32 / hemi 0.38–0.45 puts
+the wall inside the snow band (b ≥ r) at ~0.63 lum; lower env variants lose
+flat-snow brightness for no chroma gain.
+
+**New permanent gate — `tests/drive/kicker-faces.spec.js`.** Side camera on the
+block (the reviewer's vantage); the block's visible silhouette is located by
+pick grid (fill boxes + back face + angled segments; 518 sample pts), pixels
+classified against a flat-snow reference box. Gates: r−b ≤ 0.005 (cool), lum ∈
+(0.55, 0.95), warmFrac < 2%, within 0.25 lum of flat snow. Measured on the
+fixed rig: **block lum 0.6361, r−b −0.0113, warmFrac 0.0019** (was r−b +0.033);
+flatSnow 0.8278. Scene and figure shots inspected: block white/cool from the
+side and ready views; figure unchanged (athlete untouched).
+
+**Incidental P2 movement (numbers, not a claim of done).** The rebalance
+brightened every snow top ~+0.03 while the sky (emissive, light-independent)
+stayed 0.7986: corridor **0.821** > **sky 0.7986** — the "snow must be the
+brightest surface in frame" gate now READS satisfied on the shared harness
+(kicker sun-face 0.8017, inrun 0.8101, flanks 0.815/0.828). Grey-ramp gates
+pass with more margin (corridor ≥ darkest flank − 0.02 → now +0.006/+0.007 the
+other way). Under-athlete shadow drop **79.7%** (0.163 vs ringMax 0.8053) —
+CSM quick win intact; no acne/peter-panning seen in shots. P2's remaining
+scope (sun disc, fog re-tune, post 1.6→1.2, real sky model) unchanged.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** (physics untouched, no trace changes); full drive suite **44 passed
+/ 2 skipped** (8.8 m) including the new kicker-faces gate and all light-
+sensitive specs (grey-ramp, shadows, materials, textures, baked, terrain-
+corridor, venue-dressing, ready-stance, rig, look). `index.html` scripts
+`?v=10 → 11`. `ASSET_V` unchanged (no `assets/` regeneration). No `engine/`
+edits. Working tree contains only `game.js`, `index.html`, the new spec, and
+this doc.
+
+**Open / next (reviewer order 18–20).**
+1. **18: P1 slice 2 — ribbon–flank continuity** (the deferred half of 17).
+   Diagnosis already in hand: the six `w*` fills are 1.6 m-thick boxes at
+   different slope angles (wInrun/wTable rotated, wLanding rotated, wOutrun/
+   wStartPlat flat) + four `corner_*` filler slabs (lsMat); they meet the
+   ribbon (±5 m, snowMat) with an angle + normal discontinuity, worst z ≈
+   50–60 per the reviewer. Fix = rebuild the fills as the ribbon's lateral
+   extension: extend the ribbon builder's XC columns (game.js ≈ 1979–2063)
+   outward with a banked-shoulder profile that eases into the flank slope,
+   shared vertices/normals across the corridor edge (the >5° gate), then
+   skirts + base plane + `backFaceCulling=false` for the solid-ground
+   requirement — the `corner_*` fillers and probably some `w*` boxes then
+   retire. Beware: build-time picks are unreliable during script evaluation
+   (b-net lesson) — seed flank heights from `terrainRootY`, reseat by pick
+   only if a pick is unavoidable.
+2. **18–19: the ONE Blender rebuild bundle** (straight arms, loose suit,
+   cranium/brim, bib 30, 155 cm mogul skis + the APPROVED proportions/ski-
+   length rebaseline, own physics commit first).
+3. **20: review.** Rebake surgery remains the spare-budget filler; lightmap
+   stays off until then.
+
+**Open questions for the reviewer**
+- The env map (`assets/environment.env`) has a warm horizon; any vertical
+  surface inherits its cast. The P2 sky/sun work may want to re-open the
+  env/hemi split (now 0.32/0.42) once the sun disc + post-contrast land —
+  flagging so the kicker gate's numbers are re-read then, not assumed stable.
+- The hemi boost is scene-wide: dark undersides (boot soles, ribbon cliffs)
+  brightened too. Nothing regressed in any gate, but if the author feels the
+  shadows are now too pale for the footage, the first knob is groundColor
+  (0.40, 0.46, 0.55), not intensity.
 
 ### 16 — Reviewer order 16: blue B-net fencing both edges (P3 slice 1) + review-measure corridor-box port + tree-trunk stopgap
 
