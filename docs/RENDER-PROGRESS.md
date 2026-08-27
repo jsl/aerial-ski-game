@@ -83,6 +83,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
 | — | Terrain lightmap | **disabled (iter 13, reviewer order 1)** | stale pre-P1 bake painted a 9.29%-black ready-view band; `applyBakedLighting` early-returns behind `_bakeLightmapEnabled=false`; baked.spec asserts the off-state + ready-view black32 < 0.5% (measured 0.026%); compare.spec BAKE_AB=1 opt-in; flip back to true WITH the rebake commit and restore the on-state assertions |
+| — | Reviewer order 3: `main` clearance comparison | **landed (iter 14)** | `tools/clearance-compare.js` on `main` b0aa043 / pre-P1 8797666 / HEAD: physics-surface tables byte-stable across trees except ready-seat floor (main −0.0059..+0.1748 vs branch +0.0020/+0.0941) and the C1 fillet halving ride-out dip (−0.1564→−0.0775); slab-era visual misgeometry quantified (kicker join chords to −0.79 m, landing slab ends ±9.9 m); entry 14 |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
@@ -136,6 +137,87 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 14 — Reviewer order 3: `main` vs branch-before vs branch-after whole-run clearance tables
+
+The comparison owed since the iteration-11 review, measured with a new committed
+tool, `tools/clearance-compare.js` (node-only, no deps, no engine changes). It
+boots the golden harness environment in any checkout (worktrees for `main`
+b0aa043 and branch-before `8797666` = pre-P1/pre-C1; scratch copies under
+`~/aerial-agents/scratch/iter-14/`), wraps MeshBuilder between stub-extend and
+game.js to record every box's dimensions, drives scenario
+`aerial-power-75` frame-by-frame (450 sampled frames, sampleEvery=2), and every
+frame computes each ski's lowest corner grid (5 along-length × 2 edges, ski box
+0.08 × 0.03 × 1.20 from SEGMENTS) plus a body proxy (lowest of skis/boots/glove/
+helmet/head/neck nodes) against:
+
+- **physics surface** — `terrainRootY(z, liveCfg) − FOOT_OFFSET` from that tree's
+  own engine + game.js constants (unit-test `configFor` convention); and
+- **visual surface** — reconstructed top faces of that tree's corridor boxes,
+  or the ribbon profile itself on branch-after (`ribbonMode`; its ≤2 cm parity
+  is already gated by `terrain-corridor.spec.js`, not re-derived here).
+
+Launch-window handling: samples within ~3 m before the lip while the root pitch
+exceeds 30° are skipped (319 samples) — there the rigid ski rotates into air the
+heightfield still reports as solid kicker face (the same span
+`terrain-corridor.spec.js` excludes); without this the launch frames read
+−0.78 m spuriously. Frames classified `air` are reported but non-gating.
+
+**Table A — ski lowest-corner clearance vs PHYSICS surface, m (min / max per phase;
+negative = penetration; worst frame noted):**
+
+| phase | main b0aa043 | branch-before 8797666 | branch-after f78ee4b |
+|---|---|---|---|
+| inrun | −0.0059 / +0.1748 | +0.0020 / +0.0941 | **+0.0020 / +0.0941** |
+| transition | +0.0477 / +0.1000 | same | same |
+| kicker (grounded) | −0.0839 / +0.1000 | same | same |
+| landing | +0.0368 / +0.2913 | same | same |
+| outrun | **−0.1564 / +0.1037** | −0.1564 / +0.1037 | **−0.0775 / +0.3755** |
+| body min (hard zones) | +0.0697..+0.1664 | +0.0182..+0.1572 | +0.0182..+0.1572 |
+
+Readings: (a) in-run columns differ between main and the branch only because main
+predates the ready-stance seating (+2 mm seat ⇒ exact +0.0020 floor; its float
+halves max from 0.1748 → 0.0941); (b) the C1 roll-out fillet halves the ride-out
+dip (−0.1564 → −0.0775 — it fills the concave corner so compression bottoms out
+higher); (c) transition/kicker/landing numbers are byte-stable across trees.
+
+**Table B — slab-era VISUAL surface vs physics profile, m (main; validated single-box
+top-plane errors at segment centres / worst edge):**
+
+| region | deviation |
+|---|---|
+| slope slab centre | −0.044 |
+| trans_seg_0..15 centres | −0.091 → −0.000 (join chords) |
+| kicker_seg far-edge rows (seg_14–16 @ z≈23.2–23.7) | up to **−0.789** |
+| landing slab (45.7 m tilted box, slope-matched) | mid-span ≈ −0.32, ends −9.91 / +9.26 |
+| start pedestal top | −7.80 (below-snow base piece, not surface) |
+
+This quantifies the vanishing-athlete defect class the P1 ribbon removed: where
+single big slabs or 16–20 short rotated segments approximate curved/profiled
+zones, their tops miss the physics line by centimetres-to-most-of-a-metre, so an
+athlete riding the physics surface crosses visible slabs. The same reconstruction
+on branch-before reproduces the class visually (transition vis-min −0.32) except
+near the lip overhang, where box footprints extend into open air and answer
+wrongly by construction (documented artifact, not a claim).
+
+Scratch: `~/aerial-agents/scratch/iter-14/{main,pre,branch-after}.json` retain the
+full per-phase aggregates; probe worktrees removed after measurement.
+
+**Verification.** `npm run test:unit` 74/74; `npm run test:golden` 30/30 (no
+runtime code touched besides the new tool); drive specs untouched — none assert
+the new tool; shots left as iteration 13's (no scene change this session).
+
+**Open questions for the reviewer**
+- Two residual PHYSICS-side negatives the renderer cannot fix (both inside the
+  pinned contact framework; renderer defers to the author):
+  (a) grounded kicker-window dip −0.0839 (worst f=282, z=21.2) — rigid-ski
+  corners vs convex curvature under high pitch; (b) ride-out −0.0775 (branch,
+  was −0.1564 on main/pre) — landing compression persisting past OUTRUN_Z.
+  Both sit within the pre-approved remediation paths (`APPROVED: hard snow
+  surface` / `compliant landing layer`) if the author wants them closed in the
+  engine; branch-after already respects the ≤0.10 m landing-zone cap.
+- Should `tools/clearance-compare.js` become a gating unit/drive check (it is
+  deterministic and ~10 s), e.g. against the stored json aggregates?
 
 ### 13 — Stale lightmap disabled (order 1); C1 blends rebuilt as tangent fillets (order 2)
 
