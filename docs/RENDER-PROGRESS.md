@@ -115,12 +115,23 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Terrain lightmap | **disabled (iter 13, reviewer order 1)** | stale pre-P1 bake painted a 9.29%-black ready-view band; `applyBakedLighting` early-returns behind `_bakeLightmapEnabled=false`; baked.spec asserts the off-state + ready-view black32 < 0.5% (measured 0.026%); compare.spec BAKE_AB=1 opt-in; flip back to true WITH the rebake commit and restore the on-state assertions |
 | — | Reviewer order 3: `main` clearance comparison | **landed (iter 14)** | `tools/clearance-compare.js` on `main` b0aa043 / pre-P1 8797666 / HEAD: physics-surface tables byte-stable across trees except ready-seat floor (main −0.0059..+0.1748 vs branch +0.0020/+0.0941) and the C1 fillet halving ride-out dip (−0.1564→−0.0775); slab-era visual misgeometry quantified (kicker join chords to −0.79 m, landing slab ends ±9.9 m); entry 14 |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
-| — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; **entry-19 (a) resolved by `APPROVED: keep ski d = 1.55 and retune the touchdown evaluator` (10:15): retune the landing margin in `engine/` so the three knife-edge scenarios return to pre-1.55 outcomes with airtime/flip byte-identical — own physics commit + ADR-0005 audit + 30-scenario before/after table; second of 31**; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
+| — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d); iter-33 retune closed its knife-edge flips** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) — **restored by the iter-33 retune (own row below)**; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
+| — | APPROVED: keep ski d = 1.55, retune the touchdown evaluator | **landed (iter 33, commit 1e20d31)** | measured mechanism: d 1.55 slowed tucked rotation 4.1 % via computeI's ski self-term (I_tuck 5.2250→5.5459), shifting touchdown flipAngle 17–111° (norms: pike 125.5→28.9, tuck-long 343.5→232.7, tuck-short 326.1→308.8) — no window change can restore all three outcomes (opposite directions), so the self-term is pinned at the tuned 1.20 m; ski keeps its 1.55 m reach; 21/30 traces byte-identical to HEAD, 5 node-only (tuck-rate restoration), 3 outcome flips at f=435 exactly; all 30 byte-identical to the pre-1.55 build; airTime 2.300046 s byte-identical everywhere; unit 74/74, golden 30/30, drive 44/2 (the 2 = iter-32's pre-existing mismatches, unchanged) |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 
 ## Open questions for the reviewer
 
+- **Entry 33 (touchdown retune, landed) — one interpretation call.** The
+  approval named "the landing/touchdown margin", but measurement shows the
+  drift lives in `computeI`'s ski self-term (tucked ω −4.07 %, touchdown norms
+  shifted 17–111°) and no margin change can restore all three pre-1.55
+  outcomes (opposite-direction window moves). I pinned the self-term at the
+  tuned 1.20 m instead (`SKI_SELF_INERTIA_D`, `engine/core/inertia.js`): all
+  three outcomes restored, airtime/flip rates byte-identical (in fact restored
+  to the values the entry-19 audit believed were byte-stable), 21/30 traces
+  untouched, ski keeps its approved 1.55 m reach. One-line veto if you want a
+  different construction; details and the outcome table in entry 33.
 - **Entry 26 (both mandatory items reverted, not landed) — one call.** The
   geometry repair works (probe evidence above) but three gate/metric designs
   need rework before a hard-green build ships (elbow radial rows ±100–134 mm at
@@ -226,6 +237,79 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 33 — APPROVED touchdown retune: the flip-rate drift was computeI's ski self-term, not the evaluator; three knife-edge outcomes restored with ski d = 1.55 kept (commit 1e20d31)
+
+Reviewer order (11:15): after the arm-transport attempt, "the following iterations
+go: touchdown retune (APPROVED) → hop turn → coherent crash → P2 sky/sun → P12
+quality → review"; no further arm iterations. This is the touchdown retune.
+Scratch `~/aerial-agents/scratch/iter-33/` holds `repo-d120/` (d=1.20 scratch
+build), `traces-head/`, `traces-pre155/`, `probe-td.js`, `probe-angle.js`,
+`audit.js`. Tree started clean at `48ff000`.
+
+**Mechanism, measured first (falsifies the premise the approval was written
+under).** The 1.55 rebaseline's flips are NOT a touchdown-evaluator effect:
+`runScenario` state trajectories are byte-identical between a d=1.20 scratch
+build and HEAD through the whole flight — the drift is `computeI`'s ski
+self-inertia `m(h²+d²)/12` (per ski 0.240→0.401 kg·m², I_tuck 5.2250→5.5459,
+I0 17.6349→17.9558), which slows tucked rotation **4.07 %** (ω = L/I, L set
+from I0 at takeoff) and shifts the touchdown flipAngle. Touchdown norms
+(wrapped, instrumented via `isFeetDown`): aerial-pike 125.5°→28.9°,
+aerial-tuck-long 343.5°→232.7°, aerial-tuck-short 326.1°→308.8°. The three
+pre-1.55 outcomes therefore need **narrower AND wider AND impossible** window
+moves simultaneously (pike: forward-tol < 28.9°; tuck-short: backward-tol
+≥ 51.2°; tuck-long: 232.7° inside a near-upright window) — no
+landing/touchdown margin change in `landing.js` can satisfy the approved
+outcome contract. The construction that does satisfy it: pin the ski
+**rotational** self-term at the tuned 1.20 m (`SKI_SELF_INERTIA_D` in
+`engine/core/inertia.js`, one term + justification comment) while the ski
+keeps its approved 1.55 m contact/visual reach. The flip dynamics feeding the
+evaluator return to exactly the tuned pre-1.55 values.
+
+**ADR-0005 audit (all 30 scenarios; fresh vs HEAD traces and vs a d=1.20
+scratch build's traces), then re-capture:**
+
+- vs HEAD: **21 scenarios byte-identical** (all pool, trampoline-basic/keyx,
+  every power/twist/gamepad/off-axis/crash-free aerial); **5 node-transforms-
+  only** (aerial-tuck, aerial-full-twisting-double, aerial-crash-ragdoll,
+  trampoline-tuck, trampoline-pike — tucked rotation returns to the pre-1.55
+  rate, zero state-field diffs); **3 knife-edge scenarios** additionally flip
+  `state.crashed/posZ/trickName` at the grounding keyframe **f=435 exactly**.
+- Outcome table (before d=1.55 → after retune; pre-1.55 in parens = restored):
+  aerial-pike clean@82.622 → **crash@81.784** (crash@81.784);
+  aerial-tuck-long crash@81.784 → **clean@82.622** (clean@82.622);
+  aerial-tuck-short crash@81.784 → **clean@82.622, trick "Tuck-Tuck-Lay"**
+  (clean@82.622, "Tuck-Tuck-Lay"). All other 27 outcomes unchanged.
+- **airTime byte-identical (2.300046 s) in every scenario, before and after.**
+- vs the d=1.20 pre-rebaseline build: **all 30 traces byte-identical** — the
+  retune restores the entire flight system to the tuned dynamics with the ski
+  length kept.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden` **30/30**
+after the audited re-capture (8 trace files change: the 5 node-only + the 3
+knife-edge scenarios — exactly the audit's diff list). Drive
+game+ready-stance+rig+body: **44 passed / 2 failed** — the two failures are
+iteration-32's recorded pre-existing gate mismatches with byte-identical
+numbers (rig hands-out 0.1534 vs 0.155; body stripe spec-window blueFrac 0.0
+vs bake 0.070), untouched by this change. `look` 1/1; shots inspected (I can
+view PNGs): `scene.png`/`figure.png`/`figure_front.png` all consistent with
+the stable tree — arms at the sides, styled skis, bib/face read, no scene
+change (renderer untouched). `index.html` script `?v` bumped (engine script
+changed); `ASSET_V` unchanged (no `assets/` regeneration); no `game.js`,
+`engine/core/body-model.js` or `blender/body-model.json` changes.
+
+**Open questions for the reviewer**
+- **Interpretation call (one line to veto):** the approval names "the
+  landing/touchdown margin", but measurement shows no margin change can
+  deliver its own outcome contract (numbers above); I pinned computeI's ski
+  self-term instead — same outcome contract satisfied byte-exactly, flip
+  rates/airtime untouched (in fact restored to the tuned values the
+  entry-19 audit believed were byte-stable all along). If you want the
+  literal-margin route instead, name which outcome(s) to sacrifice.
+- Disposition of iteration-32's two failing gates stands (hand-clearance
+  threshold 0.155 re-derivation; stripe UV window re-derivation) — both
+  reproduce byte-identically on this tree.
+- Next per your order: hop turn → coherent crash → P2 sky/sun → P12 quality.
 
 ### 32 — Arm transport ROOT-CAUSED and FIXED: the rig was T-pose on an A-pose mesh; arm bones re-anchored on the mesh's own axes; fallback (ii) re-applied with a tightened selector; assets rebuilt (ASSET_V 11); ARM GATES 13x better, still soft; two drive gates recorded failing
 
