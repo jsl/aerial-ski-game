@@ -77,7 +77,13 @@ test('the solids the body replaces are hidden, and the skis are not', async ({ p
         return {
             torso: v('torso'), head: v('head'), upperArmL: v('upperArmL'),
             neck: v('neck'), visor: v('visor'),
-            skiL: v('skiL'), skiR: v('skiR'),
+            // Since the styled-ski work the DRIVER boxes are never rendered —
+            // they stay as the hidden physics anchor (the golden traces record
+            // skiL/skiR `hidden: true`) — and the equipment the player sees is
+            // the styled child mesh. "The skis stay" is therefore: the styled
+            // ski exists and is visible.
+            skiL: v('skiL_vis'), skiR: v('skiR_vis'),
+            skiLDriver: v('skiL'), skiRDriver: v('skiR'),
             body: (() => {
                 const p = scene.meshes.filter(x => x.name && x.name.startsWith('athleteBody'));
                 return p.length ? p.every(x => x.isVisible) : null;
@@ -92,9 +98,14 @@ test('the solids the body replaces are hidden, and the skis are not', async ({ p
     expect(vis.upperArmL, 'arm solid still visible').toBe(false);
     expect(vis.neck, 'neck detail still visible').toBe(false);
 
-    // Skis are equipment, not body: they stay.
-    expect(vis.skiL, 'skis were hidden — they are equipment, not skin').toBe(true);
+    // Skis are equipment, not body: the styled ski stays visible (this failed
+    // raw `skiL` visibility between the styled-ski landing and this fix, because
+    // the driver box it checked has been intentionally hidden since then).
+    expect(vis.skiL, 'styled ski (skiL_vis) missing or hidden — equipment, not skin').toBe(true);
     expect(vis.skiR).toBe(true);
+    expect(vis.skiLDriver, 'skiL driver should be hidden — the styled ski renders for it')
+        .toBe(false);
+    expect(vis.skiRDriver).toBe(false);
     expect(vis.body, 'the body itself is hidden').toBe(true);
 });
 

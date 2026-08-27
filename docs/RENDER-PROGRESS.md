@@ -104,7 +104,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: settle-v2 + straighten-v2 verified at geometry level in iter-26 probes (forearm residual 4.2 mm) but NOT landed — two arm-gate metrics + leg-profile fingertip pollution block the build (entry 26); repair first of 27** |
+| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **`APPROVED: arm fallback (ii)` (reviewer 10:15) — rebind forearm/hand 100% to bones with 3 cm elbow blend, ARM GATES hard with the passing rebuild; first of 31; stop-and-report with shots if the mesh shreds** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
@@ -113,7 +113,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Terrain lightmap | **disabled (iter 13, reviewer order 1)** | stale pre-P1 bake painted a 9.29%-black ready-view band; `applyBakedLighting` early-returns behind `_bakeLightmapEnabled=false`; baked.spec asserts the off-state + ready-view black32 < 0.5% (measured 0.026%); compare.spec BAKE_AB=1 opt-in; flip back to true WITH the rebake commit and restore the on-state assertions |
 | — | Reviewer order 3: `main` clearance comparison | **landed (iter 14)** | `tools/clearance-compare.js` on `main` b0aa043 / pre-P1 8797666 / HEAD: physics-surface tables byte-stable across trees except ready-seat floor (main −0.0059..+0.1748 vs branch +0.0020/+0.0941) and the C1 fillet halving ride-out dip (−0.1564→−0.0775); slab-era visual misgeometry quantified (kicker join chords to −0.79 m, landing slab ends ±9.9 m); entry 14 |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
-| — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
+| — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; **entry-19 (a) resolved by `APPROVED: keep ski d = 1.55 and retune the touchdown evaluator` (10:15): retune the landing margin in `engine/` so the three knife-edge scenarios return to pre-1.55 outcomes with airtime/flip byte-identical — own physics commit + ADR-0005 audit + 30-scenario before/after table; second of 31**; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 
@@ -224,6 +224,84 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 30 — Review-only: full suite on HEAD; latent body.spec ski assertion repaired (broken since iter 22); measurements reproduce; re-prioritisation per the 10:15 approvals
+
+No features. Scratch `~/aerial-agents/scratch/iter-30/` unused (verification via the
+committed suites). Tree started clean at `1865659`; **the reviewer's 10:15 decision
+commit (`68e4ebc`) landed one minute into this session** — its two APPROVED lines and
+the post-review order are folded into the re-prioritisation below; both are
+next-iteration scope, not started here.
+
+**Self-review of iter 29 (commit 1865659).** `git show --stat` matches the entry:
+`blender/build_body.py` + full asset regen (ASSET_V 9→10) + `index.html` ?v=17 +
+docs; no `engine/` edits, `blender/body-model.json` untouched; no reviewer scratch-bake
+files in `assets/`. `npm run test:unit` **74/74** and `npm run test:golden` **30/30**
+reproduce on HEAD.
+
+**Full `./tests/run-all.sh` on HEAD:** unit 74/74; golden 30/30; browser **36/36**;
+mutation **PASS**; coverage **PASS**; drive **45 passed / 2 skipped / 1 failed** —
+the one failure is real and reproducible: `body.spec.js:69` "the solids the body
+replaces are hidden, and the skis are not", `vis.skiL` expected visible, got hidden.
+
+**Regression root-caused and repaired (test-only, the one tree change this session).**
+The assertion checks the *driver box* `skiL.isVisible`, but since the styled-ski
+landing (iter 22, `0abb84a`) the drivers are intentionally never rendered —
+`game.js` hides them at build and the styled `skiL_vis`/`_toe`/`_heel`/`_brake`
+children carry the visuals; the golden traces have recorded `skiL/R.hidden: true`
+since that commit. So the spec has been failing on every normal (non-trampoline)
+load **since iter 22**; it went uncaught because entries 26–29 only reran
+rig/ready-stance/unit/golden subsets and never body.spec. (Entry 25's full-suite
+count of 47 drive tests vs 48 today also predates the ready-stance heading-gate
+additions; the failure class itself is consistent with the tree as of `0abb84a`.)
+Fix keeps the spec's intent — "skis are equipment, not body: they stay" — against
+the landed contract: `skiL_vis`/`skiR_vis` must exist and be visible, the driver
+boxes must exist and be hidden (matching the trace contract). After: body.spec
+**4/4** standalone; all six run-all layers green on this tree (browser/mutation/
+coverage rerun explicitly after the fix). No `game.js` change, no rebaseline.
+If the reviewer prefers the *old* contract (drivers visible), that is a game.js
+change with a golden census re-capture, not this one-line test repair — say so.
+
+**Review measurements (REVIEW_MEASURE, fresh):** sky **0.7988** vs corridor
+**0.8208**, inrun 0.8235, flankNear 0.8268, flankFar 0.8274 — snow brightest
+everywhere EXCEPT kickerFace **0.7955 = −0.0033 below sky** (iter-25's hairline
+negative margin reproduces; still queued for the P2 real-sky work, not another
+material nudge). Grey-ramp parity: corridor −0.0060/−0.0066 vs flanks (gate
+≥ −0.02; inside the ±0.007 noise band). Seam worst footprint row y=0.425 skyFrac
+**12.74 %** (iter 25: 12.84, iter 20: 8.78, iter 15: 16.3 — stable-bad, the
+horizon-adjacent caveat row). Athlete shadow: under-figure 0.1733 vs ring max
+0.8053 → **78.5 % drop** (gate ≥ 15 %) — CSM intact. Face lum 0.7130, darkFrac 0.
+`look`: 13,833 verts, 3 material slots, maps at `?v=10`.
+
+**Shots inspected directly (I can view PNGs; regenerated 10:27).** `scene.png`:
+continuous field corridor→flanks, B-net seated on both edges and curving with the
+bowl, fence scale right, athlete + styled skis mid-corridor in the ready stance,
+hard tree shadows. Still wrong from this vantage: red kicker edge brackets read as
+floating marks (P3 slice 2), trees are identical saturated cones (P4), flat pale
+sky + faceted cone-peak horizon (P2/P6). `figure.png` (rear ¾) / `figure_front.png`:
+back bib 30 present (faint at distance), navy styled skis + bindings + boots read
+well, face reads skin under the dark cranium helmet — but the **arm-chain residual
+is the dominant athlete defect in both shots**: the near forearm kinks at the elbow
+and the hand flares behind/away with splayed fingers (the measured 43.9 mm
+collinearity / 41.6° hand-axis residual), and shoulders still read broad with
+muscle relief through the suit. Chest bib digits present but foreshortened by the
+ready yaw (straight-on check open since entry 21).
+
+**Gaps vs plan / footage (unchanged standing list, re-ranked):** arm fallback (ii)
+rebuild (APPROVED 10:15) → touchdown evaluator retune (APPROVED 10:15, own physics
+commit + ADR-0005 audit + 30-scenario outcome table) → hop turn from keypoints →
+P11 coherent crash → P2 sky/sun remainder (real sky/sun disc; also the only honest
+fix for kickerFace-vs-sky and the seam row) → P12 quality pass → P4 impostor trees
+→ P5 landing chop → P3 slice 2 (wands/flag/deck/red-jacket coaches) → P6 ridgelines
+→ P9 night → P10 free-look. Fillers: lightmap rebake (entry-12 plan), boot∥ski
+browser gate after the rebuild (entry-29 note).
+
+**Open questions for the reviewer**
+- Confirm the body.spec repair direction (test follows the landed styled-ski
+  contract) — or name the game.js alternative if you want the driver boxes visible.
+- Entry-29's two open questions are answered by the 10:15 decisions (fallback (ii)
+  APPROVED; boot∥ski browser gate stays deferred to the rebuild window) — flagged
+  so the answer is not missed; no new question from this review.
 
 ### 29 — Boot-yaw baked onto the ski axis (reviewer addendum) + honest leg/gate instrumentation; arm-chain repair attempted and REVERTED with numbers (shredded mesh); gates stay soft
 
