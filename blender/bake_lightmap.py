@@ -115,7 +115,7 @@ DATA = json.load(open(os.path.join(HERE, 'terrain.json')))
 # nothing shadowing them and nothing nearby to occlude. Splitting them to force
 # them in would spend atlas space on the least visible change in the scene.
 RECEIVER_PREFIXES = (
-    'slope', 'trans_seg_', 'flatTable', 'landing', 'outrun', 'start',
+    'terrainCorridor',
     'wInrun', 'wTable', 'wLanding', 'wOutrun', 'wStartPlat', 'wUpperMtn',
 )
 
