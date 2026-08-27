@@ -75,7 +75,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7)** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); corridor 0.622→0.7778 vs flanks 0.787, inrun 0.784, kicker 0.758; phase-2 near-parity gates in `grey-ramp.spec.js`; kicker residual −0.029 queued behind P1/P2 geometry |
-| — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; **+ ready-state arms hang at the sides (|hand z − hip z| ≤ 3 cm) per the reviewer's post-iter-4 check**; before P1 |
+| — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
 ## Open questions for the reviewer
@@ -570,3 +570,116 @@ shots inspected directly.
   stable; if it ever flakes, the honest fix is moving the gate to a scene with a
   denser stand, not loosening the threshold.
 - Ready stance (order 4) remains the last order item before P1.
+
+### 10 — Review-only: recovered the killed iter-9 ready stance, audited it, measured the render
+
+Iteration 9 was killed before committing; its ready-stance work (reviewer order 4) was found
+intact in the working tree, independently re-verified, and landed here together with this
+iteration's review-only audit. No new features. I can view PNGs; shots inspected directly.
+
+**What changed (recovered iter-9 work, self-reviewed this session)**
+- `game.js`: renderer-side ready stance (ADR-0002, physics untouched). While `readyState &&
+  readyTurnT < 1`: both skis are rolled about their long axis onto the slope plane and the
+  rendered root is seated so each ski's lowest edges rest on `terrainRootY − FOOT_OFFSET` +
+  2 mm (two-pass solve); the uphill (L) leg gets knee/hip flexion fading with `readyTurnT`;
+  the downhill ski defines the seat so hips stay level; a smoothstep hands the skis back to
+  euler pose at `readyTurnT = 1`. Written stub-safe (plain-quaternion maths) so the golden
+  harness executes identical numbers. Plus `window._readyStanceProbe` for the drive spec,
+  and a KNOWN-DEFECT comment on the `slopeBox` centre (below).
+- `tests/drive/ready-stance.spec.js` (new, gating): the reviewer-order-4 acceptance set —
+  5 lowest-edge samples per ski ∈ [0, 5 mm]; ski roll ≤ 2°; torso ≤ 3° from vertical;
+  uphill knee ≥ 10° more flexion; hands-beside-thighs proxy |Δz| ≤ 3 cm; after ↑ the turn
+  completes back to the symmetric in-run posture with skis ≥ −5 mm (no penetration) and
+  ≤ 0.10 m float (the pre-existing run seating float, documented and gated, P1 reconciles).
+- `tests/golden/audit-ready-stance.js` (new, ADR-0005 audit) + all 30 golden traces
+  rebaselined: the ready pose changes the scene census (athlete hierarchy + `slope` box
+  through the turn frames; persistently in `aerial-idle` where the ready state never ends).
+- `tests/drive/rig.spec.js`: the bind≡driver test now measures in the NEUTRAL rest pose
+  (starts the run first) — the ready state now deliberately poses the athlete, so the old
+  at-boot measurement was testing the pose, not the bind.
+- `index.html`: all 11 script tags `?v=5` → `?v=6` per the reviewer's cache-busting rule.
+  Process gap: this branch has changed `game.js` in iters 1–8 without ever bumping it
+  (last `index.html` edit predates the branch) — the author should hard-reload once.
+
+**Verification (all green on the landed tree)**
+- `node tests/golden/audit-ready-stance.js` against a pre-change worktree:
+  **state IDENTICAL in all 30 scenarios** (independently reproduced this session);
+  node diffs confined to the athlete hierarchy + `slope` box, through f=45 (the 0.7 s
+  turn), persistent only in `aerial-idle` (ready state never ends there — by design).
+- `npm run test:unit` pass; `npm run test:golden` 30/30; full `./tests/run-all.sh` on the
+  landed tree: unit/golden/browser/mutation/coverage pass, **drive 42 passed / 1 skipped
+  (7.7 min)**; `ready-stance.spec.js` + `rig.spec.js` 7/7 standalone.
+- Ready-stance numbers (spec): ski samples all within [0, 0.005] m on both skis; roll 0.7°;
+  torso tilt 0.4°; flexL−flexR ≈ 24° (gate 10°); hand-hip Δz L 0.028 / R 0.010 m; post-turn
+  worst float 0.0941 m (gated 0.10).
+- `look` shots regenerated and inspected: `scene.png` — the athlete now waits yawed across
+  the corridor, both skis flat on the slope plane, upright torso; corridor/flank brightness
+  pattern unchanged from iter 8; `figure.png`/`figure_front.png` — ready-stance figure
+  stands vertical across the run; residuals unchanged (below).
+
+**What still reads wrong (review-only findings, with measurements)**
+1. **Sky brighter than every snow surface (P2, top standing delta).** REVIEW_MEASURE on
+   this tree: sky 0.799 vs corridor 0.7685, flanks 0.7866/0.7878, inrun 0.7846, kicker
+   face 0.7604. Same-harness corridor history: 0.622 (iter 5) → 0.7685 now (residual
+   −0.018 vs near flank). The footage wants snow the brightest surface in frame: needs
+   the sky/sun rig (sun disc, fog re-tune, post 1.6→~1.2), not more snow tuning.
+2. **The rendered hands still hang in FRONT of the thighs in the ready stance (P8).** The
+   new spec's hands-at-sides check passes — but it measures the DRIVER proxy
+   (`lowerArm.position.z − 0.125·sin(rx)` vs hip z, ≤ 3 cm). `figure_front.png` still
+   shows the mesh hand clearly ahead of the thigh line: the offset lives in the mesh/bind
+   (arm vertices carried forward of the bone), which no pose change fixes. The known
+   residual is NOT closed by the ready stance; it must go into the next Blender rebuild.
+   (A mesh-level centroid probe was attempted for a hard number; root-local maths
+   returned NaN late in the session — TODO number for the rebuild iteration.)
+3. **Known defect, now documented in code: the `slopeBox` top face sits 4.7 cm ABOVE the
+   physics plane** (centre −0.6 instead of −0.6/cos(SLOPE_ANGLE)). Iter 9 tried the cos
+   correction and the corridor top rendered near-black (grey-ramp corridor 0.7778 →
+   0.06–0.10); mechanism unattributed within that budget (bake UV2 guard, caster lists,
+   ready block all ruled out), so it was reverted and commented at the site. This defect
+   is why the post-turn ski float is 0.0941 m. P1 replaces this box entirely — do not
+   cos-correct it again in isolation.
+4. **Athlete shadow (P2 quick win holds on the same harness):** ring probe drop 19.6%
+   (iter-5 pre-CSM baseline on the same probe: 11.6%; gate ≥ 15%). Note the review
+   harness's ring probe is a different geometry from `shadows.spec.js`'s 79% probe —
+   compare like with like.
+5. **Seam stays closed:** kicker-face skyFrac 2.2% (was 12.2% at iter 5; gate 3.5%).
+   The row-scan worst row (16.5% at y=0.40) remains the horizon-adjacent row where real
+   sky belongs (documented caveat, iter 5).
+6. **Unchanged dressing/geometry gaps vs footage (all planned, not regressions):** dark
+   longitudinal bands along the corridor edges (P1 side faces), faceted cone trees +
+   hexagonal trunks (the reviewer's interim tessellation stopgap from 2026-08-26 is STILL
+   not landed — it is a ~10-line change and should not survive another iteration), cone
+   peaks + flat sky (P6/P2), no B-net/wands/flag/deck (P3), smooth landing (P5), faint
+   bib (P7), broad shoulders (approved rebaseline queued).
+7. **Suite flake (recorded, not fixed):** in the first post-recovery run,
+   `body.spec` "body deforms" (bone-matrix diff timed out at 40 s) and `game.spec` "full
+   run" (flipPower charge timed out) failed; both then passed twice standalone and the
+   full suite passed on rerun. SwiftShader at ~9 fps + retries:0 makes charge/deform
+   timing the fragile edge; if it recurs, the honest fix is longer charge timeouts, not
+   retries.
+
+**Regressions:** none. Iter-8 numbers (grey ramp, shadows) reproduce on the landed tree.
+
+**Re-prioritised list for the next iterations**
+1. **P1 slice 1 — continuous corridor ribbon** from the exact physics profile (the next
+   order item, now overdue): fixes the 0.0941 m run float, the 4.7 cm slopeBox defect,
+   the corridor-edge dark bands, and the remaining kicker −0.029 in one geometry.
+2. **The approved physics rebaseline as its own commit** (arm x ±0.175, torso/leg
+   proportions, ADR-0005 rebaseline, ±5% flip-rate constraint) + the SAME Blender rebuild
+   taking the queued suit work (loose shell, folds, muscle smoothing) and the P8
+   mesh-hands-forward bind fix (finding 2) — one rebuild, three payloads.
+3. **P2 sky/sun remainder**: sky 0.799 > all snow — sun disc, fog re-tune, post 1.6→~1.2,
+   then re-measure snow-vs-sky.
+4. **Interim tree trunks** (tessellation ≥ 16, flare, snow collar) — owed since iter 5,
+   trivial, do it alongside any iteration that touches the scene.
+5. Then P10 free-look, P11 crash, P3 dressing, P4 impostor forest, P5 landing bake.
+
+**Open questions for the reviewer**
+- The `slopeBox` cos-correction black-render mystery (finding 3): the corrected box
+  renders 0.06–0.10 luminance while the uncorrected one renders 0.77+. If P1's ribbon
+  lands next iteration this is moot, but if the mechanism is a material/bake interaction
+  it will bite the ribbon too — any hypothesis before then is welcome.
+- `index.html` `?v=` was never bumped on this branch before iter 10 (rule gap, now
+  fixed): confirm `game.js?v=6` loads for you after a hard reload.
+- Mesh-level hand-position number (finding 2) still missing — will land with the rebuild
+  iteration's spec instead of a one-off probe.

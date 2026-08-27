@@ -270,6 +270,17 @@ test('bind equals driver and the figure faces -z', async ({ page }) => {
     //    ankles along -z, the direction the game calls forward.
     await boot(page);
 
+    // Measure in the NEUTRAL rest pose. The boot state used to be the rest
+    // pose, but since the ready-stance work (reviewer order 4) the ready state
+    // deliberately POSES the athlete (uphill knee bent, skis rolled/seated) —
+    // the skinned body following that pose is correct behaviour, not a bind
+    // residual. The neutral pose is the post-turn in-run posture at tuck=0
+    // (POSE_UNTUCKED): readyState has flipped, the ready block is off, and the
+    // drivers sit exactly on the pose tables the binds were written against.
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 8000 });
+    await page.waitForTimeout(250);
+
     const r = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const V = BABYLON.VertexBuffer;

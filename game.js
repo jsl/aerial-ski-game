@@ -1701,6 +1701,39 @@ function _startGame() {
         };
     };
 
+    // Ready-stance diagnostics for the drive spec: per-ski clearance of the
+    // 5 lowest-edge samples against the physics surface (terrainRootY(z) -
+    // FOOT_OFFSET), measured with the same stub-safe maths as the render
+    // block. Skis with euler-only rotation (post-turn) are folded in as
+    // RotX(rx) — pose tables keep ski ry/rz at 0.
+    window._readyStanceProbe = function () {
+        const r = { readyState: readyState, readyTurnT: readyTurnT, last: _readyStance.last, skis: {} };
+        if (!_skiHalfDims || !character.meshes.skiL || !character.root.rotationQuaternion) return r;
+        for (const nm of ['skiL', 'skiR']) {
+            const sk = character.meshes[nm];
+            if (!sk) continue;
+            const qS = sk.rotationQuaternion
+                ? sk.rotationQuaternion
+                : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, sk.rotation.x || 0);
+            const samples = [];
+            for (let i = 0; i < 5; i++) {
+                const s = -_skiHalfDims.z + (2 * _skiHalfDims.z) * (i / 4);
+                let worst = Infinity;
+                for (const e of [-_skiHalfDims.x, _skiHalfDims.x]) {
+                    const loc = _quatRotateVec(qS, new BABYLON.Vector3(e, -_skiHalfDims.y, s));
+                    const off = _quatRotateVec(character.root.rotationQuaternion,
+                        new BABYLON.Vector3(sk.position.x + loc.x, sk.position.y + loc.y, sk.position.z + loc.z));
+                    const clear = character.root.position.y + off.y -
+                        (terrainRootY(state.posZ + off.z) - FOOT_OFFSET);
+                    if (clear < worst) worst = clear;
+                }
+                samples.push(+worst.toFixed(4));
+            }
+            r.skis[nm] = { worst: Math.min.apply(null, samples), samples: samples };
+        }
+        return r;
+    };
+
     window.applySkierColors = function() {
         function hexToC3(hex) {
             return new BABYLON.Color3(
@@ -1877,6 +1910,14 @@ function _startGame() {
     const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
         { width: 10, height: 1.2, depth: (TRANS_START_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
     slopeBox.rotation.x = SLOPE_ANGLE;
+    // KNOWN DEFECT, documented (P1 reconciles it): the centre offset is -0.6,
+    // not -0.6/cos(SLOPE_ANGLE), so this tilted box's top face sits 4.7 cm
+    // ABOVE the physics surface plane. The cos-corrected centre was tried
+    // (iteration 9) and the corridor top face rendered near-black (grey-ramp
+    // corridor 0.7778 -> 0.06-0.10); mechanism unattributed within the
+    // iteration's budget — bake UV2 length-guard ruled out, ski/tree caster
+    // lists ruled out, the ready-stance block ruled out. Reverted; the P1
+    // continuous-terrain rebuild replaces this box entirely.
     slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + TRANS_START_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + TRANS_START_Z) / 2);
     slopeBox.material = snowMat;
 
@@ -2936,6 +2977,25 @@ function _startGame() {
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
+    // Ready-stance diagnostics (read by window._readyStanceProbe, drive-tested)
+    const _readyStance = { last: null };
+    // Ski half-dims memo (from SEGMENTS; skis are the physics driver boxes)
+    let _skiHalfDims = null;
+    // Rotate v by unit quaternion q (Babylon convention, v' = q·v·q⁻¹).
+    // Written out with plain arithmetic on purpose: the golden harness's
+    // inert Babylon stub lacks TransformCoordinates/invert, and the
+    // ready-stance block below must produce the same numbers there.
+    const _quatRotateVec = function (q, v) {
+        const px =  q.w * v.x + q.y * v.z - q.z * v.y;
+        const py =  q.w * v.y + q.z * v.x - q.x * v.z;
+        const pz =  q.w * v.z + q.x * v.y - q.y * v.x;
+        const pw = -q.x * v.x - q.y * v.y - q.z * v.z;
+        return new BABYLON.Vector3(
+            px * q.w + pw * -q.x + py * -q.z - pz * -q.y,
+            py * q.w + pw * -q.y + pz * -q.x - px * -q.z,
+            pz * q.w + pw * -q.z + px * -q.y - py * -q.x
+        );
+    };
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let bothArmsSpinTarget = Infinity; // spinTarget value at which a both-arms twist was triggered
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
@@ -4834,6 +4894,92 @@ function _startGame() {
                 const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
                 character.root.rotationQuaternion = qFace.multiply(qOffAxis).multiply(qFlip).multiply(qSpin);
             }
+        }
+
+        // ── Ready stance (reviewer order 4): skis flat on the slope plane ──
+        // Waiting across the fall line, both skis are rolled about their long
+        // axis so they lie FLAT on the slope plane, and the rendered root is
+        // seated so each ski's lowest edges rest on the physics surface
+        // (terrainRootY(z) - FOOT_OFFSET + 2 mm). The uphill (L) leg flexes at
+        // hip and knee for the side-stance look, with the thigh re-pinned to
+        // the unmoved shin so the boot/ski relationship is untouched.
+        // Display only (ADR-0002): state.rootY is physics state and is NOT
+        // touched here; as readyTurnT advances the seating blends into the
+        // run's own root seating (state.rootY + the FOOT_OFFSET*(1-cos) lift),
+        // so the ready→run handoff stays continuous. The leg fade and the
+        // quaternion hand-back at readyTurnT = 1 return the normal in-run
+        // posture. Deliberately free of computeWorldMatrix /
+        // TransformCoordinates / Quaternion.invert so the golden harness's
+        // inert Babylon stub executes the exact same numbers.
+        if (readyState && readyTurnT < 1.0 && !_poolDiveMode &&
+            !_trampolineMode && !_trampolineMatMode && !crashActive &&
+            character.meshes.skiL && character.meshes.skiR &&
+            character.root.rotationQuaternion) {
+            if (!_skiHalfDims) {
+                const _ss = SEGMENTS.find(function (s) { return s.name === 'skiL'; });
+                _skiHalfDims = { x: _ss.w / 2, y: _ss.h / 2, z: _ss.d / 2 };
+            }
+            const _rEps  = 0.05;
+            const _rDydz = (terrainRootY(state.posZ + _rEps) - terrainRootY(state.posZ - _rEps)) / (2 * _rEps);
+            const _slope = Math.atan(Math.abs(_rDydz));   // slope magnitude at the athlete
+            // World-space orientation of a ski lying flat on the slope plane.
+            const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope);
+            const qRoot  = character.root.rotationQuaternion;
+            // Ski-local roll that composes with the (yawed) root to qFlat.
+            const qLocal = qRoot.conjugate().multiply(qFlat);
+            const _u     = readyTurnT;
+            const _blend = _u * _u * (3 - 2 * _u);        // smoothstep handoff
+            // Side-slope geometry: yawed across the fall line, the skis' body-x
+            // separation (±0.075) lies ALONG the fall line in the world, so the
+            // downhill (R) ski rests on terrain 0.15·tan(Θ) lower than the
+            // uphill (L) ski. Hips stay level: the downhill leg stays straight
+            // (root is seated by the R ski) and the uphill ski + foot ride δ
+            // higher in the body frame with the L knee bent — the boots stay
+            // seated because each ankle translates rigidly with its ski.
+            const _sideGap = Math.abs(character.meshes.skiL.position.x - character.meshes.skiR.position.x);
+            const _delta   = _sideGap * Math.tan(_slope) * (1.0 - _blend);
+            character.meshes.skiL.position.y  += _delta;
+            character.meshes.lowerLegL.position.y += _delta;
+            // Uphill-leg knee/hip flexion for the stance look (fades with the turn)
+            const _legF = 0.26 * (1.0 - _blend);
+            if (_legF > 0.001) {
+                const _ul = character.meshes.upperLegL, _ll = character.meshes.lowerLegL;
+                _ul.rotation.x += 0.45 * _legF;
+                _ll.rotation.x -= 0.85 * _legF;
+                // Knee stays joined: shin bottom (ankle) rides its ski, the
+                // thigh centre follows so the knee joint stays closed.
+                const _cU = Math.cos(_ul.rotation.x), _sU = Math.sin(_ul.rotation.x);
+                const _cL = Math.cos(_ll.rotation.x), _sL = Math.sin(_ll.rotation.x);
+                _ul.position.y = _ll.position.y + 0.18 * _cL + 0.18 * _cU;
+                _ul.position.z = _ll.position.z + 0.18 * _sL + 0.18 * _sU;
+            }
+            // Roll both skis flat, then seat: lowest edge of the ski bottoms on
+            // the physics surface + 2 mm. Two passes converge (translation is
+            // linear in the root offset).
+            for (let _it = 0; _it < 2; _it++) {
+                let _worst = Infinity;
+                const _rootY0 = character.root.position.y;
+                for (const _skName of ['skiL', 'skiR']) {
+                    const _sk = character.meshes[_skName];
+                    _sk.rotationQuaternion = qLocal;
+                    const _cx = _sk.position.x, _cy = _sk.position.y, _cz = _sk.position.z;
+                    for (let _i = 0; _i < 5; _i++) {
+                        const _s = -_skiHalfDims.z + (2 * _skiHalfDims.z) * (_i / 4);
+                        for (const _e of [-_skiHalfDims.x, _skiHalfDims.x]) {
+                            const _loc = _quatRotateVec(qLocal, new BABYLON.Vector3(_e, -_skiHalfDims.y, _s));
+                            const _off = _quatRotateVec(qRoot, new BABYLON.Vector3(_cx + _loc.x, _cy + _loc.y, _cz + _loc.z));
+                            const _clear = _rootY0 + _off.y - (terrainRootY(state.posZ + _off.z) - FOOT_OFFSET);
+                            if (_clear < _worst) _worst = _clear;
+                        }
+                    }
+                }
+                character.root.position.y += 0.002 - _worst;
+            }
+            _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u };
+        } else if (character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
+            // Hand the skis back to the pose solver's euler rotations
+            character.meshes.skiL.rotationQuaternion = null;
+            character.meshes.skiR.rotationQuaternion = null;
         }
 
         // ── First-person camera update ────────────────────────────────────────
