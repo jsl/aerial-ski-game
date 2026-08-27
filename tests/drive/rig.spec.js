@@ -547,6 +547,7 @@ test('hands hang beside the thighs and shins sit on their ski lines', async ({ p
         }
         const byName = {};
         let hipZsum = 0, hipN = 0;
+        const nodeAxis = {};
         for (const b of skel.bones) {
             const pts = buckets[b.getIndex()];
             if (!pts) continue;
@@ -560,19 +561,42 @@ test('hands hang beside the thighs and shins sit on their ski lines', async ({ p
                     hipN++;
                 }
             }
+            // Forearm long axis: the driver node's own local +Y mapped into
+            // root space. At rest it points elbow->wrist (the driver rest is
+            // rx=-pi, arms hang); under any pose it stays the bone's axis,
+            // which is what makes the hand band pose-independent.
+            if (/^lowerArm[LR]$/.test(b.name)) {
+                const node = b.getTransformNode && b.getTransformNode();
+                if (node) {
+                    node.computeWorldMatrix(true);
+                    const m = node.getWorldMatrix().multiply(toLocal);
+                    const p = BABYLON.Vector3.TransformCoordinates(
+                        node.getAbsolutePosition(), toLocal);
+                    const u = BABYLON.Vector3.TransformNormal(
+                        new BABYLON.Vector3(0, 1, 0), m).normalize();
+                    nodeAxis[b.name] = { p, u };
+                }
+            }
         }
         const centroid = (pts) => pts.length ? {
             n: pts.length,
             x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
             z: pts.reduce((s, p) => s + p.z, 0) / pts.length,
         } : null;
-        // HANDS: distal third of each forearm cluster (arms hang down, so the
-        // hand band is the LOWEST third by height).
+        // HANDS: the glove band = forearm-cluster vertices DISTAL of the
+        // wrist plane (node position + 0.125 m along the node's own axis).
+        // This used to be "lowest third by height", a proxy that only worked
+        // while the hand was stretched long (lane A iter 1 shortened it to
+        // anatomy, and the proxy started mixing cuff/forearm verts into the
+        // centroid).
         const hands = {};
         for (const side of ['L', 'R']) {
-            const pts = [...(byName['lowerArm' + side] || [])].sort((a, b) => a.y - b.y);
-            const cutY = pts.length ? pts[Math.floor(pts.length * 0.33)].y : 1e9;
-            hands[side] = centroid(pts.filter(p => p.y <= cutY));
+            const ax = nodeAxis['lowerArm' + side];
+            const pts = byName['lowerArm' + side] || [];
+            const band = ax ? pts.filter(p =>
+                (p.x - ax.p.x) * ax.u.x + (p.y - ax.p.y) * ax.u.y +
+                (p.z - ax.p.z) * ax.u.z > 0.125) : [];
+            hands[side] = centroid(band.length >= 40 ? band : pts);
         }
         // SHINS: a band around the mid-shin (driver rests at y=-0.815).
         const shins = {};
@@ -612,6 +636,145 @@ test('hands hang beside the thighs and shins sit on their ski lines', async ({ p
         .toBeLessThan(0.04);
     expect(r.shins.R.lat, `right shin ${r.shins.R.dx} m off its ski centreline`)
         .toBeLessThan(0.04);
+});
+
+test('hands are proportionate to the forearm, hanging and raised', async ({ page }) => {
+    // ── Lane A task 1: hands too long / disproportionate ────────────────────
+    // The glove cluster rides the forearm bone through the build's stretch and
+    // settle fallbacks, so the hand came out nearly AS LONG as the forearm
+    // (measured pre-fix: 0.269 m past the wrist against the 0.25 m segment,
+    // ratio 1.08; a real hand is ~0.75 of its forearm). The build now scales
+    // the glove about the wrist onto that ratio and hard-gates it there, so
+    // this test asks the SHIPPED glb the same question, end to end:
+    //   * hanging (ready crouch): each hand's wrist->fingertip extent along
+    //     the arm axis is 0.65-0.85 of the forearm segment (0.25 m),
+    //   * raised (driven through takeoff into the air, where the game sweeps
+    //     the arms overhead): the same ratio measured in flight — the hand
+    //     must follow its bone rigidly, not detach, lag or stretch.
+    // The arm axis is the forearm driver node's own local +Y mapped into the
+    // root frame (elbow->wrist at rest, and still the bone's axis under any
+    // pose — in flight the elbow bends, so a centroid-to-centroid axis would
+    // measure along the wrong limb). Distal sign taken from where the cloud's
+    // own mass lies beyond the driver node.
+    await boot(page);
+
+    const measure = () => page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const V = BABYLON.VertexBuffer;
+        const parts = scene.meshes.filter(
+            m => m.name && m.name.startsWith('athleteBody') &&
+            m.skeleton && m.getTotalVertices() > 0);
+        const skel = parts[0].skeleton;
+        const root = scene.getMeshByName('skierRoot') || parts[0].parent;
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+        const buckets = {};
+        for (const part of parts) {
+            part.computeWorldMatrix(true);
+            const world = part.getWorldMatrix();
+            const pos = part.getVerticesData(V.PositionKind);
+            const mi = part.getVerticesData(V.MatricesIndicesKind);
+            const mw = part.getVerticesData(V.MatricesWeightsKind);
+            if (!pos || !mi || !mw) continue;
+            // SKIN the vertices by hand (as the soles test does): raw CPU
+            // positions are the BIND pose and go stale the moment the pose
+            // moves off it — in flight the whole figure pitches and the arms
+            // sweep, so measuring raw positions against posed drivers reads
+            // as a half-metre hand. The weight blend of the bone matrices is
+            // the true deformed position in any pose.
+            const skel = part.skeleton;
+            const bones = skel.getTransformMatrices(part);
+            const tmp = new BABYLON.Vector3();
+            const acc = new BABYLON.Matrix();
+            const bm = new BABYLON.Matrix();
+            for (let i = 0; i < pos.length / 3; i++) {
+                let bestSlot = -1, bestW = 0;
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    if (w > bestW) { bestW = w; bestSlot = mi[i * 4 + k]; }
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2],
+                    acc.multiply(world).multiply(toLocal), tmp);
+                (buckets[bestSlot] = buckets[bestSlot] || []).push(
+                    { x: tmp.x, y: tmp.y, z: tmp.z });
+            }
+        }
+        const out = {};
+        for (const side of ['L', 'R']) {
+            const bl = skel.bones.find(b => b.name === 'lowerArm' + side);
+            const lo = buckets[bl.getIndex()] || [];
+            const node = bl.getTransformNode && bl.getTransformNode();
+            if (lo.length < 40 || !node) { out[side] = null; continue; }
+            node.computeWorldMatrix(true);
+            const p = BABYLON.Vector3.TransformCoordinates(
+                node.getAbsolutePosition(), toLocal);
+            const u = BABYLON.Vector3.TransformNormal(
+                new BABYLON.Vector3(0, 1, 0),
+                node.getWorldMatrix().multiply(toLocal)).normalize();
+            // distal = the side with more cloud mass beyond the node (the
+            // hand adds its bulk past the wrist; the elbow side has none).
+            let plus = 0, minus = 0;
+            for (const q of lo) {
+                const d = (q.x - p.x) * u.x + (q.y - p.y) * u.y + (q.z - p.z) * u.z;
+                if (d > 0) plus++; else minus++;
+            }
+            const sgn = plus >= minus ? 1 : -1;
+            const proj = lo.map(q => sgn * ((q.x - p.x) * u.x +
+                (q.y - p.y) * u.y + (q.z - p.z) * u.z));
+            const wrist = 0.125;               // node->wrist along distal
+            const tip = Math.max(...proj);
+            const handLen = tip - wrist;
+            out[side] = {
+                n: lo.length,
+                hand: +handLen.toFixed(4),
+                ratio: +(handLen / 0.25).toFixed(3),
+            };
+        }
+        return out;
+    });
+
+    const hanging = await measure();
+    console.log('HANDRATIO hang ' + JSON.stringify(hanging));
+    expect(hanging.L && hanging.R, 'no forearm clusters found (hanging)').toBeTruthy();
+
+    // Drive a real run: the ready turn plays, the athlete skis the in-run and
+    // takes off; in the air the game sweeps both arms overhead (armDrop -> 0).
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 45000 });
+    await page.waitForFunction(() => {
+        const g = window._getGameState();
+        return !g.grounded && g.airTime > 0.6;
+    }, null, { timeout: 60000 });
+
+    const raised = await measure();
+    console.log('HANDRATIO air  ' + JSON.stringify(raised));
+    expect(raised.L && raised.R, 'no forearm clusters found (raised)').toBeTruthy();
+
+    for (const [tag, m] of [['hanging', hanging], ['raised', raised]]) {
+        for (const side of ['L', 'R']) {
+            expect(m[side].ratio, `${tag} ${side} hand/forearm ratio ` +
+                `${m[side].ratio} (hand ${m[side].hand} m) — hands read as ` +
+                `long as the forearm`).toBeGreaterThanOrEqual(0.65);
+            expect(m[side].ratio, `${tag} ${side} hand/forearm ratio ` +
+                `${m[side].ratio} (hand ${m[side].hand} m)`).toBeLessThanOrEqual(0.85);
+        }
+    }
+    // Pose invariance: skinning is rigid per bone, so the ratio must not move
+    // between hanging and raised by more than measurement noise. A stretched
+    // or detached hand shows up here first.
+    for (const side of ['L', 'R']) {
+        expect(Math.abs(raised[side].ratio - hanging[side].ratio),
+            `${side} hand ratio moved ${raised[side].ratio} -> ` +
+            `${hanging[side].ratio} between hanging and raised — the glove ` +
+            `is not following its bone rigidly`).toBeLessThan(0.05);
+    }
 });
 
 test('styled skis: shaped geometry replaces the slats, boot line carries a binding', async ({ page }) => {

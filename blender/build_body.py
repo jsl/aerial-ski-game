@@ -1731,6 +1731,113 @@ def arm_geometry_report(body):
     return worst
 
 
+# ── Hand proportion ─────────────────────────────────────────────────────────
+# A real hand (wrist crease -> fingertip) is ~0.75 of its forearm segment. The
+# glove cluster rides the forearm bone through pose_onto_segments' stretch and
+# the settle fallbacks, so it inherits the forearm's x1.12+ stretch on top of
+# its own anatomy and reads as a hand nearly AS LONG as the forearm (measured
+# pre-fix: 0.269 m past the wrist against a 0.25 m segment, ratio 1.08).
+HAND_RATIO_TARGET = 0.75
+HAND_RATIO_GATE = (0.65, 0.85)
+
+
+def hand_metrics(body, side):
+    """
+    Wrist->fingertip length and the hand/forearm ratio for one side.
+
+    The wrist is the forearm bone's tail (segment centre z - h/2, arms hang);
+    the glove cluster is the lowerArm-weighted vertices strictly below it.
+    """
+    gi = {g.name: g.index for g in body.vertex_groups}
+    idx = gi.get('lowerArm' + side)
+    if idx is None:
+        return None
+    cl = bl('lowerArm' + side)
+    hl = SEGMENTS['lowerArm' + side]['h'] / 2
+    wrist_z = cl.z - hl
+    tip_z, n = None, 0
+    for v in body.data.vertices:
+        w = next((g.weight for g in v.groups if g.group == idx), 0.0)
+        if w <= 0.30 or v.co.z >= wrist_z - 0.004:
+            continue
+        n += 1
+        tip_z = v.co.z if tip_z is None else min(tip_z, v.co.z)
+    if tip_z is None or n < 25:
+        return None
+    hand = wrist_z - tip_z
+    forearm = SEGMENTS['lowerArm' + side]['h']
+    return {'hand': hand, 'forearm': forearm, 'ratio': hand / forearm,
+            'wrist_z': wrist_z, 'tip_z': tip_z, 'n': n}
+
+
+def scale_hands(body):
+    """
+    Scale the glove cluster about the wrist onto the anatomical hand/forearm
+    ratio (task: hands too long / disproportionate).
+
+    The stretch that made the hands long is ALONG the hanging arm axis, so the
+    correction is a z-only scale about the wrist plane: length is restored,
+    the glove's cross-section keeps the girth the rest of the pipeline gave
+    it. The scale fades in over a 5 cm cuff band above the wrist (full below
+    it) so the continuous forearm->hand mesh never tears at the cut — the
+    glove cuff is a fabric gather, a smooth squeeze there reads as elastic.
+    Only shortening is applied: a below-ratio hand is left alone and the gate
+    below reports it.
+    """
+    for side in ('L', 'R'):
+        m = hand_metrics(body, side)
+        if m is None:
+            log(f'  hands{side}: no glove band measurable — skipped')
+            continue
+        s = min(1.0, HAND_RATIO_TARGET * m['forearm'] / max(1e-6, m['hand']))
+        fade_hi = m['wrist_z'] + 0.045
+        gi = {g.name: g.index for g in body.vertex_groups}
+        idx = gi['lowerArm' + side]
+        moved = 0
+        for v in body.data.vertices:
+            w = next((g.weight for g in v.groups if g.group == idx), 0.0)
+            if w <= 0.30 or v.co.z >= m['wrist_z'] + 0.001:
+                continue
+            f = s
+            if v.co.z > m['wrist_z']:
+                u = max(0.0, min(1.0, (v.co.z - m['wrist_z']) /
+                                 max(1e-6, fade_hi - m['wrist_z'])))
+                f = s + (1.0 - s) * (u * u * (3 - 2 * u))
+            v.co.z = m['wrist_z'] + (v.co.z - m['wrist_z']) * f
+            moved += 1
+        after = hand_metrics(body, side)
+        log(f'  hands{side}: hand {m["hand"] * 1000:.0f} mm vs forearm '
+            f'{m["forearm"] * 1000:.0f} mm (ratio {m["ratio"]:.2f}) -> scale '
+            f'x{s:.2f} on {moved} glove verts, ratio now {after["ratio"]:.2f}')
+
+
+def hand_ratio_gate(body):
+    """
+    Hard gate: hand/forearm ratio in [0.65, 0.85] per side, measured on the
+    FINAL geometry (after girth, boots, everything) so no later pass can
+    quietly re-stretch the gloves.
+    """
+    worst_lo, worst_hi = 1e9, -1e9
+    for side in ('L', 'R'):
+        m = hand_metrics(body, side)
+        if m is None:
+            raise SystemExit(f'[body] hand gate: no measurable glove band on '
+                             f'{side} — weights or wrist plane moved')
+        worst_lo = min(worst_lo, m['ratio'])
+        worst_hi = max(worst_hi, m['ratio'])
+        log(f'  hand{side}: wrist->fingertip {m["hand"] * 1000:.0f} mm, '
+            f'forearm {m["forearm"] * 1000:.0f} mm, ratio {m["ratio"]:.2f} '
+            f'(n={m["n"]})')
+    ok = HAND_RATIO_GATE[0] <= worst_lo and worst_hi <= HAND_RATIO_GATE[1]
+    log(f'HAND GATE summary: ratio {worst_lo:.2f}..{worst_hi:.2f} '
+        f'(gate {HAND_RATIO_GATE[0]:.2f}-{HAND_RATIO_GATE[1]:.2f}, target '
+        f'{HAND_RATIO_TARGET:.2f})')
+    if not ok:
+        raise SystemExit(
+            f'[body] hand/forearm ratio {worst_lo:.2f}..{worst_hi:.2f} outside '
+            f'the hard gate {HAND_RATIO_GATE[0]:.2f}-{HAND_RATIO_GATE[1]:.2f}')
+
+
 def leg_profile(body, tag):
     """
     Width of one leg every 2 cm from hip to sole, checked for DIPS and STEPS.
@@ -3304,6 +3411,7 @@ def main():
     build_report(body, 'before girth')
     straighten_forearms(body)
     settle_limb_geometry(body)
+    scale_hands(body)
     _arm_trace(body, 'after-settle')
     _arm_cloud_dbg(body, 'final')
     leg_profile(body, 'pre-girth ')
@@ -3319,6 +3427,7 @@ def main():
     # yet repaired — flipping '--gate-mode hard' must happen with the rebuild
     # that actually passes them.
     armgates = arm_geometry_report(body)
+    hand_ratio_gate(body)
     GATE_MODE = arg('--gate-mode', 'soft')
     if armgates is not None and GATE_MODE == 'hard' and (
             armgates['collinear'] > 0.010 or armgates['join'] > 0.010
