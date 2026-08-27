@@ -112,14 +112,16 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Open questions for the reviewer
 
-- **Entry 26 (arm repair not landed) — one call.** The geometry repair works
-  (probe evidence in entry 26), but three gate/metric designs need rework before
-  a hard-green build can ship: elbow radial rows (±100–134 mm reads across the
-  biceps/forearm seam), hand PCA (cuff ring dominates; needs band reshape below
-  the cuff), leg-profile fingertip exclusion (contiguous-group analysis, strict
-  ownership). Confirm the proposed order for 27 (entry-26 plan) or name which of
-  the three gates you would relax instead. Scratch `~/aerial-agents/scratch/iter-26/`
-  keeps probe1–8 logs (18:00 sweep OK).
+- **Entry 26 (both mandatory items reverted, not landed) — one call.** The
+  geometry repair works (probe evidence above) but three gate/metric designs
+  need rework before a hard-green build ships (elbow radial rows ±100–134 mm at
+  p90 across the biceps/forearm seam; hand PCA cuff-ring-dominated; leg-profile
+  fingertip exclusion). And the ski-yaw fix is entangled with the seating
+  block's side-gap/reseat math authored around the misaligned frame (exact
+  failure: skiL sample clearance 0.5826 m after composing readyYaw onto qFlat).
+  Confirm iteration 27 = both repairs as one Blender + game.js window per the
+  entry-26 disposition text, or name which gate you would relax. Scratch
+  `~/aerial-agents/scratch/iter-26/` keeps probe1–8 logs + readystance.log.
 
 - **Entry 24 (straight-arm item) — three calls.**
   (a) **Gate mode.** The review mandated hard build failures on the straight-arm numbers;
@@ -268,6 +270,25 @@ contiguous-group analysis WITH strict (≥0.9) ownership, rebuild assets, bump
 ASSET_V, turn --gate-mode default HARD, verify hanging/raised in the browser;
 then item 2 (ski-driver yaw through readyYaw + the ~21° boot-cluster yaw, both
 gates into ready-stance.spec.js — entry-25 baseline numbers stand).
+
+**Reviewer answers (5ef48b9, 07:45) disposition — ski item attempted FIRST this
+session per the new order and also reverted.** Root cause found exactly where
+entry 25 suspected: the ready-stance seating block (`game.js` ~5501) builds
+`qLocal = qRoot.conjugate() × qFlat`, which pins the skis' WORLD orientation to
+the slope-roll alone — cancelling the root's readyYaw outright. That is why
+readyYaw "never reaches" the ski drivers. Fix composed readyYaw onto the target
+(`qFlatY = R_y(readyYaw) × qFlat`; across-hill pre-turn, fall-line at handoff)
+and ran `tests/drive/ready-stance.spec.js`: **FAILED at skiL sample 0 clearance
+0.5826 m (limit ≤0.005)** — the block's remaining geometry was authored around
+the misaligned frame: its side-gap height compensation assumes body-±x lies
+ALONG the fall line (now inverted when skis correctly point lateral), the
+uphill/downhill leg-flex roles ride on that assumption, and the corner-probe
+reseat samples ski-local corners through `qRoot`, which no longer matches the
+ski world orientation (`qFlatY`). `game.js` + `index.html` (?v) restored
+byte-clean; no partial fix committed. Iteration 27 must land the yaw compose AND
+re-derive those three dependent pieces together, then add both spec gates; boot
+yaw (~21° bind-frame residual) follows with the same rebuild window as the arm
+work.
 
 ### 25 — Review-only: full suite audited; kicker-faces gate repaired (follow-steal + buried block); ski/boot alignment BASELINE measured for the mandatory item
 
