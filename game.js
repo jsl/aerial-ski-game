@@ -988,7 +988,15 @@ function _startGame() {
     hemi.diffuse     = new BABYLON.Color3(0.85, 0.92, 1.0);
     hemi.groundColor = new BABYLON.Color3(0.40, 0.46, 0.55);
 
-    // Directional sun light — afternoon angle from upper-left-back
+    // Directional sun light — afternoon angle from upper-left-back.
+    // NOTE (iter 39, P2): a 32° elevation (the plan's footage number) was tried
+    // here with intensity compensated (×1.33, sin-scaling) — the sky and the
+    // disc read it fine, but the hemi+IBL indirect (~0.71 sRGB measured) so
+    // dominates underneath that the athlete shadow drop collapsed 0.80 → 0.05
+    // (gates 0.15/0.20) and the in-run grey-ramp band missed by 0.0006. The
+    // elevation move is therefore coupled to a full sun/indirect/exposure
+    // rebalance (P12-quality retune) — deferred with numbers in the progress
+    // entry. The dome reads THIS light's direction for the disc.
     const sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.35, -1, 0.45), scene);
     sunLight.position  = new BABYLON.Vector3(-30, 60, -40);
     sunLight.intensity = 0.82;
@@ -1026,12 +1034,108 @@ function _startGame() {
     } catch(e) { shadowGen = null; }
 
     // ── Atmospheric fog — makes distant terrain fade into the sky ──────────────
+    // P2: clear-air density (was 0.005); the colour is the sky dome's horizon
+    // colour exactly, so fogged terrain blends seamlessly into the dome.
     if (!_trampolineMode) {
         scene.fogMode    = BABYLON.Scene.FOGMODE_EXP2;
-        scene.fogDensity = _poolDiveMode ? 0.003 : 0.005;  // halved: was lifting the black floor ~29 levels
+        scene.fogDensity = _poolDiveMode ? 0.003 : 0.0022;  // clear air (P2); was 0.005
         scene.fogColor   = _poolDiveMode
             ? new BABYLON.Color3(0.50, 0.72, 0.95)
-            : new BABYLON.Color3(0.68, 0.87, 0.99);
+            : new BABYLON.Color3(0.62, 0.76, 0.92);  // = skyShader horizonColor
+    }
+
+    // ── P2 sky: procedural gradient dome + cumulus layer + sun disc/glare ──────
+    // Ski mode only (pool/trampoline keep their backdrops). Guarded on
+    // ShaderMaterial so the golden harness's inert stub — which deliberately
+    // lacks it — skips the whole block: the dome is display-only and must not
+    // enter the traces (see tests/golden/stub-extend.js design rule).
+    if (!_trampolineMode && !_poolDiveMode &&
+        BABYLON.ShaderMaterial && BABYLON.Effect && BABYLON.Effect.ShadersStore &&
+        BABYLON.MeshBuilder) {
+        BABYLON.Effect.ShadersStore.skyVertexShader = `
+precision highp float;
+attribute vec3 position;
+uniform mat4 worldViewProjection;
+varying vec3 vDir;
+void main(void) {
+    vDir = position;
+    gl_Position = worldViewProjection * vec4(position, 1.0);
+}`;
+        BABYLON.Effect.ShadersStore.skyFragmentShader = `
+precision highp float;
+varying vec3 vDir;
+uniform vec3 sunDir;
+uniform vec3 zenithColor;
+uniform vec3 horizonColor;
+float _hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float _noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = _hash(i);
+    float b = _hash(i + vec2(1.0, 0.0));
+    float c = _hash(i + vec2(0.0, 1.0));
+    float d = _hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float _fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int k = 0; k < 5; k++) {
+        v += a * _noise(p);
+        p = p * 2.03 + vec2(19.7, 7.3);
+        a *= 0.5;
+    }
+    return v;
+}
+void main(void) {
+    vec3 dir = normalize(vDir);
+    float y = clamp(dir.y, 0.0, 1.0);
+    // Deep blue zenith into a pale horizon; the pow curve keeps the zenith
+    // saturated and the horizon band wide, like the footage's clear sky.
+    vec3 col = mix(zenithColor, horizonColor, pow(1.0 - y, 2.4));
+    // Cumulus: value-noise fbm projected on a plane above the camera, thinning
+    // into the horizon haze. Static (no time term) so shots and luminance
+    // gates stay deterministic.
+    if (dir.y > 0.015) {
+        vec2 uv = dir.xz / (dir.y + 0.10);
+        float f = _fbm(uv * 1.35 + vec2(13.1, 7.7));
+        float cov = smoothstep(0.52, 0.66, f);
+        float fade = smoothstep(0.02, 0.16, dir.y);
+        float dens = cov * fade;
+        // Lit tops near-white, dense centres shaded blue-grey.
+        vec3 cloudCol = mix(vec3(1.02, 1.04, 1.08), vec3(0.74, 0.80, 0.90),
+                            smoothstep(0.35, 0.75, f) * 0.55);
+        col = mix(col, cloudCol, dens * 0.92);
+    }
+    // Sun disc + glare at the directional light's own direction. Values above
+    // 1.0 ride the HDR/ACES roll-off into white and feed the bloom pass.
+    float d = max(dot(dir, sunDir), 0.0);
+    float disc = smoothstep(0.99988, 0.99996, d);
+    float halo = pow(d, 700.0) * 0.9 + pow(d, 90.0) * 0.30 + pow(d, 12.0) * 0.10;
+    col += vec3(1.30, 1.24, 1.10) * (disc * 2.2 + halo);
+    gl_FragColor = vec4(col, 1.0);
+}`;
+        try {
+            const skyMat = new BABYLON.ShaderMaterial('skyShader', scene,
+                { vertex: 'sky', fragment: 'sky' },
+                { attributes: ['position'],
+                  uniforms: ['worldViewProjection', 'sunDir', 'zenithColor', 'horizonColor'] });
+            // The disc sits where the light COMES FROM (opposite its travel).
+            const sd = sunLight.direction.clone().normalize().scale(-1);
+            skyMat.setVector3('sunDir', sd);
+            skyMat.setColor3('zenithColor', new BABYLON.Color3(0.07, 0.20, 0.55));
+            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.62, 0.76, 0.92));
+            skyMat.backFaceCulling = false;
+            const sky = BABYLON.MeshBuilder.CreateSphere('skyDome',
+                { diameter: 4000, segments: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+            sky.material = skyMat;
+            sky.infiniteDistance = true;   // rides the camera, never clips
+            sky.isPickable = false;
+            sky.applyFog = false;
+        } catch (e) { /* no shader sky — flat clearColor remains */ }
     }
 
     // ── Image-based lighting ────────────────────────────────────────────────
@@ -1307,8 +1411,7 @@ function _startGame() {
             dofPipeline.imageProcessing.toneMappingType =
                 BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
             dofPipeline.imageProcessing.exposure = 1.0;
-            dofPipeline.imageProcessing.contrast = 1.6;   // ACES compresses hard; without this the
-                                              // histogram sits in a narrow mid band and reads as haze
+            dofPipeline.imageProcessing.contrast = 1.2;   // P2: the real sky now supplies dynamic range; was 1.6
 
             // Dithering breaks up 8-bit banding in large smooth gradients. The
             // sky and open snow are exactly that, and with untextured flat

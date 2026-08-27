@@ -110,7 +110,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
-| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iters 15, 20** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open**; iter 20: reproduces (corridor 0.8210, inrun 0.8235, kicker 0.8017, flanks 0.8268/0.8276 vs sky 0.7986; shadow drop 79.8%) — margins thin, widen in the P2 remainder |
+| P2 | Sky and sun | **sky slice landed (iter 39): procedural gradient dome + cumulus + sun disc/glare, clear-air fog, contrast 1.2; sky.spec green** | dome: zenith r−b −0.389, clouds 10.8%, sun patch 0.974, scene-margin snow−sky +0.138 (gate +0.05); unit 74/74, golden 30/30 **no re-capture** (dome guarded out of the stub), shadows/grey-ramp/kicker-faces green; iter-39 measured: **32° sun elevation coupled to a lighting rebalance** (indirect 0.71 sRGB dominates → shadow drop 0.72→0.05 if moved naively) — deferred with numbers; earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), sun-disc/fog re-tune now landed |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
@@ -250,6 +250,78 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 39 — P2 slice: real procedural sky (gradient dome + cumulus + sun disc/glare), clear-air fog, post contrast 1.6→1.2 (commit this tree)
+
+Unit of work: the reviewer's 16:05 item (2) — P2 sky/sun starts. Slice landed:
+**the visible sky**. Not landed: the 32° sun elevation (measured, coupled to a
+lighting rebalance — see below) and height haze on the ridgelines.
+
+**What changed (`game.js`, display-only; `engine/` untouched, `assets/` untouched
+→ no ASSET_V bump; `index.html` `game.js?v=23→24`).**
+- **Sky dome** (`skyDome`, `ShaderMaterial` registered via
+  `Effect.ShadersStore`): analytic gradient (deep blue zenith (0.07,0.20,0.55)
+  → pale horizon (0.62,0.76,0.92), pow curve), a static 5-octave value-noise
+  fbm cumulus layer projected above the camera (~11% coverage in the up-look
+  band, thinned into the horizon haze), and a sun disc + 3-lobe glare drawn at
+  the directional light's own direction (HDR values >1 ride the ACES roll-off
+  and feed bloom). `infiniteDistance`, not pickable, not a shadow caster.
+  Guarded on `BABYLON.ShaderMaterial` so the golden stub (which deliberately
+  lacks it, per stub-extend's design rule) skips the block — the traces never
+  see the dome.
+- **Fog** EXP2 0.005 → 0.0022 (clear air); fogColor = the dome's horizon colour
+  exactly, so distant terrain blends into the dome seamlessly.
+- **Post** contrast 1.6 → 1.2 (the sky now supplies real dynamic range).
+- **Sun elevation NOT moved (measured, deferred).** A 32° elevation with
+  sin-scaled intensity compensation (0.82→1.33) was implemented and probed:
+  sun-only rendering still shows a 68% shadow drop, but the hemi+IBL indirect
+  (~0.71 sRGB measured with the sun off) dominates underneath, so the visible
+  athlete-shadow drop collapsed 0.72 → 0.05 (gate 0.15) and the in-run
+  grey-ramp band missed its tolerance by 0.0006. The elevation move is
+  therefore coupled to a sun/indirect/exposure rebalance (P12-quality retune),
+  not a one-line change — reverted; the disc rides the existing 60° light.
+
+**New gate: `tests/drive/sky.spec.js`** (structure: dome on skyShader, not a
+caster; zenith deep blue; sun disc ≥ 0.25 over zenith; cumulus present; snow
+≥ sky + 0.05). It measures on a dedicated FreeCamera with the post pipeline
+attached because the game's camera follow lives in
+`scene.registerBeforeRender` and re-drags the ArcRotate target inside ANY
+`scene.render()` — composed views must not use the game camera.
+
+**Two pre-existing instrument findings (recorded, not fixed):** (a)
+shadows.spec's tree-shadow ray pointed toward the SUN, not away — it only ever
+passed because dense forest shadows those samples from further trees (a
+direction probe this session: the true displacement is +(0.614,0.789) of the
+light's horizontal travel); (b) look/review-measure style framings on the game
+camera are follow-dragged mid-render (same mechanism as kicker-faces
+documented in iter 21).
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30 with NO re-capture** (the guard kept the dome out of the harness and
+sun/fog/contrast touch no recorded state). Drive, all green in one run:
+sky (zenith lum 0.4436 / r−b −0.3885 / clouds whiteFrac 0.108 / sun patch
+0.9736 = zenith+0.53 / scene-framing margin snow 0.786 vs sky 0.648 =
+**+0.138**, gate +0.05); shadows re-run unchanged (athlete drop **0.7203**,
+tree **0.5998**); grey-ramp corridor 0.7866 vs flanks 0.7889/0.7896, inrun
+0.7878, kickerFace 0.7596, skyFrac 0 everywhere; kicker-faces block lum
+0.6079 / rb −0.0882 / warmFrac 0.0189. `look` regenerated: scene/figure/
+figure_front show the gradient sky, cumulus, fogged ridgelines blending into
+the dome with no seam; venue, athlete, B-net, skis unchanged. Debug probes
+removed; scratch dir unused (all probes were in-repo temp specs, deleted).
+
+**Open for the reviewer**
+- **Sun elevation 32° needs its own session with a lighting rebalance**
+  (mechanism + numbers above): raise sun intensity AND cut hemi/IBL so
+  direct ≥ indirect on snow, re-tune exposure/contrast, then re-walk the
+  luminance gates (grey-ramp bands, kicker-faces, shadow drops, sky margin).
+  Fits naturally with P12's material/post retune.
+- The height haze on the far ridgelines (P2) is not started; the fog colour
+  now matches the dome horizon, which already reads as a haze band.
+- Cloud drift/animation deliberately omitted (deterministic gates); add time
+  as a uniform only with slow drift + gate re-measure.
+- Sky-vs-sky margin in the scene framing measures the HORIZON band (fogged
+  peaks + pale horizon), not the zenith — that is the honest worst case and
+  it passes at +0.138; confirm the gate's intent is the horizon band.
 
 ### 38 — P11 closed to enforced gates: pen gate was an instrument defect on the slope + head-axis re-solve + hard length projection (commit this tree)
 
