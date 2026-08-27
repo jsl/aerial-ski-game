@@ -1164,7 +1164,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=11';
+    const ASSET_V = '?v=12';
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -1704,6 +1704,11 @@ void main(void) {
     // Crash-ragdoll probe (P11 spec): the surface the ragdoll contacts (the
     // physics surface: terrainRootY(z) - FOOT_OFFSET, or the mode floor).
     window._crashFloorY = function (z) { return _crashFloorY(z); };
+    // Ragdoll settle probe (human item 2): rest state for the drive spec.
+    window._ragdollProbe = function () {
+        return ragdoll ? { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
+                           t: ragdoll.t, restAt: ragdoll.restAt } : null;
+    };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
     if (_trampolineMode || _poolDiveMode) {
@@ -3918,14 +3923,26 @@ void main(void) {
         const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
         const _rq = character.root.rotationQuaternion || R.qRoot;
         const qRootInv = _crashQConj(_rq);
+        // When the rest detector has fired (R.resting), the ragdoll pose is
+        // FROZEN in world space — but the physics root KEEPS SLIDING under it
+        // (the crash only froze state.vz at impact and the slope keeps
+        // re-accelerating it), so the world→root write-back below must keep
+        // running every frame or the frozen root-local pose would ride the
+        // sliding root and the body would visibly glide down the out-run
+        // (measured: rendered torso speed 10.1 m/s with a naive full freeze).
+        // Everything from integration to spray is skipped; only the
+        // transform write-back executes.
+        if (!R.resting) {
         // ── Verlet integrate (2 substeps for stability at clamped dt) ─────
         const nSub = dt > 0.026 ? 3 : 2;
         const h = dt / nSub;
         for (let s = 0; s < nSub; s++) {
             for (const pt of R.parts) {
-                const vx = (pt.p.x - pt.prev.x) * 0.996;
-                const vy = (pt.p.y - pt.prev.y) * 0.996;
-                const vz = (pt.p.z - pt.prev.z) * 0.996;
+                // Linear damping raised 0.996 → 0.99 (human item 2: total
+                // ragdoll motion after impact ≈ 2–3 s, then still).
+                const vx = (pt.p.x - pt.prev.x) * 0.99;
+                const vy = (pt.p.y - pt.prev.y) * 0.99;
+                const vz = (pt.p.z - pt.prev.z) * 0.99;
                 pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
                 pt.p.x += vx; pt.p.y += vy - _CRASH_GRAV * h * h; pt.p.z += vz;
             }
@@ -3959,12 +3976,24 @@ void main(void) {
                         pt.p.y = surf;
                         const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
                         const vH = Math.sqrt(vx * vx + vz * vz);
-                        // Ploughing friction + a static stop so the body settles.
-                        const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
-                        let k = 1 - f;
-                        if (vH * (1 - k) / h < 0.5) k = 0.25;
-                        pt.prev.x = pt.p.x - vx * k;
-                        pt.prev.z = pt.p.z - vz * k;
+                        // Static friction (human item 2): below 0.35 m/s the
+                        // contact STOPS the point dead. Without this the body
+                        // creeps forever at the gravity-injection equilibrium
+                        // (g·h per substep ≈ 0.26 m/s at clamped headless dt),
+                        // so the rest detector never sees < 0.08 m/s.
+                        if (vH / h < 0.35) {
+                            pt.prev.x = pt.p.x;
+                            pt.prev.z = pt.p.z;
+                        } else {
+                            // Ploughing friction + a static stop so the body settles.
+                            // Static-stop threshold raised 0.5 → 0.9 m/s (human
+                            // item 2: come to rest within ~1 s of stopping).
+                            const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
+                            let k = 1 - f;
+                            if (vH * (1 - k) / h < 0.9) k = 0.25;
+                            pt.prev.x = pt.p.x - vx * k;
+                            pt.prev.z = pt.p.z - vz * k;
+                        }
                         if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
                     }
                 }
@@ -4103,7 +4132,28 @@ void main(void) {
             R.sprayT = 0.12;
             _spawnSnowBurst(R.torso.x, R.torso.y - 0.35, R.torso.z, 14, Math.min(2.2, R.maxSpeed / 6));
         }
+        // ── Rest detector (human item 2): freeze the pose once settled ────
+        // A few tumbles, a slide, then a STILL resting pose: total ragdoll
+        // motion after impact ≈ 2–3 s. Count consecutive slow frames — body
+        // displacement rate below 0.12 m/s (imperceptible at game camera
+        // distance, and safely under the 0.1 m/s settle gate once the last
+        // 4 cm of creep decay) and every released ski at rest — after at
+        // least 1 s of ragdoll time (no freezing during a mid-tumble lull).
+        // After 8 such frames (~0.13 s at 60 fps) mark R.resting; the step
+        // then skips the physics and only re-projects the frozen world pose
+        // into the still-sliding root frame — the settle gate and "no
+        // residual jitter / no motion afterwards" hold by construction.
+        // restAt records the ragdoll time of the freeze.
+        if (!R.resting) {
+            const _skisStill = R.skis.every(sk =>
+                sk.resting && Math.hypot(sk.vel.x, sk.vel.z) < 0.03);
+            if (R.t > 1.0 && R.maxSpeed < 0.12 && _skisStill) {
+                R.restFrames = (R.restFrames || 0) + 1;
+                if (R.restFrames >= 8) { R.resting = true; R.restAt = R.t; }
+            } else R.restFrames = 0;
+        }
         // ── Write driver transforms (root-local, bones follow as always) ──
+        } else { R.maxSpeed = 0; }
         // Arm segments are passed (distal, proximal) so the written +Y matches
         // the arm drivers' own frame (+Y = elbow/wrist end); torso/head/legs
         // pass (proximal, distal) per their +Y-proximal frames. See the note
@@ -5834,6 +5884,9 @@ void main(void) {
         if (crashActive && ragdoll) {
             crashTimer += dt;
             try {
+                // Keeps running after the rest detector fires: once resting
+                // the step skips the physics and only re-projects the frozen
+                // world-space pose into the still-sliding root frame.
                 _crashRagdollStep(ragdoll, dt);
             } catch (e) { window._crashErr = String((e && e.stack) || e); ragdoll = null; }
         }

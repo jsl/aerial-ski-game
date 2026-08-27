@@ -53,13 +53,46 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
     await page.waitForTimeout(800);
 
-    // Drive the same inputs as the golden aerial-crash-ragdoll scenario.
+    // ── Deterministic crash trigger (state-driven, not wall-clock) ──────────
+    // The old script pressed keys on wall-clock timers; under SwiftShader the
+    // render loop runs at a few fps with clamped dt, so physics time lags wall
+    // time and the charge/tuck schedule landed differently every run (iter 40:
+    // one run never crashed in 30 s). The golden aerial-crash-ragdoll
+    // scenario's schedule is STATE-determined — hold ↓ until the flip-power
+    // bar is full, then hold tuck from takeoff — so the pump below dispatches
+    // each key exactly when the state crosses that boundary, making the
+    // trigger fps-independent (the page's key handler binds on event.code).
     await page.keyboard.press('ArrowUp');
-    await page.waitForTimeout(1000);
-    await page.keyboard.down('ArrowDown');
-    await page.waitForTimeout(1700);
-    await page.keyboard.up('ArrowDown');
-    await page.keyboard.down('Space');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 45000 });
+    await page.evaluate(() => {
+        window._pump = { down: false, tuck: false, stop: false };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            if (window._pump.stop) return;
+            const g = window._getGameState();
+            if (g.crashed) {
+                if (window._pump.down) send('keyup', 'ArrowDown');
+                if (window._pump.tuck) send('keyup', 'Space');
+                window._pump.stop = true;
+                return;
+            }
+            // Charge: hold ↓ while grounded until the bar is full.
+            if (g.grounded && !window._pump.down && g.flipPower < 0.999) {
+                window._pump.down = true; send('keydown', 'ArrowDown');
+            } else if (window._pump.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                window._pump.down = false; send('keyup', 'ArrowDown');
+            }
+            // Tuck: hold Space from the first airborne frame (the golden
+            // script's frame-300 Space, expressed as a state boundary).
+            if (!g.grounded && !window._pump.tuck) {
+                window._pump.tuck = true; send('keydown', 'Space');
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
 
     // rAF sampler from just before the crash until settled (or 10 s).
     await page.evaluate((SEG_H) => {
@@ -84,7 +117,8 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                 };
                 const dist = (a, b) => a && b
                     ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null;
-                const rec = { t: now, crashed: g.crashed, gaps: {}, pens: {}, legacy: 0, bodyVisible: 0, rootOn: null, skis: {} };
+                const rec = { t: now, crashed: g.crashed, gaps: {}, pens: {}, legacy: 0, bodyVisible: 0, rootOn: null, skis: {},
+                              probe: window._ragdollProbe ? window._ragdollProbe() : null };
                 // Arms: +Y is the DISTAL end (elbow/wrist) — see the header.
                 rec.gaps.elbowL = dist(end('upperArmL', 1), end('lowerArmL', -1));
                 rec.gaps.elbowR = dist(end('upperArmR', 1), end('lowerArmR', -1));
@@ -168,13 +202,36 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         if (r.rootOn === false) rootOffFrames++;
         if (r.bodyVisible === 0) bodyGone++;
     }
-    // Body settles: the latest speed sample inside the 5 s window (and every
-    // sample after 3.5 s) is < 0.1 m/s. Sparse headless rAF may give few
-    // samples; the gate is on the last one plus any late ones present.
-    const late = settledBy.filter(r => r.t - tCrash > 3500 && r.tSpeed !== null);
-    const lastSpeedSample = settledBy.filter(r => r.tSpeed !== null).pop();
-    const tail = late.length ? late : (lastSpeedSample ? [lastSpeedSample] : []);
-    const maxTailSpeed = tail.length ? Math.max(...tail.map(r => r.tSpeed)) : 99;
+    // Body settles: measured by the rest detector below (freeze time +
+    // post-freeze stillness) — the previous wall-clock tail window is what
+    // made this spec flaky (iter 40).
+    // ── Human item 2: a few tumbles, then STILL — rest detector ────────────
+    // The ragdoll must freeze (probe.resting) within ~3 s of impact (total
+    // motion ≈ 2–3 s), and show NO body animation afterwards. The settle
+    // contract is evaluated on the POST-FREEZE samples: the slide before the
+    // freeze is legitimate motion whose length varies with the crash
+    // severity (run-to-run touchdown energy varies by a frame under
+    // SwiftShader), so a wall-clock tail window is exactly what made this
+    // spec flaky in iter 40. The frozen world-space pose is re-projected
+    // into the physics root, which keeps sliding until the run's own stop,
+    // so the rendered torso is static up to one frame of root-slide
+    // projection lag (measured 0.045 m/s) — the gate sits above that
+    // artefact and under the 0.1 m/s settle contract.
+    const frozen = traceR.filter(r => r.probe && r.probe.resting);
+    expect(frozen.length, 'ragdoll reached the frozen resting state').toBeGreaterThan(0);
+    const restAt = frozen[0].probe.restAt;
+    // Gate at 3.5 s: the author's target is ≈ 2–3 s of motion, but the
+    // touchdown energy varies by ~1 frame run-to-run under SwiftShader, and
+    // a more violent crash slides proportionally longer (measured spread
+    // 3.0–4.2 s at the pre-tune friction). The freeze threshold itself is
+    // 0.12 m/s — the motion is over long before the detector confirms it.
+    expect(restAt, `rest detector fired at ragdoll t=${restAt.toFixed(2)}s (target ≤ 3.5 s of motion)`)
+        .toBeLessThanOrEqual(3.5);
+    const firstRest = traceR.findIndex(r => r.probe && r.probe.resting);
+    const afterFreeze = traceR.slice(firstRest).filter(r => r.tSpeed !== null);
+    const maxTailSpeed = afterFreeze.length ? Math.max(...afterFreeze.map(r => r.tSpeed)) : 0;
+    expect(maxTailSpeed, `settled: post-freeze speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
+        .toBeLessThan(0.06);
     // Skis at rest on the surface at the end.
     const lastRec = traceR[traceR.length - 1];
     const skiClear = ['skiL', 'skiR'].map(sk => lastRec.skis[sk]
@@ -192,7 +249,6 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         Object.entries(perJoint).map(([k, v]) => [k, +v.toFixed(4)])));
     expect(worstGap, `worst joint gap ${worstGap.toFixed(4)} m ≤ 0.02 per joint ${worstJoints}`).toBeLessThanOrEqual(0.02);
     expect(worstPen, `worst body penetration ${worstPen.toFixed(4)} m within corner tolerance`).toBeLessThanOrEqual(0.06);
-    expect(maxTailSpeed, `settled: tail speed ${maxTailSpeed.toFixed(3)} m/s < 0.1`).toBeLessThan(0.1);
     for (const c of skiClear) {
         expect(c, `ski rests on the snow (clearance ${c === null ? 'n/a' : c.toFixed(4)})`).not.toBeNull();
         expect(c).toBeGreaterThanOrEqual(-0.005);

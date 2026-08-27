@@ -63,6 +63,69 @@ test('hop turn: crouch → skis leave snow 10–15 cm while rotating 90° → ab
         window._hopStop = false;
         const t0 = performance.now();
         const flex = (t, s) => Math.abs(t.rotation.x - s.rotation.x);
+        // ── Boot↔ski attachment instrument (human item 1) ────────────────────
+        // The ski drivers must travel with the boots — same lift, same
+        // rotation — through the whole crouch/hop/absorb. Measured as the
+        // RIGID relative transform between each shin's ankle end and its ski
+        // in the ROOT frame (rotation-invariant distance + heading
+        // difference), which the seating/hip-turn code must keep constant.
+        // The node rotation convention is the game's own (writeSeg):
+        // direction = Rx(rx)·Rz(rz) applied to the local axis.
+        const qRot = (n, v) => {
+            let w;
+            if (n.rotationQuaternion) {
+                const q = n.rotationQuaternion;
+                w = { x: v.x, y: v.y, z: v.z };
+                // v' = q · v · q*
+                const qx = q.w * w.x + q.y * w.z - q.z * w.y;
+                const qy = q.w * w.y + q.z * w.x - q.x * w.z;
+                const qz = q.w * w.z + q.x * w.y - q.y * w.x;
+                const qw = -q.x * w.x - q.y * w.y - q.z * w.z;
+                return {
+                    x: qx * q.w + qw * -q.x + qy * -q.z - qz * -q.y,
+                    y: qy * q.w + qw * -q.y + qz * -q.x - qx * -q.z,
+                    z: qz * q.w + qw * -q.z + qx * -q.y - qy * -q.x,
+                };
+            }
+            const rx = n.rotation.x || 0, rz = n.rotation.z || 0;
+            // Rz then Rx (direction = Rx·Rz·v)
+            const cx = Math.cos(rx), sx = Math.sin(rx), cz = Math.cos(rz), sz = Math.sin(rz);
+            const x1 = v.x * cz - v.y * sz, y1 = v.x * sz + v.y * cz, z1 = v.z;
+            return { x: x1, y: y1 * cx - z1 * sx, z: y1 * sx + z1 * cx };
+        };
+        const feet = () => {
+            const scene = BABYLON.EngineStore.LastCreatedScene;
+            const out = {};
+            for (const side of ['L', 'R']) {
+                const ll = scene.getMeshByName('lowerLeg' + side);
+                const sk = scene.getMeshByName('ski' + side);
+                if (!ll || !sk) continue;
+                // Ankle = shin distal end, 0.18 m from the centre. The leg
+                // drivers pose on euler rx (applyPose / seating / crouch), and
+                // the game's own crouch pin (game.js: `_ll.position.z +=
+                // 0.18*(sin(rxNew)−sin(rxOld))`, `_ll.position.y += drop +
+                // 0.18*(cos(rxOld)−cos(rxNew))`) holds the point
+                // centre + (0, +0.18·cos rx, −0.18·sin rx) fixed — that IS the
+                // ankle in the game's convention, so measure it.
+                const a = ll.rotationQuaternion
+                    ? qRot(ll, { x: 0, y: 0.18, z: 0 })
+                    : { x: 0, y: 0.18 * Math.cos(ll.rotation.x || 0),
+                        z: -0.18 * Math.sin(ll.rotation.x || 0) };
+                a.x += ll.position.x; a.y += ll.position.y; a.z += ll.position.z;
+                // Ski top-centre point.
+                const s = qRot(sk, { x: 0, y: 0.012, z: 0 });
+                s.x += sk.position.x; s.y += sk.position.y; s.z += sk.position.z;
+                const d = Math.hypot(a.x - s.x, a.y - s.y, a.z - s.z);
+                // Boot vs ski heading in the root frame (tip/toe = local −z).
+                const ts = qRot(sk, { x: 0, y: 0, z: -1 });
+                const tb = qRot(ll, { x: 0, y: 0, z: -1 });
+                let dy = Math.atan2(ts.x, ts.z) - Math.atan2(tb.x, tb.z);
+                while (dy > Math.PI) dy -= 2 * Math.PI;
+                while (dy < -Math.PI) dy += 2 * Math.PI;
+                out[side] = { d, dy };
+            }
+            return out;
+        };
         const tick = () => {
             if (window._hopStop) return;
             const g = window._getGameState();
@@ -83,6 +146,7 @@ test('hop turn: crouch → skis leave snow 10–15 cm while rotating 90° → ab
                 skiWorst: Math.min(p.skis.skiL ? p.skis.skiL.worst : 0,
                                    p.skis.skiR ? p.skis.skiR.worst : 0),
                 flexL, flexR,
+                feet: feet(),
             });
             requestAnimationFrame(tick);
         };
@@ -167,6 +231,38 @@ test('hop turn: crouch → skis leave snow 10–15 cm while rotating 90° → ab
     const peakK2 = Math.max(...after.map(s => s.flexK));
     expect(peakK2, 'absorption fold observed after touchdown').toBeGreaterThanOrEqual(0.1 * phases.kMax);
     expect(peakK2, 'absorption shallower than the crouch').toBeLessThanOrEqual(0.75 * phases.kMax);
+
+    // ── Boot↔ski attachment (human item 1): the feet stay on the skis ──────
+    // Baseline = median over the pre-turn samples (u === 0); every turn
+    // sample must hold: the ankle↔ski offset stays within 5 mm of its seated
+    // value (same lift) and the boot heading stays within 3° of the ski's
+    // (same rotation). This is exactly "the ski drivers travel with the
+    // boots" measured per rendered frame of the crouch/hop/absorb.
+    const pre = T.filter(s => s.u === 0 && s.feet && s.feet.L && s.feet.R);
+    expect(pre.length, 'pre-turn attachment samples').toBeGreaterThan(0);
+    const med = (arr, f) => {
+        const v = arr.map(f).sort((a, b) => a - b);
+        return v[Math.floor(v.length / 2)];
+    };
+    for (const side of ['L', 'R']) {
+        const d0 = med(pre, s => s.feet[side].d);
+        const dy0 = med(pre, s => s.feet[side].dy);
+        let worstD = 0, worstA = 0, nTurn = 0;
+        for (const s of run) {
+            if (!s.feet || !s.feet[side]) continue;
+            if (s.u <= 0 || s.u > 1.001) continue;
+            nTurn++;
+            worstD = Math.max(worstD, Math.abs(s.feet[side].d - d0));
+            worstA = Math.max(worstA, Math.abs(s.feet[side].dy - dy0));
+        }
+        expect(nTurn, `turn samples captured for ${side}`).toBeGreaterThan(0);
+        console.log(`HOPFEET ${side} baseline d=${d0.toFixed(4)} dy=${(dy0 * 180 / Math.PI).toFixed(2)}deg ` +
+            `worst drift d=${(worstD * 1000).toFixed(2)}mm yaw=${(worstA * 180 / Math.PI).toFixed(2)}deg over ${nTurn} turn samples`);
+        expect(worstD, `${side} boot↔ski offset drift ${(worstD * 1000).toFixed(2)} mm ≤ 5 mm through the hop`)
+            .toBeLessThanOrEqual(0.005);
+        expect(worstA, `${side} ski yaw − boot yaw drift ${(worstA * 180 / Math.PI).toFixed(2)}° ≤ 3°`)
+            .toBeLessThanOrEqual(3 * Math.PI / 180);
+    }
 
     // ── Post-turn: clean hand-back into the in-run posture ───────────────────
     for (const ski of ['skiL', 'skiR']) {
