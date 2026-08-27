@@ -9,6 +9,8 @@ const { defineConfig } = require('@playwright/test');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+// Port for the static server; override with DRIVE_PORT so parallel lanes/worktrees do not collide on 8099.
+const PORT = parseInt(process.env.DRIVE_PORT || '8099', 10);
 
 module.exports = defineConfig({
     testDir: __dirname,
@@ -26,14 +28,14 @@ module.exports = defineConfig({
 
     // Serve the game exactly as it ships — static files, no build step.
     webServer: {
-        command: `python3 -m http.server 8099 --bind 127.0.0.1 --directory ${ROOT}`,
-        url: 'http://127.0.0.1:8099/index.html',
+        command: `python3 -m http.server ${PORT} --bind 127.0.0.1 --directory ${ROOT}`,
+        url: `http://127.0.0.1:${PORT}/index.html`,
         reuseExistingServer: false,
         timeout: 30_000,
     },
 
     use: {
-        baseURL: 'http://127.0.0.1:8099',
+        baseURL: `http://127.0.0.1:${PORT}`,
         headless: true,
         // Small viewport ON PURPOSE. game.js:2904 skips the entire update when
         // rawDt > 0.1s, a guard against physics exploding after a tab stall.
