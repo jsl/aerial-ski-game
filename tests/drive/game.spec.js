@@ -36,6 +36,11 @@ function watchErrors(page) {
 async function waitForBoot(page) {
     await page.waitForFunction(() => typeof window._getGameState === 'function',
         null, { timeout: 30_000 });
+    // Press-start inputs are swallowed if they land while the glb body-link
+    // promise is still resolving (iter-20 probe: turn never starts within
+    // 150 s). Wait for the link to complete before any key is pressed.
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
 }
 
 const state = (page) => page.evaluate(() => window._getGameState());

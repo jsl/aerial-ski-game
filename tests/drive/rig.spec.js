@@ -9,8 +9,14 @@ async function boot(page) {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function',
         null, { timeout: 30_000 });
-    await page.waitForFunction(() => window._bodyLinked !== undefined,
-        null, { timeout: 30_000 });
+    // Wait for the link to COMPLETE (a positive count), not merely to be
+    // declared: `_bodyLinked !== undefined` fires while the glb promise is
+    // still in flight, and an ArrowUp pressed during the load window is
+    // swallowed — the entry-18/19/20 `waitForFunction` timeout class, pinned
+    // by iter 20's probe (turn flips in 3.75 s pressed after the wait,
+    // never within 150 s without it). Test-only; no game change.
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
     await page.waitForTimeout(800);
 }
 

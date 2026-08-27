@@ -122,8 +122,8 @@ test('only the athlete and the trees cast real-time shadows, and the VISIBLE ath
     // temporarily off the runtime CSM covers the athlete (+ skis) and the trees
     // either way — this file's caster half is independent of the bake and stays.
     await boot(page);
-    await page.waitForFunction(() => window._bodyLinked !== undefined,
-        null, { timeout: 30_000 });
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
 
     const r = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;

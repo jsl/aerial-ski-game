@@ -20,8 +20,8 @@ async function boot(page) {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function',
         null, { timeout: 30_000 });
-    await page.waitForFunction(() => window._bodyLinked !== undefined,
-        null, { timeout: 30_000 });
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
 }
 
 test('the continuous body loads and every bone is linked to its driver', async ({ page }) => {

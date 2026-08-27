@@ -15,6 +15,10 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    // The ArrowUp below must not land inside the glb load window or the ready
+    // turn never starts (input-vs-body-link race, pinned by iter 20's probe).
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
     // The ready-stance block memoises its ski dims on its first rendered frame;
     // the probe needs that (and one applied frame) before numbers exist.
     await page.waitForFunction(() => {
@@ -96,7 +100,7 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
 
     // ── Turn to the fall line: back to the in-run posture, skis on the snow ──
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 8000 });
+    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 45000 });
     await page.waitForTimeout(300); // let the pose settle on the first run frames
 
     const after = await page.evaluate(() => {

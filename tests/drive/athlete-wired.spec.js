@@ -20,7 +20,11 @@ async function bootAndUpgrade(page) {
         null, { timeout: 30_000 });
     // The transplant resolves off a promise; wait for its completion flag.
     await page.waitForFunction(() => window._athleteGeometryUpgraded !== undefined,
-        null, { timeout: 30_000 });
+        null, { timeout: 60_000 });
+    // ...and for the body-link itself to have completed (a positive count):
+    // inputs pressed during the load window are swallowed (iter-20 probe).
+    await page.waitForFunction(() => window._bodyLinked > 0,
+        null, { timeout: 60_000 });
 }
 
 test('the running athlete uses the Blender geometry', async ({ page }) => {
