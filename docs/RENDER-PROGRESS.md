@@ -111,6 +111,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
+| P11 | Coherent crash | **slice landed (iter 36, commit f84de2f)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 20 sticks / 6 iters, seeded angular limits, slope-scaled friction + static stop) drives the bones; skis release and slide to rest; impact burst + trailing spray; camera eases to the tumble. Audit: `state` byte-identical ×30 (node-census re-capture). OPEN: drive spec for the acceptance gates; browser verification |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
@@ -239,6 +240,86 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 36 — P11 slice: coherent crash ragdoll on the skinned body replaces the flying legacy solids (commit f84de2f)
+
+The author has seen the flying-boxes crash twice; per the entry-35 queue this
+was next. Tree started clean at `f24d675`; no new reviewer feedback beyond
+entry 35 (its two open questions — bib straight-on capture and figure_front
+exposure — remain unanswered, so untouched).
+
+**What changed (`game.js` only; `engine/` untouched, ADR-0002 display-only).**
+On `state.crashed` the athlete is NO LONGER hidden and the legacy driver
+solids are never re-shown or detached. Instead a position-based ragdoll takes
+over the driver transforms for the crash duration (`applyPose` and the
+root-rotation block are already gated off while `crashActive`; the bones
+follow the drivers via `linkTransformNode` exactly as in normal play, so the
+skinned body IS the ragdoll):
+
+- 15 verlet particles with SHARED joint particles (neck/shoulders/elbows/hips/
+  knees are single particles ⇒ joint gap 0 by construction, gate ≤ 2 cm met
+  trivially), 20 sticks: 10 body segments + rigid collar (shoulders) and
+  pelvis braces; 6 constraint iterations per substep, 2–3 substeps/frame.
+- Coarse angular limits seeded from the crash pose (a tuck lands deeply
+  flexed — the limits clamp away from the seed, never into it): head ≤ ~35–50°
+  off the torso axis; knees/elbows clamped to seed ±0.2 rad outward. Frame
+  rule (torso/head ±30°) satisfied by the head clamp.
+- Terrain contact per particle against `terrainRootY(z) − FOOT_OFFSET` (or the
+  mode floor): position projection, slope-scaled ploughing friction and a
+  low-speed static stop ⇒ hard-zone penetration 0 by construction; landing
+  sink 0 (within the ≤ 0.10 m band).
+- Skis release at impact: each slides flat on the surface plane (yaw spin
+  decaying, driver bottom plane pinned to the physics surface) and comes to
+  rest — never below it.
+- Impact `_spawnSnowBurst` (70 particles) + trailing spray every 0.12 s while
+  the body ploughs at > 1.2 m/s, scaled to speed. Camera follow eases to the
+  tumbling torso (`?v=20→21`; no ASSET_V change — `assets/` untouched).
+- `window._crashErr` surfaces any ragdoll exception out of the frame-level
+  try/catch (the BUG-001 silent-swallow class — it caught two real bugs during
+  development: sticks referencing unwrapped particles; the angular clamp
+  rotating an unnormalized vector, which injected energy and exploded the
+  body). The ski hand-back `else if` now respects `crashActive` so it cannot
+  null the ragdoll's ski quats mid-crash.
+
+**Golden traces: node-census-only re-capture, audited.** `npm run test:golden`
+was 17/30 before re-capture (13 crash-affected scenarios). Audit
+(`tests/golden/audit-ready-stance.js` vs HEAD traces in
+`~/aerial-agents/scratch/iter-36/pre-crash-traces/`): **`state` byte-identical
+in all 30 scenarios** — the physics never changed; diffs are the crash-frame
+node transforms/visibility (athleteBody no longer hidden, skierRoot no longer
+disabled, drivers follow the ragdoll). Re-captured per the ready-stance /
+hop-turn precedent → **30/30**.
+
+**Verification (harness numbers).** `npm run test:unit` **74/74**;
+`npm run test:golden` **30/30**. Harness probes on `aerial-crash-ragdoll`
+(seed 7, crash at f=431, z≈34.96 just past the lip): torso world position
+settles at the crash site — sampled drift 0.33 m/s at f+120, 0.02 m/s at
+f+200, 0.00 m/s from f+300 (settles ≈ 1–2 s, gate ≤ 5 s); worst body
+penetration across frames 431–831: **0.0 m** (contact projection); skis slide
+~4.5 m from the crash point and rest with quats written and the driver bottom
+plane on the surface; `athleteBody*` never hidden; `skierRoot` never disabled.
+
+**NOT done this session (recorded honestly; the 60-minute budget went to the
+ragdoll maths):** (1) the P11 acceptance DRIVE spec (per-frame joint gaps
+≤ 2 cm, per-driver contact rules, settle < 0.1 m/s within 5 s, skis at rest on
+the surface, no legacy solid visible) — next iteration, first item; (2) drive
+specs and `look` shots were NOT rerun in a real browser this session, and the
+crash path has not been eyeballed — the ragdoll's look (and the ski-release
+impulse tuning) needs the browser check before this slice is called done;
+(3) `aerial-idle`-style long-run stability beyond f=1200 untested.
+
+**Open questions for the reviewer**
+- Trace re-capture class: as with the ready-stance/hop-turn precedents, this
+  re-capture is node-census-only with `state` byte-identical ×30 — confirm it
+  stands without a fresh APPROVED line (the crash path changes recorded node
+  transforms by design).
+- Ski release tuning: the release impulse is currently modest
+  (lateral ±1.2 m/s, 1.4–3.4 m/s downhill, yaw ±2.5 rad/s) so the skis stop
+  near the body on the steep landing. If the author wants a livelier
+  cartwheel/slide, that is two constants in `_crashRagdollInit`.
+- Should the crash ragdoll also own the POOL and TRAMPOLINE crash variants
+  (they run the same path with their mode floors) or keep a distinct water
+  splash behaviour there?
 
 ### 35 — Review-only: iteration 34's uncommitted hop turn audited, landed and verified; full-suite review with measurements; re-prioritised queue
 
