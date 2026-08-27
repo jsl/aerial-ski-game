@@ -76,8 +76,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables |
 | P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.7986 > corridor 0.7949 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7, re-verified iters 13 and 15 (corridor 0.7949 ≥ flanks 0.7918/0.8058) |
-| P3 | Venue dressing | open | |
-| P4 | Forest | open | |
+| P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; open: wands, knoll flag, judges' deck, coach figures |
+| P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | open | |
@@ -141,6 +141,89 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 16 — Reviewer order 16: blue B-net fencing both edges (P3 slice 1) + review-measure corridor-box port + tree-trunk stopgap
+
+Mid-session reviewer inspection (d492d76, 01:35) pinned 16 = B-net + the
+review-measure box fix; both landed. Scratch dir unused/removed. Shots
+inspected directly (scene, figure_front).
+
+**Blue B-net (`game.js`, P3 pull-forward; reference IMG_3523/3520/7841)**
+- Continuous net along BOTH edges, `z = SLOPE_START_Z → OUTRUN_Z + 8`,
+  `x = ±6.2` (outside the ribbon edge, inside the tree-clear band): dark
+  thin posts every ~2.75 m as ONE thin-instanced cylinder (**68 posts, 1
+  draw call**; hand-written translation matrices so partial headless
+  stubs boot), one merged custom-strip mesh per side (2 draw calls),
+  procedural `DynamicTexture` blue rope weave, `PBRMATERIAL_ALPHATEST`
+  cutout, `backFaceCulling` off.
+- **Seating defect found and fixed:** picks during script evaluation are
+  unreliable — freshly built meshes' world matrices are not final until a
+  rendered frame (measured: every build-time pick missed or hit the wrong
+  fill; the first run seated posts **32.7 m** off the snow). Fix: seed all
+  heights from the exact physics profile, then RE-SEAT once on
+  `onAfterRenderObservable.addOnce` (picks truthful there); headless runs
+  keep the deterministic seed. Second defect found by the acceptance
+  sweep: station-interpolated top wire cut through the raised local snow
+  at the table→landing fill step (**−0.59 m sink at z ≈ 34**), so both
+  fabric edges now drape on each row's OWN picked ground; bottom edge
+  rides +2 cm, sag ±7 cm modulates the top lift.
+- Strips added to the CSM caster list (alpha-cut shadows); spec asserts
+  the alphaTest mode so a fallen-out cutout shadow cannot go unnoticed.
+
+**review-measure corridor box (entry-15 finding 4)** — ported to
+grey-ramp's projected-real-point method; now reads **corridor 0.7949**,
+byte-matching the authoritative grey-ramp gate (the stale fixed box read
+0.7666 off the wInrun/wStartPlat fills). Full REVIEW_MEASURE on the new
+tree: sky 0.7986 (still brighter than every snow surface — P2 remainder
+unchanged), flankNear 0.7918 / far 0.8058, inrun 0.7886, kickerFace
+0.7655, under-athlete 0.1564 vs ringMax 0.7818 (**80 % shadow drop**,
+gate holds), face luma 0.6821.
+
+**Tree-trunk stopgap (owed since iteration 5, third review)** — trunks
+tessellation 6→**16** with a 1.45× base flare, foliage 7→**12** sides.
+The real fix remains the P4 impostor forest.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** after an audited rebaseline — the ONLY divergence class is the
+three new `bnetPost/bnetStrip_L/R` node-census entries at frame 0
+(iter-6 corner_* precedent; flight/landing numbers byte-identical).
+Full drive suite **43 passed / 2 skipped** (7.9 m) including the new
+`tests/drive/venue-dressing.spec.js`: strips present/one material/alpha
+both sides, `thinInstanceCount === postCount === 68` (even, both edges),
+worst post-foot terrain mismatch < 2 cm (fresh re-pick), net-bottom
+clearance ∈ [−5 mm, 5.1 cm] over **200 samples** along the whole span,
+span gates vs `_terrainCfg`. Shots regenerated and inspected:
+`scene.png` — blue netting on dark posts hugging the snow along both
+edges and curving with the landing bowl, athlete between the fence
+lines, rounded trunk silhouettes; `figure_front.png` — unchanged from
+the baseline (athlete untouched this iteration; hands-forward and bib
+residuals stand). SwiftShader A/B with the fence toggled: 6.3 vs 6.7 fps
+(software-raster noise; the fence adds 3 draw calls). `index.html`
+`?v=9 → 10`. `blender/terrain.json` regenerated by the suite was
+numerically identical (no geometry change) and restored byte-stable per
+entry-15 convention.
+
+**Open / next (reviewer order 17–20).**
+1. **17: kicker block faces + ribbon–flank continuity** (P1 slice 2) —
+   tan side/back faces on the kicker block must read snow; flank fills
+   rebuilt as the ribbon's lateral extension with shared normals and
+   skirts (also retires the seam caveat under the review-measure row scan).
+2. **18–19: the ONE Blender rebuild bundle** (or two) — straight arms,
+   loose suit, cranium/brim wrap, bib 30, 155 cm mogul skis + the APPROVED
+   proportions/ski-length physics rebaseline (own physics commit first).
+3. **20: review.** Rebake surgery (entry-12 four-step) stays available as
+   the filler whenever an iteration has spare budget; lightmap stays off
+   until then.
+
+**Open questions for the reviewer**
+- Build-time picking is untrustworthy during script evaluation in this
+  Babylon version (world matrices finalise on first render). Anything
+  added later that self-seats by picking should copy the b-net
+  seed-then-reseat pattern (`_bnetSeated`); flagging in case a future
+  spec wants a shared helper.
+- Golden rebaseline this iteration followed the iter-6 census-only
+  precedent (three new bnet* nodes, flight/landing byte-identical) —
+  confirm that reading matches your expectation for scenery additions.
 
 ### 15 — Review-only: measured audit; order-item-3 holds, no regressions, re-prioritisation
 
