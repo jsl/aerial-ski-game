@@ -109,10 +109,61 @@ Reading notes:
   alternate in sign and equal ~1 torso width at original scale — left/right hip keypoint
   swaps during the turn, not travel. The hop turn window is f58–75 ± 2 (0.57 ± 0.07 s);
   hop takeoff/landing/air time need the raw video re-extracted around that window.
-- Airtime, takeoff/landing frames, in-run crouch depth and arm-sweep timing, tuck shape and
-  the landing absorption remain to be derived (task item 2) once rotation-aware tracks
-  exist; the golden-trace comparison (task item 3) and physics proposals (task item 4)
-  follow from those numbers.
+- Arm-sweep timing was derived in iteration 3 (next section); crouch depth, tuck shape
+  and the landing absorption are ruled not derivable from the current pose data there,
+  with the geometric evidence and the re-extraction windows that would fix them.
+- Airtime, takeoff/landing frames and flip counts remain blocked on rotation-aware
+  re-extraction; the golden-trace comparison (task item 3) and physics proposals (task
+  item 4) follow from those numbers.
+
+## Kinematics (iteration 3) — arm sweep into the lip, and what the geometry rules out
+
+Method (`tools/pose/kine.js`): the tracked person's full COCO-17 keypoints are re-joined
+per frame via the track's `person` index (the track file itself stores only hip/shoulder
+midpoints). All metrics are interior joint angles (deg, image plane) or distances
+normalised by the torso length, so no px/m scale assumption enters them. Wrist height
+relative to the shoulders (wr/sh, torso units; negative = below the shoulders) is the
+arm-sweep signal; the sweep detector looks for a sustained ≥ 0.6-torso rise over 8 frames
+that keeps rising. Per-frame series and windows: `reference/pose/<clip>/athlete_kine.json`
+(local).
+
+### IMG_3768 — arm sweep into the lip (the P7 technique reference)
+
+| phase | frame | clip time | wr/sh (torso) |
+|---|---|---|---|
+| arms quiet (hands at knee/hip height) | f48–59 | 1.60–1.97 s | -0.99 ± 0.07 |
+| sweep onset | f58 ± 3 | 1.93 s | wr/knee 0.67 |
+| wrists cross shoulder level | f70 ± 1 | 2.33 s | 0.0 |
+| last measurable, overhead by the ears | f80 | 2.67 s | +1.05 |
+
+Sweep duration f58–80 = 0.73 s (end clipped by wrist keypoint loss, so "≥").
+takeoff estimated f81 ± 3 (person re-locks f80–82, wrists drop out f81, hip image-motion turns consistently downward from f82) — sweep leads the lip by ~0.8 s, shoulder crossing by ~0.4 s.
+
+Crouch and flight shape: NOT DERIVABLE: camera is directly behind the athlete, so sagittal flexion projects along the view axis — back angle stays ~0 ± 3° and hip image angles 171–180° through the in-run while the sheets show a deep crouch; hip/ankle height 0.98–1.88 torso moves non-monotonically with torso size (38–47 px, moving/zooming camera), so no crouch proxy survives.
+
+Layout flight: hip/ankle height 1.27–1.41 torso constant f82–176; a knee-to-chest tuck would cut that toward ~0.7 — no tuck (projection caveat as above; knee image angles 175–180° cannot see along-axis flexion). (computed: hip/ankle 1.27–1.41 torso, knee 175.25–179.99°, hip 156.99–173.05° incl. one f101 pose glitch, f82–176).
+
+### What the camera geometry rules out (evidence, not just caution)
+
+| clip | metric | evidence | what would fix it |
+|---|---|---|---|
+| IMG_3768 | in-run crouch depth | back angle 0.15 ± 3.24° and hip angle 171.15–180° f0–80 while the sheets show a deep crouch: the camera is directly behind, flexion projects along the view axis; hip/ankle height 0.98–1.88 torso varies with camera zoom (torso 38–47 px), not with posture | profile view (e.g. IMG_3523 at the lip) or a side re-extraction |
+| IMG_3765 | arm sweep into the lip | wrists unmeasurable from f71 (scores < 0.5); arms quiet f24–69 (wr/sh -0.75 ± 0.19) | cropped re-extraction of ~f60–85 |
+| IMG_3765 | in-run crouch | hip 160.04–178.79°, knee 149.15–179.98° f0–69 read near-straight from below-front; foreshortened | same |
+| IMG_7841 | landing absorption | knee 166.94–179.77°, hip 172.51–177.71° f83–100 (min knee within 13° of straight) at 14–15 px torso = pose floor; touchdown itself sits in an unmeasured stretch (f82 ± 2, torso collapses 52.6 → 15.4 px) | cropped re-extraction of ~f75–105 |
+
+f82 ± 2 (last airborne sample f81: back 54°, torso 40 px; first grounded f83: back 2°; athlete lands far from the camera, torso collapses 53 → 15 px across the flight-to-ground stretch). The airborne opening into it supplements iteration 2: back angle 93.2° (f65) → 49.1° (f76) → 53.5° (f81) → 2.1° grounded (f83).
+
+ascent visible f72–81 (hip rises 5.8–22.6 px/frame in image, back angle flips sign, hip angle dips to 148° = slight leg draw), athlete leaves measurement f84–96. (computed ascent rate -22.6–-5.8 px/frame, hip angle at f81: 147.6°.)
+
+### Directly usable for P7 (renderer pose blending)
+
+- Arms quiet in the crouch until ~0.75 s before the lip; then a single symmetric sweep
+  (~0.7 s) from knee height through shoulder level (~0.4 s before the lip) to
+  overhead-by-the-ears at takeoff — matches "arms quiet until the transition" in
+  `docs/REFERENCE-FOOTAGE.md`.
+- Flight is layout (no tuck) in the 3768 window; "skis parallel and together" stays a
+  sheet observation (`docs/REFERENCE-FOOTAGE.md`), not pose-derived.
 
 ## Proposals
 
