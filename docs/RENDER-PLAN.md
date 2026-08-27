@@ -263,6 +263,35 @@ Acceptance in a drive spec: force a crash; every frame assert all joint gaps ≤
 driver's lowest point respects the contact rules for its zone, no legacy solid is visible, the
 body settles (speed < 0.1 m/s) within 5 s, and the skis end up on the surface.
 
+### P12 — Overall render-quality pass (author, 2026-08-27)
+The author wants a visibly higher-quality image overall. Do this as one focused pass with
+before/after shots and frame-time numbers (measure GPU frame time via `engine.getFps()` /
+`scene.getEngine().getDeltaTime()` over 300 frames in a drive spec; keep ≥ 60 fps on a mid GPU).
+- **Resolution:** render at device pixel ratio — `engine.setHardwareScalingLevel(1 / Math.min(devicePixelRatio, 2))`
+  — with an adaptive fallback (raise the scaling level if frame time > 14 ms for 2 s). MSAA
+  8 where `engine.getCaps().maxMSAASamples` allows, else 4.
+- **Texturing:** every procedural/tiled texture (snow, bark, foliage, net, fabric) with
+  mipmaps and trilinear filtering, `anisotropicFilteringLevel = 16`; raise the snow detail
+  tiles from 256 to 1024; no visible tiling repeat within 20 m of the camera (add a
+  second, larger-scale variation layer to the snow albedo/normal).
+- **Shadows:** cascaded maps with PCSS/contact-hardening (or PCF high quality), cascade
+  blending on, per-cascade bias tuned so there is neither acne nor peter-panning at the
+  skis; shadow map 2048 per cascade.
+- **Ambient occlusion:** SSAO2 at 32 samples with the bilateral blur, radius/strength tuned
+  so contact darkening reads under the skis, boots and fence posts without a dirty halo.
+- **Post:** keep ACES; contrast down from 1.6 toward ~1.2 once P2's sky exists; bloom
+  weight ≤ 0.1 and threshold high so only the sun/specular blooms; mild sharpen
+  (`SharpenPostProcess`, edge 0.3–0.5) to counter MSAA/blur softness; dithering on. No
+  vignette or colour LUT unless it can be justified against the footage.
+- **Materials:** snow roughness/sheen re-tuned under the new sky; the athlete's
+  `bodyMat`/`helmetMat`/`faceMat` with correct roughness, the helmet clear-coat, the
+  goggles glossy; skis with a glossy topsheet and matte base.
+- **Geometry:** the corridor ribbon sampled finely enough that no faceting shows at
+  gameplay distance (silhouette edges smooth in the knoll/roll-out shots); trees per P4.
+Acceptance: a `quality.spec.js` asserts hardware scaling, MSAA samples, anisotropy and
+mipmaps on all tiled textures, shadow filter mode and SSAO settings, and logs the measured
+frame time; a before/after `look` set is inspected and described in the progress entry.
+
 ## Definition of done for the branch
-All P0–P6, P9, P10 and P11 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
+All P0–P6, P9, P10, P11 and P12 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.
