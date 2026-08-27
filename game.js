@@ -2258,13 +2258,21 @@ function _startGame() {
             const ty = terrainRootY(tz) - FOOT_OFFSET;
             const ti = (gx + xCells) * zCells + gz;
 
+            // Interim stopgap (reviewer note, owed since iteration 5): rounded
+            // silhouettes — trunk with a widened base flare, foliage with more
+            // side facets. Real fix is the P4 Blender-baked impostor forest.
             const trunk = BABYLON.MeshBuilder.CreateCylinder('tr_' + ti,
-                { height: trunkH, diameter: trunkR * 2, tessellation: 6 }, scene);
+                {
+                    height:         trunkH,
+                    diameterTop:    trunkR * 2 * 0.86,
+                    diameterBottom: trunkR * 2 * 1.45,
+                    tessellation:   16,
+                }, scene);
             trunk.position.set(tx, ty + trunkH / 2, tz);
             trunk.material = tkMat;
 
             const foliage = BABYLON.MeshBuilder.CreateCylinder('fl_' + ti,
-                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
+                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 12 }, scene);
             foliage.position.set(tx, ty + trunkH + foliageH / 2, tz);
             foliage.material = flMat;
         }
@@ -2375,6 +2383,233 @@ function _startGame() {
         // landing → outrun join
         seamSlab('corner_landing_outrun', OUTRUN_Z, 14);
     }
+
+
+    // ── Venue dressing slice 1: blue B-net safety fencing on both edges (P3) ───
+    // Author pull-forward (RENDER-PROGRESS; reference IMG_3523/3520/7841):
+    // a continuous net along BOTH edges from the top of the in-run to past the
+    // end of the out-run — thin dark posts every ~2.75 m standing on whatever
+    // snow is beside the corridor (picked, never assumed), and ONE merged
+    // alpha-cut strip mesh per side that sags ~7 cm between posts. Static,
+    // display-only scenery: physics untouched, two strip draw calls total.
+    {
+        const NET_X        = 6.2;   // just outside the ribbon edge (±5), inside the tree-clear zone
+        const POST_H       = 1.5;
+        const NET_H        = 1.20;  // net height (IMG_7841 ≈ 1.2 m)
+        const SAG          = 0.07;  // 5–8 cm mid-span sag
+        const SPACING      = 2.75;
+        const TILE         = 0.92;  // metres of net per texture repeat
+        const FOOT_CLEAR   = 0.02;  // bottom edge rides 0–5 cm above the snow
+        const RAY_Y        = 80;
+
+        const groundRe = /^(terrainCorridor|wInrun|wTable|wLanding|wOutrun|wStartPlat|wUpperMtn|corner_)/;
+        // Picking gives the TRUE snow height beside the corridor (the flank
+        // fills sit slightly below the physics plane). Headless test
+        // environments (golden harness / unit stubs) carry no real Ray or
+        // picking graph — there we fall back to the exact physics surface,
+        // which is what those runs' determinism expects.
+        const canPick = typeof scene.pickWithRay === 'function' && !!BABYLON.Ray;
+        const groundAt = (x, z) => {
+            if (canPick) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && groundRe.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) {
+                        return hit.pickedPoint.y;
+                    }
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        // Net texture: transparent holes with a blue rope lattice woven across.
+        const bnetTex = new BABYLON.DynamicTexture('bnetTex',
+            { width: 128, height: 128 }, scene, true);
+        const bc = bnetTex.getContext();
+        bc.clearRect(0, 0, 128, 128);
+        bc.strokeStyle = 'rgb(58,110,222)';
+        bc.lineWidth = 7;
+        bc.beginPath();
+        for (let i = 0; i <= 4; i++) {
+            const p = i * 32;
+            bc.moveTo(p, 0);      bc.lineTo(p + 128, 128);   // diagonal weave /
+            bc.moveTo(p, 128);    bc.lineTo(p + 128, 0);     // diagonal weave \, other direction
+            bc.moveTo(0, p);      bc.lineTo(128, p);         // horizontal ropes
+            bc.moveTo(0, p + 16); bc.lineTo(128, p + 16);
+        }
+        bc.stroke();
+        bnetTex.update(false);
+        bnetTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+        bnetTex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+        bnetTex.hasAlpha = true;
+
+        const bnetMat = makePBR('bnetMat', scene);
+        bnetMat.albedoTexture = bnetTex;
+        bnetMat.albedoColor = new BABYLON.Color3(1, 1, 1);
+        bnetMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;
+        bnetMat.alphaCutOff = 0.5;
+        bnetMat.backFaceCulling = false;
+        bnetMat.metallic = 0;
+        bnetMat.roughness = 0.85;
+
+        const postMat = makePBR('bnetPostMat', scene);
+        postMat.diffuseColor = new BABYLON.Color3(0.10, 0.10, 0.12);
+        postMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.06);
+
+        // Heights CANNOT be picked correctly during script evaluation (world
+        // matrices of freshly built meshes are not final until the first
+        // rendered frame — measured: every build-time pick missed or returned
+        // garbage). So the fence is seeded from the exact physics profile and
+        // RES EATED once after the first completed render, when picking is
+        // truthful. Headless environments (golden/unit stubs) never render, so
+        // they deterministically keep the seed seating.
+        const SIDE_DEFS = [-1, 1].map((sideSign) => ({
+            sideSign,
+            x: sideSign * NET_X,
+            sideName: sideSign < 0 ? '_L' : '_R',
+            Z0: SLOPE_START_Z,
+            Z1: OUTRUN_Z + 8,
+        }));
+        const stripMeshes = {};
+
+        const nSpansOf = (d) => Math.max(2, Math.round((d.Z1 - d.Z0) / SPACING));
+        const stationZ = (d, i) => d.Z0 + ((d.Z1 - d.Z0) * i) / nSpansOf(d);
+
+        let postSrc = null;
+
+        // Column-major translation matrices written by hand — identity with the
+        // position in elements 12..14. Nothing here depends on any BABYLON math
+        // helper, so headless test environments with partial stubs boot fine.
+        const setPostMatrices = (arr) => {
+            const mtx = new Float32Array(arr.length * 16);
+            arr.forEach((p, i) => {
+                const o = i * 16;
+                mtx[o] = 1; mtx[o + 5] = 1; mtx[o + 10] = 1; mtx[o + 15] = 1;
+                mtx[o + 12] = p.x;
+                mtx[o + 13] = p.y + POST_H / 2;
+                mtx[o + 14] = p.z;
+            });
+            try {
+                postSrc.thinInstanceSetBuffer('matrix', mtx, 16, true);
+                postSrc.thinInstanceRefreshBoundingInfo(true);
+            } catch (e) { /* headless: source mesh stays put */ }
+        };
+
+        const seatSides = (picker) => {
+            const postsOut = [];
+            const samplesOut = [];
+            for (const d of SIDE_DEFS) {
+                // Ground under EVERY row (bottom edge rides 0–5 cm above the
+                // local snow, whatever the flank fills do there).
+                const nS = nSpansOf(d);
+                const groundUnderRow = (z) => picker(d.x, z);
+                const gzStations = [];
+                for (let i = 0; i <= nS; i++) {
+                    const z = stationZ(d, i);
+                    gzStations.push({ z, gy: picker(d.x, z) });
+                }
+
+                const rows = [];
+                let uLen = 0;
+                for (let i = 0; i <= nS - 1; i++) {
+                    const a = gzStations[i], b = gzStations[i + 1];
+                    const len = Math.abs(b.z - a.z);
+                    const startK = rows.length > 0 ? 1 : 0;
+                    for (let k = startK; k <= 3; k++) {
+                        const t = k / 3;
+                        const z = a.z + (b.z - a.z) * t;
+                        // Both edges derive from THIS ROW's own ground: the net
+                        // drapes along the snow, following it through whatever
+                        // the flank fills do (IMG_3523/7841). Station-to-station
+                        // wire interpolation is NOT used for the fabric edges —
+                        // fills step between zones, and an interpolated wire cut
+                        // through the raised local snow (measured: sink −0.59 m
+                        // at the table→landing boundary).
+                        const g = groundUnderRow(z);
+                        const lift = POST_H - 0.04 - SAG * Math.sin(Math.PI * t);
+                        rows.push({
+                            z,
+                            wireY: g + lift,
+                            botY: g + FOOT_CLEAR,
+                            u: (uLen + t * len) / TILE,
+                            g,
+                        });
+                        samplesOut.push({ x: d.x, z, g, yBot: g + FOOT_CLEAR });
+                    }
+                    uLen += len;
+                }
+
+                postsOut.push({ x: d.x, y: gzStations[0].gy, z: gzStations[0].z });
+                for (let i = 1; i <= nS; i++) {
+                    postsOut.push({ x: d.x, y: gzStations[i].gy, z: gzStations[i].z });
+                }
+
+                const positions = [], normals = [], uvs = [], indices = [];
+                for (const r of rows) {
+                    positions.push(d.x, r.botY, r.z, d.x, r.wireY, r.z);
+                    normals.push(d.sideSign, 0, 0, d.sideSign, 0, 0);
+                    uvs.push(r.u, 0, r.u, 1);
+                }
+                for (let i = 0; i < rows.length - 1; i++) {
+                    const b0 = i * 2, t0 = i * 2 + 1, b1 = i * 2 + 2, t1 = i * 2 + 3;
+                    indices.push(b0, b1, t0, t0, b1, t1);
+                }
+
+                let stripMesh = stripMeshes[d.sideName];
+                if (!stripMesh) {
+                    stripMesh = new BABYLON.Mesh('bnetStrip' + d.sideName, scene);
+                    stripMesh.material = bnetMat;
+                    stripMeshes[d.sideName] = stripMesh;
+                }
+                const vd = new BABYLON.VertexData();
+                vd.positions = positions;
+                vd.indices = indices;
+                vd.normals = normals;
+                vd.uvs = uvs;
+                vd.applyToMesh(stripMesh);
+            }
+
+            if (postSrc) setPostMatrices(postsOut);
+
+            window._bnetDebug = {
+                posts: postsOut,
+                samples: samplesOut,
+                spanZ: [SIDE_DEFS[0].Z0, SIDE_DEFS[0].Z1],
+                strips: ['bnetStrip_L', 'bnetStrip_R'],
+                seated: !!picker.seated,
+            };
+        };
+
+        // Seed pass — deterministic analytic profile, identical everywhere.
+        seatSides((x, z) => terrainRootY(z) - FOOT_OFFSET);
+
+        // Thin instances: one source cylinder, one draw call for every post.
+        postSrc = BABYLON.MeshBuilder.CreateCylinder('bnetPost',
+            { height: POST_H, diameterBottom: 0.07, diameterTop: 0.05, tessellation: 8 }, scene);
+        postSrc.material = postMat;
+        setPostMatrices(window._bnetDebug.posts);   // seed matrices, pre-reseat
+
+        // Re-seat after the first COMPLETED render (world matrices honest).
+        // addOnce on after-render means every mesh has been through its world-
+        // matrix update at least once — measured working by the venue spec.
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseat = () => {
+                const picker = (x, z) => groundAt(x, z);
+                picker.seated = true;
+                seatSides(picker);
+                window._bnetSeated = true;
+            };
+            scene.onAfterRenderObservable.addOnce(reseat);
+        } else {
+            window._bnetSeated = false;   // headless: keep the seed seating
+        }
+    }
+
 
 
     // ── Background mountain peaks — distributed to fill the horizon ────────────
@@ -5162,6 +5397,14 @@ function _startGame() {
         scene.meshes.forEach((m) => {
             if (!m.name || !m.getTotalVertices || m.getTotalVertices() === 0) return;
             if (/^(tr_|fl_)/.test(m.name)) casters.add(m);
+        });
+        // B-net fencing casts as well: the thin posts render through their
+        // source caster, and the alpha-cut strip throws a cutout shadow via
+        // ALPHATEST in the depth pass (a solid-quad shadow here means that
+        // path broke — see venue-dressing.spec.js).
+        ['bnetPost', 'bnetStrip_L', 'bnetStrip_R'].forEach((n) => {
+            const m = scene.getMeshByName(n);
+            if (m) casters.add(m);
         });
         casters.forEach(m => shadowGen.addShadowCaster(m));
 

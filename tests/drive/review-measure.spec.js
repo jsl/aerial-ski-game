@@ -87,10 +87,27 @@ test('review measurements: grey ramp, seam scan, athlete shadow, face', async ({
         cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35; cam.fov = 0.8;
     });
     await page.waitForTimeout(900);
+    // Corridor box (ported from grey-ramp.spec.js, iter-16): the fixed
+    // fractional box below sampled wInrun/wStartPlat flank fills after the
+    // P1 ribbon replaced the slabs — project a real table-centre corridor
+    // point into screen space instead.
+    const corBox = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cfg = window._terrainCfg;
+        const z = (cfg.LANDING_START_Z + cfg.KICKER_END_Z) / 2;      // mid-table
+        const y = AerialEngine.aerialSki.terrainRootY(z, cfg) - 1.025; // FOOT_OFFSET
+        const p = BABYLON.Vector3.Project(new BABYLON.Vector3(0, y, z),
+            BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+            scene.activeCamera.viewport.toGlobal(
+                scene.getEngine().getRenderWidth(), scene.getEngine().getRenderHeight()));
+        return { x: p.x / scene.getEngine().getRenderWidth(),
+                 y: p.y / scene.getEngine().getRenderHeight() };
+    });
     const s1 = await grabPixels(page);
     const sceneStats = {
         sky:        regionStats(s1, 0.02, 0.02, 0.18, 0.12),
-        corridor:   regionStats(s1, 0.55, 0.50, 0.65, 0.54),
+        corridor:   regionStats(s1, corBox.x - 0.05, corBox.y - 0.008,
+                                corBox.x + 0.05, corBox.y + 0.008),
         flankNear:  regionStats(s1, 0.06, 0.78, 0.30, 0.92),
         flankFar:   regionStats(s1, 0.78, 0.60, 0.95, 0.68),
         kickerFace: regionStats(s1, 0.14, 0.30, 0.20, 0.36),
