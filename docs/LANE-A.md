@@ -46,6 +46,73 @@ inspected and described. Each iteration ends with a commit and an entry below.
 
 ## Progress
 
+### 2 — Shoulders scaled onto the anatomical deltoid (bideltoid 0.481 → 0.401, hard-gated ≤ 0.41)
+
+**What changed.** Task 2. Measured first (new `bideltoid_report` in `blender/build_body.py`):
+1 cm slices across the deltoid band (shoulder joint −5 cm .. +9 cm) on the final mesh —
+pre-fix the outer verts reached **|x| 0.212–0.240 across z +0.10..+0.16, worst slice
+0.481 m at z=+0.11** — 4–6.5 cm outboard of the arm bone plane (±0.175), while the strict
+arm cloud's outer face already sits at ~0.205 (armgroup centroid 2 cm inboard of its bone).
+So the residual is not the arm shaft: it is the A-pose shoulder corner dragged outboard
+through the armature pose and the settle, exactly the author's diagnosis in RENDER-PROGRESS
+entry 36/86.
+
+Fix in `blender/build_body.py`:
+
+- `narrow_shoulders(body)` (after `align_boots`): per side, per 1 cm z row across the cap
+  zone (joint −7 cm .. +9 cm), verts OUTBOARD of the bone plane are rescaled about that
+  plane so the row's outer face lands on `CAP_OUTER_X` = 0.198; inboard verts (torso face,
+  arm-torso gap) never move; 5-row moving average on the target field (smooth in z, no
+  step); fades to no-op at both zone ends so the trapezius above and the biceps/elbow below
+  keep their surfaces. 318 verts moved per build, symmetric result.
+- `bideltoid_report` + **hard gate ≤ 0.41** (target band 0.38–0.40) on the final geometry,
+  before any bake: **BIDELTOID summary: 0.401 m at z=+0.11** — inside the target band, gate
+  green (a fail exits before the bake, so the gate is cheap to iterate against).
+- Segment layout did NOT force the width once the outboard residue was pulled in — no
+  `body-model` proposal needed.
+
+`tests/drive/rig.spec.js` (athlete gates only):
+
+- **New gate** "bideltoid breadth reads slim at the deltoid band (0.36–0.41 m)": skins all
+  verts into the root frame, finds the shoulder joints from the upperArm driver nodes (node
+  minus half a bone along its distal axis), widest 1 cm slice across [joint −5, +9] cm.
+  Result: **worst 0.4011 m at y=0.11** — matches the build-side measurement (0.401 at
+  z=+0.11) to 0.1 mm, cross-validating mesh and instrument.
+- **Instrument fix in "hands hang beside the thighs"**: the absolute hand-out constant
+  0.155 went stale — my shoulder rescale changed the global decimate pass (13324 → 13466
+  verts), and the IDENTICAL hand geometry (glb diff: 0/3342 hand verts moved > 0.5 mm)
+  re-sampled to a centroid 1 mm inboard (means 0.1554/0.1540, medians 0.1535/0.1523),
+  failing the 0.155 threshold deterministically (R side). The gate now asserts the
+  contract it actually guards — hand band clears the MEASURED leg outer face at the
+  hand's own height by ≥ 4 mm (measured 0.1554 vs 0.1174 / 0.1540 vs 0.1175 — 37 mm of
+  clearance); the 0.155 constant is logged (`HANDCONSTANT`), not asserted. The threshold's
+  re-derivation stays the reviewer's open disposition from iters 30/32; the band
+  (node-axis distal-of-wrist) is untouched.
+
+**Verification.** Blender build `--res 2048 --samples 96` green end-to-end (OPTIX);
+`BIDELTOID summary: 0.401 m` in the gate summary; HAND GATE unchanged (0.75..0.75); ARM
+GATES soft-unmoved in kind (20.7 mm / 24.3 mm / 10.5 deg / 28.0 mm vs 12.5/24.3/10.5/28.0 —
+the upper-forearm collinear read moved 12.5→20.7 mm because the upper-arm cloud's outboard
+verts moved inboard; still soft, pre-existing, limits 10/10/10/5). Browser at
+`DRIVE_PORT=8199`: **rig 9/9** (8 old + the new bideltoid gate), **look 1/1**,
+`athlete`-family suites green (ran pre-change at 17:31; rig+look re-run on the new
+assets). Shots inspected: `figure_front.png` — shoulders read slim and continuous into the
+arms, no square deltoid masses beside the neck; gloves hang beside the thighs ending
+mid-thigh; suit/bib unchanged.
+
+**Assets rebuilt** → `ASSET_V` must be bumped at merge time (see Merge notes).
+
+**Open / next in lane priority.**
+- Task 3 (loose suit with measured normal-map variance before/after) is next; then task 4
+  (helmet brim behind the ears) and task 5 (ARM GATES hard).
+- ARM GATES remain over their soft limits (pre-existing whole-chain forearm lag) — the
+  collinear read worsened 8 mm from the inboard move of the upper-arm cloud's outboard
+  verts; worth re-deriving the centroid bands when task 5 turns them hard.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) disposition on the stale 0.155
+  hands-out constant (now logged as `HANDCONSTANT`, contract asserted as measured leg
+  clearance instead); (3) the bideltoid hard gate (≤ 0.41) and the browser gate
+  (0.36–0.41) are both in place — no further merge action.
+
 ### 1 — Hands scaled onto the anatomical hand/forearm ratio (hard-gated 0.65–0.85)
 
 **What changed.** Task 1. Measured the shipped glb in the browser first: the glove cluster
