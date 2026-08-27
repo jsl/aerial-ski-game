@@ -106,18 +106,20 @@ test('the baked maps reach the terrain, with uv2 and the right slots', async ({ 
     expect(errors, 'errors or missing assets while applying the bake').toEqual([]);
 });
 
-test('only the athlete casts a real-time shadow, and it is the VISIBLE athlete', async ({ page }) => {
-    // The static shadows are baked, so the runtime map no longer has to span the
-    // trees and the background peaks. If that regresses, the athlete's own shadow
-    // gets a few texels of a several-hundred-metre frustum and turns to mush —
-    // which reads as "shadows look bad" rather than as a caster-list problem.
+test('only the athlete and the trees cast real-time shadows, and the VISIBLE athlete is in the list', async ({ page }) => {
+    // Static terrain shadows are baked; the runtime shadow map covers the athlete
+    // (+ skis) and, since the P2 cascaded-shadow work, the trees — the CSM
+    // frustum follows the camera, so adding ~300 trees no longer stretches the
+    // map over hundreds of metres the way it did with the single auto-fitted
+    // generator. What must stay restricted is everything ELSE: the gate below
+    // counts non-tree, non-athlete casters.
     //
-    // The second half of this is the part that was actually broken. Babylon skips
-    // meshes with isVisible === false when rendering the shadow map, and the
-    // caster list was built synchronously at startup — so it collected the driver
-    // solids, which the body loader then HIDES, while the skinned body that
-    // replaced them arrived too late to be added. Counting casters looked
-    // perfectly healthy; not one of them could cast.
+    // The second half is the part that was actually broken once. Babylon skips
+    // meshes with isVisible === false when rendering the shadow map, and a caster
+    // list built synchronously at startup collects the driver solids, which the
+    // body loader then HIDES. The skinned body therefore has to register itself
+    // when it resolves; counting casters looked perfectly healthy while not one
+    // of them could cast.
     await boot(page);
     await page.waitForFunction(() => window._bodyLinked !== undefined,
         null, { timeout: 30_000 });
@@ -133,16 +135,23 @@ test('only the athlete casts a real-time shadow, and it is the VISIBLE athlete',
             declared: window._shadowCasters,
             total: list.length,
             visible: visible.length,
-            visibleNames: visible.map(m => m.name),
             bodyCasting: list.filter(m => m.name && m.name.startsWith('athleteBody')).length,
+            skisCasting: list.filter(m => m.name === 'skiL' || m.name === 'skiR').length,
+            treesCasting: list.filter(m => m.name && /^(tr_|fl_)/.test(m.name)).length,
+            otherCasters: list.filter(m => m.name && !/^(tr_|fl_)/.test(m.name) &&
+                !m.name.startsWith('athleteBody') && m.name !== 'skiL' && m.name !== 'skiR').length,
         };
     });
 
     expect(r.declared, 'shadow caster list was not restricted').toBeGreaterThan(0);
-    expect(r.total, `${r.total} shadow casters — the whole scene is still in the map`)
+    expect(r.otherCasters, `${r.otherCasters} non-tree non-athlete casters — ` +
+        `unrelated scenery leaked into the shadow map`)
         .toBeLessThan(60);
+    expect(r.treesCasting, 'trees are not casting (P2: all trees cast under the CSM)')
+        .toBeGreaterThan(50);
     expect(r.bodyCasting, 'the skinned body is not a shadow caster — it loads after ' +
         'the caster list is built, so it has to register itself').toBeGreaterThan(0);
+    expect(r.skisCasting, 'skiL and skiR must both cast (P2)').toBe(2);
     expect(r.visible.valueOf(), `nothing in the caster list is visible ` +
         `(${r.total} entries) — Babylon renders no shadow for a hidden mesh, so ` +
         `the athlete casts nothing`).toBeGreaterThan(0);

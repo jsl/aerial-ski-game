@@ -52,7 +52,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | open | |
-| P2 | Sky and sun | open | **measured (iter 5): sky luminance 0.799 > snow 0.787 — snow is NOT the brightest surface; athlete shadow drop only 11.6% (target ≥15%); still plain `ShadowGenerator(2048)` (game.js:756)**; corridor parity landed iter 7 |
+| P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7 |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
 | P5 | Snow surfaces | open | |
@@ -487,3 +487,74 @@ material never had the stack.
   brightest surface in frame.
 - Kicker's remaining −0.029 vs flanks: likely its own geometry/concavity, revisit after
   P1 rebuilds the surface and P2 re-rigs the light.
+
+### 8 — P2 shadow quick win: cascaded shadow maps, athlete + all trees casting
+
+Reviewer order: "shadow quick win right after item 3 (grey ramp)". I can view PNGs;
+shots inspected directly.
+
+**What changed**
+- `game.js` (sun rig): the plain auto-fitted `ShadowGenerator(2048)` is replaced by a
+  `CascadedShadowGenerator` — 3 cascades, `lambda` 0.8, `stabilizeCascades`,
+  `shadowMaxZ` 200 (beyond it the statics keep their bake), `autoCalcDepthBounds`,
+  PCF filtering at QUALITY_MEDIUM, bias 0.0002. The frustum now follows the camera
+  instead of stretching around every caster, which is what restores near-field
+  texel density. A legacy-single-map fallback branch is kept behind the same guard
+  style (and keeps the stub harness on the inert `CascadedShadowGenerator`
+  pre-provisioned in `tests/golden/stub-extend.js`).
+- `game.js` (caster block): all 304 tree meshes (`tr_*`/`fl_*`) join the athlete
+  primitives and ski drivers as casters — safe now that the frustum follows the
+  camera. The two `scene.meshes` sweeps gained `getTotalVertices` guards because the
+  golden-harness scene contains plain nodes without vertex data (found by the unit
+  suite, fixed immediately).
+- `tests/drive/shadows.spec.js` (new, gating, the P2 acceptance numbers):
+  1. structure — the sun's shadow-map render list contains the skinned
+     `athleteBody*` primitives, both skis and >50 trees (asserted after the async
+     glb resolves, the exact failure mode the old list had);
+  2. athlete — top-down ring probe (borrowed from `review-measure.spec.js`):
+     terrain under the standing figure ≥ 15% darker than a 2 m ring beside it;
+  3. trees — for the 3 nearest trees, snow sampled at 4/6.5/9 m along the sun's
+     ground-displacement ray (u = −(0.35, 0.45)/|·|, past canopy reach) vs control
+     points 12 m up-sun/side; one qualifying pair with bright-snow controls passes
+     the ≥ 20% gate. The first two probe drafts (per-pair mirrored points, then
+     ring-arcs around a crown) were abandoned: mirrored points landed in canopy and
+     arcs 12–14 m out projected off-frame — the sun-ray geometry version measured
+     real shadow bands on the first try.
+- `tests/drive/baked.spec.js`: the "only the athlete casts" policy test is updated
+  to the P2 contract — trees are SUPPOSED to cast now; the restriction it guards
+  (unrelated scenery leaking into the shadow map) is kept as a
+  non-tree/non-athlete caster count < 60, plus new ski-caster and tree-caster
+  assertions.
+
+**Verification numbers** (SHADOW_MEASURE, deterministic across three runs)
+- Structure: CSM active, 3 cascades, 338 entries in the render list — 3
+  athleteBody primitives, both skis, 304 trees.
+- Athlete: under-figure 0.163 vs ring max 0.776 → **drop 79%** (iter-5 baseline:
+  11.6% — the shadow was mush; gate ≥ 15%). Lit ring max 0.776 matches iter-5's
+  lit-snow 0.770, so the ring itself is unchanged and the delta is real shadow.
+- Trees: best pair `tr_170` — shadow band min 0.6215 vs control median 0.7837 →
+  **drop 20.7%** (gate ≥ 20; `tr_99` 16.1%, `tr_195` 8.9% — one qualifying pair
+  passes, per plan wording).
+- GREY_RAMP unchanged by the CSM: corridor 0.7778, inrun 0.7839, kicker 0.7575,
+  flanks 0.7866/0.7878 — byte-identical to iter 7's numbers.
+- `npm run test:unit` 73/73; `npm run test:golden` 30/30 (physics untouched — the
+  golden harness exercises the inert CSM stub path, no rebaseline needed); full
+  Playwright drive suite 40 passed / 1 skipped (the opt-in `grey-ab` harness) after
+  the baked.spec policy update.
+- Shots (inspected): `scene.png` — every near tree now lays a distinct soft shadow
+  on the snow and a clear dark shadow patch sits under/beside the athlete on the
+  corridor; tree/corridor/flank brightness pattern unchanged. `figure.png` /
+  `figure_front.png` — athlete unchanged; a soft shadow now reads under the skis.
+
+**Open / next**
+- Sky-vs-snow (P2 remainder): sky 0.799 still > corridor 0.778 — snow is not yet
+  the brightest surface in frame; sun disc, fog re-tune and post 1.6→~1.2 remain.
+- Performance watch: 3×2048 cascade depth passes with 338 casters; SwiftShader in
+  the drive suite cannot give a meaningful fps number — worth one mid-GPU eyeball
+  (`autoCalcDepthBounds` should keep the per-cascade lists small; if it costs more
+  than it saves, drop it and fit the frusta manually).
+- Tree-shadow gate margin is real but narrow (20.7% vs 20%): placement is
+  deterministic and three runs reproduced the number exactly, so it should be
+  stable; if it ever flakes, the honest fix is moving the gate to a scene with a
+  denser stand, not loosening the threshold.
+- Ready stance (order 4) remains the last order item before P1.

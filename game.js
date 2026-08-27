@@ -750,12 +750,34 @@ function _startGame() {
     sunLight.diffuse   = new BABYLON.Color3(1.0, 0.96, 0.85); // warm afternoon tint
     sunLight.specular  = new BABYLON.Color3(1.0, 0.96, 0.85);
 
-    // Shadow generator — 1024 map, Poisson soft shadows, performance-friendly
+    // Shadow generator — cascaded shadow maps for the sun (P2).
+    //
+    // A single 2048 map auto-fits its ortho frustum around EVERY caster. With the
+    // trees and the whole run in that list it stretched over hundreds of metres
+    // (~20 cm per texel), so the athlete's shadow dissolved into mush while tree
+    // shadows flickered with the bias. The cascades follow the camera instead:
+    // a couple of metres per texel near the figure, coarser further out, and
+    // anything past shadowMaxZ drops out of the depth pass entirely.
     let shadowGen = null;
     try {
-        shadowGen = new BABYLON.ShadowGenerator(2048, sunLight);   // was 1024 — mushy over a whole hill
-        shadowGen.usePoissonSampling = true;
-        shadowGen.bias = 0.0002;
+        const CSM = BABYLON.CascadedShadowGenerator || BABYLON.ShadowGenerator;
+        shadowGen = new CSM(2048, sunLight);
+        if (shadowGen.numCascades !== undefined) {
+            // CSM branch — tuning per docs/RENDER-PLAN.md P2.
+            shadowGen.numCascades         = 3;
+            shadowGen.lambda              = 0.8;
+            shadowGen.stabilizeCascades   = true;
+            shadowGen.shadowMaxZ          = 200;   // beyond this the bake handles statics
+            try { shadowGen.autoCalcDepthBounds = true; } catch (e) { /* keep manual bounds */ }
+            if (BABYLON.ShadowGenerator && BABYLON.ShadowGenerator.QUALITY_MEDIUM !== undefined) {
+                shadowGen.usePercentageCloserFiltering = true;
+                shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_MEDIUM;
+            }
+            shadowGen.bias = 0.0002;               // tuned per cascade at render time
+        } else {
+            shadowGen.usePoissonSampling = true;   // legacy fallback, pre-CSM behaviour
+            shadowGen.bias = 0.0002;
+        }
     } catch(e) { shadowGen = null; }
 
     // ── Atmospheric fog — makes distant terrain fade into the sky ──────────────
@@ -4904,10 +4926,18 @@ function _startGame() {
                 if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
             }
         }
+        // Trees all cast — the CSM frustum follows the camera, so only trees near
+        // it ever enter a cascade's depth pass; the auto-fit explosion that made
+        // this impossible with the single-map generator cannot recur. (The static
+        // terrain keeps its bake; far peaks are past shadowMaxZ and are culled.)
+        scene.meshes.forEach((m) => {
+            if (!m.name || !m.getTotalVertices || m.getTotalVertices() === 0) return;
+            if (/^(tr_|fl_)/.test(m.name)) casters.add(m);
+        });
         casters.forEach(m => shadowGen.addShadowCaster(m));
 
         scene.meshes.forEach(m => {
-            if (m.name === '__root__' || m.getTotalVertices() === 0) return;
+            if (m.name === '__root__' || !m.getTotalVertices || m.getTotalVertices() === 0) return;
             m.receiveShadows = true;
         });
         window._shadowCasters = casters.size;
