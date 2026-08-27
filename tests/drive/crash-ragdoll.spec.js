@@ -1,16 +1,5 @@
 'use strict';
 // ── P11 acceptance: coherent crash ragdoll ───────────────────────────────────
-// STATUS (iter 36): fixme — the ragdoll itself passes the harness (unit 74/74,
-// golden 30/30, state byte-identical x30; settles ~1-2 s, zero penetration,
-// skis rest on the surface) but THIS spec's rendered-truth joint-gap gate
-// reads systematic mirror-symmetric offsets from the first crash frame in the
-// real browser (elbow 0.120 m both sides, knee 0.086, neck ~0.2) — i.e. the
-// spec's endpoint convention (node centre +/- h/2 along world +Y) does not
-// match the real rig's segment frames. The ragdoll's particles are shared at
-// every joint, so the gap is either a measurement-convention error here or a
-// real-babylon write-back divergence; needs a dedicated session. Do not flip
-// to test() until the convention is re-derived against the flight pose
-// (gaps must read ~0 BEFORE the crash too).
 // The crash is display (ADR-0002): the skinned athleteBody stays visible and
 // the driver bones are driven by a position-based ragdoll. Gates:
 //   - no legacy solid is ever shown (drivers stay hidden, skierRoot enabled,
@@ -23,6 +12,30 @@
 //   - the body settles (< 0.1 m/s) within 5 s of the crash and stays settled;
 //   - the released skis come to rest ON the snow (driver bottom plane on the
 //     physics surface, never below it).
+// STATUS (iter 37): fixme again, but for the LAST remaining gate only. The
+// iter-36 instrument bug is fixed and root-caused: the arm drivers' local +Y
+// points DISTAL (the +Y end is the elbow/wrist end), opposite to
+// torso/head/legs (+Y proximal) — with the proximal assumption the ready-state
+// elbow gap reads the full 0.55 m shoulder-to-wrist span while knees/neck read
+// ~0. With the corrected signs AND the ragdoll seeding rebuilt
+// (joint-coincident chains, kinematic neck, contact projected inside the
+// constraint loop) the gap gate reads elbow 0.000 / knee 0.000 / neck 0.010
+// from the first crash frame and stays there — the joint-gap gate PASSES.
+// REMAINING: the penetration gate reads up to 0.18 m when the supine body's
+// head-top snap (headRest projection from the kinematic neck) points the head
+// end into the snow. A y-clamp on the snapped particle was tried and reverted
+// (it injects verlet velocity); the fix is to re-solve the head axis so the
+// head-top stays above the surface instead of clamping y — one dedicated
+// change, next session.
+// Segment-frame convention (matters for the gap instrument): torso/head/leg
+// drivers have local +Y pointing PROXIMAL (torso top / head top / hip end),
+// but ARM drivers have local +Y pointing DISTAL — the +Y end of an arm
+// segment is the elbow/wrist end (applyPose builds the arm chain along the
+// rotated +Y from the shoulder pivot). Verified by probe (iter 37): with the
+// proximal assumption the ready-state elbow gap reads the full 0.55 m
+// shoulder→wrist span while knees/neck read ~0; with the distal signs every
+// gap reads ~0 pre-crash. The ragdoll's seeding/write-back uses the same
+// conventions (see game.js _crashRagdollInit).
 const { test, expect } = require('@playwright/test');
 
 const SEG_H = {
@@ -72,8 +85,9 @@ test.fixme('crash: ragdoll keeps the body coherent on the snow, no legacy solids
                 const dist = (a, b) => a && b
                     ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null;
                 const rec = { t: now, crashed: g.crashed, gaps: {}, pens: {}, legacy: 0, bodyVisible: 0, rootOn: null, skis: {} };
-                rec.gaps.elbowL = dist(end('upperArmL', -1), end('lowerArmL', 1));
-                rec.gaps.elbowR = dist(end('upperArmR', -1), end('lowerArmR', 1));
+                // Arms: +Y is the DISTAL end (elbow/wrist) — see the header.
+                rec.gaps.elbowL = dist(end('upperArmL', 1), end('lowerArmL', -1));
+                rec.gaps.elbowR = dist(end('upperArmR', 1), end('lowerArmR', -1));
                 rec.gaps.kneeL = dist(end('upperLegL', -1), end('lowerLegL', 1));
                 rec.gaps.kneeR = dist(end('upperLegR', -1), end('lowerLegR', 1));
                 rec.gaps.neck = dist(end('torso', 1), end('head', -1));
@@ -163,7 +177,12 @@ test.fixme('crash: ragdoll keeps the body coherent on the snow, no legacy solids
     expect(bodyGone, 'skinned body visible in every sampled frame').toBe(0);
     const gapDetail = settledBy.slice(0, 4).map(r => Object.entries(r.gaps)
         .map(([k, v]) => k + '=' + (v === null ? 'null' : v.toFixed(3))).join(' ')).join(' | ');
-    expect(worstGap, `worst joint gap ${worstGap.toFixed(4)} m ≤ 0.02 [${gapDetail}]`).toBeLessThanOrEqual(0.02);
+    const perJoint = {};
+    for (const r of settledBy) for (const [k, v] of Object.entries(r.gaps))
+        if (v !== null && v > (perJoint[k] || 0)) perJoint[k] = v;
+    const worstJoints = JSON.stringify(Object.fromEntries(
+        Object.entries(perJoint).map(([k, v]) => [k, +v.toFixed(4)])));
+    expect(worstGap, `worst joint gap ${worstGap.toFixed(4)} m ≤ 0.02 per joint ${worstJoints}`).toBeLessThanOrEqual(0.02);
     expect(worstPen, `worst body penetration ${worstPen.toFixed(4)} m within corner tolerance`).toBeLessThanOrEqual(0.06);
     expect(maxTailSpeed, `settled: tail speed ${maxTailSpeed.toFixed(3)} m/s < 0.1`).toBeLessThan(0.1);
     for (const c of skiClear) {

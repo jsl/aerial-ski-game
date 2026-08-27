@@ -3637,6 +3637,12 @@ function _startGame() {
         };
 
         // Seed particle world positions from the current driver transforms.
+        // NOTE the segment-frame conventions (they differ by limb): torso/head/
+        // leg drivers have local +Y pointing PROXIMAL (torso top, head top, hip
+        // end), but the ARM drivers' local +Y points DISTAL — the +Y end of an
+        // arm segment is the elbow/wrist end (applyPose/applyGamepadLateral
+        // build the arm chain along the rotated +Y from the shoulder pivot).
+        // Getting this backwards seeds a mirror-scrambled arm chain.
         const segEnds = {};
         for (const seg of SEGMENTS) {
             const n = M[seg.name];
@@ -3649,23 +3655,67 @@ function _startGame() {
                 dir: dir,
             };
         }
-        const avg = function (a, b) {
-            return _crashV((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+        // Seed angles FIRST, from the raw pose frames, so the angular limits
+        // never fight the crash pose (a tuck lands deeply flexed; the limits
+        // clamp AWAY from the seed, not into it). The neck angle is measured
+        // at the raw head bottom; the limb angles at each segment's own joint
+        // end — both before the chains below are made joint-coincident.
+        const angAt = function (j, a, b) {
+            const u = _crashVSub(a, j), v = _crashVSub(b, j);
+            const c = (u.x * v.x + u.y * v.y + u.z * v.z) / (_crashVLen(u) * _crashVLen(v));
+            return Math.acos(Math.max(-1, Math.min(1, c)));
         };
+        const seedHead = angAt(segEnds.head.bot, segEnds.torso.top, segEnds.head.top);
+        const seedKneeL = angAt(segEnds.upperLegL.bot, segEnds.upperLegL.top, segEnds.lowerLegL.bot);
+        const seedKneeR = angAt(segEnds.upperLegR.bot, segEnds.upperLegR.top, segEnds.lowerLegR.bot);
+        const seedElbL = angAt(segEnds.upperArmL.top, segEnds.upperArmL.bot, segEnds.lowerArmL.top);
+        const seedElbR = angAt(segEnds.upperArmR.top, segEnds.upperArmR.bot, segEnds.lowerArmR.top);
+
+        // Limb chains are seeded with EXACT segment lengths and COINCIDENT
+        // joints. The flight pose tables author tucked segments with their
+        // joints buried inside the body volume (measured iter 37: elbow gap
+        // ~0.31 m, knee ~0.21, neck ~0.21 at full tuck — occluded by the body
+        // mesh while airborne), so seeding the sticks from the raw pose
+        // distances would freeze those gaps into the crash. Each segment's
+        // OWN frame is exact (centre ± h/2), so distal joints are chained
+        // along the segment directions: shoulder + upper-arm axis → elbow,
+        // elbow + forearm axis → wrist, etc.
+        const addV = function (a, b) { return _crashV(a.x + b.x, a.y + b.y, a.z + b.z); };
+        const tAxis = _crashVSub(segEnds.torso.top, segEnds.torso.bot); // 0.55, up the torso
+        const TORSO_H = 0.55;
+        // The head attaches via a SHORT REAL brace (1 cm): neck sits 1 cm below
+        // the torso top. A zero-rest brace (neck == torsoTop exactly) made the
+        // constraint loop diverge (harness + browser, iter 37), so the brace
+        // keeps a small non-zero rest instead.
+        const NECK_OFF = 0.01;
+        const armChain = function (ua, la) {
+            const sh = ua.bot;
+            const elbow = addV(sh, _crashVSub(ua.top, ua.bot));    // +0.30 along the upper-arm axis
+            const wrist = addV(elbow, _crashVSub(la.top, la.bot)); // +0.25 along the forearm axis
+            return { sh: sh, elbow: elbow, wrist: wrist };
+        };
+        const legChain = function (ul, ll) {
+            const hip = ul.top;
+            const knee = addV(hip, _crashVSub(ul.bot, ul.top));    // +0.36 down the thigh
+            const ankle = addV(knee, _crashVSub(ll.bot, ll.top));  // +0.36 down the shin
+            return { hip: hip, knee: knee, ankle: ankle };
+        };
+        const armL = armChain(segEnds.upperArmL, segEnds.lowerArmL);
+        const armR = armChain(segEnds.upperArmR, segEnds.lowerArmR);
+        const legL = legChain(segEnds.upperLegL, segEnds.lowerLegL);
+        const legR = legChain(segEnds.upperLegR, segEnds.lowerLegR);
         const P = {
             torsoTop:    segEnds.torso.top,
             torsoBottom: segEnds.torso.bot,
-            headTop:     segEnds.head.top,
-            neck:        segEnds.head.bot,       // head bottom ≈ torso top
-            shL: segEnds.upperArmL.top, shR: segEnds.upperArmR.top,
-            elbowL: avg(segEnds.upperArmL.bot, segEnds.lowerArmL.top),
-            elbowR: avg(segEnds.upperArmR.bot, segEnds.lowerArmR.top),
-            wristL: segEnds.lowerArmL.bot, wristR: segEnds.lowerArmR.bot,
-            hipL: segEnds.upperLegL.top, hipR: segEnds.upperLegR.top,
-            kneeL: avg(segEnds.upperLegL.bot, segEnds.lowerLegL.top),
-            kneeR: avg(segEnds.upperLegR.bot, segEnds.lowerLegR.top),
-            ankleL: segEnds.lowerLegL.bot, ankleR: segEnds.lowerLegR.bot,
+            neck:        addV(segEnds.torso.top, _crashV(-tAxis.x * NECK_OFF / TORSO_H, -tAxis.y * NECK_OFF / TORSO_H, -tAxis.z * NECK_OFF / TORSO_H)),
+            headTop:     segEnds.torso.top,
+            shL: armL.sh, elbowL: armL.elbow, wristL: armL.wrist,
+            shR: armR.sh, elbowR: armR.elbow, wristR: armR.wrist,
+            hipL: legL.hip, kneeL: legL.knee, ankleL: legL.ankle,
+            hipR: legR.hip, kneeR: legR.knee, ankleR: legR.ankle,
         };
+        // The head extends from the braced neck along the head's own axis.
+        P.headTop = addV(P.neck, _crashVSub(segEnds.head.top, segEnds.head.bot));
         const parts = [];
         for (const k of Object.keys(P)) parts.push({ name: k, p: P[k], prev: _crashV(P[k].x, P[k].y, P[k].z) });
         const byName = {};
@@ -3682,6 +3732,10 @@ function _startGame() {
         const dist = function (a, b) { return _crashVLen(_crashVSub(a, b)); };
         const STICKS = [
             ['torsoTop', 'torsoBottom'], ['neck', 'headTop'],
+            // Neck-to-torso brace: without it the neck particle is held only by
+            // the head stick and drifts up to ~0.2 m off the torso (the head
+            // visibly detaches — measured in iter 36's first spec run).
+            ['torsoTop', 'neck'],
             ['torsoTop', 'shL'], ['torsoTop', 'shR'], ['shL', 'shR'],
             ['torsoBottom', 'shL'], ['torsoBottom', 'shR'],
             ['shL', 'elbowL'], ['elbowL', 'wristL'],
@@ -3694,18 +3748,9 @@ function _startGame() {
             return { a: byName[s[0]], b: byName[s[1]], rest: dist(P[s[0]], P[s[1]]) };
         });
 
-        // Seed angles, so the limits never fight the crash pose (a tuck lands
-        // deeply flexed; the limits clamp AWAY from the seed, not into it).
-        const angAt = function (j, a, b) {
-            const u = _crashVSub(a, j), v = _crashVSub(b, j);
-            const c = (u.x * v.x + u.y * v.y + u.z * v.z) / (_crashVLen(u) * _crashVLen(v));
-            return Math.acos(Math.max(-1, Math.min(1, c)));
-        };
-        const seedHead = angAt(P.neck, P.torsoTop, P.headTop);
-        const seedKneeL = angAt(P.kneeL, P.hipL, P.ankleL);
-        const seedKneeR = angAt(P.kneeR, P.hipR, P.ankleR);
-        const seedElbL = angAt(P.elbowL, P.shL, P.wristL);
-        const seedElbR = angAt(P.elbowR, P.shR, P.wristR);
+        // Angular limits from the seeds captured above (from the raw pose
+        // frames — P's chains are already joint-coincident, which would make
+        // the neck angle degenerate if measured from it).
         const clampAng = function (a, lo, hi) { return Math.max(lo, Math.min(hi, a)); };
         const ANG = {
             headMax: clampAng(seedHead + 0.10, 0.61, 0.9),          // ≤ ~35–50° off the torso axis
@@ -3714,6 +3759,21 @@ function _startGame() {
             elbL: [clampAng(seedElbL - 0.2, 0.6, 3.1), clampAng(seedElbL + 0.2, 3.1, Math.PI)],
             elbR: [clampAng(seedElbR - 0.2, 0.6, 3.1), clampAng(seedElbR + 0.2, 3.1, Math.PI)],
         };
+
+        // Hard length projection pairs (proximal anchor → distal snap): the
+        // soft stick solve leaves centimetre residuals under violent motion and
+        // the joint-gap gate reads those residuals, so segment lengths are
+        // enforced exactly each substep. The head pair is applied after the
+        // kinematic neck re-pin (it anchors on the final neck position).
+        const HARD = [
+            ['torsoBottom', 'torsoTop'],
+            ['shL', 'elbowL'], ['elbowL', 'wristL'],
+            ['shR', 'elbowR'], ['elbowR', 'wristR'],
+            ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+            ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+        ].map(function (p2) {
+            return { a: byName[p2[0]], b: byName[p2[1]], rest: dist(P[p2[0]], P[p2[1]]) };
+        });
 
         // Skis release at impact: flat-on-surface slide with yaw spin.
         const skis = [];
@@ -3737,7 +3797,8 @@ function _startGame() {
 
         const torso = P.torsoTop;
         return {
-            parts, byName, sticks: STICKS, ang: ANG, skis,
+            parts, byName, sticks: STICKS, ang: ANG, skis, neckOff: NECK_OFF,
+            hard: HARD, headRest: dist(P.neck, P.headTop),
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
             maxSpeed: 99, sprayT: 0, t: 0,
@@ -3791,29 +3852,62 @@ function _startGame() {
                     const nb = _crashQRotV(q, _crashV(v.x / lv, v.y / lv, v.z / lv));
                     b.p.x = j.p.x + nb.x * lv; b.p.y = j.p.y + nb.y * lv; b.p.z = j.p.z + nb.z * lv;
                 };
-                angClamp(R.byName.neck, R.byName.torsoTop, R.byName.headTop, 0, R.ang.headMax);
+                // Head angle off the TORSO AXIS (torsoBottom → neck): π means
+                // the head is in line with the torso, so the allowed band is
+                // the mirror of the [0, headMax] off-axis window. (Measuring at
+                // torsoTop directly is degenerate — neck == torsoTop by
+                // construction since the iter-37 joint-coincident seeding.)
+                angClamp(R.byName.neck, R.byName.torsoBottom, R.byName.headTop,
+                    Math.PI - R.ang.headMax, Math.PI);
                 angClamp(R.byName.kneeL, R.byName.hipL, R.byName.ankleL, R.ang.kneeL[0], R.ang.kneeL[1]);
                 angClamp(R.byName.kneeR, R.byName.hipR, R.byName.ankleR, R.ang.kneeR[0], R.ang.kneeR[1]);
                 angClamp(R.byName.elbowL, R.byName.shL, R.byName.wristL, R.ang.elbL[0], R.ang.elbL[1]);
                 angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
-            }
-            // ── Terrain contact + slope-scaled friction ───────────────────
-            const eps = 0.05;
-            const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
-            for (const pt of R.parts) {
-                const surf = _crashFloorY(pt.p.z) + pt.r;
-                if (pt.p.y < surf) {
-                    pt.p.y = surf;
-                    const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
-                    const vH = Math.sqrt(vx * vx + vz * vz);
-                    // Ploughing friction + a static stop so the body settles.
-                    const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
-                    let k = 1 - f;
-                    if (vH * (1 - k) / h < 0.5) k = 0.25;
-                    pt.prev.x = pt.p.x - vx * k;
-                    pt.prev.z = pt.p.z - vz * k;
-                    if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                // ── Terrain contact + slope-scaled friction ───────────────
+                // Projected INSIDE the constraint loop (standard PBD) so the
+                // sticks and the surface converge to one configuration — run
+                // sequentially they fight and leave cm-scale residuals that
+                // the joint-gap and penetration gates both read (iter 37).
+                const eps = 0.05;
+                const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
+                for (const pt of R.parts) {
+                    const surf = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y < surf) {
+                        pt.p.y = surf;
+                        const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
+                        const vH = Math.sqrt(vx * vx + vz * vz);
+                        // Ploughing friction + a static stop so the body settles.
+                        const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
+                        let k = 1 - f;
+                        if (vH * (1 - k) / h < 0.5) k = 0.25;
+                        pt.prev.x = pt.p.x - vx * k;
+                        pt.prev.z = pt.p.z - vz * k;
+                        if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                    }
                 }
+            }
+            // Kinematic neck: pinned 1 cm below the torso top along the torso
+            // axis, so the head is attached EXACTLY every frame. (A simulated
+            // neck fought the contact radii and the brace — measured joint-gap
+            // residuals up to 0.09 m; a zero-rest stick diverged outright.)
+            const _tA = _crashVSub(R.byName.torsoTop.p, R.byName.torsoBottom.p);
+            const _tL = _crashVLen(_tA);
+            if (_tL > 1e-6) {
+                const _k = R.neckOff / _tL;
+                const _nk = R.byName.neck;
+                _nk.p.x = R.byName.torsoTop.p.x - _tA.x * _k;
+                _nk.p.y = R.byName.torsoTop.p.y - _tA.y * _k;
+                _nk.p.z = R.byName.torsoTop.p.z - _tA.z * _k;
+                _nk.prev.x = _nk.p.x; _nk.prev.y = _nk.p.y; _nk.prev.z = _nk.p.z;
+                // The head top snaps onto the exact rest length from the final
+                // neck position, so the rendered head is attached exactly.
+                const _hx = R.byName.headTop.p;
+                const _hdx = _hx.x - _nk.p.x, _hdy = _hx.y - _nk.p.y, _hdz = _hx.z - _nk.p.z;
+                const _hl = Math.sqrt(_hdx * _hdx + _hdy * _hdy + _hdz * _hdz) || 1e-9;
+                const _hs = R.headRest / _hl;
+                _hx.x = _nk.p.x + _hdx * _hs;
+                _hx.y = _nk.p.y + _hdy * _hs;
+                _hx.z = _nk.p.z + _hdz * _hs;
             }
         }
         // ── Skis: flat slide on the surface, yaw spin, come to rest ───────
@@ -3849,6 +3943,10 @@ function _startGame() {
             _spawnSnowBurst(R.torso.x, R.torso.y - 0.35, R.torso.z, 14, Math.min(2.2, R.maxSpeed / 6));
         }
         // ── Write driver transforms (root-local, bones follow as always) ──
+        // Arm segments are passed (distal, proximal) so the written +Y matches
+        // the arm drivers' own frame (+Y = elbow/wrist end); torso/head/legs
+        // pass (proximal, distal) per their +Y-proximal frames. See the note
+        // on segment-frame conventions in _crashRagdollInit.
         const writeSeg = function (name, pTop, pBot) {
             const n = character.meshes[name];
             if (!n) return;
@@ -3869,10 +3967,10 @@ function _startGame() {
         const P = R.byName;
         writeSeg('torso', P.torsoTop.p, P.torsoBottom.p);
         writeSeg('head', P.headTop.p, P.neck.p);
-        writeSeg('upperArmL', P.shL.p, P.elbowL.p);
-        writeSeg('lowerArmL', P.elbowL.p, P.wristL.p);
-        writeSeg('upperArmR', P.shR.p, P.elbowR.p);
-        writeSeg('lowerArmR', P.elbowR.p, P.wristR.p);
+        writeSeg('upperArmL', P.elbowL.p, P.shL.p);
+        writeSeg('lowerArmL', P.wristL.p, P.elbowL.p);
+        writeSeg('upperArmR', P.elbowR.p, P.shR.p);
+        writeSeg('lowerArmR', P.wristR.p, P.elbowR.p);
         writeSeg('upperLegL', P.hipL.p, P.kneeL.p);
         writeSeg('lowerLegL', P.kneeL.p, P.ankleL.p);
         writeSeg('upperLegR', P.hipR.p, P.kneeR.p);
