@@ -97,8 +97,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: root cause measured (iter 24) — post-pose bake leaves arm chains ~29 cm off-column and settle verifies a blind 35-vert subset; ARM GATES landed soft, repair first item of 25** |
-| — | Iteration-23 mandatory item 2 | **BASELINE MEASURED (iter 25); fix + gates first of 26** | ready state: skis lie ALONG the fall line (pairVsFall 0°, expected ≈90°) — readyYaw/turn never reaches the ski drivers; boot-cluster vs ski yaw 20.7–22.7° both states (gate ≤5°); numbers + interpretation in entry 25 |
+| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: settle-v2 + straighten-v2 verified at geometry level in iter-26 probes (forearm residual 4.2 mm) but NOT landed — two arm-gate metrics + leg-profile fingertip pollution block the build (entry 26); repair first of 27** |
+| — | Iteration-23 mandatory item 2 | **BASELINE MEASURED (iter 25); fix + gates first of 27** | ready state: skis lie ALONG the fall line (pairVsFall 0°, expected ≈90°) — readyYaw/turn never reaches the ski drivers; boot-cluster vs ski yaw 20.7–22.7° both states (gate ≤5°); numbers + interpretation in entry 25 |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -111,6 +111,15 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 
 ## Open questions for the reviewer
+
+- **Entry 26 (arm repair not landed) — one call.** The geometry repair works
+  (probe evidence in entry 26), but three gate/metric designs need rework before
+  a hard-green build can ship: elbow radial rows (±100–134 mm reads across the
+  biceps/forearm seam), hand PCA (cuff ring dominates; needs band reshape below
+  the cuff), leg-profile fingertip exclusion (contiguous-group analysis, strict
+  ownership). Confirm the proposed order for 27 (entry-26 plan) or name which of
+  the three gates you would relax instead. Scratch `~/aerial-agents/scratch/iter-26/`
+  keeps probe1–8 logs (18:00 sweep OK).
 
 - **Entry 24 (straight-arm item) — three calls.**
   (a) **Gate mode.** The review mandated hard build failures on the straight-arm numbers;
@@ -206,6 +215,59 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 26 — Mandatory item 1 (arm-chain repair) root-caused to arithmetic + two gate-design defects; NOT landed; item 2 unstarted — both first of 27
+
+Both mandatory items remain open. This session spent its window on item 1 and
+stopped the rebuild honestly: **`blender/build_body.py` is restored to HEAD byte-
+for-byte (git checkout), `assets/` untouched, ASSET_V stays 9** — all build attempts
+died at pre-existing gates before any export. Probes/logs preserved in
+`~/aerial-agents/scratch/iter-26/` (probe1–8). `npm run test:unit` 74/74 and
+`npm run test:golden` 30/30 verified on HEAD first (entry-25 self-review clean:
+commits bbfc0d2 + docs; tree started clean).
+
+**What was learned (numbers):**
+1. **The post-pose chain offset reproduces exactly**: upperArmL strict cloud n=215
+   at (−0.112,+0.041) vs target (−0.175,−0.008) = 98 mm; lowerArmL strict n=116 at
+   (+0.144,+0.131) = 229 mm laterally+fore-aft; hand band (relaxed n=600) 389 mm.
+   Legs are unaffected.
+2. **settle v2 WORKS at the geometry level**: ownership-based measurement (no
+   geometric windows) + a piecewise correction field (shoulder→dp 98 mm,
+   elbow→dl 229 mm, wrist→dl, tip→hand-specific anchor) + shoulder fade landed
+   verify residuals of forearm **4.2 mm both sides**, straighten then measured the
+   residual forearm axis error at ~41° (was ~50°) and rotated it in place;
+   `_arm_trace` clouds moved onto-column. Hands needed their own below-wrist
+   anchor — folding their 389 mm offset into dd contaminated the whole distal
+   field (~83% weight → 82 mm overshoot everywhere); that was my own arithmetic
+   bug, not a pipeline mystery.
+3. **Two gate-metric defects exposed once real geometry reached them** (these had
+   never run end-to-end on aligned geometry):
+   - elbow radial profile: rows around elb_z read ±100–134 mm "steps" even with
+     p90 radii — the slice band straddles biceps-end vs forearm-start silhouette
+     over a mixed-weight cuff region; needs column-axis distances + strict-tier
+     membership or an explicit seam-window exclusion.
+   - hand PCA: power iteration was unnormalized (overflow garbage, read exactly
+     90.0°); normalizing made it honest but it still reads 78–86° because the
+     wrist-cuff ring dominates the hand band's covariance — the metric measures
+     cuff orientation, not finger direction.
+   - leg-profile pollution: with arms REPAIRED, fingertips legitimately hang
+     beside the thighs (x≈−0.14 at z≈−0.35..−0.5) inside leg_profile's x-window;
+     ownership filtering (>0.30 leg weight) removed them but created zero-width
+     rows at the knee gap (106 mm phantom step) and skipping holes broke slope
+     continuity across sparse boot-cuff bands (97 mm at z=−0.895); contiguous-
+     group analysis got final step from 74.6→40.5 mm at z=−0.335, still >30 limit.
+4. Blender CLI does not propagate python-script failures to the exit code — three
+   probe/final runs I read as `exit=0` had actually died in gates; detection must
+   be grep-for-BODY_EXPORTED.
+
+**Plan for 27 (proposed order, unchanged scope):** apply settle v2 +
+straighten v2 again (the pieces exist in scratch probes; restore from git history
+of this session's work or re-edit), redesign the two arm-gate metrics per the
+findings above, add the fingertip/sleeve handling to leg_profile as a
+contiguous-group analysis WITH strict (≥0.9) ownership, rebuild assets, bump
+ASSET_V, turn --gate-mode default HARD, verify hanging/raised in the browser;
+then item 2 (ski-driver yaw through readyYaw + the ~21° boot-cluster yaw, both
+gates into ready-stance.spec.js — entry-25 baseline numbers stand).
 
 ### 25 — Review-only: full suite audited; kicker-faces gate repaired (follow-steal + buried block); ski/boot alignment BASELINE measured for the mandatory item
 
