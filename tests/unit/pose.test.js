@@ -8,7 +8,7 @@ const { armSweep } = require('../../engine/core/pose.js');
 // VERBATIM COPY of the original function from game.js (renamed for comparison)
 function armSweepOriginal(name, _up, t) {
     const phi  = Math.PI * t;           // 0 (up) → π (down)
-    const baseX = (name === 'upperArmR' || name === 'lowerArmR') ? 0.205 : -0.205;
+    const baseX = (name === 'upperArmR' || name === 'lowerArmR') ? 0.175 : -0.175;
     // Radial distances from the shoulder pivot (y=0.150) along the arm chain:
     //   upper-arm centre: h/2         = 0.30/2        = 0.150
     //   lower-arm centre: h_u + h_l/2 = 0.30 + 0.125  = 0.425

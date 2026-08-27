@@ -61,7 +61,7 @@ const BASE_Z = AerialEngine.bodyModel.BASE_Z;
 //   hip y = -0.275 (bottom of torso)
 //   upperLeg h=0.36 → hip=top,  center = -0.275-0.18 = -0.455, knee = -0.635
 //   lowerLeg h=0.36 → knee=top, center = -0.635-0.18 = -0.815, foot = -0.995
-// x offset arms = ±0.205, legs = ±0.075. dz = forward/back delta from BASE_Z.
+// x offset arms = ±0.175, legs = ±0.075. dz = forward/back delta from BASE_Z.
 // Backflip tuck folds in the YZ plane: knees come forward (+dz) up toward chest.
 
 
@@ -515,8 +515,8 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
     const MAX_LAT = Math.PI / 2;
     const Y_PIVOT = 0.150;
     const sides = [
-        { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.205, stickX: lx, drop: armDropL },
-        { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.205, stickX: rx, drop: armDropR },
+        { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.175, stickX: lx, drop: armDropL },
+        { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.175, stickX: rx, drop: armDropR },
     ];
     for (const s of sides) {
         const phi    = Math.PI * s.drop;
