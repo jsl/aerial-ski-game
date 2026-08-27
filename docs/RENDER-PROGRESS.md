@@ -105,7 +105,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
+| P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
@@ -225,6 +225,78 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 32 — Arm transport ROOT-CAUSED and FIXED: the rig was T-pose on an A-pose mesh; arm bones re-anchored on the mesh's own axes; fallback (ii) re-applied with a tightened selector; assets rebuilt (ASSET_V 11); ARM GATES 13x better, still soft; two drive gates recorded failing
+
+Reviewer directive (11:15): fix the mirrored arm transport directly, one attempt,
+time-boxed; then move on. Tree started clean at `ddbbbbb0`... scratch
+`~/aerial-agents/scratch/iter-32/` holds probe1-3 logs + full_build logs.
+
+**Root cause (measured; refines entry 31's "mirrored conjugation").** The
+armature is built on the Rigify metarig's T-pose arm joints while the base mesh
+hangs A-pose: measured rest_y upperArmL (-0.856,-0.214,-0.470) (62 deg from
+vertical) vs the mesh's forearm cloud running nearly vertically with its
+centroid 0.40 m below the metarig elbow. pose_onto_segments' "preserve rest
+roll" swing then turns about a HORIZONTAL axis (lowerArmL turn axis measured
+(-0.178,-0.984,0)) — a pendulum, not a repositioning. Applying that deform to
+the pre-pose forearm centroid (-0.389,+0.088,+0.839) reconstructs entry 31's
+mirrored cloud (+0.160,+0.093,-0.429) to 1 mm. The bone axis itself maps
+exactly onto its column (probe: mid-bone -> (-0.175,-0.008,-0.275)); the legs
+are correct because mesh and rig agree there (4-6 deg swings).
+
+**Fix (build-side, `blender/build_body.py`).** New `mesh_arm_joints` runs
+between `anatomical_joints` and `build_armature`: keeps the metarig shoulder
+and segment LENGTHS, re-anchors elbow/wrist onto the PCA axis of the mesh's
+own arm silhouette (outboard of the torso; L 50.4 deg / R 50.3 deg off the
+metarig chain, hard-gated to [10,110]), oriented distal. The pose transport
+now behaves like the legs'. The approved fallback (ii) `rebind_arm_weights`
+(iter 31 scratch) is re-applied on top, with its selector tightened after
+measurement: with vertical bones, chest-side verts became "nearest the arm
+axis" and the rebind stripped them off the torso group, collapsing the bib
+plate's torso-dominant triangles 820 -> 250; margin 5 -> 30 mm and arm-weight
+floor 0.02 -> 0.30 restored it.
+
+**Numbers.** Strict (w>0.9) lowerArmL cloud final (-0.158,+0.006,-0.502) vs
+column x=-0.175 (committed build: (+0.156,+0.087,-0.427), mirrored, 33 cm
+off-column). ARM GATES (honest instrument, still SOFT): collinear 210.9 ->
+12.5 mm, forearm-hand 178.7 -> 25.5 mm, hand axis 90.0 -> 6.1 deg, elbow step
+96.7 -> 28.0 mm (limits 10/10/10/5 — 1.3x/2.6x/1.6x/5.6x over). Bib gate
+GREEN: front 1040 samples ink 0.341, back 880 ink 0.277. Boot yaw +/-0.4 deg
+preserved; settle worst distal 0.00 mm; stripe bake gate 234/3336 = 0.070
+(committed 0.072); BODY_EXPORTED 8995 verts, binds verified (worst element
+diff recorded in log).
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** (no rebaseline; physics untouched); drive rig+body+ready-stance
+**10 passed / 2 failed** (below); `look` 1/1, shots inspected directly (I can
+view PNGs): figure_front/figure show both arms hanging at the sides, hands
+beside the thighs, no elbow kink, no flare, no mirrored haul — iter 30's
+dominant athlete defect is visually gone; chest bib 30 present, face/helmet
+unchanged. `ASSET_V` 10 -> **11**; `index.html` game.js ?v 17 -> **18**. No
+`engine/` edits; `blender/body-model.json` untouched.
+
+**Two drive gates fail on the new geometry (recorded honestly, not hidden):**
+- `rig.spec.js` hands-beside-thighs: handsOut.L **0.1534** vs > 0.155 (1.6 mm
+  short; R passes at >0.155; mirror within 0.02) — the vertical transport
+  hangs the hands marginally more inboard than the hauled old build did.
+- `body.spec.js` stripe: spec reads leg blueFrac **0.0** while the build's own
+  stripe bake gate reads 234/3336 blue (0.070; committed 0.072) — the ink is
+  in the bake; the spec's sampling window disagrees with the re-unwrapped
+  mesh. Needs its window re-derived, not a paint change.
+
+**Open questions for the reviewer**
+- Confirm the root-cause reframe: "mirrored conjugation" was the T-pose-rig-
+  on-A-pose-mesh mismatch, and re-anchoring the arm chain on the mesh axis is
+  the conjugation fix (your strict-then-mixed cloud criterion: strict lands
+  on-column/side, mixed follows at settle's 0.00 mm distal).
+- Disposition of the two failing gates: re-derive the hand-clearance threshold
+  (0.155) and the stripe UV window against the corrected geometry, or name the
+  geometry point you want instead.
+- ARM GATES remain over limit with the residual now in base-mesh hand/cuff
+  geometry (hand axis 6.1 deg PASSES; dx offsets 12/28 mm are cuff+hand shape,
+  not transport). Per your time-box the arm chain gets no further iteration
+  from me; the plan-P8 lever would be a mesh-side hand repair in a rebuild
+  window you schedule.
 
 ### 31 — Arm fallback (ii) attempted and REVERTED with root-cause evidence (mirrored arm transport, not LBS lag); ARM GATES instrument made honest; no geometry shipped
 

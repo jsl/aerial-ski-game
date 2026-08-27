@@ -416,6 +416,70 @@ def anatomical_joints(obj):
     return j
 
 
+def mesh_arm_joints(body, joints):
+    """
+    Re-anchor the ARM bones on the axis the MESH actually hangs along.
+
+    ROOT CAUSE of the "mirrored arm transport" (iteration 32, measured).
+    anatomical_joints reads the Rigify metarig, whose arms are held out at
+    ~62 deg from vertical (upper-arm rest axis (-0.856,-0.214,-0.470)), while
+    the base mesh hangs its arms at its sides: the forearm-dominant cloud runs
+    nearly vertically with its centroid 0.40 m below the metarig elbow.
+    pose_onto_segments therefore swings each off-axis arm cloud about a
+    HORIZONTAL axis (the measured turn axis for the lower arm is
+    (-0.178,-0.984,0)) — a pendulum, not a repositioning. Applying that deform
+    to the pre-pose forearm centroid (-0.389,+0.088,+0.839) lands at
+    (+0.160,+0.093,-0.429): mirrored across the body, matching entry 31's
+    traced cloud to 1 mm. The legs never showed this because mesh and rig
+    agree there (5-6 deg swings).
+
+    The fix is at the source, before the armature exists: keep the metarig
+    shoulder and the metarig segment LENGTHS, but rotate the elbow/wrist
+    positions onto the principal axis of the mesh's own arm silhouette
+    (vertices outboard of the torso, which on an A-pose figure is arm-only),
+    oriented distal. The transport then behaves like the legs': a small swing
+    onto the vertical driver, and the cloud lands on its column instead of
+    across the body. Residual along-axis offsets are settle_limb_geometry's
+    job (gated <= 10 mm post-settle).
+    """
+    sh_z = joints['shoulderL'].z
+    wri_z = min(joints['wristL'].z, joints['wristR'].z)
+    fixed = dict(joints)
+    for side in ('L', 'R'):
+        sh = joints[f'shoulder{side}']
+        elb = joints[f'elbow{side}']
+        wri = joints[f'wrist{side}']
+        L_up = (elb - sh).length
+        L_lo = (wri - elb).length
+        # Arm-only silhouette: clearly outboard of the torso, between the
+        # wrist and just above the shoulder. (The game's L sits at negative x.)
+        x_lo, x_hi = (-0.24, None) if side == 'L' else (None, 0.24)
+        pts = [v.co for v in body.data.vertices
+               if (x_lo is None or v.co.x < x_lo)
+               and (x_hi is None or v.co.x > x_hi)
+               and wri_z - 0.05 <= v.co.z <= sh_z + 0.06]
+        if len(pts) < 80:
+            raise SystemExit(f'[body] mesh_arm_joints: {side} silhouette too '
+                             f'small ({len(pts)}) — outboard selection broke')
+        c = Vector((sum(q.x for q in pts) / len(pts),
+                    sum(q.y for q in pts) / len(pts),
+                    sum(q.z for q in pts) / len(pts)))
+        u = _pca_axis(pts)
+        if u.z > 0:
+            u = -u                                # distal = downward
+        a_up = math.degrees(u.angle((elb - sh).normalized()))
+        a_lo = math.degrees(u.angle((wri - elb).normalized()))
+        log(f'  mesh arm axis {side}: {a_up:.1f} deg off the metarig upper, '
+            f'{a_lo:.1f} deg off the forearm chain '
+            f'(n={len(pts)}, axis ({u.x:+.3f},{u.y:+.3f},{u.z:+.3f}))')
+        if not (10.0 < a_up < 110.0) or not (10.0 < a_lo < 110.0):
+            raise SystemExit(f'[body] mesh arm axis {side} out of range '
+                             f'({a_up:.1f}/{a_lo:.1f} deg) — refusing to guess')
+        fixed[f'elbow{side}'] = sh + u * L_up
+        fixed[f'wrist{side}'] = fixed[f'elbow{side}'] + u * L_lo
+    return fixed
+
+
 # Which anatomical joints each physics segment runs between, as (HEAD, TAIL).
 #
 # The order is not free: the game places a bone's HEAD at the segment's BOTTOM
@@ -625,6 +689,122 @@ def sharpen_limb_weights(body, joints):
             fixed += 1
     log(f'limb weights sharpened to '
         f'{min(SHARPEN_MIN.values()):.2f}+ by anatomical proximity: {fixed} vertices')
+
+
+ARM_REBIND_ELBOW = 0.030
+ARM_REBIND_CREASE = 0.030
+ARM_REBIND_CREASE_R = 0.075
+
+
+def rebind_arm_weights(body, joints):
+    """
+    Remove the arm chain's LBS lag by ownership, not by moving geometry.
+
+    The heat map + joint smoothing leave every forearm vertex a torso/upper-arm
+    minority blend, so when pose_onto_segments hauls the bones to the game's
+    segment spots the arm cloud travels only PART of the way (entry 24: ~29 cm
+    of whole-chain lag frozen into the rest mesh by the modifier bake) — the
+    mechanism behind the author's "extra joint" elbow and the inboard arm
+    chains the gates measure. A 100%-bound vertex follows its bone exactly, in
+    the bake and in the game; entries 26/29 showed the alternative (moving the
+    vertices themselves) smears the cross-joint surface into a wing.
+
+    Selection is ANATOMICAL PROXIMITY (sharpen_limb_weights' rule: nearest
+    arm-segment axis by a clear margin over the runner-up) gated on the vertex
+    already carrying arm weight — the heat map's side-of-chest vertices have
+    none and must not be ripped onto the arm. Per selected vertex the blend
+    factor t comes from the joint distances, not from the weights:
+
+      forearm/hand  t = ramp from 5 mm to 3 cm away from the ELBOW joint
+      upper arm     t = ramp from the deltoid crease (7.5 cm off the
+                    shoulder, CREASE_CAPS' cap) over 3 cm, minus the same
+                    elbow band (the elbow end stays stitched too)
+
+    t = 0 keeps today's weights; t = 1 writes pure ownership on the target
+    bone and scales every other group to zero. Weights only — no vertex
+    coordinate is touched, so the rest silhouette is exactly the shipped one
+    until pose_onto_segments transports the chain.
+    """
+    gi = {g.name: g.index for g in body.vertex_groups}
+    axes = {nm: (joints[ja], joints[jb]) for nm, (ja, jb) in ANATOMY.items()
+            if is_arm(nm)}
+    fixed = {nm: 0 for nm in axes}
+    full = {nm: 0 for nm in axes}
+    for v in body.data.vertices:
+        best_nm, best_d, second_d = None, 1e9, 1e9
+        for nm, (a, b) in axes.items():
+            d = _seg_dist(v.co, a, b)
+            if d < best_d:
+                second_d, best_nm, best_d = best_d, nm, d
+            elif d < second_d:
+                second_d = d
+        if best_nm is None or second_d - best_d <= 0.03:
+            # (0.03, iteration 32): with the bones re-anchored onto the mesh's
+            # vertical hanging axes, chest-side vertices sit marginally nearer
+            # the arm axis than the torso axis; the old 5 mm margin let the
+            # rebind strip them off the torso group and the bib number plate
+            # lost most of its torso-dominant triangles (820 -> 250 samples).
+            continue                    # ambiguous territory keeps its blend
+        tgt = best_nm
+        idx = gi.get(tgt)
+        if idx is None:
+            continue
+        w = next((g.weight for g in v.groups if g.group == idx), 0.0)
+        if w <= 0.30:
+            # (0.30, iteration 32): a genuine limb vertex carries heavy arm
+            # weight; 0.02 also admitted thin-weight chest verts, which the
+            # margin fix above now double-covers.
+            continue                    # not the heat map's call: leave it
+        if tgt.startswith('lowerArm'):
+            elb = joints[f'elbow{tgt[-1]}']
+            d_e = (v.co - elb).length
+            t = max(0.0, min(1.0, (d_e - 0.005) / ARM_REBIND_ELBOW))
+        else:
+            side = tgt[-1]
+            sh, elb = joints[f'shoulder{side}'], joints[f'elbow{side}']
+            d_s = (v.co - sh).length
+            d_e = (v.co - elb).length
+            t_crease = max(0.0, min(1.0, (d_s - ARM_REBIND_CREASE_R)
+                                    / ARM_REBIND_CREASE))
+            t_elbow = max(0.0, min(1.0, (d_e - 0.005) / ARM_REBIND_ELBOW))
+            t = min(t_crease, t_elbow)  # both ends stitched, shaft rigid
+        if t <= 1e-4:
+            continue
+        others = [(g.group, g.weight) for g in v.groups if g.group != idx]
+        for gidx, wt in others:
+            body.vertex_groups[gidx].add([v.index], wt * (1.0 - t), 'REPLACE')
+        body.vertex_groups[idx].add([v.index], w + t * (1.0 - w), 'REPLACE')
+        fixed[tgt] += 1
+        if t >= 0.999:
+            full[tgt] += 1
+    for nm in sorted(fixed):
+        log(f'  arm rebind {nm}: {fixed[nm]} vertices rebound '
+            f'({full[nm]} to pure ownership)')
+    if not any(fixed.values()):
+        raise SystemExit('[body] arm rebind selected nothing — selection '
+                         'rule broke, refusing to build a lagged arm')
+
+
+def _arm_cloud_dbg(body, tag):
+    if os.environ.get('ARM_TRACE') != '1':
+        return
+    gi = {g.name: g.index for g in body.vertex_groups}
+    for nm in ('upperArmL', 'lowerArmL'):
+        idx = gi.get(nm)
+        if idx is None:
+            continue
+        pts = [v.co for v in body.data.vertices
+               if next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.9]
+        if not pts:
+            log(f'CLOUDDBG[{tag}] {nm}: EMPTY')
+            continue
+        cx = sum(p.x for p in pts) / len(pts)
+        cy = sum(p.y for p in pts) / len(pts)
+        cz = sum(p.z for p in pts) / len(pts)
+        log(f'CLOUDDBG[{tag}] {nm}: n={len(pts)} centroid '
+            f'({cx:+.3f},{cy:+.3f},{cz:+.3f}) bbox x '
+            f'{min(p.x for p in pts):+.3f}..{max(p.x for p in pts):+.3f} y '
+            f'{min(p.y for p in pts):+.3f}..{max(p.y for p in pts):+.3f}')
 
 
 def settle_limb_geometry(body):
@@ -3087,9 +3267,11 @@ def main():
            'crown_smooth': chin0 + hh0 * 0.70}
     soften(body, lm0)
     joints = anatomical_joints(body)
+    joints = mesh_arm_joints(body, joints)
     arm = build_armature(joints)
     skin(body, arm)
     sharpen_limb_weights(body, joints)
+    rebind_arm_weights(body, joints)
     rigid_boots(body, arm, joints)
 
     # How tall the boot is: ankle joint down to the sole, expressed in the shin's
@@ -3099,9 +3281,11 @@ def main():
     foot_lift = (joints['ankleL'].z - sole) * (SEGMENTS['lowerLegL']['h'] / rest_shin)
     log(f'boot height {foot_lift:.3f} m (ankle {joints["ankleL"].z:.3f}, sole {sole:.3f})')
 
+    _arm_cloud_dbg(body, 'pre-pose')
     _arm_trace(body, 'pre-pose')
     stretch = pose_onto_segments(body, arm, foot_lift)
     _arm_trace(body, 'after-pose')
+    _arm_cloud_dbg(body, 'after-pose')
 
     # Face/helmet landmarks are measured off the POSED mesh; every downstream
     # consumer (helmet projection, paint, material split, displacement) must
@@ -3121,6 +3305,7 @@ def main():
     straighten_forearms(body)
     settle_limb_geometry(body)
     _arm_trace(body, 'after-settle')
+    _arm_cloud_dbg(body, 'final')
     leg_profile(body, 'pre-girth ')
     add_girth(body, stretch)
     seat_soles(body)
