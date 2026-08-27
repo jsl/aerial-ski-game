@@ -91,13 +91,13 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iters 15, 20** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open**; iter 20: reproduces (corridor 0.8210, inrun 0.8235, kicker 0.8017, flanks 0.8268/0.8276 vs sky 0.7986; shadow drop 79.8%) — margins thin, widen in the P2 remainder |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
-| — | Reviewer order 17: kicker block faces | **landed (iter 17)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js` |
+| — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: root cause measured (iter 24) — post-pose bake leaves arm chains ~29 cm off-column and settle verifies a blind 35-vert subset; ARM GATES landed soft, repair first item of 25** |
-| — | Iteration-23 mandatory item 2 | **not started (iter 24 ran out of scope)** | ski/foot alignment in ready state: measure ski↔boot axis angle (≤5°) and pair-vs-fall-line (90° pre-turn / 0° after), fix + add to ready-stance.spec — FIRST of 25 per reviewer order unless entry-24 call (b) says otherwise |
+| — | Iteration-23 mandatory item 2 | **BASELINE MEASURED (iter 25); fix + gates first of 26** | ready state: skis lie ALONG the fall line (pairVsFall 0°, expected ≈90°) — readyYaw/turn never reaches the ski drivers; boot-cluster vs ski yaw 20.7–22.7° both states (gate ≤5°); numbers + interpretation in entry 25 |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -205,6 +205,124 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 25 — Review-only: full suite audited; kicker-faces gate repaired (follow-steal + buried block); ski/boot alignment BASELINE measured for the mandatory item
+
+No features. Scratch `~/aerial-agents/scratch/iter-25/` holds `runall.log` only; the two
+temporary probe specs were deleted before commit. Working tree started clean; iteration-24
+self-review: commits `f86c8c5` (builder gates) + `6ac47e8` (docs) match the entry, nothing
+half-landed, unit 74/74 + golden 30/30 reproduce on HEAD. One environment incident, self-
+inflicted: my first background suite attempt was tool-killed and orphaned its Playwright
+webServer on 127.0.0.1:8099 (the relaunch then failed fast with EADDRINUSE); I killed only
+that pid (cwd = this repo's tests/drive). The author's servers (8200/8201) and the other
+strays (8000/8090/8091/8092/8100) were left alone.
+
+**Full `./tests/run-all.sh` on HEAD:** unit **74/74**; golden **30/30**; browser **36/36**;
+mutation **5/5 caught**; coverage PASS (28 distinct behaviours; the two documented dup
+pairs unchanged); drive **44 passed / 2 skipped / 1 failed** — the failure
+`kicker-faces.spec.js` was real gate breakage, root-caused and repaired this session
+(below); it passes standalone after the fix. Colour gates did NOT regress.
+
+**Root cause 1 — a NEW latent class for every composed-camera drive spec: the per-frame
+follow steals fixed cameras now that the sim steps.** Since iteration 21's dt clamp, the
+simulation actually advances under SwiftShader, so game.js's follow
+(`camera.target.y = _visRootY; camera.target.z = state.posZ`) runs every frame and drags
+any parked target back onto the athlete. Measured: after `setTarget(block); radius=9;
+beta=1.42; alpha=π`, a 700 ms wait later the camera reads eye (−7.2, 8.4, −17.3),
+target (1.7, 7.1, **−17.3**) — the ready stance ~38 m from the block. Worse, an explicit
+`scene.render()` runs the same follow *inside* the evaluate, so compose→render is lost by
+the render itself. `look` and `review-measure` survive only because they frame/re-project
+around the athlete — the very object the follow tracks. `kicker-faces` uniquely failed
+because it frames the block. Fix (test-only, in `kicker-faces.spec.js`): stop the render
+loop at boot, keep a synchronous `_kfCompose()`, and re-assert it AFTER every render in
+the same synchronous task (single-threaded JS cannot interleave). The same pattern should
+be adopted by any future spec that parks a camera on non-athlete subject matter; existing
+body/venue/grey specs were left untouched (review-only) — flagging them as latent.
+
+**Root cause 2 — the block the gate was looking at no longer exists as meshes.** Pick
+inventory: 37 legacy `kicker_seg_*`/`kicker_fill_*` boxes + `kickerBackFace` all exist,
+visible, enabled, pickable — but their world tops measure y ≈ **−3.43..−3.45**, ≈1 m BELOW
+the physics table (−2.424) and far below the physics lip (+1.783): after iteration 18's
+continuous ground, the visible kicker block IS the merged `terrainCorridor` ribbon and the
+old block meshes are buried scaffolding. Zero rays can reach them first ⇒ `blockPts 0`.
+Locator rebuilt (colour gates untouched): first hit ∈ {`terrainCorridor`, `kicker_*`} AND
+hit point inside the block volume (|x| ≤ 1.75, z across KICKER_START−0.5..END+0.6,
+y > table + 15 cm), preserving occlusion semantics; sampling grid doubled to 0.01 for
+count headroom. After: **blockPts 1217** (was 0), block **lum 0.6454** (band 0.55–0.95),
+**r−b −0.1057** (cool; the iter-17 defect read +0.033), warmFrac **0.0025** (<2%),
+flatSnow 0.8063 — all gates green with margin.
+
+**Review measurements (REVIEW_MEASURE harness, fresh):**
+- Snow vs sky: corridor **0.8208**, inrun 0.8235, flankNear 0.8268, flankFar 0.8274 vs
+  sky **0.7988** — snow brightest everywhere EXCEPT the kicker sun-face **0.7955 = −0.0033
+  BELOW sky** (iter-20 read +0.0031 above). Sign flipped; margins are hairline. The P2
+  remainder (real sky/sun) should re-establish this with actual range, not nudged
+  materials.
+- Grey ramp: corridor −0.0060/−0.0066 vs flanks (gate ≥ darkest −0.02) — inside the
+  ±0.007 noise band, parity holds.
+- Athlete shadow: under-figure **0.1738** vs ring max 0.8053 → **78.4% drop** (gate ≥15%).
+  CSM quick win intact. (The harness's own ringMin/Max spread prints ~0 — the 15% metric
+  used since iter 8 is under-vs-ringMax, computed as before.)
+- Seam scan: worst footprint row y=0.425 skyFrac **12.84%** — iter-20: 8.78%, iter-15:
+  16.3%. The horizon-adjacent caveat row is worsening again; candidate for the P2/P6
+  horizon work rather than a one-off fill.
+- Face region lum 0.7116, darkFrac 0 — face reads under the brim.
+
+**Shots inspected directly (I can view PNGs; regenerated by the suite run 07:00).**
+`scene.png`: continuous field corridor→flanks, B-net seated both edges with sag, fence
+scale correct against the athlete, red kicker edge-line brackets still read as floating
+marks (P3 slice 2), trees still identical saturated cones (P4), cone-peak horizon + flat
+pale sky (P6/P2). `figure.png` (rear ¾): back bib **30** present, helmet dark, the
+near-side forearm shows the elbow kink / flared hand — the author's "extra joint" visibly
+reproduces pending the iter-24 repair. `figure_front.png`: **the ready-state ski defect is
+visible exactly as reported** — skis run into the distance (down the fall line) while the
+boots/feet point across the hill; styled navy skis + bindings render, front bib 30 present
+but foreshortened at this yaw (straight-on check still open).
+
+**Ski/boot alignment BASELINE (iteration-23 mandatory item 2 — measured this session,
+NOT fixed; fix + gates are the first work item of 26).** Temporary probe (deleted),
+numbers from the live scene:
+- BEFORE the ready turn (`readyTurnT=0`, `readyState=true`): ski long axes horizontal
+  projection = **(0, ±1)**, i.e. the skis lie ALONG the fall line (slope −22° measured
+  from the physics gradient) — expected ≈90° (pair across the hill). Boot-cluster PCA
+  axis vs ski axis: **L 22.7°, R 20.7°** (gate ≤5°); cluster n≈1900/side, anisotropy
+  2.6–4.0 (PCA direction trustworthy).
+- AFTER the turn (`readyState=false`): ski axes (0, ∓1) = fall line ✓ (0°, correct
+  phase), but boot yaw persists: **L 20.8°, R 20.7°**.
+- Interpretation, two separable defects: (a) the readyYaw/hop-turn rotates the body and
+  legs but never the ski drivers — the skis sit on the hill axis in BOTH states, so the
+  visible "turn" happens around skis that were already pointing downhill (this is the
+  author's "skis perpendicular to the feet" regression; likely the ski drivers are
+  excluded from whatever applies the ready/turn yaw, cf. the ready-stance seating block
+  writing ski `rotationQuaternion` directly); (b) an independent ~21° boot-vs-ski yaw in
+  both states (lower-leg frame or boot placement vs the driver axis).
+
+**What reads wrong now (re-prioritised for 26+):**
+1. Ready-state ski/boot alignment (numbers above) — fix ski-driver yaw source + the ~21°
+   boot yaw, add both gates to `ready-stance.spec.js`. Mandatory.
+2. Straight-arm repair rebuild (entry-24 plan stands: pose_onto_segments chain-lag root
+   cause, `--gate-mode hard`, ASSET_V bump) — the elbow kink is visible in today's
+   `figure.png`.
+3. P2 sky/sun remainder, then P12 quality pass (author order 2026-08-27; also fixes the
+   kickerFace<sky hairline and the worsening seam row with real sky range).
+4. P11 coherent crash (author order: iteration 26 was named for it; with item 1 mandatory
+   first, propose 26 = item 1 + crash if it fits, else crash in 27).
+5. Rebaseline part 2 (torso/legs) — still pending the entry-19 construction approval.
+6. Then: hop turn from RTMPose keypoints, P4 impostor trees, P5 landing chop, P3 slice 2
+   (wands/flag/deck/coach figures), P6 ridgelines, P9 night, P10 free-look, lightmap
+   rebake (spare budget).
+
+**Open questions for the reviewer**
+- Entry-24 calls (a)–(c) still standing (soft gates until the repair; next-session order;
+  ARM_TRACE evidence). This session's `figure.png` adds visual confirmation the defect is
+  live on the committed tree — nothing contradicts the entry-24 plan; the ski/boot
+  alignment numbers above are NEW mandatory-scope input for 26.
+- The kickerFace-vs-sky margin flipped negative (−0.0033). Fix via P2's real sky rather
+  than another material nudge? (Previous nudges produced ±0.007-band churn.)
+- Seam worst row 8.78% → 12.84% across three reads: keep treating as the documented
+  horizon-adjacent caveat, or promote into the P2/P6 slice with a gate?
+- The follow-steal class: adopt the freeze-and-recompose pattern proactively in the other
+  composed-camera specs (test-only, small) next iteration, or wait for them to fail?
 
 ### 24 — Iteration-23 item 1 (straight anatomical arms): root cause measured with numbers; the gates land (soft); the repair is the first item of 25
 

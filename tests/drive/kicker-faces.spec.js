@@ -55,37 +55,69 @@ test('kicker block side/back faces read as shaded snow, not plywood', async ({ p
 
     // Side camera on the block, matching the reviewer's vantage (−X, slightly
     // downhill, framing the wall between the lip and the table).
+    //
+    // Two headless realities since iteration 21's dt clamp made the sim step
+    // under SwiftShader:
+    //   1. The per-frame follow writes camera.target.{y,z} every step, so a
+    //      camera parked on the block is dragged onto the ready-stance athlete
+    //      (measured: composed target z 23.7 → reads back z −17.3).
+    //   2. Any explicit scene.render() runs that same follow via the render
+    //      observable, INSIDE our evaluate. A compose before a render is lost
+    //      by the render itself.
+    // Countermeasure: freeze the render loop at boot, define a synchronous
+    // _kfCompose(), and ALWAYS re-assert it AFTER any render, in the same
+    // synchronous task — single-threaded JS cannot interleave between them.
+    // look/review-measure stay unaffected because they track the athlete the
+    // follow itself tracks.
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const cfg = window._terrainCfg;
-        const lipY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_END_Z, cfg) - 1.025;
-        const tabY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_START_Z, cfg) - 1.025;
-        const cam = scene.activeCamera;
-        cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 400;
-        cam.setTarget(new BABYLON.Vector3(1.7, (lipY + tabY) / 2 - 0.6, cfg.KICKER_END_Z));
-        cam.radius = 9; cam.beta = 1.42; cam.alpha = Math.PI; cam.fov = 0.8;
+        scene.getEngine().stopRenderLoop();
+        window._kfCompose = () => {
+            const cfg = window._terrainCfg;
+            const lipY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_END_Z, cfg) - 1.025;
+            const tabY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_START_Z, cfg) - 1.025;
+            const cam = scene.activeCamera;
+            cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 400;
+            cam.setTarget(new BABYLON.Vector3(1.7, (lipY + tabY) / 2 - 0.6, cfg.KICKER_END_Z));
+            cam.radius = 9; cam.beta = 1.42; cam.alpha = Math.PI; cam.fov = 0.8;
+        };
+        window._kfCompose();
     });
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(400);
 
-    // Locate the block's visible silhouette by picking: every ray whose first
-    // hit is a kicker-block surface (fill boxes, back face, angled segments)
-    // samples that pixel. This covers the −x side wall AND the ribbon cliff
-    // around it (the reviewer's "back wall and side faces") without guessing
-    // fractional boxes — trees/sky live right beside them in frame.
+    // Locate the block's visible silhouette by picking: every ray whose FIRST
+    // hit lands on a block surface samples that pixel. Since iteration 18's
+    // continuous ground replaced the slabs, the visible block IS the merged
+    // `terrainCorridor` ribbon (the legacy kicker_seg_/kicker_fill_ boxes and
+    // kickerBackFace survive only as buried scaffolding — their tops measure
+    // ≈ 1 m below the physics table level), so the locator accepts the
+    // corridor mesh too, but only where the HIT POINT sits inside the block
+    // footprint ABOVE table level (|x| ≤ 1.75, z across the kicker span,
+    // y > table + 15 cm): outside those bounds the same mesh is just flat
+    // snow, and allowing it here would sample the wrong pixels. The first-hit
+    // rule keeps occlusion semantics (net/trees in front of the wall hide it).
     const picks = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
+        window._kfCompose(); // re-assert in this task; no render may precede it here
         const eng = scene.getEngine();
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
-        const blockRe = /^(kicker_fill_|kickerBackFace|kicker_seg_)/;
+        const cfg = window._terrainCfg;
+        const tabY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_START_Z, cfg);
+        const blockRe = /^(terrainCorridor|kicker_fill_|kickerBackFace|kicker_seg_)/;
         const pts = [];
-        for (let gy = 0.05; gy <= 0.85; gy += 0.02) {
-            for (let gx = 0.05; gx <= 0.95; gx += 0.02) {
+        for (let gy = 0.05; gy <= 0.85; gy += 0.01) {
+            for (let gx = 0.05; gx <= 0.95; gx += 0.01) {
                 const ray = scene.createPickingRay(gx * W, gy * H,
                     BABYLON.Matrix.Identity(), scene.activeCamera);
                 let hit = null;
                 try { hit = scene.pickWithRay(ray, null); } catch (e) {}
-                if (hit && hit.hit && hit.pickedMesh &&
-                    blockRe.test(hit.pickedMesh.name)) {
+                if (!hit || !hit.hit || !hit.pickedMesh ||
+                    !blockRe.test(hit.pickedMesh.name)) continue;
+                const p = hit.pickedPoint;
+                if (Math.abs(p.x) <= 1.75 &&
+                    p.z >= cfg.KICKER_START_Z - 0.5 &&
+                    p.z <= cfg.KICKER_END_Z + 0.6 &&
+                    p.y > tabY + 0.15) {
                     pts.push([Math.round(gx * W), Math.round(gy * H)]);
                 }
             }
@@ -93,6 +125,15 @@ test('kicker block side/back faces read as shaded snow, not plywood', async ({ p
         return pts;
     });
 
+    // Render the composed view LAST in its own task (render runs the follow
+    // observable; recomposing after it restores our framing synchronously),
+    // then screenshot before anything else can execute (loop is stopped).
+    await page.evaluate(() => {
+        window._kfCompose();
+        BABYLON.EngineStore.LastCreatedScene.render();
+        window._kfCompose();
+        BABYLON.EngineStore.LastCreatedScene.render();
+    });
     const f = await grabPixels(page);
     const px = (x, y) => {
         const i = (y * f.W + x) * 4;
