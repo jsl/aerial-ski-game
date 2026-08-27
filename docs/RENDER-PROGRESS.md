@@ -121,7 +121,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
-| P11 | Coherent crash | **slice landed (iter 36, f84de2f); instrument + seeding root-caused (iter 37, bdd5869); ALL acceptance gates ENFORCED (iter 38)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 21 sticks / 6 iters + hard length projection & polish, contact INSIDE the loop, kinematic neck, slope-scaled friction + static stop) drives the bones; skis release and slide to rest. Iter-38: pen gate root-caused — the spec applied the BOTTOM endpoint's surface height to both endpoints (phantom pen = seg len × sin 35° ≈ 0.31 m torso / 0.14 m head along-slope); ragdoll head-axis re-solve + in-loop hard projection (knee gap 0.134 → 0.013 in harness sweep); spec `test()` green ×2 browser runs; audit `state` byte-identical ×30 (node-census re-capture). OPEN: crash-moment eyeball still owed |
+| P11 | Coherent crash | **slice landed (iter 36, f84de2f); instrument + seeding root-caused (iter 37, bdd5869); ALL acceptance gates ENFORCED (iter 38); iter-40: spec FLAKY in the full suite** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 21 sticks / 6 iters + hard length projection & polish, contact INSIDE the loop, kinematic neck, slope-scaled friction + static stop) drives the bones; skis release and slide to rest. Iter-38: pen gate root-caused — the spec applied the BOTTOM endpoint's surface height to both endpoints (phantom pen = seg len × sin 35° ≈ 0.31 m torso / 0.14 m head along-slope); ragdoll head-axis re-solve + in-loop hard projection (knee gap 0.134 → 0.013 in harness sweep); spec `test()` green ×2 browser runs; audit `state` byte-identical ×30 (node-census re-capture). Iter-40: 3 runs → pass / settle-gate fail 0.142 m/s (gate 0.1) / crash never triggers in 30 s — two distinct modes; settle ties to human item 2 (iter 41), trigger needs a guaranteed-crash scenario |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
@@ -132,6 +132,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | APPROVED: keep ski d = 1.55, retune the touchdown evaluator | **landed (iter 33, commit 1e20d31)** | measured mechanism: d 1.55 slowed tucked rotation 4.1 % via computeI's ski self-term (I_tuck 5.2250→5.5459), shifting touchdown flipAngle 17–111° (norms: pike 125.5→28.9, tuck-long 343.5→232.7, tuck-short 326.1→308.8) — no window change can restore all three outcomes (opposite directions), so the self-term is pinned at the tuned 1.20 m; ski keeps its 1.55 m reach; 21/30 traces byte-identical to HEAD, 5 node-only (tuck-rate restoration), 3 outcome flips at f=435 exactly; all 30 byte-identical to the pre-1.55 build; airTime 2.300046 s byte-identical everywhere; unit 74/74, golden 30/30, drive 44/2 (the 2 = iter-32's pre-existing mismatches, unchanged) |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
+| — | Human-testing queue (author 16:40, reviewer order) | **41 = (1)+(2), 42 = (3)+(4), 43 = (5)+(6)+(7); all open** | iter-40 review confirms in code/shots: (1) hop feet — unverified this pass; (2) crash settle — the gate is marginal/flaky (entry 40); (3) kicker block — mechanism CONFIRMED: `kickerWidth` 3.4 m blocks are buried ≈1 m under the iter-18 ribbon which carries the profile full-width (`game.js:2294`, kicker-faces/terrain-corridor gates measure the ribbon so both stay green); (4) hands long — glove fingers read long in figure_front.png; (8) shoulders bulky in profile |
 
 ## Open questions for the reviewer
 
@@ -250,6 +251,105 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 40 — Review-only: full-suite audit after the P2 sky slice — no new regression from iter 39; run-all RED for 3 pre-dating/flaky reasons (2 stale entry-32 instrument gates + 1 flaky crash spec); visual findings on fresh shots; re-prioritised queue
+
+No features; no code changed — docs only. Time: suite ≈ 15 min of the budget; the
+three failures were re-run/dispositioned individually.
+
+**Verification (HEAD = 81e1a61, tree started clean).**
+- `npm run test:unit` **74/74**; `npm run test:golden` **30/30, NO re-capture**.
+- `tests/browser-suite.js` **36 passed / 0 failed**; `mutation-check.sh` all
+  mutations caught; `check-distinct.js` all scenarios differentiate.
+- Full drive suite: **46 passed / 3 failed / 2 skipped** (51 tests, 1 worker,
+  14.8 min). Skips are the two opt-in A/B compares (baked/grey), as designed.
+- `look` ran inside the suite and **regenerated `shots/scene.png`,
+  `shots/figure.png`, `shots/figure_front.png` (17:38)**; I can view PNGs and
+  inspected all three directly (notes below), plus a 3.4× chest crop probe of
+  figure_front (scratch `~/aerial-agents/scratch/iter-40/chest_crop.png`).
+
+**The three drive failures, dispositioned (none is an iter-39 regression):**
+1. `rig.spec.js:496` hands-beside-thighs — `handsOut.L` **0.1534** vs > 0.155.
+   Byte-identical to entry 32's honest record (pre-fix threshold; the corrected
+   vertical transport hangs the hands 1.6 mm more inboard than the old hauled
+   build). Red for **8 iterations**; disposition still open (entry 32 question).
+2. `body.spec.js:112` suit design — shin stripe `blueFrac` **0.0** vs > 0.10,
+   while the build's own stripe bake gate reads 0.070 blue ink. Entry 32's
+   instrument-window defect (spec window vs re-unwrapped mesh), NOT a paint
+   loss; the bib and head assertions in the same test PASS (ink 0.341/0.277).
+   Red for 8 iterations; window re-derivation still awaiting a go-ahead.
+3. `crash-ragdoll.spec.js:47` — **flaky, three distinct outcomes in three
+   runs**: in-suite settle gate fail (`tail speed 0.142 m/s`, gate < 0.1);
+   solo re-run crashed the 30 s `crashedAt` wait (the scripted run did not
+   crash at all under SwiftShader timing); solo re-run 3 passed (31.2 s).
+   Two real defects hiding here: (a) the settle gate is marginal — exactly
+   human-testing item 2 (residual motion, scheduled iter 41); (b) the spec's
+   crash trigger is timing-dependent — it needs a guaranteed-crash scenario
+   rather than hoping the driven landing fails.
+
+Everything else that guards iter 39's slice stayed green in the same run:
+sky, shadows, grey-ramp, kicker-faces, terrain-corridor, hop-turn,
+ready-stance, venue-dressing.
+
+**What now reads wrong (fresh shots + code, with numbers where I have them):**
+- **The P2 sky is invisible in all three canonical shots.** scene/figure/
+  figure_front are all pitched at the terrain; the dome's deep-blue zenith,
+  cumulus and sun disc never enter frame — the only instrument that sees the
+  new sky is sky.spec's dedicated FreeCamera (zenith r−b −0.389, clouds 10.8%,
+  sun patch 0.974, entry 39). From the ready camera the sky band is the fogged
+  pale horizon (snow 0.786 vs horizon-band 0.648), so the human sees almost no
+  change from the slice. The work is real but its payoff is framed out.
+- **Kicker-width regression mechanism CONFIRMED in code** (human item 3, iter
+  42): `game.js:2294` still builds the 3.4 m kicker blocks, but they are
+  buried ≈1 m under the iter-18 ribbon (entry 25), which carries the kicker
+  profile across the full corridor width — and both kicker-faces and
+  terrain-corridor measure ribbon pixels/profile, so both gates stay green
+  while the author sees a full-width kicker. The fix must put the flat table
+  beside a distinct 3.4 m block and re-point the two gates at the block.
+- **Bib 30 unreadable from `figure_front.png`.** The digits are painted and
+  texture-gated (ink 0.341/0.277), but the ready stance faces across the hill,
+  so the front camera sees the athlete in profile: the chest digits collapse
+  to foreshortened smudges (crop probe). P7's acceptance "readable by eye from
+  figure_front.png" is unmet in the canonical shot — a framing/state problem,
+  not a paint problem.
+- **Blue reads as a pale wash + seam stripe, not a broad royal panel** (P7,
+  visible in both figure shots); **glove fingers read long** (item 4); **the
+  deltoid/upper-back mass still reads bulky in profile** (item 8); a
+  **skin-tone band shows at jaw/nape** in both figure shots (the entry-20
+  cranium/brim re-check is still owed).
+- **Unchanged open plan gaps**: trees are cone-on-stick monocultures (P4),
+  foreground snow is featureless (P5), the horizon is grey cone peaks (P6);
+  P2's sun elevation + height haze deferred with numbers (entry 39); P10,
+  P9 night mode, P12 not started.
+
+**Re-prioritised queue (respects the 16:40 order; small adds proposed):**
+- **41 = human (1)+(2)** hop-feet attachment gates + crash settle — fold in:
+  make crash-ragdoll deterministic (guaranteed-crash scenario), and — if
+  approved below — re-derive the two stale entry-32 gate instruments (both are
+  measurement-side, ~30 min total, unblocks run-all green).
+- **42 = human (3)+(4)** kicker block restore (reference-frame description
+  first, then corridor-flat-beside-block + gate re-pointing) + hand ratio fix.
+- **43 = human (5)+(6)+(7)** FP VLM pass vs `main`, Dvorak-aware keys, ESC.
+- Then **P12 quality** (natural home for the 32° sun-elevation lighting
+  rebalance, entry 39 numbers), loose suit + broad royal panel rebuild,
+  P10 free-look, proportions part 2, P4 trees, P5 snow chop, P6 ridgelines,
+  P9 night mode.
+
+**Open questions for the reviewer**
+- Two stale gates have kept `run-all.sh` red since entry 32 with root causes
+  agreed but disposition open: (a) `rig.spec` hands threshold 0.155 (measured
+  reality 0.1534 on the corrected build — re-derive to ≥ 0.150 or name the
+  point you want), (b) `body.spec` stripe window (re-derive against the
+  re-unwrapped mesh, bake gate 0.070 as ground truth). Approve re-deriving
+  both in iteration 41 as instrument-only changes?
+- Fold the crash-ragdoll determinism fix (guaranteed-crash scenario) into 41's
+  crash-settle work? The settle gate itself (0.142 observed) is item 2's work.
+- Bib 30 readability: change the `figure_front` look camera (front-quarter
+  angle) or shoot after the hop turn completes? Texture gates already pass;
+  only the canonical framing fails.
+- Sky payoff: accept that the dome shows only via sky.spec's camera, or
+  re-pitch the three look cameras so the zenith/cumulus enter frame (affects
+  every downstream shot review; sky-vs-snow margins would need re-measuring)?
 
 ### 39 — P2 slice: real procedural sky (gradient dome + cumulus + sun disc/glare), clear-air fog, post contrast 1.6→1.2 (commit this tree)
 
