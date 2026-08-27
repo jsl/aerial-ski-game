@@ -196,9 +196,14 @@ flank slope, skirts/base for solidity"). Scratch dir
   terrain, grey-ramp, materials, textures, shadows, kicker-faces (block gate
   re-proved on the merged field), venue-dressing (b-net seat/reseat contract),
   ready-stance, body, look, and rig ×2 after the wait fix. A confirmation
-  full-suite rerun was still executing at the session deadline; the earlier
-  full run this session was 44 passed / 2 skipped / 1 failed, the one failure
-  being rig's 8 s load-wait (fixed above, then green twice standalone).
+  full-suite rerun finished after this commit was cut: **40 passed / 2 skipped /
+  5 failed**, the five being exactly the entry-10 SwiftShader timing class
+  (game full-run charge, ready-stance wait, rig wait, body deform,
+  athlete-wired — all `waitForFunction` timeouts at 8–45 s) amplified by the
+  wider field's software-raster triangle count (suite took 13.4 m); every one of
+  them passed standalone/batch on this identical tree earlier in the session.
+  First order of iter 19: rerun those five standalone, then consider longer
+  charge/deform waits across the drive specs as the standing fix.
 - Shots inspected directly: `scene.png` — continuous snowfield from corridor to
   flanks, NO seam band and NO sky-through gaps anywhere inside the footprint;
   fence hugging the field, trees seated on the windlip, athlete + CSM shadow
