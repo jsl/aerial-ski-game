@@ -104,7 +104,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **`APPROVED: arm fallback (ii)` (reviewer 10:15) — rebind forearm/hand 100% to bones with 3 cm elbow blend, ARM GATES hard with the passing rebuild; first of 31; stop-and-report with shots if the mesh shreds** |
+| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
@@ -224,6 +224,81 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 31 — Arm fallback (ii) attempted and REVERTED with root-cause evidence (mirrored arm transport, not LBS lag); ARM GATES instrument made honest; no geometry shipped
+
+Scratch `~/aerial-agents/scratch/iter-31/` keeps `probe0_full.log` (committed
+baseline), `probe2.log` (committed + cloud tracer), `probe3.log` (rebind +
+`ARM_TRACE=1`), `final3.log` (honest gates), `build_body.rebind.py` (the
+reverted rebind, ready to re-apply). Tree started clean at `4dd06da`.
+
+**Attempted as approved — fallback (ii), weights-only.** New
+`rebind_arm_weights` in `blender/build_body.py` (called after
+`sharpen_limb_weights`, before `pose_onto_segments`): forearm/hand vertices
+selected by anatomical proximity + existing arm weight rebound to pure
+lowerArm ownership with a 3 cm elbow blend; upper arm likewise past the
+deltoid crease (7.5 cm cap + 3 cm ramp, elbow end blended too). Measured:
+940/940 forearm+hand and 551/551 upper-arm verts to pure ownership per side.
+No vertex coordinate touched by the rebind itself.
+
+**REVERTED per the approved stop condition — (ii) makes the defect WORSE,
+because the lag was never the disease.** With pure binding:
+
+- the posed bone is CORRECT: `TRACEBONE lowerArmL head (−0.175,−0.008,−0.150),
+  tail (−0.175,−0.008,−0.400)`, yet the 100%-bound cloud lands at centroid
+  **(+0.160,+0.093,−0.429)** against target (−0.175,−0.008) — mirrored across
+  the body, ~33 cm off-column (probe3);
+- the committed build's mixed weights only DILUTE the same wrong haul: the
+  strict (w>0.9) cloud lands at (+0.029,+0.055), 21 cm off-column (probe2) —
+  the "29 cm whole-chain lag" of entry 24 is exactly this partial travel;
+- `settle_limb_geometry` has been dragging the cloud back by translation ever
+  since (distal shift −0.154,−0.052), which is why exact closures (entries
+  26/29) shear the surface apart: they fight a mirrored transport with
+  translations;
+- full-res rebuild with the rebind FAILS the bib front-plate gate (samples
+  820 → 180, ≥300 required) — the mirrored arm cloud physically crosses the
+  bib sampling region; group weight-centroid worsens (+0.124 → +0.148).
+
+**Root cause (for the reviewer to confirm): the armature-modifier bind/pose
+composition for the ARM bones is mirrored about x=0** (legs are fine — their
+strict cloud lands 0.02 mm on-column). Until that conjugation is fixed in
+`pose_onto_segments`/the bind handling, NO rebinding strategy can work — pure
+binding amplifies the transport bug instead of fixing lag.
+
+**LANDED instead — instrument honesty (measurement-only, no geometry).** The
+ARM GATES could never see any of this: their xy window about the upper-arm
+centre excluded exactly the off-column cloud they exist to catch (hand band
+always empty → "no usable side" on the committed build at full res too —
+probe0_full), the hand-band floor used the mesh minimum (soles) instead of
+below-the-fingertips, the elbow-profile cloud's z filter (`z > cu.z−hu`) left
+every elbow row empty (latent TypeError once the bands stopped skipping), and
+the summary printed metres under an mm label ("0.2 mm" for 210 mm). Fixed all
+four in `arm_geometry_report`; bands are now ownership-pure (≥0.30 weight, z
+band only). **The glb is byte-identical** (weights/geometry untouched) and
+`assets/` is unchanged (rebake PNGs are OPTIX-nondeterministic; restored, so
+no `ASSET_V` bump — nothing shipped). `index.html` untouched.
+
+**Honest gate readings (soft mode; limits 10 mm / 10 mm / 10° / 5 mm):**
+collinear 210.9 mm (dx 201, dy 64), forearm-hand 178.7 mm, hand axis 90.0°,
+worst elbow cross-section step 96.7 mm at z=−0.253 — per-side and summary now
+agree. For the same mesh the old windowed instrument reported 43.9 mm.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** (no rebaseline — physics untouched); `rig.spec.js` **7/7**
+(bind≡driver, styled skis, boots unchanged — the glb is byte-identical);
+build completes in soft mode; probe evidence above. No `engine/` edits;
+`blender/body-model.json` untouched.
+
+**Open questions for the reviewer**
+- Confirm the mirrored-arm-transport diagnosis and the proposed order:
+  (1) root-cause the arm bone bind-vs-posed conjugation in
+  `pose_onto_segments` (candidates: the hanging-arm bind's rest-roll handling,
+  or the modifier bake's armature matrix) as its own build-side commit;
+  (2) THEN fallback (ii) on top — pure binding becomes correct once transport
+  is; (3) THEN the ARM GATES go hard on the now-honest instrument.
+- If you would rather I first re-prove the mirror with a minimal isolated
+  Blender probe (single bone, one vertex, print the deform matrix), say so —
+  the evidence above is from the full pipeline tracer.
 
 ### 30 — Review-only: full suite on HEAD; latent body.spec ski assertion repaired (broken since iter 22); measurements reproduce; re-prioritisation per the 10:15 approvals
 

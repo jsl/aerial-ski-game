@@ -1428,8 +1428,6 @@ def arm_geometry_report(body):
                 p = v.co
                 if not (z_lo <= p.z <= z_hi):
                     continue
-                if math.hypot(p.x - cu.x, p.y - cu.y) > hu * 1.3 + 0.03:
-                    continue
                 (out_s if w > 0.90 else out_r).append((v.co, max(0.0, min(1.0, (w - 0.30) / 0.60))))
             return out_s, out_r
 
@@ -1448,7 +1446,11 @@ def arm_geometry_report(body):
         b_lo = pts_in(gi.get(lo), cl.z - hl * 0.70, cl.z + hl / 2)
         # Hand band: the glove lives AT and just below the forearm bone's
         # tail (wrist) — from a little above the tail down past any fingertip.
-        z_floor = min(v.co.z for v in body.data.vertices) - 0.002
+        # The floor must be BELOW the fingertips, not the mesh minimum (the
+        # soles can sit above or below the hands depending on the pose) —
+        # one forearm-length below the wrist covers any hand geometry.
+        z_floor = min(min(v.co.z for v in body.data.vertices),
+                      cl.z - hl * 2.0) - 0.002
         tail_z = cl.z - hl
         b_ha = pts_in(gi.get(lo), z_floor, tail_z + hl * 0.08)
         c_up, n_up = wcen(b_up)
@@ -1490,6 +1492,8 @@ def arm_geometry_report(body):
 
         # Elbow cross-section profile: radius about EACH slice's own centroid,
         # 7 mm rows across [elbow-4cm, elbow+4cm], both arm bones' members.
+        # Ownership only — no z cut: the elbow slices bound the scan, and a
+        # filter near the upper-arm centre emptied every row.
         cloud = []
         for nm in (up, lo):
             idx = gi.get(nm)
@@ -1497,7 +1501,7 @@ def arm_geometry_report(body):
                 continue
             for v in body.data.vertices:
                 w = next((g.weight for g in v.groups if g.group == idx), 0.0)
-                if w > 0.45 and v.co.z > cu.z - hu:
+                if w > 0.45:
                     cloud.append(v.co)
         rows = []
         zz = elb_z - 0.040
@@ -1516,12 +1520,17 @@ def arm_geometry_report(body):
             prof.append(j * 1000)
             if abs(j) > abs(worst_jump):
                 worst_jump, jump_z = j, rows[i][0]
+        if jump_z is None:
+            log(f'  arm{side}: elbow profile found no rows '
+                f'(elb_z {elb_z:+.3f}, cloud n={len(cloud)}) — step unmeasured')
         side_txt = (f'col up-lo {d_ul*1000:.1f} mm (dx {dx_ul*1000:.0f}, dy {dy_ul*1000:.0f}), '
                     f'lo-hand {d_lh*1000:.1f} mm (dx {dx_lh*1000:.0f}, dy {dy_lh*1000:.0f}); '
                     f'hand axis {ang_hand:.1f} deg off the forearm; '
                     f'elbow radial steps [mm]: {" ".join(f"{j:+.1f}" for j in prof)}')
-        log(f'arm{side}: {side_txt} | worst elbow jump {worst_jump*1000:+.1f} mm at z={jump_z:+.3f}'
-            f' | sets n={n_up}/{n_lo}/{n_ha}')
+        log(f'arm{side}: {side_txt} | worst elbow jump '
+            f'{(worst_jump * 1000):+.1f} mm at z='
+            + (f'{jump_z:+.3f}' if jump_z is not None else 'n/a')
+            + f' | sets n={n_up}/{n_lo}/{n_ha}')
         results[side] = {'ul': d_ul, 'lh': d_lh, 'hand_deg': ang_hand,
                          'step': abs(worst_jump), 'step_z': jump_z}
     if results:
@@ -1534,8 +1543,8 @@ def arm_geometry_report(body):
         log('ARM GATES summary: upper-forearm collinear %.1f mm, forearm-hand '
             '%.1f mm (limit 10 each), hand axis %.1f deg (limit 10), worst '
             'elbow cross-section step %.1f mm (limit 5)'
-            % (worst['collinear'], worst['join'], worst['hand_axis'],
-               worst['elbow_step']))
+            % (worst['collinear'] * 1000, worst['join'] * 1000,
+               worst['hand_axis'], worst['elbow_step'] * 1000))
     else:
         worst = None
         log('ARM GATES summary: no usable side — weights bleed or bands empty')
