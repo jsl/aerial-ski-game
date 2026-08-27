@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { trackAthlete } = require('./pose/track');
+const { analyze, hipSurges } = require('./pose/metrics');
 
 const ROOT = path.resolve(__dirname, '..');
 const POSE_DIR = path.join(ROOT, 'reference', 'pose');
@@ -29,6 +30,39 @@ const CLIP_ROLE = {
   IMG_7841: 'landing, absorption and spray',
 };
 
+// Rotation-capture verdicts per clip, from the review sheets + trajectories
+// (checked by the analyst, iteration 2). Kept here so the doc regenerates.
+const CLIP_ROT_VERDICT = {
+  IMG_3396: {
+    flight: 'flight ~f80–120 (sheet: athlete a white blur, no skeleton drawn)',
+    verdict: 'not derivable — athlete untracked during flight; night scores mean 0.40. Flip count needs a cropped, upscaled re-extraction of ~f75–125.',
+  },
+  IMG_3520: {
+    flight: 'two sheet-verified flight windows with inversions (~f92–105 above the knoll, ~f118–150 above the trees)',
+    verdict: 'not derivable — pose fits a near-upright skeleton to the inverted athlete (torso 12–55 px): max θ excursion 0.5 s is 123° and that jump at f120–122 sits inside the re-acquisition after the 12-frame gap (hip jumps 437 px between f120 and f123 — a track re-lock, not rotation). Needs cropped re-extraction of ~f90–155.',
+  },
+  IMG_3523: {
+    flight: 'sheet-verified layout rotation above the knoll, flight ≈f155–207',
+    verdict: 'not derivable — same upright-fit failure; the only θ excursions (126°/0.5 s incl. f253–274: 81° over 0.73 s at ~153°/s) sit in the ride-out and around person switches at f207–208/f248–249 (hip jumps −168/−169 px). Needs cropped re-extraction of ~f150–210.',
+  },
+  IMG_3523_hop: {
+    flight: 'one hop turn, destabilisation window f58–75 ± 2 (0.57 ± 0.07 s)',
+    verdict: 'hop window bounded, timings inside it not derivable from this track — hip "surges" at f60/67/72/74 alternate ±60–70 px (±15 px at original scale ≈ one torso width): left/right hip keypoint swaps during the turn, not travel; torso stays within −6…+18° (yaw turn, pitch-plane θ barely moves). Needs the raw video re-extracted at higher fps for takeoff/landing/air time.',
+  },
+  IMG_3765: {
+    flight: 'vertical layout ascent, no rotation in clip (footage notes)',
+    verdict: 'no rotation expected or found (max excursion 51°/0.5 s = pose noise). Takeoff/airtime metrics next iteration.',
+  },
+  IMG_3768: {
+    flight: 'in-run, arm sweep into the lip, early flight; no full rotation in clip',
+    verdict: 'no flip expected or found (max excursion 88°/0.5 s, f19–21, during the far in-run stretch where the track is coarse). Crouch depth and arm-sweep timing next iteration.',
+  },
+  IMG_7841: {
+    flight: 'late flight + touchdown (track verified on the athlete from just before touchdown)',
+    verdict: 'partial rotation captured: f67–81 (t 2.23–2.70 s), 42° in 0.50 s, mean 165°/s, peak 310°/s — the athlete opening from ~80° to ~25° body attitude in the last half-second before touchdown. Not a flip count; touchdown absorption next iteration.',
+  },
+};
+
 function venvPython() {
   return process.env.RTMPOSE_PYTHON || path.join(process.env.HOME || '', 'aerial-agents', 'rtmpose-venv', 'bin', 'python');
 }
@@ -42,6 +76,9 @@ function main() {
   for (const clip of clips) {
     const data = JSON.parse(fs.readFileSync(path.join(POSE_DIR, clip, 'keypoints.json'), 'utf8'));
     const { frames, summary } = trackAthlete(data);
+    const track = { clip, fps: data.fps, videoPx: data.frame_size || [720, 1280], frames };
+    const metrics = analyze(track);
+    const surges = clip === 'IMG_3523_hop' ? hipSurges(track, 30) : null;
     const outPath = path.join(POSE_DIR, clip, 'athlete_track.json');
     fs.writeFileSync(outPath, JSON.stringify({
       clip,
@@ -51,8 +88,15 @@ function main() {
       summary,
       frames,
     }, null, 1));
-    results.push({ clip, summary });
-    console.log(`${clip}: coverage ${summary.coverage}% (${summary.known}/${summary.frames} frames), interpolated ${summary.interpolated}, gaps>3 ${summary.gapsOver3}, max gap ${summary.maxGap}, shoulder-hip median ${summary.sizeMedianPx}px`);
+    fs.writeFileSync(path.join(POSE_DIR, clip, 'athlete_metrics.json'), JSON.stringify({
+      clip,
+      method: 'shoulder->hip angle unwrap, deg/s at clip fps, rotation intervals |rate|>=90 deg/s merged<=2, gaps>3 never bridged',
+      fps: data.fps,
+      ...metrics,
+      ...(surges ? { hipSurgesPxPerFrame: surges } : {}),
+    }, null, 1));
+    results.push({ clip, summary, metrics, surges });
+    console.log(`${clip}: coverage ${summary.coverage}% (${summary.known}/${summary.frames} frames), interpolated ${summary.interpolated}, gaps>3 ${summary.gapsOver3}, max gap ${summary.maxGap}, shoulder-hip median ${summary.sizeMedianPx}px, theta-exc-0.5s ${metrics.thetaExcursion05sDeg}deg, rot-intervals ${metrics.rotationIntervals.length}`);
   }
 
   if (!noOverlay) {
@@ -141,12 +185,51 @@ function renderDoc(results) {
   L.push('- IMG_3520, IMG_3523_hop, IMG_3765, IMG_3768: track verified on the sheets (95–100%');
   L.push('  coverage).');
   L.push('');
-  L.push('## Per-clip derived metrics — TODO (next iterations)');
+  L.push('## Rotation metrics from the tracked pose (iteration 2)');
   L.push('');
-  L.push('Task items 2–4 of `docs/LANE-D.md` (takeoff/landing frames, airtime, flips and angular');
-  L.push('rate from the shoulder→hip vector, crouch depth and arm-sweep timing, tuck shape,');
-  L.push('landing absorption, hop timings, golden-trace comparison, physics proposals) are not');
-  L.push('yet implemented; this document will grow those tables.');
+  L.push('Method (`tools/pose/metrics.js`): the shoulder-midpoint → hip-midpoint vector angle θ(f)');
+  L.push('(image plane, 0° = upright) is unwrapped across each clip (unwrap resets after gaps > 3');
+  L.push('frames so cuts never fake rotation) and differentiated to ω in °/s, 3-tap-median smoothed.');
+  L.push('Rotation intervals are maximal runs with |ω| ≥ 90°/s (runs ≤ 2 frames apart merged, never');
+  L.push('across gaps); a flips estimate is only reported for intervals that plausibly contain whole');
+  L.push('flips (≥ 0.25 s, ≥ 180° captured turn, peak ≤ 3000°/s). Per-frame θ/ω series and interval');
+  L.push('details are in `reference/pose/<clip>/athlete_metrics.json` (local).');
+  L.push('');
+  L.push('### Key finding: flip counts are NOT derivable from the current pose data');
+  L.push('');
+  L.push('RTMPose fits a near-upright skeleton to the inverted athlete at small scale, so the');
+  L.push('shoulder→hip angle does not wind during the sheet-verified flips. The table is therefore a');
+  L.push('rotation-capture diagnostic: where the pose data supports a number it is quoted, where it');
+  L.push('does not the failure is evidenced and a targeted re-extraction window is proposed (crop +');
+  L.push('4× upscale around the flight, the approach that produced the clean `IMG_3523_hop` track).');
+  L.push('');
+  L.push('| clip | flight per review sheet | max θ excursion in 0.5 s | significant rotation intervals | flips | verdict |');
+  L.push('|---|---|---|---|---|---|');
+  for (const { clip, metrics: m } of results) {
+    const v = CLIP_ROT_VERDICT[clip] || { flight: '', verdict: '' };
+    const iv = m.rotationIntervals
+      .map((r) => `f${r.f0}–${r.f1}: ${r.absTurnDeg}°/ ${r.dur}s, peak ${r.peakRateDegS}°/s${r.flipsEst != null ? `, ≈${r.flipsEst} flips` : ''}`)
+      .join('; ') || 'none';
+    const ivShort = iv.length > 80 ? iv.slice(0, 77) + '…' : iv;
+    L.push(`| ${clip} | ${v.flight} | ${m.thetaExcursion05sDeg}° (f${m.thetaExcursionSpan[0]}–${m.thetaExcursionSpan[1]}) | ${ivShort} | ${m.rotationIntervals.some((r) => r.flipsEst != null) ? m.rotationIntervals.filter((r) => r.flipsEst != null).map((r) => r.flipsEst).join(', ') : 'n/d'} | ${v.verdict} |`);
+  }
+  L.push('');
+  L.push('Reading notes:');
+  L.push('');
+  L.push('- The 30 fps frame rate bounds every rate by pose jitter: one degree of θ noise per');
+  L.push('  frame is already ±30°/s, which is why only intervals with sustained ≥ 90°/s and');
+  L.push('  ≥ 180° of turn are counted, and interval means are quoted to 2 significant figures.');
+  L.push('- `IMG_7841` is the only clip where the pose actually captures body rotation: the tracked');
+  L.push('  θ sweeps ~80° → ~25° over the 0.50 s before touchdown (mean 165°/s, peak 310°/s). This is');
+  L.push('  the late-flight "open for landing" attitude change, not a flip.');
+  L.push('- `IMG_3523_hop` (torso ≈ 10 px): hip-anchor "surges" of ±60–70 px/frame at f60/67/72/74');
+  L.push('  alternate in sign and equal ~1 torso width at original scale — left/right hip keypoint');
+  L.push('  swaps during the turn, not travel. The hop turn window is f58–75 ± 2 (0.57 ± 0.07 s);');
+  L.push('  hop takeoff/landing/air time need the raw video re-extracted around that window.');
+  L.push('- Airtime, takeoff/landing frames, in-run crouch depth and arm-sweep timing, tuck shape and');
+  L.push('  the landing absorption remain to be derived (task item 2) once rotation-aware tracks');
+  L.push('  exist; the golden-trace comparison (task item 3) and physics proposals (task item 4)');
+  L.push('  follow from those numbers.');
   L.push('');
   L.push('## Proposals');
   L.push('');

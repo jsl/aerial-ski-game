@@ -77,3 +77,37 @@ checkout (gitignored, not committed) — merge needs nothing from it.
 Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. The
 only committed artefacts are `tools/pose_vs_physics.js`, `tools/pose/{track.js,
 overlay_track.py}` and `docs/POSE-VS-PHYSICS.md`.
+
+### 2 — Rotation study: flip counts not derivable from current pose data; partial capture in IMG_7841; hop window bounded
+Implemented the first slice of task item 2. New `tools/pose/metrics.js`: shoulder-midpoint →
+hip-midpoint angle θ(f) (image plane, 0° upright), unwrapped (reset after gaps > 3 so camera
+cuts never fake rotation), differentiated to ω °/s (3-tap median), rotation intervals =
+maximal |ω| ≥ 90°/s runs (merge ≤ 2 frames, never across gaps), flips estimate only for
+plausible intervals (≥ 0.25 s, ≥ 180°, peak ≤ 3000°/s), plus a max-θ-excursion-in-0.5 s
+diagnostic and a hip-surge helper. `tools/pose_vs_physics.js` writes
+`reference/pose/<clip>/athlete_metrics.json` (local) and regenerates a new doc section
+"Rotation metrics (iteration 2)" with a per-clip table + analyst verdicts.
+
+Key finding (evidenced in the doc): RTMPose fits near-upright skeletons to the inverted
+athlete at small scale, so flip counts are NOT derivable for IMG_3396/3520/3523 from the
+current keypoints.json (θ excursion ≤ 126°/0.5 s while the sheets show full inversions; the
+3520 123° jump at f120–122 is a track re-lock after a 12-frame gap, hip +437 px f120→123).
+IMG_7841 is the only real capture: θ ~80°→~25° in the last 0.50 s before touchdown (mean
+165°/s, peak 310°/s) — the open-for-landing attitude change. IMG_3523_hop: turn window
+f58–75 ± 2 (0.57 ± 0.07 s) bounded; the ±60–70 px hip "surges" are left/right keypoint
+swaps (~1 torso width at original scale), not travel. Each non-derivable clip gets a
+proposed re-extraction window (crop + upscale around flight: 3520 ~f90–155, 3523 ~f150–210,
+3396 ~f75–125, 7841 ~f60–90) for the next iteration.
+
+Verification: `node tools/pose_vs_physics.js` end to end; all iteration-1 numbers reproduced
+identically (coverage 64.8/95/73.2/100/95.5/100/67.2%, torso medians unchanged); sheets
+re-rendered 7/7. New numbers: θ excursions 46/123/126/34/51/88/84°; rotation intervals
+1/4/2/0/1/0/1 per clip (only 7841's is real rotation).
+
+Open: rotation-aware re-extraction of the flight windows (then airtime, takeoff/landing
+frames, flip counts, single/double); crouch depth + arm-sweep timing (3768/3765); tuck
+shape; landing absorption (7841); golden-trace comparison (task 3); proposals (task 4).
+
+Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. New file
+`tools/pose/metrics.js`; `tools/pose_vs_physics.js` + `docs/POSE-VS-PHYSICS.md` updated.
+`reference/pose/*/athlete_metrics.json` are local-only (gitignored), like the tracks.

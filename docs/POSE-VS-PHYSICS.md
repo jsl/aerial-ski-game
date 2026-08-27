@@ -69,12 +69,50 @@ should stay on the athlete for the whole sheet.
 - IMG_3520, IMG_3523_hop, IMG_3765, IMG_3768: track verified on the sheets (95–100%
   coverage).
 
-## Per-clip derived metrics — TODO (next iterations)
+## Rotation metrics from the tracked pose (iteration 2)
 
-Task items 2–4 of `docs/LANE-D.md` (takeoff/landing frames, airtime, flips and angular
-rate from the shoulder→hip vector, crouch depth and arm-sweep timing, tuck shape,
-landing absorption, hop timings, golden-trace comparison, physics proposals) are not
-yet implemented; this document will grow those tables.
+Method (`tools/pose/metrics.js`): the shoulder-midpoint → hip-midpoint vector angle θ(f)
+(image plane, 0° = upright) is unwrapped across each clip (unwrap resets after gaps > 3
+frames so cuts never fake rotation) and differentiated to ω in °/s, 3-tap-median smoothed.
+Rotation intervals are maximal runs with |ω| ≥ 90°/s (runs ≤ 2 frames apart merged, never
+across gaps); a flips estimate is only reported for intervals that plausibly contain whole
+flips (≥ 0.25 s, ≥ 180° captured turn, peak ≤ 3000°/s). Per-frame θ/ω series and interval
+details are in `reference/pose/<clip>/athlete_metrics.json` (local).
+
+### Key finding: flip counts are NOT derivable from the current pose data
+
+RTMPose fits a near-upright skeleton to the inverted athlete at small scale, so the
+shoulder→hip angle does not wind during the sheet-verified flips. The table is therefore a
+rotation-capture diagnostic: where the pose data supports a number it is quoted, where it
+does not the failure is evidenced and a targeted re-extraction window is proposed (crop +
+4× upscale around the flight, the approach that produced the clean `IMG_3523_hop` track).
+
+| clip | flight per review sheet | max θ excursion in 0.5 s | significant rotation intervals | flips | verdict |
+|---|---|---|---|---|---|
+| IMG_3396 | flight ~f80–120 (sheet: athlete a white blur, no skeleton drawn) | 46° (f82–83) | f97–99: 12°/ 0.1s, peak 131°/s | n/d | not derivable — athlete untracked during flight; night scores mean 0.40. Flip count needs a cropped, upscaled re-extraction of ~f75–125. |
+| IMG_3520 | two sheet-verified flight windows with inversions (~f92–105 above the knoll, ~f118–150 above the trees) | 123° (f120–123) | f26–28: 8°/ 0.1s, peak 125°/s; f63–66: 6°/ 0.13s, peak 127°/s; f120–122: 123°… | n/d | not derivable — pose fits a near-upright skeleton to the inverted athlete (torso 12–55 px): max θ excursion 0.5 s is 123° and that jump at f120–122 sits inside the re-acquisition after the 12-frame gap (hip jumps 437 px between f120 and f123 — a track re-lock, not rotation). Needs cropped re-extraction of ~f90–155. |
+| IMG_3523 | sheet-verified layout rotation above the knoll, flight ≈f155–207 | 126° (f246–250) | f205–208: 26°/ 0.13s, peak 410°/s; f253–274: 81°/ 0.73s, peak 280°/s | n/d | not derivable — same upright-fit failure; the only θ excursions (126°/0.5 s incl. f253–274: 81° over 0.73 s at ~153°/s) sit in the ride-out and around person switches at f207–208/f248–249 (hip jumps −168/−169 px). Needs cropped re-extraction of ~f150–210. |
+| IMG_3523_hop | one hop turn, destabilisation window f58–75 ± 2 (0.57 ± 0.07 s) | 34° (f59–63) | none | n/d | hop window bounded, timings inside it not derivable from this track — hip "surges" at f60/67/72/74 alternate ±60–70 px (±15 px at original scale ≈ one torso width): left/right hip keypoint swaps during the turn, not travel; torso stays within −6…+18° (yaw turn, pitch-plane θ barely moves). Needs the raw video re-extracted at higher fps for takeoff/landing/air time. |
+| IMG_3765 | vertical layout ascent, no rotation in clip (footage notes) | 51° (f77–85) | f25–28: 26°/ 0.13s, peak 228°/s | n/d | no rotation expected or found (max excursion 51°/0.5 s = pose noise). Takeoff/airtime metrics next iteration. |
+| IMG_3768 | in-run, arm sweep into the lip, early flight; no full rotation in clip | 88° (f19–21) | none | n/d | no flip expected or found (max excursion 88°/0.5 s, f19–21, during the far in-run stretch where the track is coarse). Crouch depth and arm-sweep timing next iteration. |
+| IMG_7841 | late flight + touchdown (track verified on the athlete from just before touchdown) | 84° (f67–82) | f67–81: 42°/ 0.5s, peak 310°/s | n/d | partial rotation captured: f67–81 (t 2.23–2.70 s), 42° in 0.50 s, mean 165°/s, peak 310°/s — the athlete opening from ~80° to ~25° body attitude in the last half-second before touchdown. Not a flip count; touchdown absorption next iteration. |
+
+Reading notes:
+
+- The 30 fps frame rate bounds every rate by pose jitter: one degree of θ noise per
+  frame is already ±30°/s, which is why only intervals with sustained ≥ 90°/s and
+  ≥ 180° of turn are counted, and interval means are quoted to 2 significant figures.
+- `IMG_7841` is the only clip where the pose actually captures body rotation: the tracked
+  θ sweeps ~80° → ~25° over the 0.50 s before touchdown (mean 165°/s, peak 310°/s). This is
+  the late-flight "open for landing" attitude change, not a flip.
+- `IMG_3523_hop` (torso ≈ 10 px): hip-anchor "surges" of ±60–70 px/frame at f60/67/72/74
+  alternate in sign and equal ~1 torso width at original scale — left/right hip keypoint
+  swaps during the turn, not travel. The hop turn window is f58–75 ± 2 (0.57 ± 0.07 s);
+  hop takeoff/landing/air time need the raw video re-extracted around that window.
+- Airtime, takeoff/landing frames, in-run crouch depth and arm-sweep timing, tuck shape and
+  the landing absorption remain to be derived (task item 2) once rotation-aware tracks
+  exist; the golden-trace comparison (task item 3) and physics proposals (task item 4)
+  follow from those numbers.
 
 ## Proposals
 
