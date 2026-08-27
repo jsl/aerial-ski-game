@@ -11,6 +11,12 @@ const { test } = require('@playwright/test');
 const path = require('node:path');
 const OUT = path.resolve(__dirname, '..', '..', 'shots');
 
+// TEMPORARY opt-in (iteration 13): the terrain lightmap is switched OFF until
+// the rebake lands (see baked.spec.js header), so there is no bake to A/B — the
+// harness would wait forever on `_bakedApplied > 0`. Run with BAKE_AB=1 once the
+// bake is back; that run restores the shipped-by-default behaviour.
+const RUN = process.env.BAKE_AB === '1';
+
 // Wide views that actually contain the things the bake affects: the flanking
 // snowfields, the tree line, and the kicker's concave transition. A view of open
 // sunlit snow shows almost nothing, correctly — sky visibility there is 1.
@@ -23,7 +29,7 @@ const VIEWS = [
     { name: 'trees', target: [-40, -20, 30], radius: 55, beta: Math.PI / 2.7, alpha: Math.PI * 1.20 },
 ];
 
-test('compare baked lighting on and off', async ({ page }) => {
+(RUN ? test : test.skip)('compare baked lighting on and off', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._bakedApplied > 0);

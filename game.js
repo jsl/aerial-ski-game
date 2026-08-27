@@ -870,7 +870,19 @@ function _startGame() {
     // Materials are shared between terrain meshes, so the textures are assigned
     // once per material while uv2 is assigned per mesh.
     window._bakedApplied = 0;
+
+    // TEMPORARY OFF SWITCH (iteration 13, reviewer order 1 of 23:50): the maps on
+    // disk were baked for the PRE-P1 slab terrain. The corridor ribbon replaced
+    // those meshes, so every atlas sample taken on wInrun's newly-exposed top face
+    // reads a stale zero multiplier — a full-width black band across the ready
+    // view (measured: black coverage 9.29% of frame; 0.09% with these clones
+    // stripped). Until the rebake lands (blocked on the post-unwrap vertex-split
+    // fixup across the uv2 sidecar contract — see RENDER-PROGRESS entries 12/13),
+    // the statics render on their plain snow/ls materials. FLIP TO true WITH THE
+    // REBAKE COMMIT; baked.spec.js asserts the off-state meanwhile.
+    window._bakeLightmapEnabled = false;
     (function applyBakedLighting() {
+        if (!window._bakeLightmapEnabled) return;
         try {
             fetch('assets/terrain_uv2.json' + ASSET_V)
                 .then(r => r.ok ? r.json() : null)
