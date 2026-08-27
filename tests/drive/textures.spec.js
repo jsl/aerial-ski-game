@@ -59,8 +59,8 @@ test('surface maps are generated and applied across the scene', async ({ page })
         .toBe(false);
     expect(info.snow.f0).toBeCloseTo(0.21, 5);
     expect(info.snow.albedoColor).not.toBeNull();
-    expect(Math.abs(info.snow.albedoColor[0] - 0.955)).toBeLessThan(0.01);
-    expect(Math.abs(info.snow.albedoColor[1] - 0.97)).toBeLessThan(0.01);
+    expect(Math.abs(info.snow.albedoColor[0] - 0.975)).toBeLessThan(0.01);
+    expect(Math.abs(info.snow.albedoColor[1] - 0.99)).toBeLessThan(0.01);
     expect(Math.abs(info.snow.albedoColor[2] - 1.0)).toBeLessThan(0.01);
 
     expect(errors, 'errors during texture generation').toEqual([]);

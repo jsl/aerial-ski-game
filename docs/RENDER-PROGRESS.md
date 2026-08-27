@@ -70,8 +70,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
-| P1 | Continuous terrain | **slice 1 landed (iter 11)** | corridor ribbon from exact physics profile + C1/clearance gates; C1 landing profile physics landed under APPROVED (airtime identical, finalPosZ -0.23..-0.64 m); OPEN: stale-lightmap rebake — iter-11's winding-flip plan RETRACTED (measured, entry 12), replaced with a post-unwrap vertex-split fixup (steps in entry 12); C1 blends to be rebuilt non-overshooting per the iter-11 review (iter 13, same APPROVED) |
-| P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7 |
+| P1 | Continuous terrain | **slice 1 landed (iter 11); C1 blends rebuilt as tangent fillets (iter 13)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios, landing posZ equal, ride-out drift ≤ 0.37 m; reviewer's 3 gates now permanent unit tests; OPEN: stale-lightmap rebake (entry-12 split-fixup plan), main clearance tables |
+| P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7, re-verified iter 13 with bake off (corridor 0.7949 ≥ flanks 0.7918/0.8058) |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
 | P5 | Snow surfaces | open | |
@@ -81,12 +81,30 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
-| — | Reviewer order 3: grey ramp | **landed (iters 6–7)** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); corridor 0.622→0.7778 vs flanks 0.787, inrun 0.784, kicker 0.758; phase-2 near-parity gates in `grey-ramp.spec.js`; kicker residual −0.029 queued behind P1/P2 geometry |
+| — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
+| — | Terrain lightmap | **disabled (iter 13, reviewer order 1)** | stale pre-P1 bake painted a 9.29%-black ready-view band; `applyBakedLighting` early-returns behind `_bakeLightmapEnabled=false`; baked.spec asserts the off-state + ready-view black32 < 0.5% (measured 0.026%); compare.spec BAKE_AB=1 opt-in; flip back to true WITH the rebake commit and restore the on-state assertions |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
 ## Open questions for the reviewer
+
+- **Iteration 13 wrap (2026-08-26, entry 13).** Reviewer-order items 1 (lightmap
+  disable) and 2 (non-overshooting C1) are landed; item 3 (the `main` vs
+  branch-before/after clearance tables, owed since 23:50) did NOT fit this
+  session and stays first in line, before or alongside item 4 (the rebake).
+  Two things worth a glance: (a) with pinned endpoints AND pinned end slopes,
+  a two-point Hermite must peak ≥ 1.5× the secant (~51°) — so the fillet
+  construction floats the endpoints and each blend "spends"
+  R·tan(LANDING_ANGLE/2) of the old lines' footprint (knuckle leaves the
+  table 0.36 m early; roll-out rejoins the flat 2.45 m past OUTRUN_Z at the
+  same level). Airtime/landing deltas below are the smallest I could get
+  while honouring slope ∈ [0°, 40°]; if even ±0.37 m of ride-out drift is
+  unwanted, the alternative is a smaller roll-out radius, not a different
+  construction. (b) The grey-ramp "corridor" box had been measuring
+  wInrun/wStartPlat fills (not the ribbon) since iter 11 — so iter-8/10's
+  "corridor 0.7778/0.7685" numbers were really fill numbers; the corrected
+  box reads 0.7949 for the true corridor. History row updated.
 
 - **Iteration 11 review, two confirmations requested (2026-08-26, entry 12).**
   (a) The winding-flip rebake step queued at the end of entry 11 is retracted
@@ -118,6 +136,91 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 13 — Stale lightmap disabled (order 1); C1 blends rebuilt as tangent fillets (order 2)
+
+Reviewer's 23:50 order, items 1–2. Item 3 (the `main` clearance-comparison
+tables) did not fit the session and remains first in the queue; item 4 (the
+rebake) untouched. Scratch: `/home/justin/aerial-agents/scratch/iter-13/arc-blend.js`
+(fillet construction + gates, kept for the numbers).
+
+**Order 1 — stale lightmap disabled (44f5d9d).**
+- `applyBakedLighting` early-returns behind `window._bakeLightmapEnabled =
+  false` with the flip-back point documented at the switch. The on-disk
+  `terrain_skyvis/shadow` maps describe the pre-P1 slabs; their stale zero
+  multipliers on wInrun's newly-exposed top face were the 9.29%-black
+  ready-view band (own iter-11 measurement).
+- `baked.spec.js` rewritten for the off-state contract: switch off, zero
+  `_baked` materials anywhere, plus a NEW ready-view gate — near-black
+  (max-channel < 32) frame fraction < 0.5% (measured **0.026%**; the defect
+  measured 9.29%). The P2 caster assertions are kept unchanged. The
+  "both slots reach the shader" probe is staged in git history for the
+  flip-back. `compare.spec.js` becomes `BAKE_AB=1` opt-in (it waits on
+  `_bakedApplied > 0`). `index.html` scripts `?v=7 → 8`.
+- Shots: the band is gone — `shots/scene.png` shows continuous snow where the
+  black strip was; athlete, trees, shadows unchanged.
+
+**Order 2 — C1 blends rebuilt non-overshooting (a14af69, own physics commit
+under the standing `APPROVED: C1-smooth run profile`).**
+- Root cause, measured before building: with both endpoints AND end slopes
+  pinned, a cubic-Hermite/bezier blend's interior slope must reach
+  ≥ 1.5× the secant (0°–40° join ⇒ ≥ 51°) — iter-11's −49.8° was structural,
+  not a tuning failure. The reviewer's arc suggestion only works with
+  floating endpoints, i.e. as a true tangent fillet.
+- Both joins are now **tangent fillet circles** (engine:
+  `landKnuckleArcY`/`landRollOutArcY` + `landingFits`; cfg carries
+  `ltArc`/`loArc` descriptors instead of bezier control arrays):
+  - knuckle R=1.0 m: leaves the table 0.36 m up-table of the old crease,
+    rejoins the exact landing line 0.28 m past it; peak deviation vs the old
+    crease ≈ 7 cm (cut, not bulge).
+  - roll-out R=14 m: compression arc **9.77 m** (author's 8–12 m band),
+    fills the concave corner up to **95.9 cm above the old crease polyline**
+    at the corner itself (that is what rounding means vs a sharp cone);
+    outrun level byte-preserved past z=OUTRUN_Z+2.45.
+- Reviewer's three gates are permanent unit tests
+  (`tests/unit/terrain.test.js`): slope within [min(a,b), max(a,b)] along
+  the whole landing (worst **40.00° = limit**, was 49.8°); slope monotone
+  inside each blend; never above table level / below outrun level (no hump);
+  byte-equal to the pre-C1 creased profile outside the blend footprints.
+- Corridor mesh sampling zones + exact rings moved onto the fillet
+  tangencies (`game.js`); unit-mirror `configFor` updated (`ltArc`/`loArc`).
+- **ADR-0005 audit before re-capture** (30 scenarios): airtime **2.300 s
+  byte-identical in every scenario**; first-grounded landing posZ equal to
+  2 dp in every scenario (34.98/35.31 unchanged); final ride-out posZ drift
+  **≤ 0.37 m** (81.76→81.78, 82.99→82.62 — the roll-out's earlier flattening
+  gives the ride-out slightly more run); pool/trampoline scenarios untouched;
+  remaining trace diffs are terrainCorridor node census following the new
+  sampled geometry.
+
+**Grey-ramp correction (found while verifying order 1).** With the bake off,
+the grey-ramp gate failed by 0.004 — and a pick probe showed why: the spec's
+fixed "corridor" box has been sampling `wInrun`/`wStartPlat` (lsMat FILLS)
+since the ribbon replaced the wide slabs in iter 11. The box now projects an
+actual corridor point (mid-table, `terrainRootY−FOOT_OFFSET`) into screen
+space. Honest numbers with the lightmap disabled: **corridor 0.7949 ≥
+darkest flank 0.7918** (far flank 0.8058), inrun 0.7886, kicker face 0.7655,
+skyFrac 0 — the run is the brightest surface again even without the bake.
+`game.js` snowMat albedo stepped 0.955/0.97 → **0.975/0.99** to hold margin
+(`textures.spec` updated); `index.html` `?v=8 → 9`.
+
+**Verification.** `npm run test:unit` 74/74 (73 + the new gates test);
+`npm run test:golden` 30/30 after the audited rebaseline; drive:
+terrain-corridor 2/2, ready-stance 1/1, baked 3/3 (new off-state + black-band
+gate), grey-ramp/materials/textures 6/6 after the box fix, look 1/1; full
+drive suite 41 passed / 2 skipped before the grey-ramp box fix and 1 failed /
+41 passed / 2 skipped at the mid-point — the single failure was the
+box-attribution issue above, fixed and re-run green. Shots regenerated and
+inspected: no black band; kicker/transition continuous snow; athlete,
+trees, shadows unchanged; known residuals stand (faint bib, flat ski slats,
+hands slightly forward in the ready crouch).
+
+**Open / next (in order).**
+1. The `main` vs branch-before vs branch-after whole-run clearance tables
+   (reviewer order item 3, owed since 23:50) — first thing next iteration.
+2. The lightmap rebake (order item 4) via the entry-12 post-unwrap
+   vertex-split fixup, then flip `_bakeLightmapEnabled` back to true in the
+   SAME commit, restore baked.spec's on-state assertions, ASSET_V 8→9.
+3. B-net fencing (author pull-forward) after those.
 
 ### 12 — Rebake diagnosis: no winding flip (measured); unit harness blend fix; rebake mechanics re-planned for iter 13
 

@@ -66,16 +66,35 @@ test('corridor reads at least as bright as its flanks; no sky through the seams'
         cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35; cam.fov = 0.8;
     });
     await page.waitForTimeout(900);
+    // The corridor box must sit on the ACTUAL corridor ribbon. The old fixed
+    // fractional box (0.55–0.65, 0.50–0.54) was sized for the pre-P1 wide slabs;
+    // a pick probe showed it sampling wInrun/wStartPlat (lsMat flank fills)
+    // after the ribbon replaced them — it had been measuring the flanks.
+    // Project a table-centre corridor point into screen space and box around it.
+    const box = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cfg = window._terrainCfg;
+        const z = (cfg.LANDING_START_Z + cfg.KICKER_END_Z) / 2;      // mid-table
+        const y = AerialEngine.aerialSki.terrainRootY(z, cfg) - 1.025; // FOOT_OFFSET
+        const p = BABYLON.Vector3.Project(new BABYLON.Vector3(0, y, z),
+            BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+            scene.activeCamera.viewport.toGlobal(
+                scene.getEngine().getRenderWidth(), scene.getEngine().getRenderHeight()));
+        return { x: p.x, y: p.y, W: scene.getEngine().getRenderWidth(), H: scene.getEngine().getRenderHeight() };
+    });
+    const cor = { x0: box.x / box.W - 0.05, x1: box.x / box.W + 0.05,
+                  y0: box.y / box.H - 0.008, y1: box.y / box.H + 0.008 };
     const f = await grabPixels(page);
 
     const stats = {
-        corridor:   regionStats(f, 0.55, 0.50, 0.65, 0.54),
+        corridor:   regionStats(f, cor.x0, cor.y0, cor.x1, cor.y1),
         flankNear:  regionStats(f, 0.06, 0.78, 0.30, 0.92),
         flankFar:   regionStats(f, 0.78, 0.60, 0.95, 0.68),
         kickerFace: regionStats(f, 0.14, 0.30, 0.20, 0.36),
         inrun:      regionStats(f, 0.18, 0.46, 0.28, 0.52),
     };
-    console.log('GREY_RAMP ' + JSON.stringify(stats));
+    console.log('GREY_RAMP ' + JSON.stringify(stats) + ' corridorBox ' +
+        JSON.stringify(cor));
 
     expect(stats.corridor.n).toBeGreaterThan(100);
     expect(stats.flankNear.n).toBeGreaterThan(100);

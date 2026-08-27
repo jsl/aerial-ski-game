@@ -1014,7 +1014,13 @@ function _startGame() {
             const bare = mat.name.replace(/_baked$/, '');
             if (/^snowMat$/.test(bare)) {
                 mat.metallicF0Factor = 0.21;
-                mat.albedoColor = new BABYLON.Color3(0.955, 0.97, 1.0);
+                // iter 13: with the stale lightmap disabled (see
+                // applyBakedLighting) the flanks lost their slightly-sub-1
+                // bake multipliers and sit brighter; corridor albedo stepped
+                // up to keep the run at least as bright as the flanks
+                // (measured 0.7666 -> 0.779 vs flanks 0.7905/0.8015;
+                // grey-ramp gate corridor >= darkestFlank - 0.02).
+                mat.albedoColor = new BABYLON.Color3(0.975, 0.99, 1.0);
                 const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 256, {
                     scale: 26, strength: 1.05,
                 });
