@@ -90,10 +90,35 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Terrain lightmap | **disabled (iter 13, reviewer order 1)** | stale pre-P1 bake painted a 9.29%-black ready-view band; `applyBakedLighting` early-returns behind `_bakeLightmapEnabled=false`; baked.spec asserts the off-state + ready-view black32 < 0.5% (measured 0.026%); compare.spec BAKE_AB=1 opt-in; flip back to true WITH the rebake commit and restore the on-state assertions |
 | — | Reviewer order 3: `main` clearance comparison | **landed (iter 14)** | `tools/clearance-compare.js` on `main` b0aa043 / pre-P1 8797666 / HEAD: physics-surface tables byte-stable across trees except ready-seat floor (main −0.0059..+0.1748 vs branch +0.0020/+0.0941) and the C1 fillet halving ride-out dip (−0.1564→−0.0775); slab-era visual misgeometry quantified (kicker join chords to −0.79 m, landing slab ends ±9.9 m); entry 14 |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
+| — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
-| — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
 ## Open questions for the reviewer
+
+- **Entry 19 (rebaseline part 1) — three calls for you.**
+  (a) **Ski-length landing flips.** With d 1.55 the aerial touchdown evaluator
+  now flips clean↔crash on three knife-edge scenarios: aerial-pike
+  crash→clean, aerial-tuck-long/short clean→crash-at-touchdown; airtime and
+  flip rates byte-identical everywhere else. Physically "longer skis change
+  landing margins", but three standard tricks changing outcome is a gameplay
+  delta beyond the ±5% gate's letter — confirm acceptable, or pick:
+  (i) keep as-is and retune tolerance later under `APPROVED`, or
+  (ii) revert ski d to 1.20 in a follow-up commit until the landing check is
+  retuned (arm part unaffected). Traces can be re-captured either way.
+  (b) **Torso/leg construction for the rebuild iteration** — approve this
+  exact plan or adjust: torso h 0.55→**0.485** (31.4% of 1.545 m standing
+  height), untucked centre y 0→+0.0375 so the torso top stays glued to the
+  unmoved head bottom (+0.280); hip line rises −0.275→−0.205; upperLeg h
+  0.36→**0.43** spanning hip −0.205…knee −0.635 (knee plane preserved),
+  centres +0.035 in every table by the same rule (untucked −0.455→−0.420);
+  lower legs/shins/soles/head untouched; legs become 51.1% of height.
+  Bent-pose tables keep their authored centres (rotated boxes overlap more at
+  joints); rig.spec bind gates will judge it once the rebuild lands. Expected
+  physics drift: small inertia changes only — same audit+±5% gate applied.
+  (c) The entry-18 five-spec SwiftShader wait class recurred on rig +
+  ready-stance this session (timing out before measuring, no assertion);
+  headless proof shows game logic fine. Confirm that treating it as timing
+  (longer waits next iteration) rather than regression matches what you see.
 
 - **Iteration 13 wrap (2026-08-26, entry 13).** Reviewer-order items 1 (lightmap
   disable) and 2 (non-overshooting C1) are landed; item 3 (the `main` vs
@@ -142,6 +167,66 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 19 — APPROVED physics rebaseline part 1: arm offset ±0.175 + ski 1.55 m (torso/legs deferred with a concrete construction)
+
+Scratch `/home/justin/aerial-agents/scratch/iter-19/` holds the pre-change
+trace snapshot (`traces-old/`) and the audit script; can be swept.
+
+**What changed** — under `APPROVED: body proportions rebaseline` (i) and
+`APPROVED: ski length 1.20 → 1.55 m`, own commit `02ab44d`:
+- `engine/core/body-model.js`: every upper/lower-arm `|x|` shifted
+  consistently by −0.03 in ALL nine pose tables — ±0.205→±0.175,
+  POSE_ARMS_T 0.355→0.325 / 0.580→0.550, POSE_TUCKED 0.160→0.130 /
+  0.100→0.070; skiL/skiR `d` 1.20→**1.55** with mass and centre unchanged.
+- `engine/core/pose.js` armSweep `baseX` 0.205→0.175;
+  `tests/unit/pose.test.js` verbatim mirror updated; `game.js`
+  applyGamepadLateral xPivots →±0.175 (+ comment). Nothing else moved.
+- **Torso/leg percentage rebalance NOT attempted this session**: it requires
+  re-authoring absolute joint positions across all nine pose tables, which
+  could not be verified adequately in the remaining window after the arm/ski
+  work. Proposed construction recorded under Open questions for the rebuild
+  iteration.
+- No `assets/` regeneration, ASSET_V unchanged; GLB binds are still baked at
+  ±0.205 until the Blender rebuild — the documented interim state.
+
+**ADR-0005 audit before re-capture** (all 30 scenarios, old traces from the
+HEAD snapshot vs new capture):
+- airtime **byte-identical** (2.300046 s) in every airborne scenario;
+  twist trajectories (`spinAngle`) byte-identical ⇒ flip rates unchanged.
+- trampoline / pool / crash-ragdoll / idle / nopower byte-stable.
+- Aerial landing dynamics change confined to THREE scenarios whose touchdown
+  outcome flips on a knife edge (first diff at f=435, the grounding frame):
+  aerial-pike crash→clean (final posZ 81.784→82.622); aerial-tuck-long and
+  aerial-tuck-short clean→crash-at-touchdown (82.622→81.784). The evaluator
+  now sees the longer tip/tail reach against the local landing slope;
+  airtime, trickName family and all other aerial outcomes unchanged.
+  See Open questions for the reviewer's call.
+- Athlete node census moves as expected (arm drivers −3 cm inboard, ski
+  nodes longer).
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** after the audited rebaseline. Drive: rig+ready-stance batch runs
+failed at their `waitForFunction` waits — verified as the entry-18 SwiftShader
+timing class, not a regression of today's edits: (a) no numeric assertion
+fired anywhere, (b) both specs were already flaking by timeout on this exact
+tree in entry-18's confirmation suite, and (c) a headless run of real game.js
+through the golden harness (`createSim` + ArrowUp) completes the ready turn
+normally: `readyState true→false`, turn finishes, athlete descends. Five other
+rig tests passed in the same runs. Shot set NOT regenerated — no renderer or
+asset file was touched, so the rendered scene is byte-identical; next
+iteration's rebuild regenerates everything anyway. `index.html` scripts
+`?v=12→13`.
+
+**Open / next**
+1. **Rebuild iteration (the bundle's second half)**: ONE Blender rebuild
+   against the NEW segments — straight arms, loose suit, cranium/brim check,
+   bib 30, visual 155 cm mogul skis + binding — plus the torso/leg proportion
+   commit below if approved as constructed, then regen assets (ASSET_V bump),
+   restamp binds via `patch_skin_binds`, and expect rig.spec bind≡driver to
+   return green against the new pose tables.
+2. Longer charge/deform waits across drive specs as the standing fix for the
+   entry-18/19 timing class; rebake surgery stays the spare-budget filler.
 
 ### 18 — P1 slice 2: one continuous solid ground — flank field joins the ribbon without a seam
 
