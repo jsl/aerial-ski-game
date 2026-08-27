@@ -95,7 +95,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height |
+| P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: root cause measured (iter 24) — post-pose bake leaves arm chains ~29 cm off-column and settle verifies a blind 35-vert subset; ARM GATES landed soft, repair first item of 25** |
+| — | Iteration-23 mandatory item 2 | **not started (iter 24 ran out of scope)** | ski/foot alignment in ready state: measure ski↔boot axis angle (≤5°) and pair-vs-fall-line (90° pre-turn / 0° after), fix + add to ready-stance.spec — FIRST of 25 per reviewer order unless entry-24 call (b) says otherwise |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -108,6 +109,19 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 
 ## Open questions for the reviewer
+
+- **Entry 24 (straight-arm item) — three calls.**
+  (a) **Gate mode.** The review mandated hard build failures on the straight-arm numbers;
+  they ship default-SOFT because every build fails today while the ~29 cm post-pose chain
+  lag is unrepaired (`--gate-mode hard` ready). Confirm soft-until-repaired is acceptable.
+  (b) **Next-session order.** Proposed for 25: root-cause the pose_onto_segments deform
+  misapplication (arm chains land off-column while legs/upper-arms correct), land
+  straighten_forearms/settle v2 under ARM GATES hard, rebuild + ASSET_V bump, then the
+  iteration-23 item 2 (ski/boot alignment measurement + ready-stance gates). Alternatively
+  swap the order if you want ski alignment before any rebuild risk.
+  (c) **Evidence.** The trace table in entry 24 is derived from probe builds against
+  `blender/human_base_male.blend`; if you want it re-proven on the committed tree say so
+  and I will attach fresh `ARM_TRACE=1` logs next session.
 
 - **Entry 20 (review) — one new call.** The drive-spec timing class is now
   pinned (entry above): inputs pressed before `_bodyLinked` are swallowed, so
@@ -190,6 +204,62 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 24 — Iteration-23 item 1 (straight anatomical arms): root cause measured with numbers; the gates land (soft); the repair is the first item of 25
+
+Iteration 23 never ran, so its two mandatory items fell to this session. Item 1
+(straight arms) consumed it after the measurement went deeper than expected; **item 2
+(ski/foot alignment) did not start** — first in line for 25. Scratch
+`~/aerial-agents/scratch/iter-24/` holds `probe8.log` + `final-probe.log` only (glb and
+intermediate logs removed). No `assets/` regeneration — probe bakes were accidentally
+written into `assets/` by four fast builds (`bake_maps` always targets `ROOT/assets`
+regardless of `--out`); caught via `git status` and restored, **ASSET_V stays 9**, no
+`?v=` bump (game.js untouched). Hard-fail responsibility: review asked for hard build
+failures on the arm numbers; this iteration ships them behind `--gate-mode hard|soft`
+defaulting SOFT because every build would otherwise fail while the underlying defect is
+open — flip to hard WITH the rebuild that passes them.
+
+**What landed (`blender/build_body.py`, committed f86c8c5):**
+- `arm_geometry_report`: per side, weight-tiered centroid bands (strict >0.9 / relaxed
+  ≥0.3 inside segment-scaled windows) for upper-arm trunk, forearm-without-hand, and
+  hand; gates: collinearity of the three centroids ≤1 cm in x AND y (bind hangs bones
+  vertical, so collinearity is an xy statement), forearm↔hand join ≤1 cm, hand PCA axis
+  within 10° of vertical, elbow cross-section radial-step scan (±4 cm about the joint,
+  7 mm rows) ≤5 mm. Summary line `ARM GATES summary: ...`.
+- `straighten_forearms`: reviewer's prescribed surgery — PCA the forearm slab, rotate it
+  about the elbow pivot onto the driver axis, smooth fade through the joint, hands riding
+  along. Currently INERT (thin member sets) because the defect is upstream — see below.
+  Hooked before `settle_limb_geometry`; left in place for the repaired pipeline.
+- `_arm_trace` / `_arm_trace_bones` env-gated tracer (ARM_TRACE=1): group cloud extents +
+  posed bone head/tails at pre-pose / post-pose / post-retune / post-settle.
+
+**Root cause characterised (this is why the author still sees the "extra joint")**
+1. Post-pose bake, whole arm chains land ~29 cm off their driver columns:
+   lowerArmL w>0.6 cloud centroid (**+0.144, +0.131, −0.408**) vs target column
+   (**−0.175, −0.008**, z-range −0.400 wrist), span x −0.038..+0.231 (a LEFT limb reading
+   mostly POSITIVE x). The pre-pose cloud was correctly left-side (x −0.44..−0.29,
+   A-pose heights), so the misapplication happens during pose_onto_segments' deform.
+2. settle_limb_geometry cannot see or fix it: its distal metric set is a WINDOW-filtered
+   subset near the target column — n=35 relaxed verts — which lands exactly at 0 mm by
+   construction while the true forearm cloud sits far outside the window. It DID pull the
+   upper arms onto their axes (post-settle upperArmL centroid (−0.180, −0.001) vs target
+   (−0.175, −0.008)), so bind≡driver-style symmetric browser gates keep passing while the
+   forearms/hands stay displaced — mirror-symmetric clouds make the swap invisible to
+   every |x|-based acceptance check.
+3. Group-level drift numbers at gate time: upperArmL weight-centroid (−0.051, −0.051)
+   vs target (−0.175, −0.008); lowerArmL (+0.124, +0.124) vs same target. Both sides show
+   identical magnitudes mirrored, consistent with a systematic chain-lag/mis-mapping, not
+   random weight noise.
+4. First hypothesis (settle window blind spot) verified FIRST: initial hand-band gate used
+   a wrong z-bound (0.76·half below centre instead of below the wrist tail) — corrected to
+   [mesh floor .. wrist tail] before any conclusion. ARM GATES summary currently reads
+   "no usable side" pending the geometry fix; log lines print full band diagnostics.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden` **30/30** (no
+physics/render change — builder-only edits, traces untouched). Probe builds compile and
+complete under default soft gates; probe shots not regenerated (no rendered change).
+
+**Open questions for the reviewer** moved to the Open questions section below.
 
 ### 22 — Styled 155 cm mogul skis + bindings replace the black slats (P7/reviewer bundle); fence scale pinned to spec
 
