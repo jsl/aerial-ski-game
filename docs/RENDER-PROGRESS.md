@@ -75,7 +75,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
-| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iter 15** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open** |
+| P2 | Sky and sun | **shadow quick win landed (iter 8); re-verified iters 15, 20** | CSM 3×2048 live; athlete shadow drop 79.7% (was 11.6%), trees all cast; **iter 17: snow now BRIGHTER than sky on the shared harness (corridor 0.821 / kicker face 0.8017 / flanks 0.815–0.828 vs sky 0.7986) via the hemi/IBL rebalance — sun disc, fog re-tune, post 1.6→1.2, real sky model still open**; iter 20: reproduces (corridor 0.8210, inrun 0.8235, kicker 0.8017, flanks 0.8268/0.8276 vs sky 0.7986; shadow drop 79.8%) — margins thin, widen in the P2 remainder |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js` |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
@@ -92,8 +92,18 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
 | — | APPROVED: body proportions rebaseline | **part 1 landed (iter 19, commit 02ab44d)** | arm |x| ±0.205→±0.175 in all 9 pose tables + armSweep baseX + game.js xPivots; ski d 1.20→1.55 (mass/centre pinned); airtime & twist byte-identical ×30; 3 knife-edge landing outcomes flipped (pike↔tuck-long/short) reported; torso/legs percentages deferred to the rebuild iteration with construction under Open questions |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
+| — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20)** | the ONE Blender rebuild bundle (straight arms, loose suit, cranium/brim, bib 30, 155 cm styled skis + binding) + rebaseline part 2 (torso/legs, pending entry-19 construction approval) → iter 21; drive-spec body-link race fix (test-only) → 21/22 |
 
 ## Open questions for the reviewer
+
+- **Entry 20 (review) — one new call.** The drive-spec timing class is now
+  pinned (entry above): inputs pressed before `_bodyLinked` are swallowed, so
+  the ready turn never starts under load (probe: 3.75 s with the wait, never
+  in 150 s without). Confirm the fix shape for iter 21: test-only — a shared
+  boot that presses only after `_bodyLinked` plus longer waits in the five
+  affected specs (rig, ready-stance, body, game, athlete-wired). Standing
+  calls unchanged: entry-19 (a) ski-length landing flips, (b) torso/leg
+  construction approval; entry-12 rebake glance.
 
 - **Entry 19 (rebaseline part 1) — three calls for you.**
   (a) **Ski-length landing flips.** With d 1.55 the aerial touchdown evaluator
@@ -167,6 +177,107 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 20 — Review-only: full-suite audit; snow>sky reproduces; rig wait failure root-caused to a body-link input race (probe numbers)
+
+No features. Scratch `/home/justin/aerial-agents/scratch/iter-20/` holds
+`runall.log` + the probe log only; the temporary probe spec was deleted from
+the tree before commit.
+
+**Self-review of iter 19 (commits 02ab44d, 710960c).** Working tree started
+clean (no reviewer scratch-bake files); `git show --stat` matches the entry:
+engine body-model/pose + unit mirror + game.js xPivots + index.html `?v=13` +
+30 traces, then docs. `npm run test:unit` **74/74** and `npm run test:golden`
+**30/30** reproduce on HEAD (1.3 s / ~20 s).
+
+**Full `./tests/run-all.sh` on HEAD:** unit PASS; golden 30/30; browser 36/36;
+mutation 5/5 caught; coverage PASS (28 distinct behaviours); drive **40 passed
+/ 2 skipped / 1 failed (14.7 m)** — the single failure
+`rig.spec.js:253 bind equals driver and the figure faces -z`, a
+`waitForFunction` **TimeoutError at line 285** (`readyState === false`),
+no numeric assertion fired.
+
+**Root cause of that failure (temporary probe spec, run then deleted) — it is
+the entry-18/19 timing class, now pinned to a specific race.** rig.spec's
+`boot()` waits `window._bodyLinked` before pressing ArrowUp; reproduce that
+order and the ready turn flips in **3.75 s** (probe total 10.9 s). Drop the
+`_bodyLinked` wait (press 2 s after `_getGameState`) and the keypress is
+swallowed while the GLB links: `readyState` never flips within **150 s**
+(probe1 `flipped=null`, 139 samples all true). So the turn is not stalled and
+the logic is fine — the input races body-link under suite load. This answers
+entry-19 Open question (c): **timing, confirmed with numbers.** The standing
+fix (queued since entry 19, test-only, NOT landed in this review iteration):
+press only after `_bodyLinked` + longer waits in the five affected specs
+(rig, ready-stance, body, game, athlete-wired).
+
+**Review measurements (`review-measure` harness on the shared scene camera,
+fresh this session)** — vs iter-15/17 baselines:
+- **Snow > sky everywhere** (iter-17 rebalance reproduces): corridor **0.8210**,
+  inrun 0.8235, kickerFace 0.8017, flankNear 0.8268, flankFar 0.8276 vs sky
+  **0.7986** — smallest margin +0.0031 (kicker). Thin; the P2 remainder (sun
+  disc, fog, post 1.6→1.2, real sky) should widen it, per the iter-17 note
+  that the env/hemi split gets re-read then.
+- Grey-ramp parity: corridor −0.0058/−0.0066 vs flanks (gate ≥ darkest flank
+  − 0.02). Sign flipped vs entry 17's +0.006/+0.007 — same harness, fresh
+  camera; band ±0.007, treated as noise, well inside the gate.
+- Seam: worst footprint row y=0.425 skyFrac **8.78 %** (iter 15: 16.3 % at
+  y=0.40) — the documented horizon-adjacent caveat row, improved.
+- Athlete shadow: under-figure **0.163** vs ring max 0.8053 → **79.8 % drop**
+  (gate ≥ 15 %). CSM quick win intact.
+- Face region lum 0.7279, darkFrac 0 — face reads under the brim.
+
+**Shots inspected directly (I can view PNGs; regenerated by this suite run).**
+`scene.png`: continuous field corridor→flanks, B-net seated and hugging the
+bowl both edges, athlete with a hard CSM shadow. `figure.png`/`figure_front.png`:
+athlete unchanged from the documented interim state — the known residuals all
+reproduce, none new.
+
+**What reads wrong now (re-prioritised with the above numbers)**
+1. **Athlete asset vs new physics (interim by design):** GLB binds baked
+   ±0.205 while the tables sit at ±0.175 — shoulders still read broad/puffy
+   in both figure shots. The ONE Blender rebuild against the new segments is
+   the top item (reviewer order 18–19, half-landed in iter 19).
+2. **Skis are long black slats:** physics d is now 1.55 and the flat black
+   box got longer and MORE prominent — no tips, no topsheet graphic, no
+   binding. Styling is renderer-side + the rebuild bundle.
+3. **Bib 30 not legible:** faint pale-blue front patch; two faint marks on
+   the lower back at figure distance. Queued in the rebuild.
+4. **Suit skin-tight with muscle relief; hands slightly forward of the thigh
+   line** — queued (loose-suit shell + bind carry-forward).
+5. **Trees:** saturated mid-green flat-shaded cones, no snow tint (P4
+   impostor forest; the iter-16 trunk stopgap holds but cannot approach the
+   footage).
+6. **Sky/horizon:** flat pale cyan sky, faceted cone-peak silhouettes (P2
+   remainder + P6 ridgelines). Harness snow-vs-sky margins are +0.003..+0.028;
+   the real sky model must end darker with margin.
+7. **Landing reads smooth white** — no chop/track texture or displacement
+   (P5 `bake_landing.py`).
+8. **Venue dressing remainder:** kicker red edge lines read as floating
+   brackets; no wands/knoll flag/judges' deck/coach figures (P3 slice 2).
+9. **Lightmap stays disabled** (black-band gate green at 0.026 %); the
+   entry-12 split-fixup rebake remains the spare-budget filler.
+10. Not started: P10 free-look, P11 coherent crash, P9 night mode; hop-turn-
+    from-keypoints and `pose_vs_physics` are now UNBLOCKED — the RTMPose
+    extraction finished for all six clips (100 % frames each,
+    `reference/pose/extract_all.log`).
+
+**Regressions:** none found. Every gating spec on this tree is green except
+the rig wait classified above (and ready-stance/body/game/athlete-wired
+passed inside the suite this time — the race is load-dependent, which is
+itself the argument for the standing wait fix). Iter-19's three knife-edge
+landing flips (aerial-pike clean; aerial-tuck-long/short crash) remain
+recorded physics deltas under Open questions, not regressions.
+
+**Next iterations (proposal)**
+1. **21:** the ONE Blender rebuild bundle vs NEW segments (straight arms,
+   loose suit, cranium/brim, bib 30, 155 cm styled skis + binding), riding
+   the APPROVED rebaseline part 2 (torso/legs per the entry-19 construction)
+   if approved; ASSET_V bump; rig bind gates expected green after.
+2. **21/22 (small, test-only):** the body-link race fix across drive specs —
+   unblocks the red-suite noise the author sees.
+3. Then per reviewer order: P2 sky/sun remainder, P10 free-look, P11 crash,
+   hop turn from keypoints, pose-vs-physics, P4 trees, P5 snow, P9 night,
+   P3 remainder, P6 horizon.
 
 ### 19 — APPROVED physics rebaseline part 1: arm offset ±0.175 + ski 1.55 m (torso/legs deferred with a concrete construction)
 
