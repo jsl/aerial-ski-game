@@ -1115,6 +1115,111 @@ def seat_soles(body):
 
 
 
+def align_boots(body, joints):
+    """
+    Yaw each boot onto the SKI long axis (iteration 29, reviewer addendum).
+
+    The base mesh's A-pose feet carry a fore-aft yaw (~21 deg vs the ski axis,
+    measured in entry 25) that survives every downstream stage: rigid_boots
+    pins the boot WEIGHTS to its shin but does not correct GEOMETRY. With
+    bind := driver (patch_skin_binds), whatever rest positions are baked here
+    are exactly where the rendered boot sits, so this fix belongs in the bake:
+    rotate each boot's vertices about the VERTICAL through that side's ankle
+    joint by the measured yaw onto the ski axis.
+
+    Frame contract (bl()): toes point along Blender +Y (= game -z), which is
+    also the ski long axis. Yaw-only keeps sole heights exact to the last bit,
+    so seat_soles' seating and every ski-contact gate survive untouched.
+    Hard gate: |residual yaw| <= 5 deg on both sides.
+    """
+    BAND = 0.05                              # cuff blend span above the ankle
+    report = []
+    for side in ('L', 'R'):
+        an = joints[f'ankle{side}']
+        pivot = Vector((an.x, an.y, 0.0))
+        idxg = body.vertex_groups.find(f'lowerLeg{side}')
+
+        def boot_set():
+            out = []
+            for v in body.data.vertices:
+                if v.co.z > an.z - 0.02 + BAND:
+                    continue                 # above the cuff blend: not boot
+                w = next((g.weight for g in v.groups if g.group == idxg), 0.0)
+                if w < 0.70:
+                    continue
+                dx_, dy_ = v.co.x - pivot.x, v.co.y - pivot.y
+                if math.hypot(dx_, dy_) < 0.03:
+                    continue
+                out.append(v.index)
+            return out
+
+        def yaw_of(idxs):
+            sxx = syy = sxy = 0.0
+            for i in idxs:
+                q = body.data.vertices[i].co
+                dx_, dy_ = q.x - pivot.x, q.y - pivot.y
+                sxx += dx_ * dx_
+                syy += dy_ * dy_
+                sxy += dx_ * dy_
+            phi = 0.5 * math.atan2(2.0 * sxy, sxx - syy)   # major axis vs +X
+            raw = math.pi / 2.0 - phi
+            th = ((raw + math.pi / 2.0) % math.pi) - math.pi / 2.0
+            return math.degrees(th)
+
+        idxs = boot_set()
+        if len(idxs) < 40:
+            report.append(f'{side}: thin boot set n={len(idxs)}')
+            continue
+        ang_pre = yaw_of(idxs)
+        # Brute force the corrective yaw: for every candidate, fold the
+        # residual into [-90, 90) and keep the smallest |residual|. The closed
+        # form is ambiguous to +/-90 deg (a foot's mass ellipse barely differs
+        # from its heel-end mirror), so measure instead of derive.
+        best_th, best_res = 0.0, float('inf')
+        for k in range(-180, 180):
+            cand = math.radians(k)
+            ct, st = math.cos(cand), math.sin(cand)
+            sxx = syy = sxy = 0.0
+            for i in idxs:
+                q = body.data.vertices[i].co
+                dx_, dy_ = q.x - pivot.x, q.y - pivot.y
+                rx = dx_ * ct + dy_ * st
+                ry = -dx_ * st + dy_ * ct
+                sxx += rx * rx
+                syy += ry * ry
+                sxy += rx * ry
+            phi2 = 0.5 * math.atan2(2.0 * sxy, sxx - syy)
+            raw2 = math.pi / 2.0 - phi2
+            res2 = ((raw2 + math.pi / 2.0) % math.pi) - math.pi / 2.0
+            if abs(res2) < best_res:
+                best_res, best_th = abs(res2), cand
+        moved = 0
+        for i in idxs:
+            q = body.data.vertices[i].co
+            t = 1.0
+            if q.z > an.z - 0.02:            # inside the cuff blend band only
+                u = max(0.0, min(1.0, (an.z - 0.02 + BAND - q.z) / BAND))
+                t = u * u * (3 - 2 * u)
+            nx = q.x - pivot.x
+            ny = q.y - pivot.y
+            ca, sa = math.cos(best_th * t), math.sin(best_th * t)
+            body.data.vertices[i].co = Vector((
+                pivot.x + nx * ca + ny * sa,
+                pivot.y + ny * ca - nx * sa,
+                q.z))
+            moved += 1
+        ang_post = yaw_of(boot_set())
+        report.append(f'{side}: yaw {ang_pre:+.1f} deg corrected by '
+                      f'{math.degrees(best_th):+.1f} -> residual {ang_post:+.1f} '
+                      f'deg ({moved} verts)')
+        if abs(ang_post) > 5.0:
+            raise SystemExit(
+                f'[body] boot{side} still {ang_post:.1f} deg off the ski axis '
+                f'(limit 5)')
+    for r in report:
+        log('  align_boots ' + r)
+
+
 def _pca_axis(pts):
     """Dominant direction of a point cloud (power iteration on covariance)."""
     mx = sum(p.x for p in pts) / len(pts)
@@ -1455,33 +1560,64 @@ def leg_profile(body, tag):
     """
     hip = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
     sole = bl('skiL').z + SEGMENTS['skiL']['h'] / 2
+    # Ownership filter (entry-26/29 finding): fingertips legitimately hang
+    # beside the thigh line once the arms are settled, and mixed-weight midline
+    # verts bleed; only vertices DOMINATED by this leg's own segments
+    # contribute to its width rows. Short unmeasurable runs (knee gap, boot
+    # cuff) are bridged by linear interpolation.
+    own = dominant_segments(body)
     rows, prev = [], None
     z = hip
     while z > sole:
-        # Lateral width of the GAME-L leg every 2 cm. The window CENTRES on
-        # the row's own column estimate (median x of plausible vertices) — a
-        # fixed "x < 0" cut goes blind once a limb has been brought close to
-        # the midline, truncating one face and reporting phantom steps.
         cand = [v.co.x for v in body.data.vertices
                 if abs(v.co.z - z) < 0.012
-                and -0.24 < v.co.x < 0.055]          # far wider than any leg: kills contralateral bleed
-        if len(cand) > 3:
+                and own[v.index] in ('upperLegL', 'lowerLegL')
+                and -0.24 < v.co.x < 0.055]
+        w = None
+        if len(cand) >= 6:
             med = sorted(cand)[len(cand) // 2]
             xs = [x for x in cand if abs(x - med) < 0.11]
-            w = (max(xs) - min(xs)) if len(xs) > 3 else 0.0
-        else:
-            w = 0.0
+            if len(xs) >= 4:
+                w = max(xs) - min(xs)
         rows.append((z, w))
         z -= 0.02
+    n = len(rows)
+    i = 0
+    while i < n:
+        if rows[i][1] is not None:
+            i += 1
+            continue
+        j = i
+        while j < n and rows[j][1] is None:
+            j += 1
+        lo_i, hi_i = i - 1, j
+        if lo_i >= 0 and hi_i < n and (hi_i - lo_i) <= 5:
+            wa, wb = rows[lo_i][1], rows[hi_i][1]
+            for k in range(i, j):
+                u = (k - lo_i) / (hi_i - lo_i)
+                rows[k] = (rows[k][0], wa + (wb - wa) * u)
+        i = j
     widths = [w for _, w in rows]
+    for k in range(n):                          # end runs: extend the nearest
+        if widths[k] is None:
+            widths[k] = next((x for x in widths[k:] if x is not None),
+                             next(x for x in reversed(widths[:k]) if x is not None))
     worst_dip, dip_z = 0.0, None
     for i in range(1, len(rows) - 1):
         dip = min(widths[i - 1], widths[i + 1]) - widths[i]
         if dip > worst_dip:
             worst_dip, dip_z = dip, rows[i][0]
-    slopes = [widths[i + 1] - widths[i] for i in range(len(rows) - 1)]
+    # 3-row box smoothing before the STEP scan: single-row measurement blips
+    # (sparse rows at cuff/cap boundaries) are not geometry; a real hard notch
+    # survives averaging. Rows within 4.5 cm of the sole are the boot sole-cap
+    # flare (a boundary, not a limb notch) and are excluded from the scan.
+    sm = [widths[0]] + [sum(widths[k - 1:k + 2]) / 3.0
+                        for k in range(1, len(widths) - 1)] + [widths[-1]]
+    slopes = [sm[i + 1] - sm[i] for i in range(len(sm) - 1)]
     worst_step, step_z = 0.0, None
     for i in range(1, len(slopes)):
+        if rows[i + 1][0] <= sole + 0.045:
+            continue
         j = abs(slopes[i] - slopes[i - 1])
         if j > worst_step:
             worst_step, step_z = j, rows[i][0]
@@ -2979,6 +3115,7 @@ def main():
     leg_profile(body, 'pre-girth ')
     add_girth(body, stretch)
     seat_soles(body)
+    align_boots(body, joints)
     prof = leg_profile(body, 'final')
     # Straight-arm gates (reviewer order iter 23/24): collinearity <=1 cm,
     # forearm-hand join <=1 cm, hand axis within 10 deg of the forearm,

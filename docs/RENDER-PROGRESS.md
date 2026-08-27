@@ -101,7 +101,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | partially landed (iter 4) | hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **straight arms: settle-v2 + straighten-v2 verified at geometry level in iter-26 probes (forearm residual 4.2 mm) but NOT landed — two arm-gate metrics + leg-profile fingertip pollution block the build (entry 26); repair first of 27** |
-| — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); boot yaw open** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; boot-vs-ski ~21° bind residual NOT fixable renderer-side this window — rebuild note in entry 28 |
+| — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -220,6 +220,76 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 29 — Boot-yaw baked onto the ski axis (reviewer addendum) + honest leg/gate instrumentation; arm-chain repair attempted and REVERTED with numbers (shredded mesh); gates stay soft
+
+Reviewer addendum (2d8d94d, 09:25): arm-repair rebuild with boot yaw folded in,
+ARM GATES hard. Both attempted; disposition below. Scratch
+`~/aerial-agents/scratch/iter-29/` holds probe1–10 logs. ASSET_V 9→**10**
+(rebuild), `index.html` scripts `?v=16→17` (game.js ASSET_V edit).
+
+**LANDED — boot ∥ ski baked at the source.** `align_boots` in
+`blender/build_body.py`: per side, the rigid-pinned boot cluster's horizontal
+PCA yaw about the ankle pivot is measured, brute-force-corrected (±180° scan,
+fold ambiguity resolved by measurement), applied yaw-only (sole heights exact,
+seating/ski-contact gates untouched) over a 5 cm cuff blend, and HARD-gated:
+measured **L −21.6° → residual +0.4°, R +18.7° → −0.3°** (limit 5°) — the
+entry-25/28 ~21° bind residual is gone at the geometry level, no per-frame
+compensation. Entry-28's boot-yaw open question is answered: the bake route,
+as recommended there.
+
+**LANDED — instrumentation honesty (measurement-only, no geometry):**
+`leg_profile` now ownership-filters rows (dominant upperLegL/lowerLegL only —
+repaired arms put fingertips legitimately beside the thighs, the entry-26
+pollution), bridges short unmeasurable runs, 3-row box-smooths the STEP scan,
+and excludes the boot sole-cap flare (boundary, not notch). Result: the gate
+reads **18.7 mm worst step** (limit 30) instead of the polluted 95–97 mm, and
+no longer needs exclusions-by-exception. `arm_geometry_report`: hand-band
+centroid and PCA now dominance-based; hand PCA normalized on a cloud-derived
+fingertip sub-band; elbow rows strict-tiered with gap bridging (falls back
+60→30 tiers, current build reads n=5–6 rows at relaxed tier).
+
+**ATTEMPTED AND REVERTED — the arm-chain repair.** Built and probed
+(`settle_arm_chains`: ownership-based three-station delta field + exact
+per-station closures; `straighten_handtips`: 88.6° wrist-pivot de-splay):
+- Metrics DID converge: upper-forearm collinearity **43.9 mm → 0.2/0.3 mm**
+  (gate ≤10), join ≤9.8 mm before the tip rotation.
+- But `figure.png`/`figure_front.png` showed the cost: the field's
+  cross-joint smearing turned the deltoid/upper-back into a **wing**, and the
+  pivot-anchored tip rotation left the gloves as claws at the hips — a
+  regression against the intact iter-28 figure. A weight-scaled field variant
+  fixed the bib (census 211→576, ink gate green) but not the silhouette.
+- Both passes are OUT of the build; `assets/` rebuilt WITHOUT them
+  (BODY_EXPORTED verified); the known state (collinear 43.9 mm, join 9.8 mm,
+  hand axis instrument still reading 41.6° via a 2-point tip band) stands.
+- Probe evidence (numbers above + logs) says the *translation-field* family
+  can close the stations but cannot keep the surface intact — the deltas
+  (ΔU 98 mm, ΔL 229 mm, ΔH 389 mm) are too large for cross-joint
+  interpolation on this mesh. Fallback preference, for one-line approval per
+  the iteration-23 list: **(ii) rebind forearm/hand vertices 100% to their
+  bones with a 3 cm elbow blend** — it removes the LBS lag mechanism entirely
+  (the root cause measured in entries 24/26), needs no field surgery, and the
+  slight elbow stiffness is acceptable for a hanging/armDrop-driven rig.
+
+**Verification.** `npm run test:unit` **74/74**; `npm run test:golden`
+**30/30** (no rebaseline — physics untouched, harness never loads the glb);
+drive: rig **8/8** incl. bind≡driver on the new bake, styled-ski gates
+unchanged (len 1.5500, bottom −0.015, tip 4.76 cm); ready-stance in the same
+batch (8 passed total); `look` 1/1, shots inspected directly (I can view
+PNGs): `figure_front.png` intact athlete, boots square on the navy skis,
+hands at the sides, face/bib unchanged; `figure.png`/`scene.png` consistent
+with iter-28. Build log: stripe bake gate 0.072 (byte-stable), bib ink
+0.339/0.278 (band [0.10,0.45]), boot gates green. No `engine/` edits;
+`blender/body-model.json` untouched.
+
+**Open questions for the reviewer**
+- Fallback (ii) approval for the arm chain (wording above), OR name a
+  different one-liner from the iteration-23 list; with it, the rebuild window
+  also carries the ARM GATES hard flip (collinearity/join gates are ready;
+  the hand-axis instrument needs its tip-band ownership fixed first — noted).
+- Boot∥ski browser gate: with the bake at ±0.4°, should I add the
+  ready-stance spec assertion next window (needs the vertex-level instrument
+  hardened per entry-28's note), or defer until the rebuild lands?
 
 ### 28 — Ski drivers follow readyYaw (mandatory item 1 of the next-work-iteration order): composition fixed, seating re-derived, permanent heading gates; boot-yaw item documented for the rebuild; hop turn NOT started
 
