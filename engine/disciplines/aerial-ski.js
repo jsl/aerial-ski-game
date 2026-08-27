@@ -59,9 +59,18 @@ function terrainRootY(z, cfg) {
     if (z <= KICKER_END_Z) return kickerBezY(z, cfg);
     const _backFaceEndZ   = KICKER_END_Z + 0.5;
     const _landingStartZ  = LANDING_START_Z;
-    // Landing: flat at tableY then simple straight slope downward
+    // Landing: flat at tableY, C1 knuckle blend into the straight slope,
+    // C1 roll-out blend into the flat outrun (see landingBlendsFit note).
     if (z <= _landingStartZ) return tableY;
-    if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
+    const _knuckleEndZ = _landingStartZ + cfg.LANDING_TRANS_LEN;
+    if (!landingBlendsFit(cfg)) {
+        if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
+        return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
+    }
+    if (z <= _knuckleEndZ) return landTransBezY(z, cfg);
+    const _rollOutStartZ = OUTRUN_Z - cfg.OUTRUN_TRANS_LEN;
+    if (z <= _rollOutStartZ) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
+    if (z <= OUTRUN_Z) return landOutBezY(z, cfg);
     return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
 }
 
@@ -80,6 +89,46 @@ function terrainAccelZ(z, cfg) {
     return -g * dydz / Math.sqrt(1 + dydz * dydz);
 }
 
+
+// C1 landing-profile joins (APPROVED: C1-smooth run profile, RENDER-PROGRESS).
+// The raw profile creases 0deg -> 40deg at LANDING_START_Z (knuckle) and
+// 40deg -> 0deg at OUTRUN_Z (roll-out into the outrun). Both joins are now
+// cubic beziers whose end tangents match their neighbours exactly, so the
+// sampled surface is C1 everywhere except the intended cliff behind the lip.
+// All levels and horizontal extents are pinned (table height, landing angle,
+// OUTRUN_Z position, flat levels); the curvature each blend needs in excess
+// of the nominal slope is bounded (~50deg / ~46deg peaks across ~1.5 m) and
+// reported in docs/RENDER-PROGRESS.md entry 11.
+function landTransBezY(z, cfg) {
+    const _ltBP = cfg.ltBP;
+    let lo = 0, hi = 1;
+    for (let _i = 0; _i < 14; _i++) {
+        const _m = (lo + hi) * 0.5, _u = 1 - _m;
+        (_u*_u*_u*_ltBP[0][0] + 3*_u*_u*_m*_ltBP[1][0] + 3*_u*_m*_m*_ltBP[2][0] + _m*_m*_m*_ltBP[3][0] < z)
+            ? (lo = _m) : (hi = _m);
+    }
+    const _t = (lo + hi) * 0.5, _u = 1 - _t;
+    return _u*_u*_u*_ltBP[0][1] + 3*_u*_u*_t*_ltBP[1][1] + 3*_u*_t*_t*_ltBP[2][1] + _t*_t*_t*_ltBP[3][1];
+}
+
+function landOutBezY(z, cfg) {
+    const _loBP = cfg.loBP;
+    let lo = 0, hi = 1;
+    for (let _i = 0; _i < 14; _i++) {
+        const _m = (lo + hi) * 0.5, _u = 1 - _m;
+        (_u*_u*_u*_loBP[0][0] + 3*_u*_u*_m*_loBP[1][0] + 3*_u*_m*_m*_loBP[2][0] + _m*_m*_m*_loBP[3][0] < z)
+            ? (lo = _m) : (hi = _m);
+    }
+    const _t = (lo + hi) * 0.5, _u = 1 - _t;
+    return _u*_u*_u*_loBP[0][1] + 3*_u*_u*_t*_loBP[1][1] + 3*_u*_t*_t*_loBP[2][1] + _t*_t*_t*_loBP[3][1];
+}
+
+// True when the caller supplied the two landing-blend control-point arrays and
+// they fit the available landing span (custom worlds can shorten it).
+function landingBlendsFit(cfg) {
+    if (!cfg.ltBP || !cfg.loBP || !cfg.OUTRUN_TRANS_LEN || !cfg.LANDING_TRANS_LEN) return false;
+    return cfg.LANDING_START_Z + cfg.LANDING_TRANS_LEN <= cfg.OUTRUN_Z - cfg.OUTRUN_TRANS_LEN;
+}
 
 // ── Physics config factory ───────────────────────────────────────────────────
 // The per-world tuning values live HERE, with the discipline, rather than in
@@ -105,7 +154,7 @@ function makePhysicsConfig(opts) {
     };
 }
 
-const api = { makePhysicsConfig, transBezY, kickerBezY, terrainRootY, terrainAccelZ };
+const api = { makePhysicsConfig, transBezY, kickerBezY, landTransBezY, landOutBezY, landingBlendsFit, terrainRootY, terrainAccelZ };
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

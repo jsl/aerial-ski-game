@@ -655,6 +655,32 @@ const _kBP    = [
     [KICKER_END_Z,                                                                    _KBP_lY],  // P3
 ];
 
+// ── C1 landing-profile blends (APPROVED: C1-smooth run profile) ──────────────
+// Knuckle (table → 40° landing) over LANDING_TRANS_LEN, roll-out (40° landing
+// → flat outrun) over OUTRUN_TRANS_LEN at the bottom of the slope. End tangents
+// match the neighbours exactly so terrainRootY is C1 across both joins. All
+// levels/horizontal extents are pinned to the old profile — the only surface
+// change is curvature inside the two blend spans (bulge ≤ 0.54 m above the old
+// line near the knuckle, none on the roll-out). Handle ratios tuned in
+// /data/aerial-agents/scratch/iter-11/blend-probe4.js.
+const _ltBP = [
+    [LANDING_START_Z,                        _KBP_tY],
+    [LANDING_START_Z + LANDING_TRANS_LEN * 0.36,        _KBP_tY],
+    [LANDING_START_Z + LANDING_TRANS_LEN - LANDING_TRANS_LEN * 0.9 * Math.cos(LANDING_ANGLE),
+     _KBP_tY - LANDING_TRANS_LEN * Math.tan(LANDING_ANGLE) + LANDING_TRANS_LEN * 0.9 * Math.sin(LANDING_ANGLE)],
+    [LANDING_START_Z + LANDING_TRANS_LEN,    _KBP_tY - LANDING_TRANS_LEN * Math.tan(LANDING_ANGLE)],
+];
+const OUTRUN_TRANS_LEN = 10.5;   // horizontal span of the roll-out bezier (~12 m of arc)
+const _rollOutStartZ   = OUTRUN_Z - OUTRUN_TRANS_LEN;
+const _rollOutY        = _KBP_tY - (_rollOutStartZ - LANDING_START_Z) * Math.tan(LANDING_ANGLE);
+const _loBP = [
+    [_rollOutStartZ,                          _rollOutY],
+    [_rollOutStartZ + OUTRUN_TRANS_LEN * 0.5 * Math.cos(LANDING_ANGLE),
+     _rollOutY       - OUTRUN_TRANS_LEN * 0.5 * Math.sin(LANDING_ANGLE)],
+    [OUTRUN_Z - OUTRUN_TRANS_LEN * 0.25,      _KBP_tY - (OUTRUN_Z - LANDING_START_Z) * Math.tan(LANDING_ANGLE)],
+    [OUTRUN_Z,                                _KBP_tY - (OUTRUN_Z - LANDING_START_Z) * Math.tan(LANDING_ANGLE)],
+];
+
 // ── Terrain config for the shared discipline module ────────────────────────
 // engine/disciplines/aerial-ski.js takes geometry as CONFIG rather than reading
 // globals, because these values are derived from URL params at runtime
@@ -665,6 +691,7 @@ const _terrainCfg = {
         : _poolDiveMode ? 'pool' : 'ski',
     SLOPE_ANGLE, SLOPE_START_Z, FLAT_Z, TRANS_START_Z, TRANS_END_Z,
     KICKER_START_Z, KICKER_END_Z, LANDING_START_Z, OUTRUN_Z, LANDING_ANGLE,
+    LANDING_TRANS_LEN, OUTRUN_TRANS_LEN, ltBP: _ltBP, loBP: _loBP,
     MAT_LAND_START_Z, MAT_LAND_END_Z, TRAMPOLINE_Y,
     tBP: _tBP, kBP: _kBP,
 };
