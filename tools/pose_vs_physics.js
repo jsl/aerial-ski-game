@@ -140,6 +140,58 @@ function kineFor(clip, series, fps) {
   return null;
 }
 
+// Tracked-crop re-extraction (reviewer fix): windows around the flight /
+// transition stretches where the full-frame pose failed.
+const RX_WINDOW = {
+  IMG_3520: [90, 155],
+  IMG_3523: [150, 210],
+  IMG_3765: [55, 95],
+  IMG_3768: [50, 95],
+  IMG_7841: [55, 100],
+};
+
+// Analyst verdicts for the re-extracted rotation table (filled from the
+// re-extraction runs; clips without an entry get a data-driven line).
+const RX_VERDICT = {
+  IMG_3520: 'flip count still NOT derivable — the re-extraction inherits the original track\'s failures: the crop centres go stale during flight (13/66 frames with no detection, f108–119 gap) and re-locks onto a bystander at f122 (437 px hip jump, the same event iteration 2 flagged); the only θ excursion (127°/0.5 s at f121–128) spans that re-lock, not a flip.',
+  IMG_3523: 'flip count still NOT derivable — and the failure is now isolated to the pose model: 100% coverage, one dominant person, mean score 0.73 at ≥ 600 px person height, yet image-plane θ stays within 2–40° of vertical through the whole sheet-verified flight (the only sweep, −2° → −39°, is the landing ride-out at f196–208). RTMPose fits near-upright skeletons to the inverted athlete at any scale, and the test-time-rotation picker prefers the upright crop (0° in 52/60 frames) — orientation is not the bottleneck either.',
+  IMG_3765: 'no rotation expected or found (θ excursion 146°/0.5 s sits in the takeoff stretch); the rx window does confirm the near-straight lip wait from the kinematics section.',
+  IMG_3768: 'rx window (in-run into the lip) is rotation-quiet (θ exc 15°/0.5 s), consistent with the arm-sweep kinematics and the behind-view crouch limit; no new rotation signal.',
+  IMG_7841: 'the opening-for-landing sweep is confirmed at higher quality: interval f67–75 (abs), 41° over 0.30 s, peak 163°/s; θ excursion 147°/0.5 s at touchdown. No flip.',
+};
+
+function runReextract() {
+  const rx = [];
+  for (const clip of CLIP_ORDER) {
+    const p = path.join(POSE_DIR, clip, 'keypoints_tracked.json');
+    if (!fs.existsSync(p)) continue;
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const { frames, summary } = trackAthlete(data);
+    const track = { clip, fps: data.fps, videoPx: data.frame_size || [720, 1280], frames };
+    const metrics = analyze(track);
+    const knownConf = frames.filter((e) => e.ok && e.meanScore != null);
+    const bestMean = knownConf.length ? +(knownConf.reduce((a, e) => a + e.meanScore, 0) / knownConf.length).toFixed(3) : null;
+    fs.writeFileSync(path.join(POSE_DIR, clip, 'athlete_track_tracked.json'), JSON.stringify({
+      clip,
+      source: 'keypoints_tracked.json',
+      method: 'same tracker, run on the tracked-crop test-time-rotation re-extraction',
+      fps: data.fps,
+      videoPx: data.frame_size || [720, 1280],
+      summary,
+      frames,
+    }, null, 1));
+    fs.writeFileSync(path.join(POSE_DIR, clip, 'athlete_metrics_tracked.json'), JSON.stringify({
+      clip,
+      method: 'rotation metrics on the tracked-crop re-extraction',
+      fps: data.fps,
+      ...metrics,
+    }, null, 1));
+    rx.push({ clip, summary, metrics, nReextracted: data.frames.length, bestMean, fOff: (RX_WINDOW[clip] || [0])[0] || 0 });
+    console.log(`${clip} (tracked-crop rx): coverage ${summary.coverage}% (${summary.known}/${summary.frames}), torso median ${summary.sizeMedianPx}px, theta-exc-0.5s ${metrics.thetaExcursion05sDeg}deg, rot-intervals ${metrics.rotationIntervals.length}`);
+  }
+  return rx;
+}
+
 function venvPython() {
   return process.env.RTMPOSE_PYTHON || path.join(process.env.HOME || '', 'aerial-agents', 'rtmpose-venv', 'bin', 'python');
 }
@@ -184,6 +236,8 @@ function main() {
     console.log(`${clip}: coverage ${summary.coverage}% (${summary.known}/${summary.frames} frames), interpolated ${summary.interpolated}, gaps>3 ${summary.gapsOver3}, max gap ${summary.maxGap}, shoulder-hip median ${summary.sizeMedianPx}px, theta-exc-0.5s ${metrics.thetaExcursion05sDeg}deg, rot-intervals ${metrics.rotationIntervals.length}`);
   }
 
+  const rx = runReextract();
+
   if (!noOverlay) {
     const py = venvPython();
     if (fs.existsSync(py)) {
@@ -197,11 +251,11 @@ function main() {
     }
   }
 
-  fs.writeFileSync(DOC, renderDoc(results));
+  fs.writeFileSync(DOC, renderDoc(results, rx));
   console.log(`wrote ${path.relative(ROOT, DOC)}`);
 }
 
-function renderDoc(results) {
+function renderDoc(results, rx) {
   const L = [];
   L.push('# Pose vs physics — reference-footage analysis (lane D)');
   L.push('');
@@ -371,6 +425,43 @@ function renderDoc(results) {
   L.push('- Flight is layout (no tuck) in the 3768 window; "skis parallel and together" stays a');
   L.push('  sheet observation (`docs/REFERENCE-FOOTAGE.md`), not pose-derived.');
   L.push('');
+  L.push('## Tracked-crop re-extraction with test-time rotation (reviewer fix, iteration 3)');
+  L.push('');
+  L.push('The reviewer requested a rotation-aware re-extraction: `tools/pose/reextract_tracked.py`');
+  L.push('(venv python) re-runs RTMPose on a per-frame crop centred on the tracked hip (side ≈ 3×');
+  L.push('the person height, upscaled so the person is ≥ 600 px tall), at 0°/90°/180°/270°, keeping');
+  L.push('every detected person with keypoints rotated back to video px (`keypoints_tracked.json`,');
+  L.push('local). The same tracker was re-run on that file; frames are decoded via ffmpeg with the');
+  L.push('same filter chain as the original extraction (cv2 alone mis-applies rotation/colour:');
+  L.push('best-person mean score 0.19 vs 0.64 re-extracted on IMG_7841). Windows per');
+  L.push('`RX_WINDOW` below; IMG_3396 skipped per the reviewer (night footage untrackable),');
+  L.push('IMG_3523_hop already had the crop treatment in the original data.');
+  L.push('');
+  if (!rx.length) {
+    L.push('No re-extraction results yet — run `tools/pose/reextract_tracked.py` per clip.');
+    L.push('');
+  } else {
+    L.push('| clip | window | rx frames | tracked | best-person mean | θ exc 0.5 s | rotation intervals | flips |');
+    L.push('|---|---|---:|---:|---:|---:|---|---|');
+    for (const { clip, summary: s, metrics: m, nReextracted, bestMean, fOff } of rx) {
+      const [f0, f1] = RX_WINDOW[clip] || [0, 0];
+      const iv = m.rotationIntervals
+        .map((r) => `f${r.f0 + fOff}–${r.f1 + fOff}: ${r.absTurnDeg}°/${r.dur}s, peak ${r.peakRateDegS}°/s`)
+        .join('; ') || 'none';
+      const flips = m.rotationIntervals.filter((r) => r.flipsEst != null).map((r) => r.flipsEst);
+      L.push(`| ${clip} | f${f0}–${f1} | ${nReextracted} | ${s.known} (${s.coverage}%) | ${bestMean != null ? bestMean : '—'} | ${m.thetaExcursion05sDeg}° | ${iv.length > 90 ? iv.slice(0, 87) + '…' : iv} | ${flips.length ? flips.join(', ') : 'n/d'} |`);
+    }
+    L.push('');
+    for (const { clip, metrics: m, fOff } of rx) {
+      const v = RX_VERDICT[clip];
+      if (v) { L.push(`- **${clip}**: ${v}`); }
+      else {
+        const iv = m.rotationIntervals.map((r) => `f${r.f0 + fOff}–${r.f1 + fOff} ${r.absTurnDeg}°/ ${r.dur}s peak ${r.peakRateDegS}°/s`).join('; ') || 'none';
+        L.push(`- **${clip}**: coverage ${s.coverage}%, rotation intervals: ${iv}.`);
+      }
+    }
+    L.push('');
+  }
   L.push('## Proposals');
   L.push('');
   L.push('None yet — proposals come after the comparison tables exist (task item 4).');

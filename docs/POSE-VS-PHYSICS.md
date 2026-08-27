@@ -165,6 +165,32 @@ ascent visible f72–81 (hip rises 5.8–22.6 px/frame in image, back angle flip
 - Flight is layout (no tuck) in the 3768 window; "skis parallel and together" stays a
   sheet observation (`docs/REFERENCE-FOOTAGE.md`), not pose-derived.
 
+## Tracked-crop re-extraction with test-time rotation (reviewer fix, iteration 3)
+
+The reviewer requested a rotation-aware re-extraction: `tools/pose/reextract_tracked.py`
+(venv python) re-runs RTMPose on a per-frame crop centred on the tracked hip (side ≈ 3×
+the person height, upscaled so the person is ≥ 600 px tall), at 0°/90°/180°/270°, keeping
+every detected person with keypoints rotated back to video px (`keypoints_tracked.json`,
+local). The same tracker was re-run on that file; frames are decoded via ffmpeg with the
+same filter chain as the original extraction (cv2 alone mis-applies rotation/colour:
+best-person mean score 0.19 vs 0.64 re-extracted on IMG_7841). Windows per
+`RX_WINDOW` below; IMG_3396 skipped per the reviewer (night footage untrackable),
+IMG_3523_hop already had the crop treatment in the original data.
+
+| clip | window | rx frames | tracked | best-person mean | θ exc 0.5 s | rotation intervals | flips |
+|---|---|---:|---:|---:|---:|---|---|
+| IMG_3520 | f90–155 | 66 | 54 (81.8%) | 0.694 | 127° | none | n/d |
+| IMG_3523 | f150–210 | 61 | 61 (100%) | 0.734 | 33° | f203–206: 12°/0.13s, peak 119°/s | n/d |
+| IMG_3765 | f55–95 | 41 | 36 (87.8%) | 0.705 | 146° | none | n/d |
+| IMG_3768 | f50–95 | 46 | 26 (56.5%) | 0.695 | 15° | f89–91: 5°/0.1s, peak 132°/s | n/d |
+| IMG_7841 | f55–100 | 46 | 39 (84.8%) | 0.603 | 147° | f67–75: 41°/0.3s, peak 163°/s | n/d |
+
+- **IMG_3520**: flip count still NOT derivable — the re-extraction inherits the original track's failures: the crop centres go stale during flight (13/66 frames with no detection, f108–119 gap) and re-locks onto a bystander at f122 (437 px hip jump, the same event iteration 2 flagged); the only θ excursion (127°/0.5 s at f121–128) spans that re-lock, not a flip.
+- **IMG_3523**: flip count still NOT derivable — and the failure is now isolated to the pose model: 100% coverage, one dominant person, mean score 0.73 at ≥ 600 px person height, yet image-plane θ stays within 2–40° of vertical through the whole sheet-verified flight (the only sweep, −2° → −39°, is the landing ride-out at f196–208). RTMPose fits near-upright skeletons to the inverted athlete at any scale, and the test-time-rotation picker prefers the upright crop (0° in 52/60 frames) — orientation is not the bottleneck either.
+- **IMG_3765**: no rotation expected or found (θ excursion 146°/0.5 s sits in the takeoff stretch); the rx window does confirm the near-straight lip wait from the kinematics section.
+- **IMG_3768**: rx window (in-run into the lip) is rotation-quiet (θ exc 15°/0.5 s), consistent with the arm-sweep kinematics and the behind-view crouch limit; no new rotation signal.
+- **IMG_7841**: the opening-for-landing sweep is confirmed at higher quality: interval f67–75 (abs), 41° over 0.30 s, peak 163°/s; θ excursion 147°/0.5 s at touchdown. No flip.
+
 ## Proposals
 
 None yet — proposals come after the comparison tables exist (task item 4).
