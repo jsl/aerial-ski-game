@@ -68,7 +68,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
-| P1 | Continuous terrain | open | |
+| P1 | Continuous terrain | **slice 1 landed (iter 11)** | corridor ribbon from exact physics profile + C1/clearance gates; C1 landing profile physics landed under APPROVED (airtime identical, finalPosZ -0.23..-0.64 m); OPEN: stale-lightmap rebake for the exposed wInrun face (exact steps in entry 11) |
 | P2 | Sky and sun | **shadow quick win landed (iter 8)** | CSM 3×2048 live; athlete shadow drop 79% (was 11.6%), trees all cast; **still open: sky luminance 0.799 > snow 0.778 — snow not yet the brightest surface; sun disc, fog re-tune, post 1.6→1.2**; corridor parity landed iter 7 |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
@@ -81,6 +81,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7)** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); corridor 0.622→0.7778 vs flanks 0.787, inrun 0.784, kicker 0.758; phase-2 near-parity gates in `grey-ramp.spec.js`; kicker residual −0.029 queued behind P1/P2 geometry |
 | — | Reviewer order 4: ready stance | **landed (iter 10, recovered iter 9)** | renderer-side: skis rolled flat on the slope plane (≤5 mm seated ×5 samples/ski), torso ≤3°, uphill knee ≥10° more flex, hands-at-sides proxy ≤3 cm; post-turn float 0.0941 gated at 0.10 until P1; ready-stance spec + golden audit committed |
+| — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
 ## Open questions for the reviewer
