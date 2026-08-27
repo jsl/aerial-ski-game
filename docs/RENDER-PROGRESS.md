@@ -52,7 +52,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | open | |
-| P2 | Sky and sun | open | **measured (iter 5): sky luminance 0.799 > snow 0.787 — snow is NOT the brightest surface; athlete shadow drop only 11.6% (target ≥15%); still plain `ShadowGenerator(2048)` (game.js:756)** |
+| P2 | Sky and sun | open | **measured (iter 5): sky luminance 0.799 > snow 0.787 — snow is NOT the brightest surface; athlete shadow drop only 11.6% (target ≥15%); still plain `ShadowGenerator(2048)` (game.js:756)**; corridor parity landed iter 7 |
 | P3 | Venue dressing | open | |
 | P4 | Forest | open | |
 | P5 | Snow surfaces | open | |
@@ -62,7 +62,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
-| — | Reviewer order 3: grey ramp | **phase 1 landed (iter 6)** | measured root-cause hunt (A/B harness); snowMat recipe fixed (inrun 0.640→0.765, kicker 0.651→0.678, corridor 0.622→0.645 vs flanks 0.787); junction fillers landed (kicker-region sky leak 12.2%→2.6%); corridor residual + phase 2 gates open — see iter 6 |
+| — | Reviewer order 3: grey ramp | **landed (iters 6–7)** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); corridor 0.622→0.7778 vs flanks 0.787, inrun 0.784, kicker 0.758; phase-2 near-parity gates in `grey-ramp.spec.js`; kicker residual −0.029 queued behind P1/P2 geometry |
 | — | Reviewer order 4: ready stance | open | renderer-side pose in `game.js`: both skis flat on the slope plane (≤5 mm), torso vertical, uphill knee bent ≥10° more than downhill; **+ ready-state arms hang at the sides (|hand z − hip z| ≤ 3 cm) per the reviewer's post-iter-4 check**; before P1 |
 | — | APPROVED: body proportions rebaseline | **queued (approved 18:40, post-iter-4 check)** | ONE physics commit + ADR-0005 golden rebaseline: arm x ±0.205→±0.175 across all pose tables + `armSweep` baseX; torso 36%→31–32%, legs 47.5%→51% of standing height (height+mass preserved); flip rates/landing timing within ±5% of golden or stop; then athlete rebuild with the deltoid un-stretched. Measure bideltoid first (reviewer measured ~0.47 m) |
 
@@ -432,3 +432,58 @@ Reviewer order 3. I can view PNGs; shots inspected directly.
   the grey-ramp gates to `corridor ≥ darkest flank − 0.02` and re-measure sky-vs-snow
   for P2.
 - Shadow quick win (CSM) and interim tree trunks remain queued per the iter-5 list.
+
+### 7 — Grey ramp phase 2: translucency convicted, corridor at flank parity
+
+Reviewer order 3, finished. I can view PNGs; shots inspected directly.
+
+**Attribution (clean-load toggle walk on the scene camera; temp diagnostic, deleted)**
+Iter 6 left a measured-but-unexplained residual (corridor 0.645 vs flanks 0.787) and a
+clean MATDIFF, so the remaining suspects were non-enumerable state. Sequential toggles
+on snowMat/snowMat_baked in one live page:
+- t0 baseline: corridor 0.6448, kicker 0.6783, inrun 0.7648 (flanks 0.7866/0.7878)
+- clear coat off: corridor 0.6602 (+0.015)
+- **+ subsurface translucency off: corridor 0.7778 (+0.118), kicker 0.7575, inrun 0.7839**
+- + bump map off: ±0.000; + roughness 0.46→0.471 (lsMat's value): ±0.000
+
+So the residual ramp was carried by snowMat's transmissive stack — mostly translucency
+— which re-routes energy behind the surface while the flanks' plain opaque lsMat BRDF
+keeps it facing sun/camera. Iter 6's fresh-PBR swap hit 0.762 precisely because the new
+material never had the stack.
+
+**What changed**
+- `game.js` snowMat construction: subsurface translucency and clear coat removed, with
+  the measurement and the rationale inline (a scene-wide P2 light rig is the right place
+  for a subsurface return, not one material out of step with its neighbours; the bluish
+  shade bias stays in the albedo colour). Albedo/F0/bump from iter 6 unchanged.
+- `tests/drive/materials.spec.js`: the snowMat contract flipped — translucency and clear
+  coat now asserted OFF, with the numbers in the failure message.
+- `tests/drive/grey-ramp.spec.js`: phase-2 gates — corridor > 0.72 and ≥ darkest flank
+  − 0.02; inrun ≥ darkest flank − 0.04; kicker face ≥ darkest flank − 0.06; the
+  kicker-region skyFrac < 3.5% seam gate unchanged.
+- `tests/drive/grey-ab.spec.js` kept (opt-in) as the recorded evidence harness.
+
+**Verification numbers**
+- Final GREY_RAMP (scene camera): corridor **0.7778** (iter-5 baseline 0.622; iter 6
+  0.645) vs flanks 0.7866/0.7878 — residual gap −0.009; inrun 0.7839 (−0.003); kicker
+  face 0.7575 (−0.029, gate −0.06); kicker-region skyFrac 0.0235 (gate 0.035).
+- `npm run test:unit` pass; `npm run test:golden` 30/30 (physics untouched, no
+  rebaseline needed — no geometry, no node changes); grey-ramp + materials + textures
+  6/6; `look` 1/1.
+- Shots: `scene.png` — corridor now reads at flank brightness; the pale kicker-region
+  band stays closed. With the ramp gone, two dark longitudinal bands along the corridor
+  edges are newly obvious — **pre-existing** (visible in
+  `docs/analysis-2026-08-26/img/scene.jpg` under the darker ramp): exposed box side
+  faces / shadowed seams of the raised corridor slabs. That is P1 continuous-terrain
+  geometry, recorded here so it is not mistaken for a regression. `figure.png` /
+  `figure_front.png` — athlete unchanged; known residuals stand (hands slightly forward
+  in the ready crouch, flat ski slats, faint bib digits, no skier shadow — P2).
+
+**Open / next**
+- Shadow quick win (CSM) per P2 — the next order-list item; reuse the review-measure
+  ring probe for the ≥15% acceptance.
+- Interim tree trunks (tessellation ≥ 16, base flare + snow collar) before P4.
+- P2 sky-vs-snow still standing: sky 0.799 > corridor 0.778 — snow is not yet the
+  brightest surface in frame.
+- Kicker's remaining −0.029 vs flanks: likely its own geometry/concavity, revisit after
+  P1 rebuilds the surface and P2 re-rigs the light.

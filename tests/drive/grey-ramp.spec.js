@@ -80,15 +80,16 @@ test('corridor reads at least as bright as its flanks; no sky through the seams'
     expect(stats.corridor.n).toBeGreaterThan(100);
     expect(stats.flankNear.n).toBeGreaterThan(100);
 
-    // Phase-1 gates (iteration 6): the recipe fix recovered the in-run fully
-    // (0.640→0.765) and the kicker partially (0.651→0.678); corridor table
-    // improved 0.622→0.645 with the residual attributed-but-unfixed stack
-    // (see RENDER-PROGRESS 6). These pin today's numbers so a regression from
-    // ANY cause fails; phase 2 tightens toward full parity next iteration.
+    // Phase-2 gates (iteration 7): the residual carrier turned out to be
+    // snowMat's subsurface translucency (+ clear coat, minor) — disabling them
+    // moved corridor 0.645→0.778 and kicker 0.678→0.758 against flanks 0.787.
+    // All three run surfaces now sit within a step of flank parity, so the
+    // gates tighten from phase 1's −0.08/−0.13 to near-parity margins.
     const darkestFlank = Math.min(stats.flankNear.lum, stats.flankFar.lum);
-    expect(stats.corridor.lum).toBeGreaterThan(0.62);
-    expect(stats.inrun.lum).toBeGreaterThan(darkestFlank - 0.08);
-    expect(stats.kickerFace.lum).toBeGreaterThan(darkestFlank - 0.13);
+    expect(stats.corridor.lum).toBeGreaterThan(0.72);
+    expect(stats.corridor.lum).toBeGreaterThanOrEqual(darkestFlank - 0.02);
+    expect(stats.inrun.lum).toBeGreaterThanOrEqual(darkestFlank - 0.04);
+    expect(stats.kickerFace.lum).toBeGreaterThanOrEqual(darkestFlank - 0.06);
 
     // The seam: background must not show through beside the kicker.
     // Baseline was 12.2% sky-like pixels before the junction fillers.

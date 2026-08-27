@@ -1833,18 +1833,21 @@ function _startGame() {
     // albedo map as well as a normal map and shares one code path with rock,
     // bark, foliage and fabric.
 
-    // Subsurface: light entering the snow, scattering, and leaving blue-shifted.
-    if (snowMat.subSurface) {
-        snowMat.subSurface.isTranslucencyEnabled  = true;
-        snowMat.subSurface.translucencyIntensity  = 0.45;
-        snowMat.subSurface.tintColor = new BABYLON.Color3(0.70, 0.82, 1.00);
-    }
-    // A thin icy sheen on the groomed surface.
-    if (snowMat.clearCoat) {
-        snowMat.clearCoat.isEnabled = true;
-        snowMat.clearCoat.intensity = 0.22;
-        snowMat.clearCoat.roughness = 0.16;
-    }
+    // NO subsurface translucency, NO clear coat on the corridor snow. Both were
+    // enabled here as "recognisable snow cues", but a measured property walk
+    // (iteration 7, clean-load toggles on this very camera view) convicted
+    // translucency as the main carrier of the residual grey ramp: turning it
+    // off alone moved the corridor table 0.645 -> 0.778 and the kicker face
+    // 0.678 -> 0.758 against flanks at 0.787; disabling clear coat had already
+    // given +0.015; bump map and roughness toggles moved nothing. The physics
+    // of it: with F0 0.21 and this light rig, transmissive scattering re-routes
+    // energy behind the surface while lsMat's plain opaque BRDF (the flanks)
+    // keeps it facing the sun/camera — so the groomed run lost ~13% of its
+    // luminance against untreated snow next door. The footage wants the run to
+    // read as the BRIGHTEST surface in frame; parity with the flanks comes
+    // first, and the bluish shade bias still lives in the albedo colour. A
+    // proper subsurface return belongs to the P2 light rig, applied scene-wide,
+    // not to one material out of step with its neighbours.
 
     const kickerWidth = 3.4; // all hills use double width
 

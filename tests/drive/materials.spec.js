@@ -75,11 +75,18 @@ test('snow is a PBR material with subsurface and clearcoat', async ({ page }) =>
     expect(mat.roughness).toBeGreaterThan(0);
     expect(mat.roughness).toBeLessThan(1);
 
-    // The blue subsurface scatter in shadow is the recognisable snow cue, and
-    // the specific thing Blinn-Phong could not express.
-    expect(mat.translucency, 'subsurface translucency is off — shadowed snow will read grey, not blue').toBe(true);
-    expect(mat.translucencyIntensity).toBeGreaterThan(0);
-    expect(mat.clearCoat, 'clearcoat off — groomed snow loses its icy sheen').toBe(true);
+    // Grey ramp, iteration 7: subsurface translucency + clear coat on snowMat
+    // were the measured carriers of the residual corridor grey ramp (translucency
+    // off alone: corridor 0.645 -> 0.778 vs flanks 0.787; clear coat +0.015).
+    // They re-routed energy away from sunlit snow next to opaque lsMat flanks,
+    // leaving the groomed run ~13% darker than untreated snow beside it. The
+    // run must read at least as bright as its flanks; any future subsurface
+    // return belongs to a scene-wide P2 light rig.
+    expect(mat.translucency,
+        'snowMat still carries translucency — it measurably darkens the ' +
+        'corridor vs the flanks (grey ramp, RENDER-PROGRESS 7)').toBe(false);
+    expect(mat.clearCoat,
+        'snowMat still carries clear coat — same measurement').toBe(false);
 });
 
 test('the athlete is rendered at higher geometric resolution', async ({ page }) => {
