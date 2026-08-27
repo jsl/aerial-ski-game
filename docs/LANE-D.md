@@ -152,3 +152,56 @@ needs a profile view or side re-extraction (behind-view geometry, evidenced abov
 Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. New file
 `tools/pose/kine.js`; `tools/pose_vs_physics.js` + `docs/POSE-VS-PHYSICS.md` updated.
 `reference/pose/*/athlete_kine.json` are local-only (gitignored), like tracks/metrics.
+
+### 3 — Kinematics (arm sweep into the lip) + reviewer's tracked-crop re-extraction; flip counts isolated to a pose-model failure
+Two units in this iteration. **(a) Kinematics slice of task 2** — new `tools/pose/kine.js`
+re-joins the tracked person's full COCO-17 keypoints per frame via the track's `person`
+index and derives interior joint angles + torso-normalised heights (no px/m scale);
+`tools/pose_vs_physics.js` writes `athlete_kine.json` (local) and regenerates a
+"Kinematics (iteration 3)" doc section. IMG_3768 arm sweep quantified: arms quiet f48–59
+(wr/sh −0.99 ± 0.07 torso), sweep f58 ± 3 → f80, wrists cross shoulder level f70 ± 1,
+peak +1.05 torso overhead, duration 0.73 s; takeoff estimated f81 ± 3 → sweep leads the
+lip by ~0.8 s (direct P7 renderer input). Ruled not derivable **with evidence**: 3768
+crouch (behind view — back ~0 ± 3° while sheets show a deep crouch), 3768 tuck (flight
+hip/ankle 1.27–1.41 torso constant), 3765 sweep (wrists die f71) and crouch (base view),
+7841 landing absorption (knee 167–180° at 14–15 px torso = pose floor; touchdown f82 ± 2).
+
+**(b) Reviewer feedback (17:25) acted on**: `tools/pose/reextract_tracked.py` (venv
+python) re-runs RTMPose on a per-frame crop centred on the tracked hip (~3× person height,
+upscaled so the person is ≥ 600 px) at 0/90/180/270°, keeps all people with keypoints
+rotated back (`keypoints_tracked.json`, local), and the same tracker + rotation metrics
+were re-run on the windows of IMG_3520/3523/3765/3768/7841 (3396 skipped per the
+reviewer; 3523_hop already had the crop treatment). Two decode findings baked into the
+tool: cv2 ignores the videos' rotation metadata and colour range (best-person mean score
+0.19 vs 0.64 once ffmpeg + extract_all.py's filter chain is used), and single-person
+re-extraction breaks continuity, so all people are kept for the tracker. The source
+videos live in the main checkout `~/Code/aerial-ski-game/reference/video` (this worktree's
+`reference/` has only keypoints/overlays).
+
+Result: detection quality strongly improves (best-person mean 0.60–0.73 in the windows;
+3523 rx 100% coverage), **but flip counts remain not derivable — now with the failure
+isolated to the pose model**: 3520's rx inherits the original track's stale crop centres
+(f108–119 no-detection gap; 437 px bystander re-lock at f122, the event iteration 2
+flagged); 3523 shows θ within 2–40° of vertical through the whole sheet-verified flight
+at ≥ 600 px person height and 0.73 mean score, and the orientation picker prefers the
+upright crop (0° in 52/60 frames) — neither scale nor orientation is the bottleneck.
+Gains: 7841's opening-for-landing sweep confirmed at higher quality (f67–75, 41°/0.30 s,
+peak 163°/s); 3765/3768 rx windows rotation-quiet, consistent with (a).
+
+Verification: `node tools/pose_vs_physics.js` end to end; all iteration-1/2 numbers
+reproduced identically (coverage 64.8/95/73.2/100/95.5/100/67.2%, θ excursions and
+rotation intervals unchanged); sheets re-rendered 7/7; re-extraction runs logged in
+`~/aerial-agents/scratch/lane-D/reextract.log` (245 frames × 4 orientations). Rotation
+mapping unit-tested against `cv.rotate` (scratch `test_rotmap.py`: OK).
+
+Open: flip counts / single-or-double need manual flight-frame annotation or a
+rotation-robust pose model (posed to the reviewer; a 2-pass re-centred crop re-run is a
+partial option but pass-1 tracks are already contaminated). Task 3 (golden-trace
+comparison) and task 4 (numbered proposals) remain — the airtime/takeoff/landing-frame
+derivation from bbox/hip trajectories (reviewer suggestion) is the next analysis step.
+
+Reviewer at merge time: nothing to wire; `game.js`, `engine/`, tests untouched. New
+committed files: `tools/pose/kine.js`, `tools/pose/reextract_tracked.py`;
+`tools/pose_vs_physics.js` + `docs/POSE-VS-PHYSICS.md` updated. All
+`reference/pose/*/*_track*.json`, `*_metrics*.json`, `*_kine.json`,
+`keypoints_tracked.json` stay local-only (gitignored).
