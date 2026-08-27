@@ -111,7 +111,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
-| P11 | Coherent crash | **slice landed (iter 36, commit f84de2f)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 20 sticks / 6 iters, seeded angular limits, slope-scaled friction + static stop) drives the bones; skis release and slide to rest; impact burst + trailing spray; camera eases to the tumble. Audit: `state` byte-identical ×30 (node-census re-capture). OPEN: drive spec for the acceptance gates; browser verification |
+| P11 | Coherent crash | **slice landed (iter 36, commit f84de2f); instrument + seeding root-caused (iter 37, commit bdd5869)** | legacy flying-solids path replaced: skinned body stays visible, PBD ragdoll (15 shared-joint particles / 21 sticks / 6 iters, contact INSIDE the constraint loop, kinematic neck, slope-scaled friction + static stop) drives the bones; skis release and slide to rest. Iter-37: joint-gap gate now PASSES — elbow 0.000 / knee 0.000 / neck 0.010 m from the first crash frame (gate ≤ 0.02); audit `state` byte-identical ×30 (node-census re-capture). OPEN: pen gate reads ≤ 0.18 m when the supine head-top snap points the head into the snow (spec stays fixme, diagnosis in header); browser eyeball of the crash still owed |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
@@ -240,6 +240,85 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 37 — P11 slice 2: crash-spec instrument + ragdoll arm/neck seeding root-caused; joint-gap gate green; pen gate one fix from done (commit bdd5869)
+
+Tree started clean at `cb65ed8` (iter 36's fixme'd spec). No new reviewer
+feedback, so per the entry-35 queue the open P11 items were the unit of work.
+Scratch `~/aerial-agents/scratch/iter-37/` holds the probe scripts
+(`check-explosion.js`, `trace-ragdoll.js`) and pre-fix traces; the temporary
+browser probe spec and the `_ragDbg` hook were removed before commit.
+
+**Root cause chain (each step probe-verified in the real browser and the
+deterministic node harness).**
+
+1. **The iter-36 instrument had the arm frame backwards.** Probe in the ready
+   state: with the spec's "node centre ± h/2 along world +Y, +Y = proximal"
+   assumption the elbow gaps read **0.5500 m both sides** (= the full
+   shoulder→wrist span) while knees read ~1e-8 and neck 0.005 — the ARM
+   drivers' local +Y points **DISTAL** (the +Y end is the elbow/wrist end;
+   `applyPose`/`applyGamepadLateral` build the arm chain along the rotated +Y
+   from the shoulder pivot), opposite to torso/head/legs. Spec signs corrected.
+2. **The ragdoll inherited the same convention.** `_crashRagdollInit` seeded
+   `shL` from the upper arm's +Y end (the elbow) and `wristL` from the lower
+   arm's −Y end (the elbow) — a mirror-scrambled arm chain — and `writeSeg`
+   wrote the arm segments end-for-end flipped (the un-eyeballed iter-36 visual
+   defect). Both fixed to the distal frame.
+3. **The tuck pose authors joints inside the body volume.** Measured mid-flight
+   pre-crash: elbow gap **0.308 m**, knee **0.207**, neck **0.208**
+   (mirror-symmetric — authored in `POSE_TUCKED`; analytic check of the table
+   gives ≈ 0.35 elbow at full tuck). Occluded by the body mesh while airborne,
+   which is why it was never noticed. Seeding the sticks from those distances
+   froze the gaps into the crash (the constant 0.119/0.086/0.208 of iter 36).
+   Fix: limb chains are now seeded **joint-coincident with exact segment
+   lengths** along each segment's own axis (every segment's own frame is exact;
+   only the inter-segment joints were broken).
+4. **Two divergences found and fixed on the way** (both reproduced in the node
+   harness, ×5.7/frame exponential growth from ~0.5 s post-impact): a
+   zero-rest neck brace (neck ≡ torsoTop) diverges outright — replaced by a
+   **kinematic neck** pinned 0.01 m below the torso top along the torso axis,
+   with headTop snapped to the head rest from the final neck; and contact
+   projected *outside* the constraint loop fights the sticks (0.03–0.09 m
+   residuals) — moved **inside** the loop (standard PBD). A hard length
+   projection pass was added and then removed again (it slams particles below
+   the surface); the soft solve + in-loop contact is what ships.
+
+**Verification.** `npm run test:unit` **74/74**; crash-spec sampler now reads
+**elbow 0.000 / elbow 0.000 / knee 0.000 / knee 0.000 / neck 0.010 m from the
+first crash frame and every early sample** — the plan's ≤ 2 cm joint-gap gate
+PASSES (it never did before). `npm run test:golden`: 17/30 before re-capture →
+audit (`tests/golden/audit-ready-stance.js`) **PASS: physics state
+byte-identical in all 30 scenarios** (node-census-only class, same as the
+approved ready-stance / hop-turn / iter-36 re-captures) → re-captured →
+**30/30**. Harness long-run check: worst body |p| 47.7 root-local at f1195 is
+the root sliding 46 m down the landing away from the resting body (the
+write-back uses the live root), not a divergence. `index.html`
+`game.js?v=21→22`; no `engine/` or `assets/` changes, ASSET_V unchanged.
+
+**NOT done (honest):** (1) the penetration gate still reads up to **0.18 m**
+when the supine body's head-top snap points the head end into the snow — the
+spec stays `test.fixme` with this exact diagnosis in its header; a y-clamp on
+the snapped particle was tried and reverted (it injects verlet velocity and
+starved the crash detection), the right fix is re-solving the head axis so the
+head top stays above the surface. (2) The crash still has not been EYEBALLED —
+`look` shots were not regenerated this session (the time went to the
+divergence hunt); the arm-flip fix means the crash visual CHANGED (arms were
+end-for-end flipped during crashes since iter 36) and needs eyes on it next
+iteration.
+
+**Open questions for the reviewer**
+- The trace re-capture is node-census-only with `state` byte-identical ×30,
+  third time this class is used (ready-stance, hop-turn, iter-36) — confirm it
+  stands without a fresh APPROVED line.
+- The tucked pose's buried joints (elbow 0.31 m, knee 0.21, neck 0.21 at full
+  tuck) are a PRE-EXISTING renderer pose defect, visible as skin stretch in
+  every tucked flight frame if the skin does not hide it — the ragdoll now
+  snaps the joints closed at impact (a small pop, masked by the crash). Want a
+  renderer-side tuck adjacency fix (applyPose repin, ADR-0002) as its own
+  iteration? It would change every flight frame's node data (another
+  node-census re-capture).
+- The pen-gate fix (head-axis re-solve) is one small change; after it lands the
+  spec goes `test()` and P11's acceptance gates are all enforced.
 
 ### 36 — P11 slice: coherent crash ragdoll on the skinned body replaces the flying legacy solids (commit f84de2f)
 
