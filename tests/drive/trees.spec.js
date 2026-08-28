@@ -77,7 +77,7 @@ test('forest is one thin-instanced impostor draw call fed by the baked atlas', a
             const d = cx.getImageData(0, 0, cv.width, cv.height).data;
             const w = cv.width, h = cv.height;
             const alphaAt = (px, py) => d[(py * w + px) * 4 + 3] / 255;
-            const NB = 8; // horizontal bands, index 0 = BOTTOM rows
+            const NB = 16; // horizontal bands, index 0 = the file's TOP rows
             const bands = new Array(NB).fill(0);
             for (let py = 0; py < h; py++) {
                 const b = Math.min(NB - 1, Math.floor((py / h) * NB));
@@ -92,17 +92,68 @@ test('forest is one thin-instanced impostor draw call fed by the baked atlas', a
                     for (let px = x0; px < x0 + 48; px++) mx = Math.max(mx, alphaAt(px, py));
                 return mx;
             };
-            let botCentre = 0;
-            for (let py = h - 96; py < h; py++) {
-                let acc = 0;
-                for (let px = (w >> 1) - 48; px < (w >> 1) + 48; px++) acc += alphaAt(px, py);
-                botCentre += acc / 96;
+            // Row runs: contiguous spans of visible (>0.02 mean alpha) rows.
+            // One sky run at the top, then ONE canopy run to the bottom —
+            // any interior gap is the floating-fragment regression.
+            const rowA = [];
+            for (let py = 0; py < h; py++) {
+                let a = 0;
+                for (let px = 0; px < w; px++) a += alphaAt(px, py);
+                rowA.push(a / w);
             }
+            const runs = [];
+            let cur = null;
+            for (let py = 0; py < h; py++) {
+                const vis = rowA[py] > 0.02;
+                if (!cur || cur.vis !== vis) {
+                    cur = { vis, top: py / h, bot: py / h };
+                    runs.push(cur);
+                } else cur.bot = py / h;
+            }
+            // Per-band opaque width fraction (16 bands, top-down) for the
+            // taper gate, plus colour + trunk measures.
+            const widths = new Array(NB).fill(0);
+            let rSum = 0, gSum = 0, bSum = 0, n = 0;
+            for (let py = 0; py < h; py++) {
+                const band = Math.min(NB - 1, Math.floor((py / h) * NB));
+                let wRow = 0;
+                for (let px = 0; px < w; px++) {
+                    const i = (py * w + px) * 4;
+                    if (d[i + 3] >= 128) {
+                        wRow++;
+                        rSum += d[i] / 255; gSum += d[i + 1] / 255;
+                        bSum += d[i + 2] / 255; n++;
+                    }
+                }
+                widths[band] += wRow / w;
+            }
+            for (let bI = 0; bI < NB; bI++) widths[bI] /= (h / NB);
+            const lumMean = n ? (0.2126 * rSum + 0.7152 * gSum + 0.0722 * bSum) / n : 0;
+            // Trunk zone = rows 85-97%: centre 96 px vs the outer columns.
+            let trunkCentre = 0, trunkSides = 0;
+            const y0 = Math.round(0.85 * h), y1 = Math.round(0.97 * h);
+            for (let py = y0; py < y1; py++) {
+                let c = 0, s = 0;
+                for (let px = 0; px < w; px++) {
+                    const a = alphaAt(px, py);
+                    if (Math.abs(px - (w >> 1)) < 48) c += a;
+                    else if (px < 0.06 * w || px > 0.94 * w) s += a;
+                }
+                trunkCentre += c / 96;
+                trunkSides += s / Math.round(0.06 * w) / 2;
+            }
+            trunkCentre /= (y1 - y0);
+            trunkSides /= (y1 - y0);
             card = {
                 w, h,
                 bands: bands.map(v => Math.round(v * 1e4) / 1e4),
+                runs: runs.map(r => ({ vis: r.vis, top: +r.top.toFixed(4), bot: +r.bot.toFixed(4) })),
+                widths: widths.map(v => Math.round(v * 1e4) / 1e4),
+                lum: Math.round(lumMean * 1e4) / 1e4,
+                meanRGB: n ? [+(rSum / n).toFixed(3), +(gSum / n).toFixed(3), +(bSum / n).toFixed(3)] : [0, 0, 0],
+                trunkCentre: Math.round(trunkCentre * 1e4) / 1e4,
+                trunkSides: Math.round(trunkSides * 1e4) / 1e4,
                 topCornerMaxAlpha: Math.round(Math.max(cornerBox(0, 0), cornerBox(w - 48, 0)) * 1e4) / 1e4,
-                bottomCentreMeanAlpha: Math.round((botCentre / 96) * 1e4) / 1e4,
             };
         } catch (e) {
             card = { error: String(e) };
@@ -174,29 +225,62 @@ test('forest is one thin-instanced impostor draw call fed by the baked atlas', a
         .toBe(true);
     expect(s.card.error, 'card PNG sampled without error').toBeUndefined();
 
-    // The bake-side half: the PNG on disk must be authored upright. For this
-    // cone-stack spruce the opaque coverage per horizontal band INCREASES
-    // upward (dense layered spire, sparse lowest whorl): bands bottom→top
-    // 0.199 → 0.708 (measured, strictly monotone). The unambiguous signals
-    // are the corners (transparent sky at the top) and the trunk at the
-    // bottom centre; a flipped image has alpha at the top corners and a
-    // narrow tip spike (not trunk) at the bottom centre.
-    const b = s.card.bands;
-    expect(b[0], 'bottom band coverage (sparse lowest whorl)')
-        .toBeLessThan(0.25);
-    expect(b[7], 'top band coverage (dense layered spire)').toBeGreaterThan(0.60);
-    expect(b[7] > 2.5 * b[0],
-        'coverage increases strongly upward: bottom ' + b[0] + ' top ' + b[7])
+    // The bake-side half: the PNG on disk must be authored upright AND be a
+    // coherent conifer. Iter 62 re-derived these gates for the re-rendered
+    // bake (camera-orbit + pinned ortho fit: the old card cropped the tree
+    // into a floating top fragment and wiped the branch droop, rendering
+    // columnar spike stacks). Bands index 0 = the file's TOP rows (canvas
+    // py=0). Measured on the new bake: sky margin 0-8.4%, then ONE
+    // contiguous canopy run to the file bottom; width taper monotone
+    // 0.027 → 0.842 → trunk 0.07; trunk bands brown, canopy bands green.
+    expect(s.card.runs[0].vis, 'the file starts with an empty sky margin')
+        .toBe(false);
+    expect(s.card.runs[0].bot, 'sky margin above the tip (whole tree in frame)')
+        .toBeGreaterThan(0.0);
+    expect(s.card.runs[0].bot, 'tip not cropped by the frame top')
+        .toBeLessThanOrEqual(0.12);
+    const interiorGaps = s.card.runs.filter(
+        (r, i) => i > 0 && i < s.card.runs.length - 1 && !r.vis);
+    expect(interiorGaps.length,
+        'no empty row-run inside the canopy body (the iter-60 floating ' +
+        'fragment regression): ' + JSON.stringify(s.card.runs))
+        .toBe(0);
+    expect(s.card.runs[s.card.runs.length - 1].vis,
+        'the canopy runs through the file bottom (trunk seated at the base)')
         .toBe(true);
-    for (let i = 1; i < b.length; i++) {
-        expect(b[i] >= b[i - 1],
-            'band ' + i + ' coverage non-decreasing upward (' + b[i - 1] +
-            ' → ' + b[i] + ')').toBe(true);
+
+    // Conifer taper: the widest row-band sits in the lower third and every
+    // band ABOVE it is narrower (≤ +12% noise tolerance), with the top band
+    // ≤ 25% of the widest (review-60 (a)).
+    const wMax = Math.max(...s.card.widths);
+    const wMaxBand = s.card.widths.indexOf(wMax);
+    expect(wMaxBand, 'widest whorl in the lower third of the card')
+        .toBeGreaterThanOrEqual(10);
+    for (let i = 1; i <= wMaxBand; i++) {
+        expect(s.card.widths[i - 1] <= s.card.widths[i] * 1.12 + 0.004,
+            'width shrinks monotonically toward the tip below band ' + i +
+            ' (' + s.card.widths[i - 1] + ' vs ' + s.card.widths[i] + ')')
+            .toBe(true);
     }
+    expect(s.card.widths[0], 'top band ≤ 25% of the widest whorl (spire)')
+        .toBeLessThanOrEqual(0.25 * wMax);
+
+    // Colour: the impostor must not read as a black silhouette against the
+    // snow (review-60 (b)): mean solid-pixel luminance ≥ 0.18, green leads.
+    expect(s.card.lum, 'mean impostor luminance ≥ 0.18, got ' + s.card.lum)
+        .toBeGreaterThanOrEqual(0.18);
+    expect(s.card.meanRGB[1], 'green channel leads the canopy mean')
+        .toBeGreaterThan(s.card.meanRGB[0]);
+    expect(s.card.meanRGB[1]).toBeGreaterThan(s.card.meanRGB[2]);
+
+    // Trunk visible over the bottom ~15%: opaque at the centre line, sky at
+    // the base sides (no canopy skirt down there).
+    expect(s.card.trunkCentre, 'trunk column present at the base')
+        .toBeGreaterThan(0.05);
+    expect(s.card.trunkSides, 'no canopy at the base sides (bare trunk)')
+        .toBeLessThan(0.01);
+
     expect(s.card.topCornerMaxAlpha,
         'top corners are transparent sky (alpha ~0 at the frame top edges)')
         .toBeLessThan(0.02);
-    expect(s.card.bottomCentreMeanAlpha,
-        'bottom centre rows are opaque trunk')
-        .toBeGreaterThan(0.60);
 });

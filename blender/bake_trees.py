@@ -39,7 +39,8 @@ TRUNK_H = 3.2
 TRUNK_R0 = 0.30
 TRUNK_R1 = 0.14
 TOP_Z = 13.6          # total height incl. the top spike
-NEEDLE = (0.070, 0.110, 0.078)    # dark cold green (reads grey-green in sun)
+NEEDLE = (0.090, 0.200, 0.120)    # inside the review-60 spruce band
+                                   # (0.08-0.14, 0.18-0.28, 0.10-0.16)
 TRUNK_COL = (0.16, 0.105, 0.07)
 SNOW = (0.93, 0.95, 0.98)
 
@@ -104,7 +105,10 @@ def _add_cone(r0, r1, depth, mat, loc, quat=None, seg=8):
 
 def build_spruce():
     rng = random.Random(30115)
-    mat_needle = _mat_snow('needle', NEEDLE, 0.18, 0.70, 1.0)
+    # Snow keyed lower on normal.z than the 0.18-0.70 of iters 56-61: the
+    # straight-on view washed the mix out and the forest read near-black
+    # (review-60 tonality complaint). 0.12-0.60 loads the up-facing sides.
+    mat_needle = _mat_snow('needle', NEEDLE, 0.12, 0.60, 1.0)
     mat_trunk = _mat_snow('trunk', TRUNK_COL, 0.30, 0.95, 0.55)
 
     _add_cone(TRUNK_R0, TRUNK_R1, TRUNK_H, mat_trunk,
@@ -112,12 +116,22 @@ def build_spruce():
 
     n_layers = 15
     golden = math.pi * (3 - math.sqrt(5))
+    # Review-60 (a): the layer radius must shrink monotonically toward the
+    # tip while being irregular (±20% per layer) — jitter then clamp with a
+    # running minimum so the envelope stays monotone.
+    prev_r = None
     for i in range(n_layers):
         t = i / (n_layers - 1)
-        z = 2.4 + t * (TOP_Z - 3.4)
-        layer_r = 2.35 * (1.0 - t) ** 0.85 + 0.12
-        droop = math.radians(14 + 30 * t)
-        n_br = max(5, 12 - int(6 * t))
+        z = 2.6 + t * (TOP_Z - 3.6)
+        layer_r = 2.35 * (1.0 - t) ** 0.85 + 0.15
+        layer_r *= rng.uniform(0.80, 1.20)
+        if prev_r is not None:
+            layer_r = min(layer_r, prev_r * 0.97)
+        prev_r = layer_r
+        # Bottom whorls sweep UP (negative droop) so the trunk stays visible
+        # over the tree's bottom ~15% (review-60 (a)); upper layers droop.
+        droop = math.radians(-9 + 16 * min(t / 0.14, 1.0) + 22 * t)
+        n_br = max(6, 13 - int(6 * t))
         for j in range(n_br):
             phi = j * (2 * math.pi / n_br) + golden * (i % 3) + rng.uniform(-0.12, 0.12)
             br_len = layer_r * rng.uniform(0.92, 1.10)
@@ -127,12 +141,33 @@ def build_spruce():
             start = Vector((math.cos(phi) * 0.22, math.sin(phi) * 0.22, z))
             quat = d.to_track_quat('Z', 'Y')
             centre = start + d * (br_len / 2)
-            r0 = 0.24 * (0.50 + 0.50 * (1 - t))
+            # Thicker branchlets than iter 56 (0.24): layered skirts instead
+            # of isolated spikes once the droop orientation survives.
+            r0 = 0.30 * (0.55 + 0.45 * (1 - t))
             _add_cone(r0, 0.02, br_len, mat_needle, centre, quat, seg=7)
 
-    # top spike
-    _add_cone(0.22, 0.01, 1.6, mat_needle,
-              (0, 0, TOP_Z - 0.8), seg=8)
+    # top spike: base buried in the topmost whorls (11.2) so the silhouette
+    # is continuous to the tip — no detached fragment above an empty band.
+        # Internode filler between whorls: closes the sky gaps a real spruce
+        # shows only near its spire, not through the mid canopy (iter-62
+        # row-census gate: no empty row-run inside the canopy body).
+        if i < n_layers - 1:
+            z_mid = z + (z + (TOP_Z - 3.6) / (n_layers - 1) - z) * 0.5
+            t_mid = (z_mid - 2.6) / (TOP_Z - 3.6)
+            r_mid = layer_r * 0.72
+            droop_mid = droop + math.radians(6)
+            for j in range(max(3, n_br // 2)):
+                phi = (j + 0.5) * (2 * math.pi / max(3, n_br // 2)) + golden * i
+                br_len = r_mid * rng.uniform(0.85, 1.05)
+                d = Vector((math.cos(phi) * math.cos(droop_mid),
+                            math.sin(phi) * math.cos(droop_mid),
+                            -math.sin(droop_mid)))
+                start = Vector((math.cos(phi) * 0.20, math.sin(phi) * 0.20, z_mid))
+                quat = d.to_track_quat('Z', 'Y')
+                centre = start + d * (br_len / 2)
+                _add_cone(r0 * 0.7, 0.02, br_len, mat_needle, centre, quat, seg=6)
+    _add_cone(0.35, 0.01, 2.4, mat_needle,
+              (0, 0, TOP_Z - 1.0), seg=8)
 
 
 # ── Lighting / camera ─────────────────────────────────────────────────────────
@@ -158,20 +193,26 @@ def render_view(out_path, res_x, res_y, yaw_deg, ortho_w, height):
     scn = bpy.context.scene
     cam = scn.camera
     cam.data.type = 'ORTHO'
+    # Pin the fit axis: with sensor_fit AUTO this Blender build frames a
+    # 512x1024 portrait render at only ~10.5 m of world height for
+    # ortho_scale 7.3 (measured, iter 62), which cropped the tree top into
+    # the "floating fragment". HORIZONTAL makes ortho_scale the world WIDTH
+    # and the height ortho_scale * res_y/res_x — the 7.3 x 14.6 frame the
+    # card quad (CARD_W/CARD_H in game.js) assumes.
+    cam.data.sensor_fit = 'HORIZONTAL'
     cam.data.ortho_scale = ortho_w
-    cam.location = (0, -30, height / 2)
-    cam.rotation_euler = Euler((math.radians(90), 0, 0), 'XYZ')
-    for o in bpy.context.scene.objects:
-        if o.type == 'MESH':
-            o.rotation_mode = 'XYZ'
-            o.rotation_euler = (0, 0, math.radians(yaw_deg))
+    d = math.radians(yaw_deg)
+    # Orbit the CAMERA around the tree. The old code rotated the MESHES
+    # (rotation_mode='XYZ' + rotation_euler=(0,0,yaw)), which threw away the
+    # branch cones' droop quaternions: every branch rendered as a vertical
+    # spike (the "columnar stacks with flat white tops" from review-60) and
+    # all 8 atlas views were the same frontal stack (coverage spread 0.005).
+    cam.location = (30 * math.sin(d), -30 * math.cos(d), height / 2)
+    cam.rotation_euler = Euler((math.radians(90), 0, d), 'XYZ')
     scn.render.filepath = out_path
     scn.render.resolution_x = res_x
     scn.render.resolution_y = res_y
     bpy.ops.render.render(write_still=True)
-    for o in bpy.context.scene.objects:
-        if o.type == 'MESH':
-            o.rotation_euler = (0, 0, 0)
 
 
 # ── Atlas composition + measurements ─────────────────────────────────────────

@@ -1289,7 +1289,9 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=17';   // 17: athlete rebuild — un-mirrored bib number plates (build_body.py)
+    const ASSET_V = '?v=18';   // 18: tree bake re-render — camera orbit + pinned
+                               // ortho fit (real drooping silhouette), lighter
+                               // needle, heavier snow (bake_trees.py)
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
