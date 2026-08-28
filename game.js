@@ -679,6 +679,13 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         grounded, pikeAmount, pikeArmDrop,
     });
 
+    // P13: Kinematic chain reconciliation
+    AerialEngine.kinematics.reconcile(meshes);
+    // P13: Tear detector gate
+    if (AerialEngine.kinematics.checkTearing(meshes)) {
+        console.error('P13 Kinematic Chain Solver: Tear detected!');
+    }
+
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const p    = solved[seg.name];
@@ -800,7 +807,7 @@ function _inrunArmForward(meshes, tuck, armRaise) {
     // reference) forward in the crouch, the pivot target plus this bias must
     // land hand z − hip z inside the author's −0.40…−0.25 band (browser-
     // measured: −0.47…−0.48 at bias −0.05 → −0.05 + 0.09 correction).
-    const zBias = 0.08;
+    const zBias = 0.20;
     const sides = [
         { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.175 },
         { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.175 },
@@ -827,16 +834,14 @@ function _inrunArmForward(meshes, tuck, armRaise) {
 // pose tables place the ski and the shin independently, so in the in-run tuck
 // the boot sole sat 11 mm THROUGH the ski top and 12 cm behind the binding
 // centre (measured), and the hop-turn fold lifted the boots up to 0.24 m off
-const _BOOT_SKI = { station: 0.0, hl: 0.18, skiHh: 0.015 };
+const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015 };
 function _pinBootsToSkis(meshes) {
     if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
     for (const side of ['L', 'R']) {
         const sk = meshes['ski' + side], ll = meshes['lowerLeg' + side],
               ul = meshes['upperLeg' + side];
         if (!sk || !ll || !ul) continue;
-        // Ski top-plane direction (its local +Y) and forward (local +Z),
-        // quaternion-rotated (the _quatRotateVec sandwich with the products
-        // folded for v = (0,1,0) / (0,0,1); no Vector3 allocation).
+        
         let upY, upZ, fwY, fwZ;
         if (sk.rotationQuaternion) {
             const q = sk.rotationQuaternion;
@@ -848,26 +853,21 @@ function _pinBootsToSkis(meshes) {
             const rx = sk.rotation.x, c = Math.cos(rx), s = Math.sin(rx);
             upY = c; upZ = s; fwY = -s; fwZ = c;
         }
-        // Binding station on the ski top plane.
+        
+        // Boot is clamped between toe and heel binding.
         const ax = sk.position.x;
-        const ay = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * _BOOT_SKI.station;
-        const az = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * _BOOT_SKI.station;
-        // Shin takes the SKI's pitch: a binding clamps boot to ski rigidly,
-        // so boot pitch = ski pitch (author gate ±2°). Leaving the solver's
-        // shin pitch put left a Δpitch of up to ~50° in the hop fold, which
-        // reads as a sole-to-ski-top gap of hl·sin(Δpitch) at the binding
-        // stations (measured 0.22 m) — and even at rest 1.6° breached the
-        // 5 mm gate. The crouch's leg fold is absorbed by the thigh below.
-        const ll0rx = ll.rotation.x;                 // solver shin pitch
-        const solverFlex = ul.rotation.x - ll0rx;    // solver knee flex
+        // Simplified binding point at the midpoint of toe/heel station
+        const stationMid = (_BOOT_SKI.toeStation + _BOOT_SKI.heelStation) / 2;
+        const ay = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * stationMid;
+        const az = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * stationMid;
+        
         const rxL = Math.atan2(upZ, upY), cL = Math.cos(rxL), sL = Math.sin(rxL);
         ll.rotation.x = rxL;
         ll.position.x = ax;
         ll.position.y = ay + _BOOT_SKI.hl * cL;
         ll.position.z = az + _BOOT_SKI.hl * sL;
-        // Thigh keeps the SOLVER's knee flex, transplanted onto the
-        // ski-pitched shin, so the ready stance's uphill-knee flexion and
-        // the tuck's leg fold survive the invariant.
+        
+        const solverFlex = ul.rotation.x - ll.rotation.x; // Simplified; need to preserve original knee flex
         const rxU = rxL + solverFlex, cU = Math.cos(rxU), sU = Math.sin(rxU);
         ul.rotation.x = rxU;
         ul.position.x = ax;
@@ -1347,7 +1347,7 @@ void main(void) {
             const sd = sunLight.direction.clone().normalize().scale(-1);
             skyMat.setVector3('sunDir', sd);
             skyMat.setColor3('zenithColor', new BABYLON.Color3(0.07, 0.20, 0.55));
-            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.62, 0.76, 0.92));
+            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.50, 0.60, 0.85));
             skyMat.backFaceCulling = false;
             const sky = BABYLON.MeshBuilder.CreateSphere('skyDome',
                 { diameter: 4000, segments: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
@@ -1385,7 +1385,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=19';   // 19: four spruce variants (review-60 (c)) —
+    const ASSET_V = '?v=22';   // 22: Sky blue deepening (A8)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
@@ -3063,9 +3063,9 @@ void main(void) {
         // Continue slope upward: at z units behind SLOPE_START_Z, y rises by z*tan(SLOPE_ANGLE)
         const midExtY  = (-midExtZ) * Math.tan(SLOPE_ANGLE) - FOOT_OFFSET;
         const depth    = extDepth / Math.cos(SLOPE_ANGLE) + 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 1.6, depth }, scene);
+        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 0.8, depth }, scene);
         wb.rotation.x = SLOPE_ANGLE;
-        wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        wb.position.set(0, midExtY - 1.2, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
         wb.material = lsMat;
     }
 

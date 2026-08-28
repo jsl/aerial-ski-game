@@ -53,10 +53,10 @@ const POSE_UNTUCKED = {
 const POSE_INRUN_TUCK = {
     torso:     { x:  0.000, y:  0.000, rx: -1.10, rz:  0.00, dz: -0.10 },  // torso tips forward
     head:      { x:  0.000, y:  0.160, rx: -1.00, rz:  0.00, dz: -0.45 },  // head drives forward/down
-    upperArmL: { x: -0.175, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.175, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.175, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.175, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.15 },
+    upperArmR: { x:  0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.15 },
+    lowerArmL: { x: -0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.30 },
+    lowerArmR: { x:  0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.30 },
     upperLegL: { x: -0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },  // thighs push back
     upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
     lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward

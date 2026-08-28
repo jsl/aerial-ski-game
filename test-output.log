@@ -1,0 +1,646 @@
+── Unit + live differential ─────────────────────────────────
+TAP version 13
+# Subtest: game.js consumes the engine core rather than duplicating it
+ok 1 - game.js consumes the engine core rather than duplicating it
+  ---
+  duration_ms: 2.446315
+  type: 'test'
+  ...
+# Subtest: engine module load order is consistent across all three entry points
+ok 2 - engine module load order is consistent across all three entry points
+  ---
+  duration_ms: 4.117745
+  type: 'test'
+  ...
+# Subtest: every browser-loaded engine module is browser-safe
+ok 3 - every browser-loaded engine module is browser-safe
+  ---
+  duration_ms: 3.074944
+  type: 'test'
+  ...
+# Subtest: engine/ contains no renderer or DOM references (ADR-0002)
+ok 4 - engine/ contains no renderer or DOM references (ADR-0002)
+  ---
+  duration_ms: 0.800935
+  type: 'test'
+  ...
+# Subtest: DEFAULT_LAND_TOL is the 45 degree window
+ok 5 - DEFAULT_LAND_TOL is the 45 degree window
+  ---
+  duration_ms: 1.611881
+  type: 'test'
+  ...
+# Subtest: isFeetDown matches the original over many rotations
+ok 6 - isFeetDown matches the original over many rotations
+  ---
+  duration_ms: 13.790479
+  type: 'test'
+  ...
+# Subtest: isFeetDown boundaries are exact
+ok 7 - isFeetDown boundaries are exact
+  ---
+  duration_ms: 0.183497
+  type: 'test'
+  ...
+# Subtest: isFeetDown honours a custom tolerance
+ok 8 - isFeetDown honours a custom tolerance
+  ---
+  duration_ms: 0.169647
+  type: 'test'
+  ...
+# Subtest: executionScore matches the original, including rounding
+ok 9 - executionScore matches the original, including rounding
+  ---
+  duration_ms: 9.216662
+  type: 'test'
+  ...
+# Subtest: signedLean matches the original and flips sign past PI
+ok 10 - signedLean matches the original and flips sign past PI
+  ---
+  duration_ms: 6.860615
+  type: 'test'
+  ...
+# Subtest: the running game exposes the wired engine namespaces
+ok 11 - the running game exposes the wired engine namespaces
+  ---
+  duration_ms: 1.870466
+  type: 'test'
+  ...
+# Subtest: lerp: the running game uses the engine module, not a copy of it
+ok 12 - lerp: the running game uses the engine module, not a copy of it
+  ---
+  duration_ms: 5.612368
+  type: 'test'
+  ...
+# Subtest: armSweep: dual-mode wrapper behaves identically in both realms
+ok 13 - armSweep: dual-mode wrapper behaves identically in both realms
+  ---
+  duration_ms: 17.256276
+  type: 'test'
+  ...
+# Subtest: computeI: dual-mode wrapper behaves identically in both realms
+ok 14 - computeI: dual-mode wrapper behaves identically in both realms
+  ---
+  duration_ms: 17.196557
+  type: 'test'
+  ...
+# Subtest: computeI: injected-model path matches the default path
+ok 15 - computeI: injected-model path matches the default path
+  ---
+  duration_ms: 2.1784
+  type: 'test'
+  ...
+# Subtest: body-model: extracted constants match the ones game.js still holds
+ok 16 - body-model: extracted constants match the ones game.js still holds
+  ---
+  duration_ms: 1.305276
+  type: 'test'
+  ...
+# Subtest: the pose tables are GONE from game.js, not merely duplicated
+ok 17 - the pose tables are GONE from game.js, not merely duplicated
+  ---
+  duration_ms: 7.979845
+  type: 'test'
+  ...
+# Subtest: body-model tables are deep-frozen
+ok 18 - body-model tables are deep-frozen
+  ---
+  duration_ms: 0.308735
+  type: 'test'
+  ...
+# Subtest: lerp exact identities
+ok 19 - lerp exact identities
+  ---
+  duration_ms: 1.365175
+  type: 'test'
+  ...
+# Subtest: lerp differential vs lerpOriginal over 2000 seeded pairs
+ok 20 - lerp differential vs lerpOriginal over 2000 seeded pairs
+  ---
+  duration_ms: 4.364871
+  type: 'test'
+  ...
+# Subtest: normalizeAngle maps angles into [0, TWO_PI)
+ok 21 - normalizeAngle maps angles into [0, TWO_PI)
+  ---
+  duration_ms: 3.343729
+  type: 'test'
+  ...
+# Subtest: clamp bounds values correctly
+ok 22 - clamp bounds values correctly
+  ---
+  duration_ms: 0.160057
+  type: 'test'
+  ...
+# Subtest: game.js defines no top-level function outside the allowed renderer set
+ok 23 - game.js defines no top-level function outside the allowed renderer set
+  ---
+  duration_ms: 3.136033
+  type: 'test'
+  ...
+# Subtest: game.js holds no physics constants
+ok 24 - game.js holds no physics constants
+  ---
+  duration_ms: 1.578191
+  type: 'test'
+  ...
+# Subtest: every engine module is reachable through the AerialEngine namespace
+ok 25 - every engine module is reachable through the AerialEngine namespace
+  ---
+  duration_ms: 3.495516
+  type: 'test'
+  ...
+# Subtest: computePose reproduces live applyPose across the parameter space
+ok 26 - computePose reproduces live applyPose across the parameter space
+  ---
+  duration_ms: 44.308474
+  type: 'test'
+  ...
+# Subtest: computePose matches on the branch boundaries
+ok 27 - computePose matches on the branch boundaries
+  ---
+  duration_ms: 0.788025
+  type: 'test'
+  ...
+# Subtest: computePose defaults pikeAmount/pikeArmDrop like the original
+ok 28 - computePose defaults pikeAmount/pikeArmDrop like the original
+  ---
+  duration_ms: 0.282905
+  type: 'test'
+  ...
+# Subtest: computePose is pure — it does not touch the meshes
+ok 29 - computePose is pure — it does not touch the meshes
+  ---
+  duration_ms: 0.386443
+  type: 'test'
+  ...
+# Subtest: armSweep matches original over 2000+ deterministic pseudo-random inputs
+ok 30 - armSweep matches original over 2000+ deterministic pseudo-random inputs
+  ---
+  duration_ms: 8.610323
+  type: 'test'
+  ...
+# Subtest: armSweep edge cases: t = 0 for all four names
+ok 31 - armSweep edge cases: t = 0 for all four names
+  ---
+  duration_ms: 0.240046
+  type: 'test'
+  ...
+# Subtest: armSweep edge cases: t = 0.5 for all four names
+ok 32 - armSweep edge cases: t = 0.5 for all four names
+  ---
+  duration_ms: 0.185787
+  type: 'test'
+  ...
+# Subtest: armSweep edge cases: t = 1 for all four names
+ok 33 - armSweep edge cases: t = 1 for all four names
+  ---
+  duration_ms: 0.174797
+  type: 'test'
+  ...
+# Subtest: constants have the calibrated values
+ok 34 - constants have the calibrated values
+  ---
+  duration_ms: 1.913705
+  type: 'test'
+  ...
+# Subtest: unfilled meter on keyboard gives ~6.7% flip speed
+ok 35 - unfilled meter on keyboard gives ~6.7% flip speed
+  ---
+  duration_ms: 0.288375
+  type: 'test'
+  ...
+# Subtest: calibration power (3rd dash) yields exactly world-normal speed
+ok 36 - calibration power (3rd dash) yields exactly world-normal speed
+  ---
+  duration_ms: 0.139368
+  type: 'test'
+  ...
+# Subtest: overcharged meter exceeds world-normal speed
+ok 37 - overcharged meter exceeds world-normal speed
+  ---
+  duration_ms: 0.154757
+  type: 'test'
+  ...
+# Subtest: half power sits strictly between unfilled and full
+ok 38 - half power sits strictly between unfilled and full
+  ---
+  duration_ms: 0.177317
+  type: 'test'
+  ...
+# Subtest: monotonic non-decreasing over 1000 values of flipPower from 0 to 1
+ok 39 - monotonic non-decreasing over 1000 values of flipPower from 0 to 1
+  ---
+  duration_ms: 1.09939
+  type: 'test'
+  ...
+# Subtest: gamepad floor makes an unpowered take-off a full flip
+ok 40 - gamepad floor makes an unpowered take-off a full flip
+  ---
+  duration_ms: 0.214197
+  type: 'test'
+  ...
+# Subtest: gamepad overcharge still exceeds world-normal speed
+ok 41 - gamepad overcharge still exceeds world-normal speed
+  ---
+  duration_ms: 0.133347
+  type: 'test'
+  ...
+# Subtest: REGRESSION: keyboard min power must stay below calibration power
+ok 42 - REGRESSION: keyboard min power must stay below calibration power
+  ---
+  duration_ms: 0.459951
+  type: 'test'
+  ...
+# Subtest: angularVelocity with no options is exactly L / I
+ok 43 - angularVelocity with no options is exactly L / I
+  ---
+  duration_ms: 2.327408
+  type: 'test'
+  ...
+# Subtest: maxOmega caps, and only when it is a number
+ok 44 - maxOmega caps, and only when it is a number
+  ---
+  duration_ms: 0.221746
+  type: 'test'
+  ...
+# Subtest: singleLayout cap scales with tuck/pike boost
+ok 45 - singleLayout cap scales with tuck/pike boost
+  ---
+  duration_ms: 0.175747
+  type: 'test'
+  ...
+# Subtest: caps apply in the original order: maxOmega then singleLayout
+ok 46 - caps apply in the original order: maxOmega then singleLayout
+  ---
+  duration_ms: 0.141128
+  type: 'test'
+  ...
+# Subtest: integrateFlip matches the original expression bit-for-bit
+ok 47 - integrateFlip matches the original expression bit-for-bit
+  ---
+  duration_ms: 0.326864
+  type: 'test'
+  ...
+# Subtest: frontflip boost applies only to flipDir === -1
+ok 48 - frontflip boost applies only to flipDir === -1
+  ---
+  duration_ms: 0.198746
+  type: 'test'
+  ...
+# Subtest: clampToFullRotation bounds the result, and only when asked
+ok 49 - clampToFullRotation bounds the result, and only when asked
+  ---
+  duration_ms: 0.251765
+  type: 'test'
+  ...
+# Subtest: integrateFlip is pure — it mutates nothing
+ok 50 - integrateFlip is pure — it mutates nothing
+  ---
+  duration_ms: 0.229616
+  type: 'test'
+  ...
+# Subtest: tests/golden/smoke.js runs cleanly
+ok 51 - tests/golden/smoke.js runs cleanly
+  ---
+  duration_ms: 310.035168
+  type: 'test'
+  ...
+# Subtest: tests/golden/probe.js runs cleanly
+ok 52 - tests/golden/probe.js runs cleanly
+  ---
+  duration_ms: 373.211608
+  type: 'test'
+  ...
+# Subtest: tests/golden/check-math.js runs cleanly
+ok 53 - tests/golden/check-math.js runs cleanly
+  ---
+  duration_ms: 277.656997
+  type: 'test'
+  ...
+# Subtest: tests/golden/debug-mesh.js runs cleanly
+ok 54 - tests/golden/debug-mesh.js runs cleanly
+  ---
+  duration_ms: 193.302542
+  type: 'test'
+  ...
+# Subtest: tests/golden/bug-ragdoll.js runs cleanly
+ok 55 - tests/golden/bug-ragdoll.js runs cleanly
+  ---
+  duration_ms: 395.968594
+  type: 'test'
+  ...
+# Subtest: tests/golden/check-distinct.js runs and produces a report
+ok 56 - tests/golden/check-distinct.js runs and produces a report
+  ---
+  duration_ms: 410.792544
+  type: 'test'
+  ...
+# PROFILE_GATES ok: worst slope 40.00 deg (limit 40.0); vs old crease 95.8cm above / 6.7cm into
+# Subtest: terrainRootY matches live game.js for (default)
+ok 57 - terrainRootY matches live game.js for (default)
+  ---
+  duration_ms: 94.909243
+  type: 'test'
+  ...
+# Subtest: terrainAccelZ matches live game.js for (default)
+ok 58 - terrainAccelZ matches live game.js for (default)
+  ---
+  duration_ms: 89.56099
+  type: 'test'
+  ...
+# Subtest: terrainRootY matches live game.js for ?world=triple
+ok 59 - terrainRootY matches live game.js for ?world=triple
+  ---
+  duration_ms: 80.538924
+  type: 'test'
+  ...
+# Subtest: terrainAccelZ matches live game.js for ?world=triple
+ok 60 - terrainAccelZ matches live game.js for ?world=triple
+  ---
+  duration_ms: 118.360996
+  type: 'test'
+  ...
+# Subtest: terrainRootY matches live game.js for ?world=quint
+ok 61 - terrainRootY matches live game.js for ?world=quint
+  ---
+  duration_ms: 126.791263
+  type: 'test'
+  ...
+# Subtest: terrainAccelZ matches live game.js for ?world=quint
+ok 62 - terrainAccelZ matches live game.js for ?world=quint
+  ---
+  duration_ms: 117.085169
+  type: 'test'
+  ...
+# Subtest: terrainRootY matches live game.js for ?world=trampoline
+ok 63 - terrainRootY matches live game.js for ?world=trampoline
+  ---
+  duration_ms: 15.067556
+  type: 'test'
+  ...
+# Subtest: terrainAccelZ matches live game.js for ?world=trampoline
+ok 64 - terrainAccelZ matches live game.js for ?world=trampoline
+  ---
+  duration_ms: 14.971858
+  type: 'test'
+  ...
+# Subtest: terrainRootY matches live game.js for ?world=pool
+ok 65 - terrainRootY matches live game.js for ?world=pool
+  ---
+  duration_ms: 15.465529
+  type: 'test'
+  ...
+# Subtest: terrainAccelZ matches live game.js for ?world=pool
+ok 66 - terrainAccelZ matches live game.js for ?world=pool
+  ---
+  duration_ms: 9.151613
+  type: 'test'
+  ...
+# Subtest: the config actually drives the profile — it is not decorative
+ok 67 - the config actually drives the profile — it is not decorative
+  ---
+  duration_ms: 128.337405
+  type: 'test'
+  ...
+# Subtest: landing-profile blend gates: no overshoot, monotone, correct side
+ok 68 - landing-profile blend gates: no overshoot, monotone, correct side
+  ---
+  duration_ms: 60.45423
+  type: 'test'
+  ...
+# Subtest: macroField is periodic on the unit square (seamless at any uScale)
+ok 69 - macroField is periodic on the unit square (seamless at any uScale)
+  ---
+  duration_ms: 1.296327
+  type: 'test'
+  ...
+# Subtest: macroField mean is 0.5 and stays in 0..1 (grey-ramp neutrality)
+ok 70 - macroField mean is 0.5 and stays in 0..1 (grey-ramp neutrality)
+  ---
+  duration_ms: 7.913416
+  type: 'test'
+  ...
+# Subtest: DD_TABLE is intact and game.js no longer carries a copy
+ok 71 - DD_TABLE is intact and game.js no longer carries a copy
+  ---
+  duration_ms: 3.012416
+  type: 'test'
+  ...
+# Subtest: calcDD matches game.js across the table and the fallback
+ok 72 - calcDD matches game.js across the table and the fallback
+  ---
+  duration_ms: 0.816995
+  type: 'test'
+  ...
+# Subtest: calcDD honours an injected table (ADR-0003: per-discipline scoring)
+ok 73 - calcDD honours an injected table (ADR-0003: per-discipline scoring)
+  ---
+  duration_ms: 0.251805
+  type: 'test'
+  ...
+# Subtest: matchTrick matches game.js across shapes, twists and the tucked flag
+ok 74 - matchTrick matches game.js across shapes, twists and the tucked flag
+  ---
+  duration_ms: 0.616879
+  type: 'test'
+  ...
+# Subtest: game.js no longer defines its own DD_TABLE, matchTrick or calcDD
+ok 75 - game.js no longer defines its own DD_TABLE, matchTrick or calcDD
+  ---
+  duration_ms: 2.17652
+  type: 'test'
+  ...
+# Subtest: DD_TABLE is frozen against mutation by any caller
+ok 76 - DD_TABLE is frozen against mutation by any caller
+  ---
+  duration_ms: 0.196627
+  type: 'test'
+  ...
+1..76
+# tests 76
+# suites 0
+# pass 76
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2134.660171
+unit: PASS
+
+── Golden-master traces ─────────────────────────────────────
+PASS       aerial-idle                      48 keyframes
+FAIL       aerial-nopower-run               
+      frame[435].d: 1489765150 → 3308088656
+      frame[435].nodes.head.p[0]: -0.000132 → -0.000011
+      frame[435].nodes.head.p[1]: 0.41047 → 0.403947
+      frame[435].nodes.head.p[2]: 0.001595 → -0.019484
+      frame[435].nodes.head.r[0]: 0.03079 → 0.0025
+      frame[435].nodes.head.r[2]: -0.001094 → -0.000089
+FAIL       aerial-power-25                  
+      frame[435].d: 4123954524 → 239785846
+      frame[435].nodes.head.p[0]: 0.000014 → -0.000003
+      frame[435].nodes.head.p[1]: 0.356557 → 0.36474
+      frame[435].nodes.head.p[2]: -0.006627 → 0.01801
+      frame[435].nodes.head.r[0]: -0.003993 → 0.000671
+      frame[435].nodes.head.r[2]: 0.000117 → -0.000027
+PASS       aerial-power-75                  180 keyframes
+FAIL       aerial-power-full                
+      frame[435].d: 2585735394 → 1106111468
+      frame[435].nodes.head.p[0]: 0.000094 → 0.000008
+      frame[435].nodes.head.p[1]: 0.380582 → 0.362111
+      frame[435].nodes.head.p[2]: -0.026147 → -0.01543
+      frame[435].nodes.head.r[0]: -0.025973 → -0.002398
+      frame[435].nodes.head.r[2]: 0.000781 → 0.000067
+FAIL       aerial-tuck                      
+      frame[435].d: 1523315215 → 1674062461
+      frame[435].nodes.head.p[1]: 0.331782 → 0.332002
+      frame[435].nodes.head.p[2]: 0.127056 → 0.153573
+      frame[435].nodes.head.r[0]: 0.447768 → 0.4506
+      frame[435].nodes.head.r[2]: 0.000006 → 0.000004
+      frame[435].nodes.head.w[1]: -7.352083 → -7.325571
+PASS       aerial-tuck-short                180 keyframes
+PASS       aerial-tuck-long                 220 keyframes
+FAIL       aerial-pike                      
+      frame[435].d: 1361325250 → 3015698289
+      frame[435].nodes.head.p[0]: -0.000095 → -0.000009
+      frame[435].nodes.head.p[1]: 0.408716 → 0.398267
+      frame[435].nodes.head.p[2]: -0.005813 → -0.023723
+      frame[435].nodes.head.r[0]: 0.031049 → 0.002764
+      frame[435].nodes.head.r[2]: -0.000785 → -0.000078
+FAIL       aerial-offaxis-keya              
+      frame[435].d: 1048928173 → 1261405069
+      frame[435].nodes.head.p[0]: -0.003258 → 0.003108
+      frame[435].nodes.head.p[1]: 0.376817 → 0.360532
+      frame[435].nodes.head.p[2]: 0.011559 → 0.021184
+      frame[435].nodes.head.r[0]: 0.074819 → 0.107701
+      frame[435].nodes.head.r[2]: 0.007905 → 0.000797
+FAIL       aerial-offaxis-keyd              
+      frame[435].d: 828026927 → 3395921281
+      frame[435].nodes.head.p[0]: 0.003513 → -0.00306
+      frame[435].nodes.head.p[1]: 0.376822 → 0.360532
+      frame[435].nodes.head.p[2]: 0.011511 → 0.021178
+      frame[435].nodes.head.r[0]: 0.075219 → 0.107749
+      frame[435].nodes.head.r[2]: -0.005791 → -0.000392
+FAIL       aerial-twist-left                
+      frame[435].d: 903758274 → 943634655
+      frame[435].nodes.head.p[0]: 0.000019 → 0.000002
+      frame[435].nodes.head.p[1]: 0.374647 → 0.396444
+      frame[435].nodes.head.p[2]: -0.024737 → -0.025053
+      frame[435].nodes.head.r[0]: -0.001445 → -0.000054
+      frame[435].nodes.head.r[2]: 0.00016 → 0.000019
+FAIL       aerial-twist-right               
+      frame[435].d: 1124888324 → 2070983136
+      frame[435].nodes.head.p[0]: 0.000019 → 0.000002
+      frame[435].nodes.head.p[1]: 0.374647 → 0.396444
+      frame[435].nodes.head.p[2]: -0.024738 → -0.025053
+      frame[435].nodes.head.r[0]: -0.001445 → -0.000054
+      frame[435].nodes.head.r[2]: 0.000162 → 0.000019
+FAIL       aerial-twist-double-mode         
+      frame[435].d: 2014754039 → 666398905
+      frame[435].nodes.head.p[0]: 0.000094 → 0.000008
+      frame[435].nodes.head.p[1]: 0.380582 → 0.362111
+      frame[435].nodes.head.p[2]: -0.026147 → -0.01543
+      frame[435].nodes.head.r[0]: -0.025973 → -0.002398
+      frame[435].nodes.head.r[2]: 0.000781 → 0.000067
+FAIL       aerial-twist-rightspin-setting   
+      frame[435].d: 903758274 → 943634655
+      frame[435].nodes.head.p[0]: 0.000019 → 0.000002
+      frame[435].nodes.head.p[1]: 0.374647 → 0.396444
+      frame[435].nodes.head.p[2]: -0.024737 → -0.025053
+      frame[435].nodes.head.r[0]: -0.001445 → -0.000054
+      frame[435].nodes.head.r[2]: 0.00016 → 0.000019
+FAIL       aerial-full-twisting-double      
+      frame[435].d: 742962289 → 2188404595
+      frame[435].nodes.head.p[1]: 0.331782 → 0.332002
+      frame[435].nodes.head.p[2]: 0.127056 → 0.153573
+      frame[435].nodes.head.r[0]: 0.447768 → 0.4506
+      frame[435].nodes.head.r[2]: 0.000006 → 0.000004
+      frame[435].nodes.head.w[1]: -7.352083 → -7.325571
+FAIL       aerial-crash-ragdoll             
+      frame[435].d: 3939590530 → 386915984
+      frame[435].nodes.head.p[1]: 0.331782 → 0.332002
+      frame[435].nodes.head.p[2]: 0.127056 → 0.153573
+      frame[435].nodes.head.r[0]: 0.447768 → 0.4506
+      frame[435].nodes.head.r[2]: 0.000006 → 0.000004
+      frame[435].nodes.head.w[1]: -7.352083 → -7.325571
+PASS       aerial-gamepad-armdrop-left      180 keyframes
+PASS       aerial-gamepad-armdrop-right     180 keyframes
+PASS       aerial-gamepad-both-arms         180 keyframes
+PASS       aerial-gamepad-counter-spin      180 keyframes
+PASS       aerial-gamepad-power-floor       180 keyframes
+PASS       trampoline-basic                 180 keyframes
+PASS       trampoline-tuck                  180 keyframes
+PASS       trampoline-pike                  180 keyframes
+PASS       trampoline-keyx-single           180 keyframes
+PASS       pool-dive-basic                  180 keyframes
+PASS       pool-dive-tuck                   180 keyframes
+PASS       pool-dive-pike                   180 keyframes
+PASS       pool-dive-keyf                   180 keyframes
+
+17/30 scenarios match the golden traces.
+
+A divergence means the refactor changed observable behaviour.
+Either the change is a bug, or the feel changed deliberately —
+in which case regenerate traces with capture.js as an explicit act.
+golden: FAIL
+
+── Browser integration suite (headless) ─────────────────────
+  ok    At 75% charge, flip reaches world-normal speed (≥ 1.0× TARGET_OMEGA)
+
+36 passed, 0 failed, 0 skipped (4 sections)
+browser: PASS
+
+── Gate mutation test ───────────────────────────────────────
+Mutation testing the golden gate:
+  caught unconditional throw in frame loop
+  caught athlete disabled every frame
+  caught orientation destroyed on 4 of every 5 frames
+  caught head reparented onto the right shin
+  caught silent per-frame state corruption in pool world
+
+All mutations caught — the gate has teeth.
+mutation: PASS
+
+── Scenario coverage ────────────────────────────────────────
+30 traces → 28 distinct skier behaviours
+
+8f4b44236235 aerial-crash-ragdoll
+91bbc23a3362 aerial-full-twisting-double
+891ba4a54320 aerial-gamepad-armdrop-left
+186dfdbbab86 aerial-gamepad-armdrop-right
+ae1b6cd93fd8 aerial-gamepad-both-arms
+56c132b204bc aerial-gamepad-counter-spin
+98bd93b603d5 aerial-gamepad-power-floor
+aefb6560d6ff aerial-idle
+b8add0d7eab2 aerial-nopower-run
+b9e654e0a59e aerial-offaxis-keya
+3eb60fbf70a1 aerial-offaxis-keyd
+81957b88b8c1 aerial-pike
+cbd59580d0d3 aerial-power-25
+11784359dca1 aerial-power-75
+2dd72d2a804c aerial-power-full
+85d50c98e48a aerial-tuck-long
+6a77548dc24b aerial-tuck-short
+576558a057a2 aerial-tuck
+0c8682286208 aerial-twist-double-mode
+80c2ca4aae5a aerial-twist-left, aerial-twist-rightspin-setting  ⚠ IDENTICAL
+797ed0e4300f aerial-twist-right
+6f3aec8443c9 pool-dive-basic, pool-dive-pike  ⚠ IDENTICAL
+ac22c283af3d pool-dive-keyf
+d70d0b006e64 pool-dive-tuck
+388ee26a6802 trampoline-basic
+aea207e34bfd trampoline-keyx-single
+181217e058e4 trampoline-pike
+e3164124317e trampoline-tuck
+
+Known duplicates (investigated, see OPEN-002):
+  aerial-twist-left = aerial-twist-rightspin-setting
+    setting_rightspin is only consulted in the downHalfTwistFired branch (game.js:2780); this input sequence never reaches it, so the setting genuinely has no effect here. The setting remains UNTESTED — a scenario that reaches that branch is still needed.
+  pool-dive-basic = pool-dive-pike
+    ShiftLeft/pike requires !state.grounded (game.js:2683); the pool dive airborne window does not overlap the scripted input frame. Pike in the pool world is UNTESTED.
+
+All scenarios differentiate.
+coverage: PASS
+
+── Real-browser drive-through (Playwright) ──────────────────
