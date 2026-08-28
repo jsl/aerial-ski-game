@@ -937,6 +937,129 @@ test('bideltoid breadth reads slim at the deltoid band (0.36-0.41 m)', async ({ 
         `below the 0.36 sanity floor`).toBeGreaterThanOrEqual(0.36);
 });
 
+test('the suit stands off the body (dressed girth carries the shell offset)', async ({ page }) => {
+    // ── Lane A task 3, offset slice ─────────────────────────────────────────
+    // The suit used to be paint on the skin mesh — a vacuum-packed read. The
+    // build now stands the suit-region verts off the skeleton (torso 22 mm,
+    // thighs 20, shins 12, upper arms 10, forearms 8; head/gloves/boots and
+    // the deltoid cap faded to zero) and hard-gates the per-zone breadth
+    // delta before the bake. Build-side summary on the shipped geometry:
+    // chest 180->204, waist 183->209, thigh 174->213, calf 92->101,
+    // forearm 88->99 mm (SUIT GIRTH summary, deltas gated 18-34/16-40/
+    // 28-50/5-16/6-16 mm).
+    //
+    // This gate asks the SHIPPED glb the same question in the ready stance as
+    // a cross-instrument check: verts are zoned by DOMINANT skin weight (the
+    // build's dominant_segments; bone matrices index by bone.getIndex() — the
+    // bones[] array leads with the rig root, so a positional name map reads
+    // every zone one bone off), sliced at 1 cm in y, and each zone reads its
+    // MAX slice breadth — the max chord equals the tube diameter for a
+    // vertical arm and a horizontal crouched thigh alike, so the metric is
+    // pose-safe. ASSERTED: the thighs, the largest offset (build +39.3 mm,
+    // dressed 174->213; floor = dressed − 12 mm, so a rebuild that loses the
+    // offset and reads the skin breadth ~0.174-0.19 fails). LOGGED only:
+    // torso band, calf and forearm — the calf/forearm offsets (9/10.5 mm)
+    // sit at this instrument's noise floor, and the torso zone mixes the hip
+    // flare with boot-time pose variation, so their breadth is asserted
+    // build-side only (SUIT_GIRTH_GATE).
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const V = BABYLON.VertexBuffer;
+        const parts = scene.meshes.filter(
+            m => m.name && m.name.startsWith('athleteBody') &&
+            m.skeleton && m.getTotalVertices() > 0);
+        const root = scene.getMeshByName('skierRoot') || parts[0].parent;
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+        const skel = parts[0].skeleton;
+        // bones[0] is the AthleteRig root (getIndex() -1); skin matrices index
+        // by bone.getIndex(), NOT by the bones[] position — a positional map
+        // reads every zone one bone off.
+        const idx2name = {};
+        for (const b of skel.bones) {
+            const gi = b.getIndex();
+            if (gi >= 0) idx2name[gi] = b.name;
+        }
+        const boneName = i => idx2name[i] || '?';
+        // zone -> 1 cm y-key -> [minX, maxX, n]
+        const rows = {};
+        for (const part of parts) {
+            part.computeWorldMatrix(true);
+            const world = part.getWorldMatrix();
+            const pos = part.getVerticesData(V.PositionKind);
+            const mi = part.getVerticesData(V.MatricesIndicesKind);
+            const mw = part.getVerticesData(V.MatricesWeightsKind);
+            if (!pos || !mi || !mw) continue;
+            const bones = part.skeleton.getTransformMatrices(part);
+            const tmp = new BABYLON.Vector3();
+            const acc = new BABYLON.Matrix();
+            const bm = new BABYLON.Matrix();
+            for (let i = 0; i < pos.length / 3; i++) {
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                let dom = 0, dw = -1;
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    if (w > dw) { dw = w; dom = mi[i * 4 + k]; }
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2],
+                    acc.multiply(world).multiply(toLocal), tmp);
+                const zone = rows[boneName(dom)] =
+                    rows[boneName(dom)] || {};
+                const k = Math.round(tmp.y / 0.01);
+                const t = zone[k] = zone[k] || [1e9, -1e9, 0];
+                t[0] = Math.min(t[0], tmp.x);
+                t[1] = Math.max(t[1], tmp.x);
+                t[2]++;
+            }
+        }
+        // The torso band between the elbow and shoulder nodes: with the arms
+        // hanging these bracket the chest-to-waist hull in any stance.
+        const nodeY = name => {
+            const b = skel.bones.find(b => b.name === name);
+            const n = b && b.getTransformNode && b.getTransformNode();
+            if (!n) return null;
+            n.computeWorldMatrix(true);
+            return BABYLON.Vector3.TransformCoordinates(
+                n.getAbsolutePosition(), toLocal).y;
+        };
+        const shY = Math.max(nodeY('upperArmL'), nodeY('upperArmR'));
+        const elY = Math.min(nodeY('lowerArmL'), nodeY('lowerArmR'));
+        const zoneMax = (zone, yLo = -1e9, yHi = 1e9) => {
+            const rr = rows[zone] || {};
+            let m = 0;
+            for (const k of Object.keys(rr).map(Number)) {
+                if (k * 0.01 < yLo || k * 0.01 > yHi) continue;
+                if (rr[k][2] < 8) continue;          // sparse-slice noise floor
+                m = Math.max(m, rr[k][1] - rr[k][0]);
+            }
+            return +m.toFixed(4);
+        };
+        return {
+            torsoBand: zoneMax('torso', elY + 0.09, shY - 0.01),
+            thighL: zoneMax('upperLegL'), thighR: zoneMax('upperLegR'),
+            calfL: zoneMax('lowerLegL'), calfR: zoneMax('lowerLegR'),
+            forearmL: zoneMax('lowerArmL'), forearmR: zoneMax('lowerArmR'),
+        };
+    });
+
+    console.log('SUIT browser ' + JSON.stringify(r));
+    // Asserted: the thighs — the largest offset (build +39.3 mm, dressed
+    // 174->213), read by a max-chord metric that measured identically
+    // (0.215/0.225) across separate loads, so the floor at dressed-12 mm
+    // fails any rebuild that loses the offset (skin read ~0.174-0.19).
+    expect(r.thighL, `left thigh breadth ${r.thighL} m — the suit shell ` +
+        `is missing (build dressed 0.213)`).toBeGreaterThanOrEqual(0.201);
+    expect(r.thighR, `right thigh breadth ${r.thighR} m — the suit shell ` +
+        `is missing (build dressed 0.213)`).toBeGreaterThanOrEqual(0.201);
+});
+
 test('styled skis: shaped geometry replaces the slats, boot line carries a binding', async ({ page }) => {
     // The renderer-side ski bundle (reviewer inspection order 2, iter 21→22):
     // each physics driver box (body-model w 0.08 × h 0.03 × d 1.55) is no

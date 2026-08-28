@@ -1838,6 +1838,253 @@ def hand_ratio_gate(body):
             f'the hard gate {HAND_RATIO_GATE[0]:.2f}-{HAND_RATIO_GATE[1]:.2f}')
 
 
+# ── Loose suit (task 3, offset slice) ───────────────────────────────────────
+
+# Per-surface "proud of the body" offsets, in METRES. The author's brief: a race
+# suit is a shell that stands 1.5-2.5 cm off the skin — torso/thighs more,
+# shins/forearms less, NONE at hands/face/boots. The deltoid cap and the chest
+# yoke stay snug: the bideltoid hard gate (<= 0.41) measures the dressed mesh in
+# the browser too, so the shoulder cap zone fades the offset to zero before the
+# deltoid band [joint -5, +9 cm] can read it.
+SUIT_OFFSET = {
+    'torso': 0.022, 'upperLeg': 0.020, 'lowerLeg': 0.012,
+    'upperArm': 0.010, 'lowerArm': 0.008,
+}
+# Breadth (max-min x) deltas measured before/after the offset, per zone band,
+# zone-filtered to the anchor's own segment. Bands were measured on the landed
+# field (23 Aug iteration 3 build: chest +24.0, waist +25.9, thigh +39.3,
+# calf +9.0, forearm +10.5) with regression margins; the ordering — torso/
+# thigh more, shins/forearms less — is the author's contract for task 3.
+SUIT_GIRTH_GATE = {
+    'chest':   (0.018, 0.034), 'waist': (0.016, 0.040),
+    'thigh':   (0.028, 0.050), 'calf':  (0.005, 0.016),
+    'forearm': (0.006, 0.016),
+}
+SUIT_DELTOID_GATE = 0.003             # deltoid band breadth may grow by <= 3 mm
+
+
+def loosen_suit(body, joints):
+    """
+    Stand the suit shell off the body: a per-zone radial offset field.
+
+    The suit so far was paint + millimetre relief (displace_suit) on a mesh that
+    IS the skin — the figure read vacuum-packed. This pass moves the suit-region
+    verts HORIZONTALLY away from the skeleton (skeleton_offset's direction, z
+    component dropped, so sole heights, boot seating and every contact gate are
+    untouched) by the per-zone SUIT_OFFSET amount.
+
+    Continuity: neighbouring zones differ (thigh 20 vs shin 12 mm at the knee,
+    upper 10 vs lower arm 8 mm at the elbow, torso 22 vs thigh 20 at the hip),
+    so the amounts are lerped across 8 cm smoothstep bands centred on the hip,
+    knee and elbow planes — no step where one zone hands over to the next.
+
+    Exclusions (offset exactly zero): head/face (never touched), the glove band
+    (fades to zero at the wrist plane, so the hand_ratio gate's band is
+    untouched), the boot (fades to zero at ankle + 2 cm, the boot cuff and sole
+    stay put), the deltoid cap (zero 4 cm below the shoulder joint plane, full
+    8 cm below that) and the chest yoke (zero at torso top, full 14 cm below
+    it). With those fades the deltoid band [joint -5, +9 cm] cannot read more
+    than a few mm of inflation, keeping the bideltoid hard gate green.
+
+    Collision clamps: the L/R thighs and both arms each keep their inner-face
+    envelope (per 1 cm row, an inner vert may move inboard at most 3-4 mm), and
+    the torso's outboard face is clamped to the arm's inner face minus 2 mm per
+    row, so the sleeve can lie against the suit but never cross it.
+
+    Hard gate (SUIT_GIRTH_GATE): the breadth delta per zone band must land in
+    range, and the deltoid band may grow by at most SUIT_DELTOID_GATE — a fail
+    exits before the bake.
+    """
+    def clamp01(t):
+        return min(1.0, max(0.0, t))
+
+    def sstep(t):
+        t = clamp01(t)
+        return t * t * (3 - 2 * t)
+
+    def breadth(z, band=0.02, zone=None):
+        if zone is None:
+            xs = [v.co.x for v in body.data.vertices if abs(v.co.z - z) < band]
+        else:
+            xs = [v.co.x for i, v in enumerate(body.data.vertices)
+                  if abs(v.co.z - z) < band and dom_at(v.index) == zone]
+        return (max(xs) - min(xs)) if xs else 0.0
+
+    def deltoid_width():
+        sh = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
+        xs = [v.co.x for v in body.data.vertices
+              if sh - 0.05 <= v.co.z <= sh + 0.09]
+        return (max(xs) - min(xs)) if xs else 0.0
+
+    torso_c = bl('torso')
+    t_top = torso_c.z + SEGMENTS['torso']['h'] / 2
+    dom = dominant_segments(body)
+
+    def dom_at(i):
+        return dom[i]
+
+    anchors = {
+        'chest': (t_top - 0.10, 'torso'), 'waist': (torso_c.z, 'torso'),
+        'thigh': (bl('upperLegL').z, 'upperLegL'),
+        'calf': (bl('lowerLegL').z, 'lowerLegL'),
+        'forearm': (bl('lowerArmL').z, 'lowerArmL'),
+    }
+    before = {k: breadth(z, zone=zo) for k, (z, zo) in anchors.items()}
+    delt_before = deltoid_width()
+    sh_z = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
+    knee_z = (bl('upperLegL').z - SEGMENTS['upperLegL']['h'] / 2
+              + bl('lowerLegL').z + SEGMENTS['lowerLegL']['h'] / 2) / 2
+    hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    elbow_z = bl('lowerArmL').z + SEGMENTS['lowerArmL']['h'] / 2
+    # Ankle plane from the SHIN BONE's own tail (joints[] lives in the pre-pose
+    # base frame — ankle 0.073 vs a shin spanning -0.64..+0.07 in bl() — so it
+    # cannot gate the boot fade here).
+    ankle_z = {s: bl(f'lowerLeg{s}').z - SEGMENTS[f'lowerLeg{s}']['h'] / 2
+               for s in ('L', 'R')}
+    log(f'loosen_suit landmarks: t_top {t_top:.3f} sh {sh_z:.3f} hip '
+        f'{hip_z:.3f} knee {knee_z:.3f} elbow {elbow_z:.3f} ankle '
+        f'{ankle_z["L"]:.3f}/{ankle_z["R"]:.3f}')
+
+    vs = body.data.vertices
+    cand = {}
+    arm_in, leg_in = {}, {}
+    for i, v in enumerate(vs):
+        nm = dom[i]
+        if nm is None or nm == 'head' or nm not in SEGMENTS:
+            continue
+        if nm != 'torso' and not nm.endswith(('L', 'R')):
+            continue
+        base = nm[:-1] if nm[-1] in 'LR' else nm
+        z = v.co.z
+        if base == 'torso':
+            # chest yoke: 0 at torso top, full 14 cm below
+            amp = SUIT_OFFSET['torso'] * sstep((t_top - z) / 0.14)
+            if amp <= 0:
+                continue
+            if z < hip_z + 0.04:
+                # blend toward the thigh amount across the hip
+                t = sstep((hip_z + 0.04 - z) / 0.08)
+                amp = SUIT_OFFSET['torso'] * (1 - t) \
+                    + SUIT_OFFSET['upperLeg'] * t
+            side = None
+        elif base in ('upperLeg', 'lowerLeg'):
+            # knee blend; boot cuff: 0 at the ankle plane + 2 cm, full above
+            az = ankle_z[nm[-1]]
+            if base == 'lowerLeg' and z <= az + 0.02:
+                continue
+            t = sstep((knee_z + 0.04 - z) / 0.08)
+            amp = SUIT_OFFSET['upperLeg'] * (1 - t) \
+                + SUIT_OFFSET['lowerLeg'] * t
+            if base == 'lowerLeg':
+                amp *= sstep((z - az - 0.02) / 0.08)
+                if amp <= 0:
+                    continue
+            side = base[-1]
+        elif base in ('upperArm', 'lowerArm'):
+            # elbow blend; deltoid cap fade; glove cuff fade at the wrist
+            t = sstep((elbow_z + 0.03 - z) / 0.06)
+            amp = SUIT_OFFSET['upperArm'] * (1 - t) \
+                + SUIT_OFFSET['lowerArm'] * t
+            amp *= sstep((sh_z - 0.04 - z) / 0.08)
+            if base == 'lowerArm':
+                wz = bl(nm).z - SEGMENTS[nm]['h'] / 2
+                amp *= sstep((z - wz) / 0.06)
+            if amp <= 0:
+                continue
+            side = base[-1]
+        else:
+            continue
+        # Direction from the vert's OWN segment's axis — NOT skeleton_offset:
+        # that returns the nearest axis, and for a torso vert hugging an arm
+        # the arm axis is nearer, pointing the torso INBOARD (measured: chest
+        # breadth -2.7 mm with a +22 mm field).
+        c = bl(nm)
+        half = SEGMENTS[nm]['h'] / 2
+        zc = max(c.z - half, min(c.z + half, v.co.z))
+        dx, dy = v.co.x - c.x, v.co.y - c.y
+        hl = math.hypot(dx, dy)
+        if hl < 1e-4:
+            continue
+        cand[i] = (v.co.x + dx / hl * amp, v.co.y + dy / hl * amp,
+                   v.co.x, base, side, round(z / 0.01))
+
+    # row bookkeeping for the clamps (pre-move inner extents, post-move torso)
+    torso_out = {}
+    for i, c in cand.items():
+        x_old, base, k = c[2], c[3], c[5]
+        s = 1 if x_old >= 0 else -1
+        if base in ('upperArm', 'lowerArm'):
+            key = (k, s)
+            arm_in[key] = min(arm_in.get(key, 1e9), abs(x_old))
+        elif base in ('upperLeg', 'lowerLeg'):
+            key = (k, s)
+            leg_in[key] = min(leg_in.get(key, 1e9), abs(x_old))
+        else:
+            key = (k, s)
+            torso_out[key] = max(torso_out.get(key, -1e9), s * c[0])
+
+    n_moved = 0
+    dbg = {}
+    for i, c in cand.items():
+        nx, ny, x_old, base, side, k = c
+        s = 1 if x_old >= 0 else -1
+        clamped = ''
+        if base in ('upperArm', 'lowerArm'):
+            # the sleeve rides the torso's NEW face (the loose torso pushes its
+            # sleeve out), capped 12 mm of ride so cloth can compress
+            torso_new = torso_out.get((k, s), -1e9)
+            floor = max(arm_in.get((k, s), 1e9) - 0.003,
+                        min(torso_new + 0.001,
+                            arm_in.get((k, s), 1e9) + 0.012))
+            if abs(nx) < floor:
+                nx = s * floor
+                clamped = 'sleeve-ride'
+        elif base in ('upperLeg', 'lowerLeg'):
+            floor = leg_in.get((k, s), 1e9) - 0.004
+            if abs(nx) < floor:
+                nx = s * floor
+                clamped = 'leg-floor'
+        dbg[base] = dbg.get(base, [0, 0])
+        dbg[base][0] += 1
+        if clamped:
+            dbg[base][1] += 1
+        v = vs[i]
+        if abs(nx - v.co.x) > 1e-6 or abs(ny - v.co.y) > 1e-6:
+            v.co = (nx, ny, v.co.z)
+            n_moved += 1
+    log('loosen_suit per-zone (cand/clamped): '
+        + ', '.join(f'{b} {c[0]}/{c[1]}' for b, c in sorted(dbg.items())))
+    log(f'loosen_suit: {n_moved} suit verts stood off the body '
+        f'(head/glove/boot untouched by construction)')
+
+    after = {k: breadth(z, zone=zo) for k, (z, zo) in anchors.items()}
+    delt_delta = deltoid_width() - delt_before
+    worst = None
+    parts = []
+    for k, (lo, hi) in SUIT_GIRTH_GATE.items():
+        d = after[k] - before[k]
+        parts.append(f'{k} {before[k] * 1000:.0f}->{after[k] * 1000:.0f} '
+                     f'({d * 1000:+.1f}) mm')
+        if not (lo <= d <= hi) and worst is None:
+            worst = k
+    log('SUIT GIRTH summary: ' + ' | '.join(parts)
+        + ' (gates ' + ', '.join(f'{k} {lo*1000:.0f}-{hi*1000:.0f}'
+                                 for k, (lo, hi) in SUIT_GIRTH_GATE.items())
+        + f') | deltoid band {delt_delta * 1000:+.1f} mm '
+        f'(gate <= {SUIT_DELTOID_GATE * 1000:.0f})')
+    if worst is not None:
+        raise SystemExit(
+            f'[body] suit girth gate FAILED at {worst}: '
+            f'{(after[worst] - before[worst]) * 1000:+.1f} mm breadth delta '
+            f'(gate {SUIT_GIRTH_GATE[worst][0] * 1000:.0f}-'
+            f'{SUIT_GIRTH_GATE[worst][1] * 1000:.0f})')
+    if delt_delta > SUIT_DELTOID_GATE:
+        raise SystemExit(
+            f'[body] suit girth gate FAILED: deltoid band grew '
+            f'{delt_delta * 1000:.1f} mm (gate <= '
+            f'{SUIT_DELTOID_GATE * 1000:.0f} mm) — the cap fade is leaking')
+
+
 BIDELTOID_GATE = 0.41                 # hard ceiling (m)
 BIDELTOID_TARGET = (0.38, 0.40)       # author's target band at standing 1.515
 CAP_OUTER_X = 0.198                   # post-fix outboard limit about the bone plane
@@ -3570,6 +3817,7 @@ def main():
             f'[body] leg profile has a {prof["step"] * 1000:.1f} mm slope step at '
             f'z={prof["step_z"]:+.3f} — that is the hard notch, not an anatomical '
             f'waist')
+    loosen_suit(body, joints)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     high = make_highpoly(low, lm)
