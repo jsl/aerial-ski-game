@@ -4590,3 +4590,50 @@ iteration's review-only audit. No new features. I can view PNGs; shots inspected
   fixed): confirm `game.js?v=6` loads for you after a hard reload.
 - Mesh-level hand-position number (finding 2) still missing — will land with the rebuild
   iteration's spec instead of a one-off probe.
+
+---
+
+### 65 — finish of iteration 64
+
+Iteration 64 hit its time limit with an uncommitted tree (boot–ski invariant,
+arms-in-front in the in-run crouch, re-captured traces, new `inrun-contact`
+spec). This iteration finished and landed exactly that work; nothing new.
+
+**What landed (e406b4a)**
+- `_pinBootsToSkis` (game.js, display-side per ADR-0002): every non-crash frame
+  the shin takes the SKI's pitch (a binding clamps boot to ski rigidly) and the
+  thigh keeps the solver's knee flex transplanted onto the re-pitched shin; the
+  chain (ankle → knee → thigh centre) is repositioned off the ski top plane.
+  Fixes the two measured defects: sole 11 mm through the ski / 12 cm behind the
+  binding centre in the gate crouch, and up to 0.22 m sole-to-ski in the hop fold.
+- `_inrunArmForward`: while grounded with the crouch engaged, hands ahead of the
+  hips (author band −0.40…−0.25 m; measured pre-fix −0.09…−0.15 m BEHIND) and
+  below shoulder height; blend weight `tuck·(1−armRaise)` hands over to the
+  kicker-arc raise (`armRaiseTarget=1` from `KICKER_START_Z`, so arms are
+  overhead by the lip per IMG_3768).
+- Ready state included in the pin (the invariant is "every non-crash state");
+  the transplanted flex moves the thigh ~6 cm forward, so the hanging arm
+  chains follow by the same Δz to keep hands beside thighs (≤ 3 cm gate).
+- `window._bootSkiProbe()` + new `tests/drive/inrun-contact.spec.js` gate all
+  of it; boot-vs-ski pitch (±2°) asserted alongside the 5 mm gaps.
+- Registered `_inrunArmForward`/`_pinBootsToSkis` in the unit test's
+  ALLOWED_FUNCTIONS renderer set with reasons.
+
+**Gate numbers**
+- Audit vs the PRE-change traces (scratch worktree of HEAD): physics `state`
+  byte-identical in all 30 scenarios; node diffs confined to the athlete
+  hierarchy (arm/leg/boot nodes), persistent only where the ready state never
+  ends — same shape as the iteration-9 audit. Traces re-captured twice (once
+  after the shin-pitch fix, once after the ready-state inclusion).
+- `test:unit` 76/76 (one legitimate failure fixed: the two new top-level
+  renderer functions needed allow-list entries); `test:golden` 30/30.
+- Drive, DRIVE_PORT=8099: inrun-contact 2/2 (worst sole-to-ski ≤ 5 mm at rest,
+  gate crouch, through the hop turn and mid-in-run; crouch hand band in range;
+  hands below shoulders), ready-stance (incl. uphill-knee flex ≥ 10° and hands
+  beside thighs), rig, hop-turn — 15/15.
+- `look` shots regenerated and rendered clean (scene/figure/figure_front).
+
+**What remains open (unchanged from entry 63's list)**
+- P1 slice 1 corridor ribbon (fixes the 0.0941 m post-turn float + slopeBox
+  4.7 cm defect), P2 sky/sun, crash rewrite items 2/2b, P13 chain solver, the
+- body+suit rebuild, P8 mesh-hands-forward bind fix.
