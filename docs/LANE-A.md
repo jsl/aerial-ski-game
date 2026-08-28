@@ -46,6 +46,65 @@ inspected and described. Each iteration ends with a commit and an entry below.
 
 ## Progress
 
+### 6 — Suit shell stood off the skin (task 3, offset slice: chest +24, waist +26, thigh +39 mm, hard-gated)
+
+**What changed.** Task 3, first slice — the stand-off offset. (Found this pass already
+written but UNCOMMITTED and UNVERIFIED in the worktree, presumably a prior session killed
+before its build ran; this iteration reviewed it, completed it and landed it.) The suit so
+far was paint + millimetre relief on the skin mesh — a vacuum-packed read. New
+`loosen_suit(body, joints)` in `blender/build_body.py` (called after
+`narrow_shoulders`/all gates, before `finish_lowpoly` and the bake) moves suit-region
+verts HORIZONTALLY off their own segment's axis by a per-zone field — torso 22 mm,
+thighs 20, shins 12, upper arms 10, forearms 8 (`SUIT_OFFSET`) — direction from the
+vert's OWN segment axis (NOT `skeleton_offset`, whose nearest-axis rule pointed torso
+verts hugging an arm INBOARD; measured chest −2.7 mm with a +22 mm field). Head, glove
+band and boot untouched by construction; smooth 6–8 cm fades at the chest yoke, deltoid
+cap, hip, knee, elbow, wrist and boot cuff; per-row collision clamps (sleeve rides the
+torso's NEW outboard face capped at 12 mm of ride; leg inner envelopes kept; L/R thighs
+never cross). 4430 verts moved; sole heights/z untouched so every contact gate is safe.
+
+Hard gate before the bake: `SUIT_GIRTH_GATE` breadth-delta bands per zone plus deltoid
+band growth ≤ 3 mm (`SUIT_DELTOID_GATE`) — a fail exits before the bake. The SUIT GIRTH
+summary line now logs ABSOLUTE skin→dressed breadths per anchor, which the browser gate
+derives its floors from.
+
+`tests/drive/rig.spec.js` (athlete gates only) — new gate "the suit stands off the body":
+zones the shipped glb by DOMINANT skin weight, reads each zone's max 1 cm-slice breadth
+(max chord = tube diameter for vertical arms AND horizontal crouched thighs — pose-safe)
+and hard-floors the thighs at build dressed 213 mm − 12. **Instrument finding worth
+keeping: `MatricesIndices` index by `bone.getIndex()`, and the glb's `bones[0]` is the
+`AthleteRig` root (getIndex −1) — a positional `bones[i].name` map reads every zone one
+bone off** (torso bucket caught the left upper arm at 0.187, calfR caught the whole
+torso at 0.336). Torso/calf/forearm are LOGGED, not asserted: calf/forearm offsets
+(9/10.5 mm) sit at the instrument's noise floor, and the torso zone mixes the hip flare
+with boot-time pose variation (the max torso slice read 0.336 in one load and a
+different population in another); their deltas stay asserted build-side.
+
+**Verification.** Blender build `--res 2048 --samples 96` green end-to-end (OPTIX),
+deterministic across 4 runs: `SUIT GIRTH summary: chest 180->204 (+24.0) mm |
+waist 183->209 (+25.9) | thigh 174->213 (+39.3) | calf 92->101 (+9.0) |
+forearm 88->99 (+10.5) | deltoid band +0.0 mm (gate <= 3)`. Unmoved gates:
+BIDELTOID 0.401 ≤ 0.41 (the cap fade held the deltoid band at +0.0 mm), HAND GATE
+0.75..0.75, ARM GATES soft-unmoved (20.7 mm / 24.3 mm / 10.5 deg / 28.0 mm). Browser at
+`DRIVE_PORT=8199`: **rig 10/10** (9 old + the new suit gate; thigh floors read
+0.215/0.225, identical across separate loads), **look 1/1**, athlete family
+(athlete/athlete-wired/body/ready-stance) 12/12. Shots: `figure_front.png`/`figure.png`
+— sleeves and legs now read as a shell with visible stand-off instead of paint on skin;
+A-B against a pre-suit rebuild (scratch `shots-presuit/`) confirms the pale
+neck/shoulder mass is PRE-EXISTING, not an offset artifact.
+
+**Assets rebuilt** → `ASSET_V` must be bumped at merge time (Merge notes).
+
+**Open / next in lane priority.**
+- Task 3 remainder: fabric folds at elbows/knees/hips/armpits/cuffs, bib as a looser
+  panel, and the suit-only smoothing guard (measure normal-map variance in the suit UV
+  region before/after). The `displace_suit` relief still runs on the high-poly bake.
+- Task 4 (helmet brim behind the ears) and task 5 (ARM GATES hard) after that.
+- The pale neck/shoulder hump seen from the rear quarter predates this lane's suit work
+  (identical in the pre-suit A-B) — flagging for the author's next look.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — the suit gates are
+  build-side hard + browser thigh floors, no game.js wiring needed.
+
 ### 2 — Shoulders scaled onto the anatomical deltoid (bideltoid 0.481 → 0.401, hard-gated ≤ 0.41)
 
 **What changed.** Task 2. Measured first (new `bideltoid_report` in `blender/build_body.py`):
