@@ -160,7 +160,47 @@ and measured, entry 55 below.)*
 since the iter-56 caster swap, never re-run full-suite until now; repaired
 test-side, shots regenerated + measured, entry 60 below. No features.)*
 
+### 61 — Bib 30 regression (review-60 item 1): the plates carried each other's
+reading direction (mirrored "30" BOTH sides) and the front framing was 58° off
+the chest — branch swap in `number_uv` + rebuild (ASSET_V 17) + `figure_front`
+re-aimed + HARD render gate `bib-number.spec.js`
+
+**Order acted on:** review-60 item 1 (bib 30, 20–30 min budget) — done in 50.
+Items (2) sky slice: already landed (iter 56; the camera-side r−b −0.06 gap is
+the standing entry-50(c) open check, needs a mechanism change, not parameters).
+(3) trees: NOT started — next iteration, unchanged from entry 60's list.
+
+**Mechanism (measured, not the reviewer's hypothesis):** the paint, the bake
+gate and the albedo were never broken — `bib_number_gate` passed at every
+build (today: front 0.344 / back 0.194 ink fraction, band [0.10, 0.45]). Two
+renderer-side causes stacked:
+1. **Mirrored plates.** Scratch probes (alpha 0 and π, alpha readback pinned)
+   captured "0Ɛ" from BOTH sides pre-fix. The orientation essay in
+   `build_body.py` is self-consistent, so a mirror on screen means the torso
+   frame's +Y axis points at the figure's physical BACK: each plate carried
+   the OTHER side's reading rule. Fix: swap the two branches in `number_uv`.
+2. **Framing.** `figure_front` alpha 0.32π predates the ready-turn yaw; the
+   chest/bib faces +x (drive-measured bib-blue fraction 0.102 from alpha 0 vs
+   0.017 from π). The old framing put the plate at ~58° off — edge-on wash,
+   entry-60 darkFrac 0.000. Fix: `look.spec` figure_front → alpha 0.
+
+**Verification:** rebuild green (OPTIX, 22 s); unit fail 0; golden 30/30
+byte-stable (assets are display-only); rebuilt athlete probed at alpha 0 and π:
+"30" reads left-to-right on BOTH plates (eye-checked captures), navyFrac
+0.0626 front / 0.1559 back in the projected plate box (54×84 px at the
+1100×850 look camera). New HARD gate `tests/drive/bib-number.spec.js`: projects
+the near-face plate centre, asserts navyFrac ∈ (0.02, 0.25) per face, front
+bib-blue > back, back < 0.09 (the designed narrow rear bib panel measures
+0.0677 — not a wrap defect). 1/1 green ×2.
+
+**Open / not done this iteration:** `look` shots NOT regenerated yet (hard-kill
+timebox); `body.spec` and the full drive suite not re-run; reviewer's "paint
+onto the final panel" alternative not needed — paint was already post-pass,
+the mapping was the defect. Bib-blue only 0.10 even front-on: the powder-blue
+bib reads near-white under the sun at camera — contrast note for group 7.
+
 ### 60 — Review-only: run-all exposed shipped drive breakage (baked.spec, red since the iter-56 caster swap) — repaired test-side; five shots regenerated + measured: upright forest confirmed but reads near-black with a detached top cap; bib ink absent at camera; red kicker marks ~1% of frame
+
 
 **Order acted on:** the reviewer items in this file are all satisfied by iters
 56–59 (sky parameter slice landed; trees stayed the working group through the

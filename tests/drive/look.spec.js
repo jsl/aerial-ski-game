@@ -78,9 +78,15 @@ test('look', async ({ page }) => {
     // A second angle from the FRONT. The bib and the number patch are front-only
     // and the leg stripe runs down the outboard side, so a single rear view shows
     // none of the suit design and makes a correct build look like a blank one.
+    // Iteration 61: the old alpha (0.32*pi) predates the ready-turn yaw and
+    // framed a three-quarter view in which the number plate is edge-on — the
+    // review-60 "bib 30 invisible" finding. The ready figure faces across the
+    // fall line with the chest/bib on the +x side (drive-measured: bib-blue
+    // pixel fraction 0.102 from alpha 0 vs 0.017 from alpha pi), so the
+    // frontal camera sits at alpha 0.
     await page.evaluate(() => {
         const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
-        cam.alpha = Math.PI * 0.32;
+        cam.alpha = 0;
         cam.beta = Math.PI / 2.6;
     });
     await page.waitForTimeout(900);

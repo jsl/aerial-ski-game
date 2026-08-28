@@ -18,8 +18,8 @@
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8962,
-   "belowHalf": 0.0491,
+   "mean": 0.8958,
+   "belowHalf": 0.0498,
    "srgb": true
   }
  }

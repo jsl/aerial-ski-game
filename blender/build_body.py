@@ -3171,8 +3171,17 @@ def in_number_patch(name, along, front, lx):
 
 
 def number_uv(front, lx, along):
-    """Patch-local (u, v) with the per-face reading direction above."""
-    u = (NUM_W - lx) / (2 * NUM_W) if front > 0 else (NUM_W + lx) / (2 * NUM_W)
+    """Patch-local (u, v) with the per-face reading direction above.
+
+    Iteration 61: measured MIRRORED digits from BOTH sides at the look
+    camera (scratch probes at alpha 0 and pi, "0E" in both captures) — the
+    torso frame's +Y axis points at the figure's physical BACK at rest, so
+    the mapping that encodes the +Y reading rule was landing on the chest
+    and vice versa. Swapping the branches puts each rule on the side its
+    normal actually faces; both plates now read left-to-right to their own
+    viewer (verified in the rebuilt assets at the look camera).
+    """
+    u = (NUM_W + lx) / (2 * NUM_W) if front > 0 else (NUM_W - lx) / (2 * NUM_W)
     return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
 
 
