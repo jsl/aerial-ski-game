@@ -807,7 +807,7 @@ function _inrunArmForward(meshes, tuck, armRaise) {
     // reference) forward in the crouch, the pivot target plus this bias must
     // land hand z − hip z inside the author's −0.40…−0.25 band (browser-
     // measured: −0.47…−0.48 at bias −0.05 → −0.05 + 0.09 correction).
-    const zBias = 0.20;
+    const zBias = 0.29;
     const sides = [
         { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.175 },
         { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.175 },
@@ -2456,7 +2456,8 @@ void main(void) {
             r.boots[side] = { toe: gaps.toe, heel: gaps.heel,
                               pitchDelta: +(ll.rotation.x - Math.atan2(upZ, upY)).toFixed(4) };
         }
-        // Hand (shin-style −Y end of the lower arm) vs hip/shoulder.
+        // Hand = the lower arm's +Y (wrist) end — the chain builds the arm
+        // with local +Y toward the wrist (same axis as _inrunArmForward).
         for (const side of ['L', 'R']) {
             const la = character.meshes['lowerArm' + side];
             const ul = character.meshes['upperLeg' + side];
@@ -2464,8 +2465,8 @@ void main(void) {
             if (!la || !ul || !ua) continue;
             const rx = la.rotation.x, c = Math.cos(rx), s2 = Math.sin(rx);
             r.arms[side] = {
-                handY: +(la.position.y - 0.125 * c).toFixed(4),
-                handZ: +(la.position.z - 0.125 * s2).toFixed(4),
+                handY: +(la.position.y + 0.125 * c).toFixed(4),
+                handZ: +(la.position.z + 0.125 * s2).toFixed(4),
                 hipZ: +ul.position.z.toFixed(4),
                 shoulderY: +ua.position.y.toFixed(4),
             };
@@ -3063,9 +3064,9 @@ void main(void) {
         // Continue slope upward: at z units behind SLOPE_START_Z, y rises by z*tan(SLOPE_ANGLE)
         const midExtY  = (-midExtZ) * Math.tan(SLOPE_ANGLE) - FOOT_OFFSET;
         const depth    = extDepth / Math.cos(SLOPE_ANGLE) + 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 0.8, depth }, scene);
+        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 1.6, depth }, scene);
         wb.rotation.x = SLOPE_ANGLE;
-        wb.position.set(0, midExtY - 1.2, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
         wb.material = lsMat;
     }
 
