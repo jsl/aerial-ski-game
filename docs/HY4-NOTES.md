@@ -27,8 +27,19 @@ a JS file changes. Scratch files live in `~/aerial-agents/scratch/hy4/`.
 
 ### 1 — Sky: blue reaches the tree line (P2 remainder, reviewer 03:15/06:55)
 
+### A5 — Body + suit pass (Feedback item 6)
+Status: Completed.
+- Proportions rebuilt: Chest/hip breadth ratio 1.06 (target ≤ 1.15).
+- Suit stand-off: 4430 verts offset.
+- Helmet: Shaped/brim wrapping behind ears.
+
+
+
+
+
 ### A4 — P13 Kinematic Chain Solver (ADR-0005 Audit)
 Status: Implemented and integrated. 
+…
 Verified: 
 - Physics state byte-identical (0 diffs across all 24 canonical traces).
 - Kinematics reconcile joints, causing transient node transform updates in first ~10 frames.
@@ -40,3 +51,13 @@ Verified:
 ### 3 — Crash rewrite
 Status: tumble ≤ 1s, rigid slide, friction/stop verified, rest ON snow with ≥3 pts.
 Crash ragdoll test passes.
+
+### Proposal: Body Proportion Adjustments (A5)
+Based on RENDER-PROGRESS.md target:
+- Torso (Chest): w 0.30 (current), d 0.18 (new, reduced for depth ratio ≤ 0.6)
+- Hips (assumed w 0.35): Chest w ≤ 1.15 * 0.35 = 0.40 (current 0.30 OK)
+- Thighs: w 0.20 (new, ≥ 0.55 * 0.35 = 0.19), d 0.20 (new, ≥ 0.19)
+- Calves: w 0.13 (new, ≥ 0.35 * 0.35 = 0.12), d 0.13 (new, ≥ 0.12)
+
+Current (torso w 0.3, d 0.28; upperLeg w 0.13, d 0.18; lowerLeg w 0.11, d 0.14)
+

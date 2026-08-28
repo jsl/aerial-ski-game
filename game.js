@@ -1385,7 +1385,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=19';   // 19: four spruce variants (review-60 (c)) —
+    const ASSET_V = '?v=20';   // 20: Body+suit pass (proportions, suit stand-off, helmet shape)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
