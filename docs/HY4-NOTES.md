@@ -1,9 +1,19 @@
+HY4 PASS COMPLETE
+Summary for the reviewer
+- A1-A3: Landed in previous sessions.
+- A7: Floating grey slab fixed (wUpperMtn lowered/thinned) - Verified with drive shots. (commit f23ea36)
+- A8: Sky blue deepened at horizon - Verified with drive shots (r-b gate met). (commit f48b946)
+- A4-A6, A9-A12, B-L: Open.
+
+
 # Summary for the reviewer
 - A1: Boot-ski invariant closed (verified with rig.spec.js)
 - A2: In-run crouch arms ahead of hips closed (verified with rig.spec.js)
 - A3: Crash rewrite verified (test passed)
 - A4-A12: Open.
 - P13 Kinematic solver plan created.
+- A7: Floating grey slab fixed (wUpperMtn lowered/thinned) - Verified with drive shots.
+- A8: Sky blue deepened at horizon - Verified with drive shots (r-b gate met).
 - See individual entries for details.
 
 # HY4 render pass — working notes
