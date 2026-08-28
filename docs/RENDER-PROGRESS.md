@@ -249,6 +249,21 @@ colour-pass gate not yet written.
 and the 0.12→0.25 sky-margin re-derivation are documented above if you want
 to eyeball them.
 
+**Addendum (session note):** four reviewer docs commits landed WHILE this
+iteration was in flight (e3a18d4 06:52, c350f96/cd46880 07:21, d51596d
+07:27 — I started 06:51 and read this file before they hit). Consequences
+recorded: (1) the 06:52 note confirms the iter-62 spruce look ("keep exactly
+this look") — this slice's variants keep that construction, only
+seed/height/envelope/droop/tint vary; (2) the slice I picked (spruce
+variants + scale/yaw jitter) was item (2) of that note's list, but its item
+(1), the strict 15-minute sky colour parameter slice, was ordered FIRST and
+was not attempted — I had not seen the note. Standing order for the next
+iterations per the 07:27 re-queue, which pre-empts everything: (a)
+boot–ski invariant (toe+heel binding) + (b) arms in front during the in-run
+crouch, then the P13 chain solver, then human items (3)+(4), then the sky
+slice and the remaining tree slices (deciduous majority, understory,
+near-tree cards, billboards).
+
 ### 62 — P4 trees, close group 2: bake re-render (review-60 item 3) — the
 "floating fragment" and the "columnar spike stacks" were TWO renderer-side
 defects in `bake_trees.py`, not bake parameters; new card = real snow-loaded
