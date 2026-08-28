@@ -164,7 +164,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P4 | Forest | **slice 1 landed (iter 56): Blender-baked spruce impostor cards** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 152 thin-instanced cross-cards = 1 draw call (was ~304 cylinders); alpha-cut shadows replaced by solid `treeShadowProxy` cones sharing the card matrices after the depth-pass cost was measured (149.9→109.6 ms spliced); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, birch/understory |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
-| P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
+| P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
@@ -4963,6 +4963,78 @@ regex-matches `forestCardMat*` — fine permanently, or do you want a stable
 unsuffixed probe material? (2) entry 66 question 2 (A7 slab: remove vs seat)
 still blocks that item; (3) entries 67/68 questions (tear-detector hard gate;
 engine stub removal) still unanswered.
+
+### 72 — Author rebuild slice 1: helmet dome re-centred on the cranium
+(beanie was a 97 mm segment-centre offset), hood rim cut at the occiput,
+face paint pass 1 (brows + lips); figure_front camera now auto-picked by
+bib-blue (it faced the BACK at a hard-coded alpha); new figure_side.png +
+face.png canonical shots. The straight-chest clamp is BUILT BUT DISABLED —
+it reliably kills the bib's atlas share (diagnosis below) and the 45-minute
+gate landed before a bib_mask re-derivation could.
+
+**Order acted on:** reviewer after review 70 — "author priorities 1 + 2 + 2b
+in ONE Blender rebuild ... and fix figure_front.png"; the 18:50 answers
+confirm "the author's rebuild is next, not the red marks".
+
+**Build (`blender/build_body.py`, ASSET_V 22→23):**
+- Helmet centring: the dome ellipsoid was centred on the head PHYSICS
+  segment; the mesh cranium centroid measures **97.3 mm forward** of it —
+  the measured offset IS the beanie. The shell is now projected about the
+  cranium centroid (sanity-fails only beyond 150 mm).
+- Hood fix: `head_region` now returns skin for everything below the
+  occiput/ear-top line (chin + 0.50 h) all round; previously the back was
+  shell "all the way down" to the nape. Budget guard: the new nape skin
+  stays in the HEAD atlas budget (the first cut gave it face texels and
+  squeezed the bib — caught by body.spec before landing).
+- Face pass 1: brows (0.555–0.615 h band) + lip colour (0.25–0.32 h) painted
+  in head-height fractions over the preserved skin. Census: brow 235, lip
+  50 verts; face region 19254.
+- Chest straightener (`straighten_chest`, author priority 1): slice report
+  at ~5 cm steps + front-line clamp + depth/breadth envelope, fully built
+  and gated — but the CALL IS DISABLED. Diagnosis, measured across three
+  variants (full-band, band-restricted, breadth-floored): every clamp
+  variant moved chest-front verts inward and shrank the front bib plate's
+  samples 660→360 and its rendered blue 0.100→0.039, failing body.spec and
+  the bib ink gate. `bib_mask` keys on the moved surface, so the clamp must
+  land together with a mask re-anchor (key it on the segment frame or
+  pre-clamp geometry). Function + gates kept; measured pre-clamp slice
+  report is in the build log: fronts +0.179..+0.195 over the chest band,
+  i.e. the chest already reads near-straight in the trunk frame; the
+  visible protrusion is probably the suit stand-off/bib layer, not the
+  base mesh.
+
+**Cameras (`tests/drive/look.spec.js`):** figure_front's hard-coded alpha 0
+framed the athlete's BACK (the ready-turn yaw has moved since iter 61's
+note; the four-quadrant probe measured bib-blue 0.319 from −z vs 0.150 from
++z — the figure faces −z, as rig.spec says). The frontal alpha is now
+auto-picked per run by bib-blue (2:1 weighted) + skin pixels; it picked
+−π/2, score 0.66. New canonical shots: `figure_side.png` (quarter turn off
+the front) and `face.png` (0.6 m head close-up, sim paused for the shot).
+
+**Verification:** unit 76/76; golden 30/30 (no recapture — physics
+untouched, engine untouched); drive green: body 4/4 (SUIT front blue 0.100
+vs back 0.026, helmet luma 0.349 vs suit 0.936), bib-number (front navy
+0.0362, back 0.1766 — both in band), rig 7/7, ready-stance, look. Build
+gates: helmet centring 97.3 mm applied; bib bake front ink 0.344 / back
+0.175; bideltoid and leg-step gates unchanged green. Shots regenerated
+(19:27–19:28): figure/figure_front/figure_side/face/scene/kicker/inrun.
+
+**Open / not done:** the chest straightening clamp (author priority 1) —
+function built, call disabled, re-enable together with the bib_mask
+re-anchor; helmet dome-centre ≤1 cm hard gate not yet written as a spec
+(it is constructive in the build); face pass 2 (goggle lens geometry,
+cheek/nose shading) per 2b; face.png/figure_side.png eye review by the
+reviewer; then priority 3 (crash re-verification), 4 (start gating).
+
+**Open questions for the reviewer:** (1) chest d/b convention: the author's
+"chest depth ≤ 0.55 × chest breadth" — measured on torso-dominant slices
+the bare trunk breadth is ~0.27 m (d/b ~1.07 at the chest), while the
+dressed-chest reference is ~0.48 m (d/b ~0.75–0.84, near the limit). Which
+breadth should the hard gate use? (2) is disabling the clamp with the
+diagnosis above the right call, or should the clamp ship against the suit
+stand-off layer (`loosen_suit`/`relax_suit` amounts) instead of the base
+mesh? (3) bib-blue as the figure_front facing criterion — acceptable, or do
+you want a marker-mesh-based facing?
 
 ### 71 — The five-times-ordered 15-minute sky colour slice finally landed:
 thin haze band, deep blue to the tree line, reviewer blue gate shipped in

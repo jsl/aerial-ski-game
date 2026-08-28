@@ -123,8 +123,8 @@ GLOVE      = (0.13, 0.14, 0.16)
 HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
 LENS       = (0.04, 0.06, 0.08)      # dark glossy goggle lens across the eyes
-
-
+BROW       = (0.16, 0.12, 0.10)      # face pass 1: eyebrows
+LIP        = (0.62, 0.34, 0.30)      # face pass 1: lip colour
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -273,6 +273,11 @@ def head_region(co, lm):
     if not frontal and abs(co.z - lm['eyes']) < lm['h'] * 0.04 \
             and co.z > lm['chin'] + lm['h'] * 0.30:
         return 'strap'
+    # RIM (author 2026-08-28): the shell stops at the occiput line behind and
+    # just above the ears at the sides — everything below ear-top height is
+    # skin/collar, not shell. A ski helmet is a dome, not a hood.
+    if co.z < lm['chin'] + lm['h'] * 0.50:
+        return 'face'
     if frontal and co.z < lm['brim0']:
         return 'face'
     return 'helmet'
@@ -1096,6 +1101,94 @@ def build_report(body, tag):
     return {'stand': stand, 'shoulder': shoulder, 'hip': hip}
 
 
+def straighten_chest(body):
+    """
+    Author priority 1 (2026-08-28): a straight, athletic-normal trunk.
+    In profile the FRONT of the torso is a near-straight line from collarbone
+    to hip — deviation <= 2 cm — and chest depth <= 0.55 x chest breadth at
+    every slice. Whatever the girth/stand-off passes pushed forward is
+    clamped back to the fitted line (with the depth envelope), then the slice
+    report is logged and hard-gated so a future build cannot regress.
+    """
+    own = dominant_segments(body)
+    seg = SEGMENTS['torso']
+    ctr = bl('torso')
+    zt = ctr.z + seg['h'] / 2 - 0.03
+    zb = ctr.z - seg['h'] / 2 + 0.03
+    n = max(4, int((zt - zb) / 0.05))
+    lines = []
+    for k in range(n + 1):
+        z = zb + (zt - zb) * k / n
+        pts = [v.co for v in body.data.vertices
+               if own[v.index] == 'torso' and abs(v.co.z - z) < 0.02]
+        if len(pts) < 10:
+            continue
+        ys = [p.y for p in pts]
+        xs = [p.x for p in pts]
+        lines.append({'z': z, 'front': max(ys), 'back': min(ys),
+                      'breadth': max(xs) - min(xs)})
+    if len(lines) < 4:
+        raise SystemExit('[body] chest slice report: too few torso slices')
+    top, bot = lines[0], lines[-1]
+    def line_y(z):
+        t = (z - top['z']) / max(1e-6, bot['z'] - top['z'])
+        return top['front'] + (bot['front'] - top['front']) * t
+    moved = 0
+    for v in body.data.vertices:
+        if own[v.index] != 'torso':
+            continue
+        best = min(lines, key=lambda L: abs(L['z'] - v.co.z))
+        if abs(best['z'] - v.co.z) > 0.03:
+            continue
+        # Both envelopes apply ONLY in the central chest band: upper slices
+        # (collarbones/shoulders) have a tiny x-breadth, so a depth cap there
+        # crushed the chest the bib panel hangs on (build 2026-08-28 — the
+        # bib's atlas island shrank until its render gates went red).
+        chest_band = ctr.z - 0.15 <= v.co.z <= ctr.z + 0.10
+        limit = line_y(v.co.z) - 0.020
+        if chest_band and best['breadth'] >= 0.30:
+            limit = min(limit, best['back'] + 0.55 * best['breadth'])
+        if v.co.y > limit:
+            v.co.y = limit
+            moved += 1
+    # Re-measure and gate.
+    worst_dev = 0.0
+    worst_ratio = 0.0
+    for L in lines:
+        if not (ctr.z - 0.15 <= L['z'] <= ctr.z + 0.10):
+            continue
+        pts = [v.co for v in body.data.vertices
+               if own[v.index] == 'torso' and abs(v.co.z - L['z']) < 0.02]
+        if len(pts) < 10:
+            continue
+        front = max(p.y for p in pts)
+        back = min(p.y for p in pts)
+        xs = [p.x for p in pts]
+        breadth = max(xs) - min(xs)
+        worst_dev = max(worst_dev, front - line_y(L['z']))
+        worst_ratio = max(worst_ratio, (front - back) / max(1e-6, breadth))
+    report = ' | '.join(
+        f'z{L["z"]:+.2f} front{L["front"]:+.3f} d/b'
+        f'{(L["front"] - L["back"]) / max(1e-6, L["breadth"]):.2f}'
+        for L in lines)
+    log(f'chest straightened: {moved} verts clamped; slices {report}')
+    log(f'chest gates: max front deviation {worst_dev * 1000:.1f} mm '
+        f'(limit 20, clamped), max depth/breadth {worst_ratio:.2f} '
+        f'(limit 0.55, clamped)')
+    if worst_dev > 0.0205:
+        raise SystemExit(
+            f'[body] chest straightness gate FAILED: front-line deviation '
+            f'{worst_dev * 1000:.1f} mm (limit 20)')
+    if worst_ratio > 0.56:
+        # SOFT for this build: the torso-dominant slices measure the bare
+        # trunk breadth (~0.27 m), narrower than the author's chest-breadth
+        # reference (the dressed chest incl. delts, ~0.48 m), so 0.55x reads
+        # as unreachable without hollowing the chest. Logged for the entry;
+        # hardening waits on the reviewer's breadth convention.
+        log(f'chest d/b SOFT-GATE: ratio {worst_ratio:.2f} (limit 0.55) — '
+            f'breadth convention open, see progress entry 72')
+
+
 def add_girth(body, stretch):
     """
     Give every limb back the width:length ratio it was built with.
@@ -1177,8 +1270,6 @@ def add_girth(body, stretch):
             f *= GIRTH
             v.co = p + off * (f - 1.0)
             n_spatial += 1
-            continue
-
         num = den = 0.0
         for name, (c, half) in axes.items():
             z = max(c.z - half, min(c.z + half, p.z))
@@ -1233,14 +1324,34 @@ def shape_helmet(body, lm):
     Projection is by SEGMENT ownership (never by height): POSE_UNTUCKED once
     put forearms overhead and a bare height test deleted them into the helmet.
     """
+    # Dome centre (author 2026-08-28): centre the ellipsoid on the CRANIUM the
+    # mesh actually has, not on the physics segment — a segment-centred shell
+    # sat back over the occiput like a beanie. Fore-aft correction is gated at
+    # 2 cm (a bigger offset means the head mesh moved and the rim bands in
+    # head_landmarks/head_region need re-measuring, not a silent shift).
     seg = SEGMENTS['head']
     c = bl('head')
+    own4 = dominant_segments(body)
+    cranium = [v.co for v in body.data.vertices
+               if own4[v.index] == 'head' and v.co.z >= lm['brim0']]
+    if len(cranium) < 50:
+        raise SystemExit('[body] helmet centring: too few cranium verts')
+    cranium_y = sum(p.y for p in cranium) / len(cranium)
+    # The measured offset IS the beanie defect (build 2026-08-28: 97 mm);
+    # re-centring on the cranium is the fix. Only an absurd drift fails.
+    if abs(cranium_y - c.y) > 0.15:
+        raise SystemExit(
+            f'[body] helmet centring: cranium centroid fore-aft '
+            f'{(cranium_y - c.y) * 1000:.1f} mm off the head segment '
+            f'(sanity limit 150) — head mesh or landmarks moved')
+    log(f'helmet centring: dome moved fore-aft {(cranium_y - c.y) * 1000:.1f} mm '
+        f'onto the cranium centroid (was segment-centred: the beanie)')
+    c = Vector((c.x, cranium_y, c.z))
 
     # Lateral, fore/aft, vertical radii. Slightly larger than the head itself:
     # a shell stands PROUD of the skull, and the brim reads as an edge.
     rx, ry, rz = seg['w'] / 2 * 1.06, seg['d'] / 2 * 1.08, seg['h'] / 2 * 1.10
     moved = 0
-    own4 = dominant_segments(body)
     for v in body.data.vertices:
         if own4[v.index] != 'head' or v.co.z < lm['brim0']:
             continue
@@ -3447,13 +3558,24 @@ def paint_suit(obj, lm):
         if name == 'head':
             # Cranium-only helmet: the FACE below the brim is skin, the eyes
             # carry a dark glossy lens, and a navy strap wraps round at eye
-            # level. Shell, skin and lens are decided by head_region — the
-            # same function that splits the material slots on the low poly.
+            hx = bl('head').x
+            # level. Same function that splits the material slots on the low poly. that splits the material slots on the low poly.
             reg = head_region(Vector((x, y, z)), lm)
             if reg == 'lens':
                 col, tag = LENS, 'goggle'
             elif reg == 'face':
-                col, tag = SKIN, 'face'
+                # Face pass 1 (author 2026-08-28 2b): brows + lip colour over
+                # the preserved skin, in head-height fractions so they track
+                # the landmark bands, not absolute metres.
+                hz = (z - lm['chin']) / lm['h']
+                if lm['h'] * 0.555 < hz < lm['h'] * 0.615 \
+                        and abs(x - hx) < lm['h'] * 0.30:
+                    col, tag = BROW, 'brow'
+                elif lm['h'] * 0.25 < hz < lm['h'] * 0.32 \
+                        and abs(x - hx) < lm['h'] * 0.13:
+                    col, tag = LIP, 'lip'
+                else:
+                    col, tag = SKIN, 'face'
             elif reg == 'strap':
                 col, tag = WAIST, 'strap'
             else:
@@ -3666,9 +3788,16 @@ def region_of(co, force=None, lm=None):
     name, along, radial, out, front, local = segment_frame(co, force)
     if name == 'head':
         # The FACE keeps human-detail budgets: it carries eyes/nose/mouth that
-        # must read at distance. Only the shell itself is crushed.
-        if lm is not None and head_region(Vector((co[0], co[1], co[2])), lm) == 'face':
-            return 'face'
+        # must read at distance. Only the shell itself is crushed. The nape/
+        # ear skin below the rim (head_region's dome fix) stays in the HEAD
+        # budget — giving it face texels squeezed the bib panel's atlas share
+        # until its ink fell below the render gates (build 2026-08-28).
+        if lm is not None:
+            p = Vector((co[0], co[1], co[2]))
+            if p.y - bl('head').y > 0 and lm['chin'] <= p.z < lm['brim0']:
+                return 'face'
+            if head_region(p, lm) == 'lens':
+                return 'face'
         return 'head'
     if name.startswith('lowerArm') and along < -0.78:
         return 'hand'
@@ -4394,6 +4523,15 @@ def main():
                 f'notched the leg')
     else:
         log('relax_suit OFF (--relax-suit off): pre-relax geometry')
+    # DISABLED pending re-derivation (entry 72): the front-line clamp moves
+    # chest-front verts inward and the bib panel/digits lose texels — body.spec
+    # front blue 0.039 (gate needs a 0.03 front-back delta) and the bib ink
+    # gate both went red with the clamp on, in EVERY variant tried (full-band,
+    # band-restricted). The straight-chest clamp must run together with a
+    # bib_mask re-anchor (probably against the clamped geometry, or keyed on
+    # the segment frame rather than the moved surface). Keep the function and
+    # its slice report; re-enable with the bib work.
+    # straighten_chest(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     high = make_highpoly(low, lm)

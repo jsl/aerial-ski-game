@@ -75,22 +75,75 @@ test('look', async ({ page }) => {
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'figure.png') });
 
-    // A second angle from the FRONT. The bib and the number patch are front-only
-    // and the leg stripe runs down the outboard side, so a single rear view shows
-    // none of the suit design and makes a correct build look like a blank one.
-    // Iteration 61: the old alpha (0.32*pi) predates the ready-turn yaw and
-    // framed a three-quarter view in which the number plate is edge-on — the
-    // review-60 "bib 30 invisible" finding. The ready figure faces across the
-    // fall line with the chest/bib on the +x side (drive-measured: bib-blue
-    // pixel fraction 0.102 from alpha 0 vs 0.017 from alpha pi), so the
-    // frontal camera sits at alpha 0.
-    await page.evaluate(() => {
-        const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
-        cam.alpha = 0;
-        cam.beta = Math.PI / 2.6;
+    // A second angle from the FRONT. The bib and the number patch are
+    // front-only, so the frontal framing is what shows the suit design.
+    // Review 70: figure_front.png showed the athlete's BACK — the ready-turn
+    // yaw moved again and a hard-coded alpha cannot track it. Pick the facing
+    // empirically: render all four quadrant alphas and keep the one whose
+    // frame carries the most skin-tone pixels (face/hands read only from the
+    // front; the back is white suit + dark helmet).
+    const front = await page.evaluate(async () => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera, eng = scene.getEngine();
+        const w = eng.getRenderWidth(), h = eng.getRenderHeight();
+        let best = null;
+        for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+            cam.alpha = a;
+            scene.render();
+            const px = await eng.readPixels(0, 0, w, h);
+            let skin = 0, bib = 0, n = 0;
+            for (let i = 0; i + 3 < px.length; i += 4 * 7) {
+                const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+                n++;
+                if (r > 0.30 && r > g * 1.12 && g > b * 1.02 && r < 0.95) skin++;
+                if (b > 0.55 && b > r * 1.1 && g > r && g < b) bib++;
+            }
+            // The bib panel wraps the chest front (front wrap to |lat| 0.14
+            // vs a narrow rear patch), so bib-blue discriminates front from
+            // back 2:1 (probe 2026-08-28: 0.319 front vs 0.150 rear at the
+            // figure camera radius). Skin alone picked the BACK — the face is
+            // too few pixels at r=2.4. bib dominates, skin breaks ties.
+            const s = 2 * bib / Math.max(1, n) + skin / Math.max(1, n);
+            if (!best || s > best.s) best = { a, s };
+        }
+        cam.alpha = best.a;
+        return best;
     });
+    console.log('FRONTALPHA', JSON.stringify(front));
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'figure_front.png') });
+
+    // Canonical side view (review 70): a quarter turn from the front.
+    await page.evaluate(() => {
+        BABYLON.EngineStore.LastCreatedScene.activeCamera.alpha += Math.PI / 2;
+    });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'figure_side.png') });
+
+    // Canonical face close-up (author 2b pass 1): ~0.6 m in front of the head.
+    // Pause the sim first — its per-frame callback rewrites camera.target.
+    await page.keyboard.press('p');
+    await page.waitForTimeout(300);
+    await page.evaluate((frontAlpha) => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        let lo = null, hi = null;
+        for (const p of parts) {
+            p.computeWorldMatrix(true);
+            const b = p.getBoundingInfo().boundingBox;
+            lo = lo ? BABYLON.Vector3.Minimize(lo, b.minimumWorld) : b.minimumWorld.clone();
+            hi = hi ? BABYLON.Vector3.Maximize(hi, b.maximumWorld) : b.maximumWorld.clone();
+        }
+        const top = hi.subtract(lo);
+        const head = lo.add(top.scale(0.5)).add(new BABYLON.Vector3(0, top.y * 0.42, 0));
+        const cam = scene.activeCamera;
+        cam.setTarget(head);
+        cam.alpha = frontAlpha; cam.beta = Math.PI / 2;
+        cam.radius = 0.6; cam.fov = 0.9;
+    }, front.a);
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'face.png') });
+    await page.keyboard.press('p');
 
     // Pull back for the whole scene.
     await page.evaluate(() => {

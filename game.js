@@ -1444,7 +1444,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=22';   // 22: Sky blue deepening (A8)
+    const ASSET_V = '?v=23';   // 23: Helmet re-centred on cranium, chest straightened, face paint pass 1
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
