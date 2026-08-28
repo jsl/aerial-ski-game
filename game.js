@@ -3914,19 +3914,25 @@ void main(void) {
                         pt.p.y = surf;
                         const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
                         const vH = Math.sqrt(vx * vx + vz * vz);
-                        // Static friction (human item 2): below 0.35 m/s the
+                        // Static friction (human item 2): below 0.5 m/s the
                         // contact STOPS the point dead. Without this the body
                         // creeps forever at the gravity-injection equilibrium
                         // (g·h per substep ≈ 0.26 m/s at clamped headless dt),
                         // so the rest detector never sees < 0.08 m/s.
-                        if (vH / h < 0.35) {
+                        // Retune (iter 45): 0.35 → 0.5 — the 0.35 build sat
+                        // exactly on the ≤ 3.5 s restAt gate (3.56 s measured
+                        // under load; 3.0–4.2 s spread, entries 43/44).
+                        if (vH / h < 0.5) {
                             pt.prev.x = pt.p.x;
                             pt.prev.z = pt.p.z;
                         } else {
                             // Ploughing friction + a static stop so the body settles.
                             // Static-stop threshold raised 0.5 → 0.9 m/s (human
                             // item 2: come to rest within ~1 s of stopping).
-                            const f = Math.min(0.5, (2.5 + 4.5 * slope) * h * 10);
+                            // Retune (iter 45): base 2.5 → 3.5 so the median
+                            // settle pulls toward the author's ~2–3 s target
+                            // and off the gate edge (entry 43 open item).
+                            const f = Math.min(0.5, (3.5 + 4.5 * slope) * h * 10);
                             let k = 1 - f;
                             if (vH * (1 - k) / h < 0.9) k = 0.25;
                             pt.prev.x = pt.p.x - vx * k;
