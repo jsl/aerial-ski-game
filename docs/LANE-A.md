@@ -286,3 +286,59 @@ beside the thighs ending mid-thigh, finger length proportionate; no long-finger 
 - Hand-clearance threshold 0.155 now passes on the corrected band but with ~0.5 mm margin;
   if the reviewer would rather re-derive the threshold, the band (node-axis distal-of-
   wrist) is the part worth keeping.
+
+### 8 — Bib as a looser panel (task 3 remainder: +6 mm extra stand-off on the bib region, hard-gated)
+
+**What changed.** Task 3's last build-side slice. The bib so far was paint
++ a 2.6 mm normal-map lip (`displace_suit`) — it read as printed on the
+suit, not as the separate garment it is. `loosen_suit` now gives torso
+verts inside `bib_mask` a further `BIB_OFFSET` 6 mm of stand-off (28 mm
+total vs the 22 mm suit around it), scaled by the mask's own border ramps
+(0.12 along-units = 3.3 cm along the panel, 4–5 cm round the ribs) so the
+panel edge fades instead of stepping. Placement is geometric, not hoped
+for: the chest girth anchor sits at along 0.64, ABOVE the bib's top edge
+(0.52), so `SUIT_GIRTH_GATE`'s chest band never sees the extra offset —
+measured, the chest delta is UNCHANGED at +24.0. The waist anchor
+(along 0) reads it: 183→216 (+32.2, gate 16–40, was +25.9). Thigh/calf/
+forearm deltas, the deltoid band (+0.0) and the FOLD populations are
+identical to iteration 7. New hard `BIB_GATE`: the panel must land on
+≥ 92 verts (40% of the measured 230, FOLD_GATE pattern) — an orphaned
+bib_mask (segment rename, moved anchor) fails the build instead of
+silently fading.
+
+No browser gate added deliberately: the torso zone is the instrument the
+iteration-6 note found unreliable browser-side (mixed populations under
+the max-slice read), and the panel is fully measurable build-side; the
+shipped glb's own gates re-verified the new tessellation (the adaptive
+decimate re-tessellated 9908 → 9945 verts, +37 — same precedent as
+iteration 2's 13324 → 13466).
+
+**Verification.** Blender build `--res 2048 --samples 96` green,
+deterministic across 2 runs (BIB panel 230 verts both; every gate line
+identical): BIDELTOID 0.401 ≤ 0.41, HAND 0.75..0.75, SUIT GIRTH chest
+180→204 (+24.0) / waist 183→216 (+32.2) / thigh 174→213 (+39.3) / calf
+92→101 (+9.0) / forearm 88→99 (+10.5), deltoid +0.0, FOLD populations
+unchanged. Regression re-run of iteration 7 BEFORE the change: build
+green, rig 11/11 — no regressions carried in. Browser on the new assets
+at `DRIVE_PORT=8199`: **rig 11/11**, **look 1/1**, athlete family
+(athlete/athlete-wired/body/ready-stance) 11/11. Shots inspected:
+`figure_front.png` (profile) — the bib reads as a proud chest panel with
+a soft edge, the number plate slightly raised, no shoulder/arm inflation;
+`figure.png` (rear quarter) — back panel stand-off shading around the
+plate, suit shell and folds otherwise unchanged. Subtle by design: the
+whole suit stand-off is 22–28 mm.
+
+**Assets rebuilt** → `ASSET_V` must be bumped at merge time (Merge
+notes, standing).
+
+**Open / next in lane priority.**
+- Task 3 residual: fold-visibility tuning (raise amplitudes toward
+  2.5 mm) if the author wants the creases to read harder — iteration 7
+  measured the folds at +1.5% normal-map Laplacian, deliberately subtle.
+- Task 4: helmet brim wraps behind the ears (skin patch from the rear
+  quarter).
+- Task 5: ARM GATES hard — still 20.7 mm / 24.3 mm / 10.5 deg / 28.0 mm
+  vs limits 10/10/10/5; needs the threshold re-derivation flagged in
+  iteration 2 plus a geometry pass; the biggest remaining lane item.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — the
+  bib panel is build-side hard-gated, no game.js wiring.
