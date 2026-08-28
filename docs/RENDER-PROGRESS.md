@@ -193,11 +193,19 @@ the near-face plate centre, asserts navyFrac ∈ (0.02, 0.25) per face, front
 bib-blue > back, back < 0.09 (the designed narrow rear bib panel measures
 0.0677 — not a wrap defect). 1/1 green ×2.
 
-**Open / not done this iteration:** `look` shots NOT regenerated yet (hard-kill
-timebox); `body.spec` and the full drive suite not re-run; reviewer's "paint
-onto the final panel" alternative not needed — paint was already post-pass,
-the mapping was the defect. Bib-blue only 0.10 even front-on: the powder-blue
-bib reads near-white under the sun at camera — contrast note for group 7.
+**Follow-up (same session, commit 2):** `look` regenerated 1/1 — all three
+body materials carry the ?v=17 maps (albedoReady true, uvSpan 0.992), and the
+canonical `figure_front.png` now shows "30" large, dark and correctly
+oriented — the P7 look acceptance is met in the shipped artifact. `body.spec`
+4/4 on the rebuilt assets. Scratch probes/PNGs in
+`~/aerial-agents/scratch/iter-61/`.
+
+**Open / not done this iteration:** full drive suite + run-all not re-run
+(timebox); trees (item 3) untouched — next iteration. Bib-blue only 0.10 even
+front-on: the powder-blue bib reads near-white under the sun at camera —
+contrast note for group 7. Reviewer's "paint onto the final panel"
+alternative was not needed — the paint was already post-pass; the reading-
+direction mapping was the defect.
 
 ### 60 — Review-only: run-all exposed shipped drive breakage (baked.spec, red since the iter-56 caster swap) — repaired test-side; five shots regenerated + measured: upright forest confirmed but reads near-black with a detached top cap; bib ink absent at camera; red kicker marks ~1% of frame
 
