@@ -1385,7 +1385,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=20';   // 20: Body+suit pass (proportions, suit stand-off, helmet shape)
+    const ASSET_V = '?v=21';   // 21: Floating slab fix (wUpperMtn lowered/thinned)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
@@ -3063,9 +3063,9 @@ void main(void) {
         // Continue slope upward: at z units behind SLOPE_START_Z, y rises by z*tan(SLOPE_ANGLE)
         const midExtY  = (-midExtZ) * Math.tan(SLOPE_ANGLE) - FOOT_OFFSET;
         const depth    = extDepth / Math.cos(SLOPE_ANGLE) + 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 1.6, depth }, scene);
+        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 0.8, depth }, scene);
         wb.rotation.x = SLOPE_ANGLE;
-        wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        wb.position.set(0, midExtY - 1.2, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
         wb.material = lsMat;
     }
 
