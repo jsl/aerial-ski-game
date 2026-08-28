@@ -1347,7 +1347,7 @@ void main(void) {
             const sd = sunLight.direction.clone().normalize().scale(-1);
             skyMat.setVector3('sunDir', sd);
             skyMat.setColor3('zenithColor', new BABYLON.Color3(0.07, 0.20, 0.55));
-            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.62, 0.76, 0.92));
+            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.50, 0.60, 0.85));
             skyMat.backFaceCulling = false;
             const sky = BABYLON.MeshBuilder.CreateSphere('skyDome',
                 { diameter: 4000, segments: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
@@ -1385,7 +1385,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=21';   // 21: Floating slab fix (wUpperMtn lowered/thinned)
+    const ASSET_V = '?v=22';   // 22: Sky blue deepening (A8)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
