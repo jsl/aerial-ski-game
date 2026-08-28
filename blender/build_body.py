@@ -1850,6 +1850,13 @@ SUIT_OFFSET = {
     'torso': 0.022, 'upperLeg': 0.020, 'lowerLeg': 0.012,
     'upperArm': 0.010, 'lowerArm': 0.008,
 }
+# Task 3 remainder: the competition bib is a separate, looser panel worn OVER
+# the suit — torso verts inside bib_mask get this much EXTRA stand-off (m),
+# scaled by the mask's own border ramps. The chest girth anchor sits at along
+# 0.64, above the bib's top edge (0.52), so only the waist band sees it.
+BIB_OFFSET = 0.006
+BIB_GATE = 92   # 40% of the measured 230-vert panel (FOLD_GATE pattern) — an
+                # orphaned bib_mask (segment rename) fails instead of fading
 # Breadth (max-min x) deltas measured before/after the offset, per zone band,
 # zone-filtered to the anchor's own segment. Bands were measured on the landed
 # field (23 Aug iteration 3 build: chest +24.0, waist +25.9, thigh +39.3,
@@ -1877,6 +1884,12 @@ def loosen_suit(body, joints):
     upper 10 vs lower arm 8 mm at the elbow, torso 22 vs thigh 20 at the hip),
     so the amounts are lerped across 8 cm smoothstep bands centred on the hip,
     knee and elbow planes — no step where one zone hands over to the next.
+
+    The competition bib is a separate, looser panel worn OVER the suit: torso
+    verts inside bib_mask get BIB_OFFSET of extra stand-off, scaled by the
+    mask's own border ramps so the panel edge fades rather than steps. The
+    chest girth anchor sits above the panel (along 0.64 vs top edge 0.52),
+    so the chest gate band never reads it; the waist band does.
 
     Exclusions (offset exactly zero): head/face (never touched), the glove band
     (fades to zero at the wrist plane, so the hand_ratio gate's band is
@@ -1948,6 +1961,7 @@ def loosen_suit(body, joints):
     vs = body.data.vertices
     cand = {}
     arm_in, leg_in = {}, {}
+    bib_verts = {}                   # i -> extra bib stand-off applied (m)
     for i, v in enumerate(vs):
         nm = dom[i]
         if nm is None or nm == 'head' or nm not in SEGMENTS:
@@ -1966,6 +1980,14 @@ def loosen_suit(body, joints):
                 t = sstep((hip_z + 0.04 - z) / 0.08)
                 amp = SUIT_OFFSET['torso'] * (1 - t) \
                     + SUIT_OFFSET['upperLeg'] * t
+            # Bib (task 3 remainder): extra stand-off on the bib panel, scaled
+            # by bib_mask's border ramps (0.12 along-units = 3.3 cm along the
+            # panel, 4-5 cm round the ribs) so the edge is a fade, not a step.
+            _fr = segment_frame((v.co.x, v.co.y, v.co.z), 'torso')
+            bib = BIB_OFFSET * bib_mask('torso', _fr[1], _fr[4], _fr[5][0])
+            if bib > 0:
+                amp += bib
+                bib_verts[i] = bib
             side = None
         elif base in ('upperLeg', 'lowerLeg'):
             # knee blend; boot cuff: 0 at the ankle plane + 2 cm, full above
@@ -2056,6 +2078,11 @@ def loosen_suit(body, joints):
         + ', '.join(f'{b} {c[0]}/{c[1]}' for b, c in sorted(dbg.items())))
     log(f'loosen_suit: {n_moved} suit verts stood off the body '
         f'(head/glove/boot untouched by construction)')
+    n_bib = len(bib_verts)
+    if n_bib:
+        log(f'BIB panel: {n_bib} suit verts carry a further '
+            f'{BIB_OFFSET * 1000:.0f} mm of stand-off (bib_mask ramps; '
+            f'chest anchor above the panel, waist band reads it)')
 
     after = {k: breadth(z, zone=zo) for k, (z, zo) in anchors.items()}
     delt_delta = deltoid_width() - delt_before
@@ -2083,6 +2110,11 @@ def loosen_suit(body, joints):
             f'[body] suit girth gate FAILED: deltoid band grew '
             f'{delt_delta * 1000:.1f} mm (gate <= '
             f'{SUIT_DELTOID_GATE * 1000:.0f} mm) — the cap fade is leaking')
+    if n_bib < BIB_GATE:
+        raise SystemExit(
+            f'[body] bib panel gate FAILED: {n_bib} verts carry the extra '
+            f'stand-off (floor {BIB_GATE}) — bib_mask landed on almost '
+            f'nothing (segment rename or a moved anchor?)')
 
 
 BIDELTOID_GATE = 0.41                 # hard ceiling (m)
