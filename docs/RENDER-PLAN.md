@@ -292,6 +292,29 @@ Acceptance: a `quality.spec.js` asserts hardware scaling, MSAA samples, anisotro
 mipmaps on all tiled textures, shadow filter mode and SSAO settings, and logs the measured
 frame time; a before/after `look` set is inspected and described in the progress entry.
 
+### P13 — Kinematic chain solver for the skinned athlete + boot–ski invariant (author, 2026-08-28)
+`reference/shots/author_crouched_2026-08-28.jpg` (local) shows the in-run tuck: the skinned
+torso/arms tear into shards, the neck stretches, the boots stand ahead of empty bindings. Root
+cause: every segment is driven as an independent physics box (position and rotation straight
+from the pose tables, which were written for disjoint boxes), so adjacent bones no longer meet
+at joints and linear-blend skinning stretches the mesh between them.
+Renderer-side fix (ADR-0002, physics untouched): each frame, derive a **connected skeleton**
+from the drivers before skinning — compute each joint as the reconciled point between the two
+adjacent segment ends (neck = torso top/head bottom, shoulders, elbows, hips, knees, ankles),
+orient each bone from joint to joint (keeping the driver's roll), and place the head bone from
+the neck joint with a fixed neck length. Segment lengths are the model's; only joint gaps are
+closed. Result: no tearing, a neck of constant length, hands where the pose says.
+**Boot–ski invariant (game invariant, author):** the ski is bound to the boot at toe AND heel in
+every state — ready, hop turn, in-run crouch, takeoff, flight, landing, ride-out — except a
+crash eject. Implement by posing the visual ski (and any ski-driven visuals) from the boot each
+frame (`skiTransform = bootTransform × bindingOffset`) rather than from the physics ski box;
+the physics ski segment continues to exist for the simulation. A single invariant spec samples
+every frame of a full run and the hop turn and asserts toe and heel sole-to-ski ≤ 5 mm and ski
+pitch/yaw = boot pitch/yaw ± 2°; it is allowed to be violated only after the crash eject.
+Acceptance for the solver: in the in-run tuck, flight tuck and pike, no triangle in the skinned
+body exceeds 3× its rest edge length (tear detector on the skinned buffer), neck length within
+±1 cm of rest, hands within 3 cm of the pose-table hand positions.
+
 ## Iterations 51–80 — serial schedule (author-approved 2026-08-27 21:55)
 One session at a time (no parallel lanes). Reviews at every multiple of 5. Take the groups in
 order; a group may span more than one iteration; do not skip ahead.
