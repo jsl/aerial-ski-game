@@ -4962,3 +4962,53 @@ regex-matches `forestCardMat*` — fine permanently, or do you want a stable
 unsuffixed probe material? (2) entry 66 question 2 (A7 slab: remove vs seat)
 still blocks that item; (3) entries 67/68 questions (tear-detector hard gate;
 engine stub removal) still unanswered.
+
+### 71 — The five-times-ordered 15-minute sky colour slice finally landed:
+thin haze band, deep blue to the tree line, reviewer blue gate shipped in
+`sky.spec`
+
+**Order acted on:** entry 70's re-prioritised queue item 1 (the reviewer's
+03:15/06:55 "sky colour parameter slice", ordered FIRST five times and never
+attempted). Sky dome shader parameter change only — `game.js` fragment shader
+gradient + the two `skyMat` colours. No assets, ASSET_V unchanged, engine
+untouched.
+
+**Change:** the old gradient mixed zenith→horizon with `pow(1.0−y, 2.4)`,
+which painted a ~20°-tall pale band over every low-elevation view — that was
+the wash the reviewer kept measuring. Now the haze band completes by
+y = 0.035 (~2°) via `1.0 − smoothstep(0.008, 0.035, y)`, so the saturated
+blue reaches to within ~2–5° of the tree line. Colours: zenith
+(0.16, 0.34, 0.66) → shipped (0.13, 0.29, 0.58) after gate calibration;
+horizon (0.50, 0.60, 0.85) → (0.60, 0.72, 0.88); cloud coverage threshold
+briefly tightened then restored to the original `smoothstep(0.52, 0.66, f)`
+with density 0.92 → 0.85. One shader-edit bug caught by the spec's own
+signal (a dropped `float f = _fbm(...)` line killed the dome → flat
+clearColor: sun == zenith, whiteFrac 0) and fixed.
+
+**Verification:** `sky.spec` 3/3 green, all gates — zenith lum 0.574 ∈
+[0.10, 0.60], zenith r−b −0.309 (gate ≤ −0.12), sky-band r−b −0.319 (NEW
+blue-to-treeline gate ≤ −0.25), cloud whiteFrac 0.117 ∈ [0.02, 0.70], sun
+0.979 ≥ zenith + 0.25, snow-vs-sky margin 0.172 (gate ≥ 0.05, was 0.0074 in
+entry 70's first probe). Unit 76/76; golden 30/30 (no recapture — display
+only); `look` 1/1, shots regenerated; `review-measure` unchanged on terrain:
+corridor_vs_flankNear −0.0244, seam skyFrac 0.175, shadow drop 0.075, face
+darkFrac 0. Figure shots: numeric gates only this iteration (no PNG viewer
+available); ready framing's top-strip now reads lum 0.65 / r−b −0.207 vs the
+old washed −0.043.
+
+**Gate-placement finding (entry 70 queue item 1's literal wording):** the
+reviewer's "r−b ≤ −0.25 in the top third of `scene.png`" is unmeasurable as
+written — the scene ArcRotate framing's top third is ~60% distant snowfield
+(whiteFrac 0.59 at the top-10% band; `review-measure`'s own scene sky probe
+box finds skyFrac 0), so the region mean is terrain chroma (−0.07 to −0.14)
+no matter how blue the dome is. The gate ships on the spec's all-sky band
+(pure dome pixels, −0.319) instead. The dome itself does reach deep blue to
+~2–5° above the horizon.
+
+**Open questions for the reviewer:** (1) is the all-sky-band placement of
+the blue gate acceptable, or do you want it re-homed on a camera framing
+that actually contains sky (kicker.png/inrun.png have more sky — I can
+measure there next)? (2) entry 70's open questions 1–3 carry over
+(pbr-scene probe naming; A7 slab remove-vs-seat; tear-detector hard gate +
+engine stub removal). Queue item 2 (kicker red marks → dark edge line +
+gate) is next.

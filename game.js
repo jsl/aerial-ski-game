@@ -1371,9 +1371,10 @@ float _fbm(vec2 p) {
 void main(void) {
     vec3 dir = normalize(vDir);
     float y = clamp(dir.y, 0.0, 1.0);
-    // Deep blue zenith into a pale horizon; the pow curve keeps the zenith
-    // saturated and the horizon band wide, like the footage's clear sky.
-    vec3 col = mix(zenithColor, horizonColor, pow(1.0 - y, 2.4));
+    // Deep blue zenith into a pale horizon. The haze band is THIN (mix
+    // completes by y=0.035, ~2°) so the saturated blue reaches down to
+    // within ~5° of the tree line, as the reviewer's 03:15/06:55 notes pin.
+    vec3 col = mix(zenithColor, horizonColor, 1.0 - smoothstep(0.008, 0.035, y));
     // Cumulus: value-noise fbm projected on a plane above the camera, thinning
     // into the horizon haze. Static (no time term) so shots and luminance
     // gates stay deterministic.
@@ -1386,7 +1387,7 @@ void main(void) {
         // Lit tops near-white, dense centres shaded blue-grey.
         vec3 cloudCol = mix(vec3(1.02, 1.04, 1.08), vec3(0.74, 0.80, 0.90),
                             smoothstep(0.35, 0.75, f) * 0.55);
-        col = mix(col, cloudCol, dens * 0.92);
+        col = mix(col, cloudCol, dens * 0.85);
     }
     // Sun disc + glare at the directional light's own direction. Values above
     // 1.0 ride the HDR/ACES roll-off into white and feed the bloom pass.
@@ -1404,8 +1405,8 @@ void main(void) {
             // The disc sits where the light COMES FROM (opposite its travel).
             const sd = sunLight.direction.clone().normalize().scale(-1);
             skyMat.setVector3('sunDir', sd);
-            skyMat.setColor3('zenithColor', new BABYLON.Color3(0.07, 0.20, 0.55));
-            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.50, 0.60, 0.85));
+            skyMat.setColor3('zenithColor', new BABYLON.Color3(0.13, 0.29, 0.58));
+            skyMat.setColor3('horizonColor', new BABYLON.Color3(0.60, 0.72, 0.88));
             skyMat.backFaceCulling = false;
             const sky = BABYLON.MeshBuilder.CreateSphere('skyDome',
                 { diameter: 4000, segments: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);

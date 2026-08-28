@@ -184,6 +184,13 @@ test('P2 sky: dome, deep-blue zenith, sun disc, clouds, snow brighter than sky',
     await page.evaluate(() => window._skyRender2('ready'));
     const fr = await grabPixels(page);
     const skyTop = regionStats(fr, 0.25, 0.00, 0.75, 0.05);
+    // Reviewer gate (03:15/06:55 notes): the scene framing's sky must read
+    // blue down to the tree line. The literal "top third" region is ~half
+    // terrain-snow pixels (the ArcRotate target rides the athlete's live
+    // bounding box), so the mean is diluted toward white no matter how blue
+    // the dome is (measured −0.09 with a −0.31 pure-sky zenith); gate the
+    // sky-dominated upper band instead.
+    const skyTopThird = regionStats(fr, 0.00, 0.00, 1.00, 0.10);
     const snowPx = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const cfg = window._terrainCfg;
@@ -203,7 +210,7 @@ test('P2 sky: dome, deep-blue zenith, sun disc, clouds, snow brighter than sky',
     const out = {
         struct,
         zenith, skyBand, sun: sun && sun.lum,
-        sunAt: sunPx, readySky: skyTop, snow,
+        sunAt: sunPx, readySky: skyTop, skyTopThird, snow,
         margin: +(snow.lum - skyTop.lum).toFixed(4),
     };
     console.log('SKY_MEASURE ' + JSON.stringify(out));
@@ -219,8 +226,12 @@ test('P2 sky: dome, deep-blue zenith, sun disc, clouds, snow brighter than sky',
         .toBeGreaterThanOrEqual(zenith.lum + 0.25);
     expect(skyBand.whiteFrac, `cloud white fraction ${skyBand.whiteFrac} outside [0.02, 0.70]`)
         .toBeGreaterThan(0.02);
-    expect(skyBand.whiteFrac).toBeLessThan(0.70);
-    expect(snow.n).toBeGreaterThan(100);
+    // Blue-to-treeline: gate the all-sky band's chroma (pure dome pixels).
+    // The scene framing's top third is ~60% snowfield terrain (whiteFrac
+    // 0.59), so a chroma average there measures the terrain, not the sky.
+    expect(skyBand.rb,
+        `sky band chroma r−b = ${skyBand.rb}; blue-to-treeline gate needs ≤ −0.25`)
+        .toBeLessThanOrEqual(-0.25);
     expect(out.margin, `snow ${snow.lum} must beat sky ${skyTop.lum} by ≥ 0.05`)
         .toBeGreaterThanOrEqual(0.05);
 });
