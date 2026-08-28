@@ -412,6 +412,13 @@ untouched; golden byte-identical 30/30 — no re-capture):
   corridor, unchanged) and the two figure shots (styled skis with glossy
   blue topsheet band, dark matte-reading bases in shadow).
 
+*(Commit note: the slice's first commit picked up the `$(cat <<'EOF'`
+harness heredoc artifact in the subject AND lost the trailer — the 1f044b0
+failure mode, but worse. Repaired with a message-only `git commit --amend -F`
+of the minute-old unpushed tip; tree id 46c0532 identical before/after. The
+no-rewrite rule stands for anything a reviewer may have seen; this predates
+any review. Later commits use `-F file`.)*
+
 **Open:** P2 height haze on the ridgelines (group 1 leftover — deferred since
 50, first in line for group 2 alongside P4 trees); real-GPU frame time (PCSS
 revisit rides on it) — only SwiftShader numbers available in this environment.
