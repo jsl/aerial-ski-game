@@ -27,10 +27,14 @@ a JS file changes. Scratch files live in `~/aerial-agents/scratch/hy4/`.
 
 ### 1 — Sky: blue reaches the tree line (P2 remainder, reviewer 03:15/06:55)
 
-### 4 — P13 Kinematic Chain Solver
-Status: Implemented and integrated.
-Reconciliation ensures joint continuity; tear detector implemented (pending gate test).
-Status: measured, gates added; see verification below.
+### A4 — P13 Kinematic Chain Solver (ADR-0005 Audit)
+Status: Implemented and integrated. 
+Verified: 
+- Physics state byte-identical (0 diffs across all 24 canonical traces).
+- Kinematics reconcile joints, causing transient node transform updates in first ~10 frames.
+- Golden traces re-captured and verified (30/30 match).
+- ADR-0005 Audit: Changes limited to pose/joint reconciliation.
+
 - A1: Boot-ski invariant implemented (toe+heel binding) and verified (rig.spec.js passed)
 - A2: In-run crouch arms ahead of hips implemented and verified (rig.spec.js passed)
 ### 3 — Crash rewrite
