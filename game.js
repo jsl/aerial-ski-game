@@ -1289,7 +1289,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=15';
+    const ASSET_V = '?v=16';   // 16: tree impostor atlas + card (blender/bake_trees.py)
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -2716,12 +2716,14 @@ void main(void) {
     }
 
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
+    // P4 slice 1: every tree is ONE cross-card impostor — two crossed alpha-cut
+    // quads sampling the Blender-baked snow-loaded spruce
+    // (assets/tree_spruce_card.png from blender/bake_trees.py; the 8-view atlas
+    // ships alongside for the later camera-facing billboard slice). Thin
+    // instances keep the whole forest on one draw call and one shadow-map
+    // caster entry (the alpha-cut shadow path is the B-net strip's, proven in
+    // venue-dressing.spec). Low-poly near trees for parallax are a later slice.
     {
-    const tkMat = makePBR('trunkMat', scene);
-    tkMat.diffuseColor = new BABYLON.Color3(0.36, 0.22, 0.12);
-    const flMat = makePBR('foliageMat', scene);
-    flMat.diffuseColor = new BABYLON.Color3(0.11, 0.31, 0.14);
-
     // Deterministic hash → float in [0, 1) from two integers
     function _tRng(a, b) {
         let h = Math.imul((a * 1619 + b * 31337) | 0, 0x45d9f3b);
@@ -2735,6 +2737,11 @@ void main(void) {
     const zCells = Math.ceil((zEnd - zStart) / cellZ);
     const xCells = 6;  // covers X ≈ ±60
 
+    // Baked card frame in metres. MUST match blender/bake_trees.py's framing:
+    // frame height = TOP_Z + 1.0 = 14.6, ortho width = height × (1024/2048).
+    const CARD_W = 7.3, CARD_H = 14.6;
+
+    const spots = [];
     for (let gx = -xCells; gx <= xCells; gx++) {
         for (let gz = 0; gz < zCells; gz++) {
             const rx = _tRng(gx,         gz);
@@ -2756,35 +2763,74 @@ void main(void) {
             const prob = (1 - Math.exp(-distFromCourse * 0.10)) * sideFactor;
             if (rp > prob) continue;
 
-            // Alpine conifers: trunk 2.8–5 units, total height 11–18 units
+            // Alpine conifers: total height ~11–18 units (scale 0.85–1.75)
             const s = 0.85 + rs * 0.90;
-            const trunkH  = 3.0 * s,  trunkR  = 0.26 * s;
-            const foliageH = 10.5 * s, foliageR = 2.3 * s;
 
             // Plant against the SAME field function the terrain mesh samples:
             // with the slice-2 windlip beside the corridor, a physics-only
             // planting height would leave trunk bases floating above the berm.
-            const ty = _fieldTopY(tx, tz);
-            const ti = (gx + xCells) * zCells + gz;
-
-            // Interim stopgap (reviewer note, owed since iteration 5): rounded
-            // silhouettes — trunk with a widened base flare, foliage with more
-            // side facets. Real fix is the P4 Blender-baked impostor forest.
-            const trunk = BABYLON.MeshBuilder.CreateCylinder('tr_' + ti,
-                {
-                    height:         trunkH,
-                    diameterTop:    trunkR * 2 * 0.86,
-                    diameterBottom: trunkR * 2 * 1.45,
-                    tessellation:   16,
-                }, scene);
-            trunk.position.set(tx, ty + trunkH / 2, tz);
-            trunk.material = tkMat;
-
-            const foliage = BABYLON.MeshBuilder.CreateCylinder('fl_' + ti,
-                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 12 }, scene);
-            foliage.position.set(tx, ty + trunkH + foliageH / 2, tz);
-            foliage.material = flMat;
+            spots.push({
+                x: tx, y: _fieldTopY(tx, tz), z: tz, s: s,
+                yaw: _tRng(gx * 13, gz * 17) * Math.PI,  // per-tree variety
+            });
         }
+    }
+
+    if (spots.length) {
+        const q1 = BABYLON.MeshBuilder.CreatePlane('treeCardQ1',
+            { width: CARD_W, height: CARD_H }, scene);
+        q1.position.set(0, CARD_H / 2, 0);
+        const q2 = BABYLON.MeshBuilder.CreatePlane('treeCardQ2',
+            { width: CARD_W, height: CARD_H }, scene);
+        q2.position.set(0, CARD_H / 2, 0);
+        q2.rotation.y = Math.PI / 2;
+        const cards = BABYLON.Mesh.MergeMeshes([q1, q2], true, true);
+        cards.name = 'treeCards';
+
+        const treeMat = makePBR('forestCardMat', scene);
+        treeMat.albedoTexture = new BABYLON.Texture(
+            'assets/tree_spruce_card.png' + ASSET_V, scene, false, false);
+        treeMat.albedoTexture.hasAlpha = true;
+        treeMat.albedoTexture.anisotropicFilteringLevel = 4;   // 16 costs real time in the CSM depth passes
+        treeMat.useAlphaFromAlbedoTexture = true;
+        treeMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;   // = 2 (MATERIAL_ALPHATEST); stub-safe
+        treeMat.alphaCutOff = 0.5;
+        treeMat.backFaceCulling = false;   // crossed quads read from both sides
+        treeMat.roughness = 0.95;
+        cards.material = treeMat;
+
+        const buf = new Float32Array(spots.length * 16);
+        spots.forEach((t, i) => {
+            BABYLON.Matrix.Compose(
+                new BABYLON.Vector3(t.s, t.s, t.s),
+                BABYLON.Quaternion.RotationYawPitchRoll(t.yaw, 0, 0),
+                new BABYLON.Vector3(t.x, t.y, t.z)
+            ).copyToArray(buf, i * 16);
+        });
+        cards.thinInstanceSetBuffer('matrix', buf, 16, true);
+        cards.freezeWorldMatrix();
+        treeMat.freeze();   // static material: skip per-frame define rebinds
+
+        // Shadow proxy. The CSM depth pass pays a texture fetch + discard per
+        // alpha-tested card fragment: measured 40 ms/frame on the SwiftShader
+        // rig (tools/scratch-tree-cost.js: 149.9 shipped vs 109.6 with the
+        // cards spliced out of the depth list). A solid 6-sided cone sharing
+        // the card matrices shadows every tree for a fraction of that and
+        // keeps the plan's "all trees cast". alpha 0 keeps it out of the
+        // visible frame; only the depth pass rasterises it.
+        const proxyMat = makePBR('treeShadowProxyMat', scene);
+        proxyMat.alpha = 0;
+        proxyMat.disableLighting = true;
+        const proxy = BABYLON.MeshBuilder.CreateCylinder('treeShadowProxy',
+            { height: CARD_H * 0.92, diameterTop: 0.2,
+              diameterBottom: CARD_W * 0.72, tessellation: 6 }, scene);
+        proxy.position.set(0, CARD_H * 0.46, 0);
+        const proxies = BABYLON.Mesh.MergeMeshes([proxy], true, true);
+        proxies.name = 'treeShadowProxy';
+        proxies.material = proxyMat;
+        proxies.thinInstanceSetBuffer('matrix', buf, 16, true);
+        proxies.freezeWorldMatrix();
+        proxyMat.freeze();
     }
     } // end trees
 
@@ -6532,7 +6578,7 @@ void main(void) {
         // terrain keeps its bake; far peaks are past shadowMaxZ and are culled.)
         scene.meshes.forEach((m) => {
             if (!m.name || !m.getTotalVertices || m.getTotalVertices() === 0) return;
-            if (/^(tr_|fl_)/.test(m.name)) casters.add(m);
+            if (/^(tr_|fl_)$/.test(m.name) || m.name === 'treeShadowProxy') casters.add(m);
         });
         // B-net fencing casts as well: the thin posts render through their
         // source caster, and the alpha-cut strip throws a cutout shadow via
@@ -6546,6 +6592,11 @@ void main(void) {
 
         scene.meshes.forEach(m => {
             if (m.name === '__root__' || !m.getTotalVertices || m.getTotalVertices() === 0) return;
+            // treeCards does not RECEIVE: self-shadowing 152 alpha-tested
+            // quads measurably blows the quality frame-time gate and reads
+            // as acne on the cutout edge. The terrain keeps receiving their
+            // cast shadows.
+            if (m.name === 'treeCards' || m.name === 'treeShadowProxy') return;
             m.receiveShadows = true;
         });
         window._shadowCasters = casters.size;

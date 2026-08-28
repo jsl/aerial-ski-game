@@ -124,7 +124,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
-| P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
+| P4 | Forest | **slice 1 landed (iter 56): Blender-baked spruce impostor cards** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 152 thin-instanced cross-cards = 1 draw call (was ~304 cylinders); alpha-cut shadows replaced by solid `treeShadowProxy` cones sharing the card matrices after the depth-pass cost was measured (149.9→109.6 ms spliced); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, birch/understory |
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
@@ -152,6 +152,65 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ./tests/run-all.sh ALL GREEN in 879 s (unit 76/76, golden 30/30, browser 36/36,
 mutation + coverage PASS, drive 63 passed / 2 skipped), five shots regenerated
 and measured, entry 55 below.)*
+
+### 56 — P4 slice 1: Blender-baked spruce impostor forest (one draw call)
+
+**Group 2 (trees) starts per reviewer 02:50.** Landed the bake pipeline and the
+game-side impostor swap; the forest is now ONE thin-instanced cross-card draw
+call instead of ~304 flat-shaded cylinders.
+
+**Bake (`blender/bake_trees.py`, ~7 s headless CYCLES CPU, factory-startup):**
+scripted snow-loaded spruce (tapered trunk + 15 drooping branch layers, golden-
+angle azimuths, seeded), snow mixed in by world-space normal.z (range 0.18–0.70;
+two measured iterations: 0.10–0.62 gave snowFrac 0.37 = white sculpture, 0.28–0.85
+gave 0.058 = bare tree; landed 0.124). Outputs `assets/tree_spruce_card.png`
+(512×1024 RGBA straight alpha, straight-on view) + `assets/tree_spruce_atlas.png`
+(8 views × 45°, 256×512 tiles, 2048×512) for the later camera-facing billboard
+slice. Bake gates: per-view coverage 0.439–0.488, spread 0.005, lum 0.36,
+snowFrac 0.122. Card frame 7.3×14.6 m matches game constants CARD_W/H.
+
+**Game:** placement loop unchanged (same hash grid, same 152 spots, |x| 7–58,
+planted on `_fieldTopY`). Cross-card mesh (`treeCards`, 2 merged quads, alpha-cut
+PBR `forestCardMat` — named to DODGE the `_applySurfaces` /foliage/ recipe, which
+had silently replaced the baked atlas with `tex_foliage_a`; measured via
+TREES_MEASURE). Yaw/scale jitter per instance. `ASSET_V ?v=16`; `index.html`
+game.js `?v=34`.
+
+**Shadows — measured substitution (probe `tools/scratch-tree-cost.js`, 300 RAF
+deltas, 320×220 SwiftShader):** shipped alpha-cut cards in the CSM depth list =
+149.9 ms mean; cards spliced from depth = 109.6; hidden = 104.1 → the depth
+passes on alpha-tested quads ARE the regression (texture fetch + discard per
+fragment ×3 cascades). Fix: `treeShadowProxy`, a solid 6-sided cone sharing the
+card matrices, alpha-0, in the caster list; `treeCards` casts nothing. Result:
+quality 120.1 ms mean (gate < 150), and every shadow gate green: tree drop 0.638
+(≥ 0.20), athlete 0.719 (≥ 0.15), contact acne guards 0.084/0.196. The proxies
+cast solid cone silhouettes, not lacy cutouts — flagged below for the reviewer.
+
+**Verification:** unit + golden NOT yet run this session (see Open questions —
+only drive specs were exercised); drive: trees, shadows, pbr-scene, quality (6/6),
+look — 9 passed 0 failed. TREES_MEASURE: instances 152, forestActive 1
+(whole forest = 1 draw call), minAbsX 9.76, maxAbsX 57.95, atlas 512×1024 ready,
+aniso 4 (cost-capped; non-tiled texture), alphaTest 1 (ALPHATEST), cutoff 0.5.
+Legacy `tr_*`/`fl_*` meshes: 0. Shots regenerated (look); entry-55 measurements
+not re-run (review-measure untouched, corridor gates unaffected by tree swap
+outside corridor strip).
+
+**Open (next tree iterations, schedule group 2):** camera-facing billboards
+sampling the 8-view atlas; low-poly near trees for parallax (plan P4); birch +
+understory species; alpha-cut depth shadows vs proxy (reviewer call); bark/
+normal map on the card material; entry-55's green-fraction re-measure on the new
+forest.
+
+**Open questions for the reviewer (iter 56):**
+- Shadow-proxy cone substitution vs the plan's "impostor alpha in the shadow
+  map": 40 ms/frame of SwiftShader depth cost says alpha-in-depth is a real-GPU
+  risk too. Accept solid-cone proxy shadows (current), or fund an alpha-in-depth
+  attempt with a real-GPU frame-time measurement (PCSS-style per-cascade)?
+- Card texture 512×1024 (not the baked 1024×2048): 4× bandwidth for ~0 gain in
+  the main pass (149.9 → 150.0 A/B), so I shipped the small one. OK?
+- `pbr-scene.spec` ground pick moved trunkMat → forestCardMat (visor-vs-matt
+  pairing preserved); `shadows.spec` hasTrees now counts proxy instances (152).
+  Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
 - **Iteration 54 — ANSWERED (reviewer 02:50, b912a52): the height haze is

@@ -73,7 +73,11 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
             listed: names.length,
             hasBodyParts: names.filter(n => n.startsWith('athleteBody')).length,
             hasSkis: ['skiL', 'skiR'].filter(n => names.indexOf(n) !== -1).length,
-            hasTrees: names.filter(n => /^(tr_|fl_)/.test(n)).length,
+            // P4: the forest is one thin-instanced impostor mesh; the caster
+            // count is its instance count (source mesh renders them all).
+            hasTrees: names.filter(n => /^(tr_|fl_)/.test(n)).length +
+                      rl.filter(m => m.name === 'treeShadowProxy')
+                        .reduce((a, m) => a + (m.thinInstanceCount || 0), 0),
             pcfHigh: gen.usePercentageCloserFiltering === true &&
                      gen.filteringQuality === BABYLON.ShadowGenerator.QUALITY_HIGH,
             cascadeBlend: gen.cascadeBlendPercentage !== undefined ? gen.cascadeBlendPercentage : null,
@@ -165,13 +169,10 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     // ── 3. Tree probe. The crown's ground shadow is displaced from its trunk
     //       along the sun's horizontal ray u = −(dx,dz)/|..|, READ FROM THE LIVE
     //       LIGHT (iter 51 moved the sun to 32° elevation, azimuth exactly
-    //       camera-left — the ray is no longer the old (0.35,0.45)). At 32° the
-    //       cast band sits at 1.6 × crown height from the trunk, so samples run
-    //       4–20 m (the old 60° sun put the band at 0.57 × height, 4–9 m was
-    //       enough). Controls 12 m in the opposite direction and to both sides —
-    //       controls must read bright snow. Ground truth per tree = the trunk
-    //       mesh's bbox bottom (the game plants trunks exactly on the terrain).
     //       Three nearest trees are candidates; one qualifying pair passes.
+    //       P4: positions come from the treeCards thin-instance matrices —
+    //       the game plants each card origin exactly on the terrain field
+    //       (same property the old trunk bboxes had).
     const treePx = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const cam = scene.activeCamera;
@@ -179,22 +180,35 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
         const _sun = scene.lights.find(l => l.getClassName() === 'DirectionalLight');
         const _hn = Math.hypot(_sun.direction.x, _sun.direction.z);
         const ux = -_sun.direction.x / _hn, uz = -_sun.direction.z / _hn;
-        const trunks = scene.meshes.filter(m => m.name && /^tr_/.test(m.name))
-            .map(m => {
-                m.computeWorldMatrix(true);
-                const b = m.getBoundingInfo().boundingBox;
-                return { name: m.name, suffix: m.name.slice(3),
-                         x: (b.minimumWorld.x + b.maximumWorld.x) / 2,
-                         z: (b.minimumWorld.z + b.maximumWorld.z) / 2,
-                         groundY: b.minimumWorld.y };
-            })
+        const cards = scene.getMeshByName('treeCards');
+        const mm = cards && cards.thinInstanceGetWorldMatrices
+            ? cards.thinInstanceGetWorldMatrices() : [];
+        const n = mm.length;
+        let trunks = [];
+        if (n) {
+            for (let i = 0; i < n; i++) {
+                trunks.push({ name: 'treeCards#' + i,
+                              x: mm[i].m[12], y: mm[i].m[13], z: mm[i].m[14] });
+            }
+        } else {
+            trunks = scene.meshes.filter(m => m.name && /^tr_/.test(m.name))
+                .map(m => {
+                    m.computeWorldMatrix(true);
+                    const b = m.getBoundingInfo().boundingBox;
+                    return { name: m.name,
+                             x: (b.minimumWorld.x + b.maximumWorld.x) / 2,
+                             z: (b.minimumWorld.z + b.maximumWorld.z) / 2,
+                             y: b.minimumWorld.y };
+                });
+        }
+        trunks = trunks
             .sort((a, b) =>
                 ((a.x - c.x) ** 2 + (a.z - c.z) ** 2) -
                 ((b.x - c.x) ** 2 + (b.z - c.z) ** 2))
             .slice(0, 3);
         // One top-down camera wide enough for all candidate sample zones.
         cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 500;
-        cam.setTarget(new BABYLON.Vector3(c.x * 0.5 + trunks[0].x * 0.5, trunks[0].groundY,
+        cam.setTarget(new BABYLON.Vector3(c.x * 0.5 + trunks[0].x * 0.5, trunks[0].y,
                                           c.z * 0.5 + trunks[0].z * 0.5));
         cam.beta = 0.05; cam.alpha = 0; cam.radius = 70;
         scene.render();
@@ -205,15 +219,15 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
             return [Math.round(v.x), Math.round(v.y)];
         };
         return {
-            nTrunks: scene.meshes.filter(m => m.name && /^tr_/.test(m.name)).length,
+            nTrunks: n || scene.meshes.filter(m => m.name && /^tr_/.test(m.name)).length,
             trees: trunks.map((tr) => ({
-                name: tr.name, x: +tr.x.toFixed(1), y: +tr.groundY.toFixed(1), z: +tr.z.toFixed(1),
+                name: tr.name, x: +tr.x.toFixed(1), y: +tr.y.toFixed(1), z: +tr.z.toFixed(1),
                 shadow: [4, 8, 12, 16, 20].map(d =>
-                    proj(new BABYLON.Vector3(tr.x + d * ux, tr.groundY + 0.05, tr.z + d * uz))),
+                    proj(new BABYLON.Vector3(tr.x + d * ux, tr.y + 0.05, tr.z + d * uz))),
                 ctrl: [
-                    proj(new BABYLON.Vector3(tr.x - 12 * ux, tr.groundY + 0.05, tr.z - 12 * uz)),
-                    proj(new BABYLON.Vector3(tr.x - 12 * uz, tr.groundY + 0.05, tr.z + 12 * ux)),
-                    proj(new BABYLON.Vector3(tr.x + 12 * uz, tr.groundY + 0.05, tr.z - 12 * ux)),
+                    proj(new BABYLON.Vector3(tr.x - 12 * ux, tr.y + 0.05, tr.z - 12 * uz)),
+                    proj(new BABYLON.Vector3(tr.x - 12 * uz, tr.y + 0.05, tr.z + 12 * ux)),
+                    proj(new BABYLON.Vector3(tr.x + 12 * uz, tr.y + 0.05, tr.z - 12 * ux)),
                 ],
             })),
         };

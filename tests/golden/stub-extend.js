@@ -406,6 +406,11 @@ function patchNodeTransforms(B) {
     function decorate(node) {
         if (!node || node._transformsPatched) return node;
         node._transformsPatched = true;
+        // P4 forest (iter 56): thin-instance + freeze markers. The stub has
+        // no real geometry, so these are inert bookkeeping.
+        node.thinInstanceSetBuffer = function () {};
+        node.thinInstanceGetWorldMatrices = function () { return []; };
+        node.freezeWorldMatrix = function () {};
         if (!node.getWorldMatrix) {
             node.getWorldMatrix = function () {
                 const { pos, rot } = absolutePosition(this);
@@ -473,6 +478,12 @@ function patchNodeTransforms(B) {
                 B.MeshBuilder[name] = function (n, o, s) { return mk.call(this, n, s); };
             }
         }
+    }
+
+    // P4 forest (iter 56): the impostor cards merge two quads. The stub has
+    // no geometry to merge — keep the first mesh; the caller renames it.
+    if (B.Mesh && !B.Mesh.MergeMeshes) {
+        B.Mesh.MergeMeshes = function (meshes) { return meshes && meshes[0]; };
     }
 
     // MeshBuilder returns factory-made plain objects, not class instances, so

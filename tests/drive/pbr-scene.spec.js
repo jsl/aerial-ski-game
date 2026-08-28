@@ -56,9 +56,10 @@ test('the shim mapped Blinn-Phong properties onto physical values', async ({ pag
         };
         // Probes chosen from materials that exist in the default world. The
         // terrain materials are mode-dependent, so a hardcoded name can be
-        // absent — visor (specularPower 80, shiny) vs trunk (matt) is a pairing
-        // that always exists and has a large, meaningful gap.
-        return { visor: pick('visor_mat'), ground: pick('trunkMat'), sky: pick('foliageMat') };
+        // absent — visor (specularPower 80, shiny) vs the forest-card material
+        // (matt) is a pairing that always exists and has a large, meaningful
+        // gap. (The card mat replaced trunkMat/foliageMat in the P4 slice.)
+        return { visor: pick('visor_mat'), ground: pick('forestCardMat') };
     });
 
     // The visor had specularPower 80 (shiny); ground had ~0 specular (matt).
