@@ -119,7 +119,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
-| P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
+| P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
@@ -151,6 +151,15 @@ golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
 re-baselined and measured, entry 50 below.)*
 
 ## Open questions for the reviewer
+- **Iteration 54 — one call.** Height haze (group 1 leftover): the include-
+  override mechanism is built and probe-verified but NOT LANDED — reverted
+  before commit because the acceptance gate design failed (post chain
+  compresses the peak-transect chroma signal into the rock texture's own
+  noise) and the near-field neutrality run did not fit the budget (entry 54
+  has the numbers, the two GLSL landmines for this Babylon build, and the
+  landing plan). Confirm the disposition (probe now, land with the corrected
+  matte-probe gate first thing in 55, trees after), or name the gate you want
+  for the haze effect.
 - **Iteration 51 — two calls.**
 - **Iteration 53 — one call.** The P12 material line named "snow
   roughness/sheen re-tuned under the new sky"; I implemented sheen, A/B'd it
@@ -350,6 +359,69 @@ re-baselined and measured, entry 50 below.)*
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 54 — P2 height haze: mechanism proven in a probe, NOT LANDED (reverted before commit)
+
+**Order acted on:** entry 53's Open line — group 1's one unfinished item (P2
+height haze on the far ridgelines) heads the queue before P4 trees. Outcome
+this iteration: the construction works in a probe build but could not be
+verified against the calibrated near-field gates inside the budget, so per the
+house rule (a small verified commit beats a large unfinished one) the change
+was REVERTED before committing. `game.js` and `sky.spec.js` are back at
+614e8b4 exactly; nothing half-landed.
+
+**Self-review of 53:** `test:unit` 76/76 and `test:golden` 30/30 re-run green
+at session start; no 53 regression found.
+
+**What was built (probe-verified, then reverted):**
+
+- Mechanism: override Babylon 9.10.1's GLSL fog includes ONCE at init from
+  `game.js` (`ShaderStore.IncludesShadersStore.fogVertexDeclaration /
+  fogVertex / fogFragmentDeclaration`, byte-exact reproductions of the minified
+  originals plus a new `varying float vFogWorldY` written from `worldPos.y` in
+  the vertex include). The fragment's `CalcFogFactor` keeps the stock exp2 term
+  verbatim and adds ONE term: `haze = smoothstep(60,320, dist) ·
+  exp(−max(worldY − valleyFloorY, 0)·0.03)` — a distance-ramped, height-decaying
+  band. Near field (< 60 m) untouched BY CONSTRUCTION; WGSL/WebGPU keeps stock
+  fog (graceful degradation). No engine/ change, no dependency.
+- Two real bugs found and fixed on the way (both worth recording for the
+  landing attempt): (1) this build's GLSL fragment include uses
+  `#define E 2.71828` — the WGSL variant's `const E=2.71828;` does NOT compile
+  in GLSL and kills every fogged material (frame renders only the dome);
+  (2) `valleyFloorY` formats as `−31.86`, so naive string interpolation emits
+  `vFogWorldY--31.86` — a GLSL double-minus parse error with the SAME
+  symptom; parenthesise `(−31.86)`. Note `valleyFloorY =
+  terrainRootY(OUTRUN_Z) − FOOT_OFFSET` measures **−31.86** (the out-run plain,
+  ~29 m below the table) — the haze reference floor must be picked knowingly.
+- Probe evidence (scratch `~/aerial-agents/scratch/iter-54/`, console + vista
+  probes on the working build): after the fixes the scene renders normally
+  (athlete/snow/B-net/trees) with no shader errors, and a dedicated vista
+  (camera at valley+25 m over the +x backdrop peak, `pk_body_0`, 196 m out)
+  shows peaks whose lower flanks wash paler while tops stay crisp.
+
+**Why it did not land:** the acceptance gate. The natural chroma transect
+(peak base vs mid-height r−b toward the horizon colour) is DEAD after the P12
+post chain — measured through-patch deltas are ±0.01 while the rock texture's
+own variation is the same order (pkBase rb −0.086 vs pkMid −0.097, luminances
+0.5499/0.5522 — inside noise). A pinned sky.spec gate would either be weak
+enough to pass for the wrong reason or flake. Meanwhile the change's one hard
+risk — near-field neutrality for the calibrated luminance gates (grey-ramp,
+shadows contact probes, sky snow-vs-sky margin) — had NOT been re-run when the
+budget expired. An earlier run DID show how bad a silent fog change is: with
+the broken GLSL, `sky.spec` test 1 failed (snow 0.7991 vs sky 0.7908, margin
+0.008) purely because fogged materials vanished — on HEAD the same spec passes
+(snow 0.8261, readySky 0.6955, margin 0.1306; re-verified via `git stash`
+mid-session).
+
+**Landing plan for 55 (first half, then P4 trees):** re-apply the override
+(both GLSL fixes above), run `grey-ramp`, `shadows`, `sky` test 1 and
+`quality` FIRST as the near-field neutrality proof, and gate the haze itself
+on a luminance transect measured on matte, untextured geometry (the peaks'
+striped rock defeats small patches — either wide ±0.02 boxes averaged across
+the stripes at cap-foot vs base, or an off-screen probe plane with a flat
+material at two heights × two distances). `ASSET_V`/`?v=` bump for `game.js`
+in that commit (loader shows `game.js?v=32`; the change is in `game.js`, so
+bump to 33 per the cache-busting rule).
+
 ### 53 — P12 material re-tune: ski gloss split via ORM roughness atlas; snow sheen A/B'd and rejected on the grey ramp
 
 **Order acted on:** schedule group 1, final iteration (51–53 = P12 + sun + haze);
