@@ -1060,6 +1060,187 @@ test('the suit stands off the body (dressed girth carries the shell offset)', as
         `is missing (build dressed 0.213)`).toBeGreaterThanOrEqual(0.201);
 });
 
+test('fabric folds read at the creases (suit normal-map variance)', async ({ page }) => {
+    // ── Lane A task 3, folds slice + the suit-only smoothing guard ──────────
+    // Task 3's contract: the loose suit keeps FABRIC FOLDS at the elbows,
+    // knees, hips, armpits and the boot/glove cuffs, and any future suit-only
+    // smoothing must not erase them (or the millimetre relief). Both are one
+    // instrument: bake-side the folds are millimetre ridges that live in the
+    // NORMAL map (displace_suit docstring: relief deeper than ~2 mm reads as
+    // armour plating), so their presence IS high-frequency variance in the
+    // suit's crease UV region. This gate takes the shipped glb's verts, zones
+    // them by dominant skin weight (bone.getIndex() — bones[0] is the rig
+    // root, see the suit gate), keeps those inside the crease bands, maps them
+    // to the shipped normal map through their UVs, and reads the mean
+    // |Laplacian| of the R channel over the masked texels — the crease-band
+    // relief energy. Measured on identical masks: pre-folds build 66251,
+    // folds build 67265 (+1.5% — the ridges are smooth ~25 mm waves, so they
+    // add little Laplacian energy; this instrument's job is the smoothing
+    // GUARD, not fold presence). Floor = folds build − 18%: a pass that
+    // smooths the suit flat collapses far below it; fold PRESENCE itself is
+    // hard-gated build-side (the FOLD summary population gate in
+    // displace_suit), which is the exact instrument.
+    await boot(page);
+
+    const r = await page.evaluate(async () => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const V = BABYLON.VertexBuffer;
+        const parts = scene.meshes.filter(
+            m => m.name && m.name.startsWith('athleteBody') &&
+            m.skeleton && m.getTotalVertices() > 0);
+        const root = scene.getMeshByName('skierRoot') || parts[0].parent;
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+        const skel = parts[0].skeleton;
+        const idx2name = {};
+        for (const b of skel.bones) {
+            const gi = b.getIndex();
+            if (gi >= 0) idx2name[gi] = b.name;
+        }
+        const boneName = i => idx2name[i] || '?';
+        // Pass 1: per-zone vertex y extents in the root frame. The band
+        // windows below derive from THESE, not from bone node positions —
+        // the node convention is inconsistent per bone (measured: forearm
+        // nodes at the elbow, shin nodes at segment centre) and some bones
+        // (upperArm) have no transform node at all (nodeY -> null -> 0).
+        // Extents include weight bleed and the hand cluster, so band offsets
+        // are fractions of the MEASURED extents, not segment heights.
+        const zoneY = {};
+        const skinned = [];
+        for (const part of parts) {
+            part.computeWorldMatrix(true);
+            const world = part.getWorldMatrix();
+            const pos = part.getVerticesData(V.PositionKind);
+            const mi = part.getVerticesData(V.MatricesIndicesKind);
+            const mw = part.getVerticesData(V.MatricesWeightsKind);
+            if (!pos || !mi || !mw) continue;
+            const bones = part.skeleton.getTransformMatrices(part);
+            const tmp = new BABYLON.Vector3();
+            const acc = new BABYLON.Matrix();
+            const bm = new BABYLON.Matrix();
+            for (let i = 0; i < pos.length / 3; i++) {
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                let dom = 0, dw = -1;
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    if (w > dw) { dw = w; dom = mi[i * 4 + k]; }
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2],
+                    acc.multiply(world).multiply(toLocal), tmp);
+                const nm = boneName(dom);
+                const zs = zoneY[nm] = zoneY[nm] || [1e9, -1e9];
+                if (tmp.y < zs[0]) zs[0] = tmp.y;
+                if (tmp.y > zs[1]) zs[1] = tmp.y;
+                skinned.push([nm, tmp.y, i, part]);
+            }
+        }
+        // Pass 2: crease bands. Windows = the build's fold placement
+        // (SUIT_FOLDS in build_body.py, along-units) mapped onto each zone's
+        // measured y extent: elbow = forearm proximal (along +0.5..+0.95 ->
+        // extent fraction 0.72..0.95 of the zone, which includes bleed above
+        // the joint and the hand below the wrist) + arm distal, etc.
+        const ext = (z, f) => {
+            const e = zoneY[z];
+            return e ? e[0] + f * (e[1] - e[0]) : NaN;
+        };
+        const bands = [];
+        for (const s of ['L', 'R']) {
+            bands.push(
+                ['elbow', new RegExp('lowerArm' + s),
+                    ext('lowerArm' + s, 0.72), ext('lowerArm' + s, 0.95)],
+                ['elbow', new RegExp('upperArm' + s),
+                    ext('upperArm' + s, 0.0), ext('upperArm' + s, 0.16)],
+                ['armpit', new RegExp('upperArm' + s),
+                    ext('upperArm' + s, 0.74), ext('upperArm' + s, 0.95)],
+                ['knee', new RegExp('lowerLeg' + s),
+                    ext('lowerLeg' + s, 0.84), ext('lowerLeg' + s, 1.0)],
+                ['knee', new RegExp('upperLeg' + s),
+                    ext('upperLeg' + s, 0.0), ext('upperLeg' + s, 0.19)],
+                ['hip', new RegExp('upperLeg' + s),
+                    ext('upperLeg' + s, 0.81), ext('upperLeg' + s, 0.99)],
+                ['glove-cuff', new RegExp('lowerArm' + s),
+                    ext('lowerArm' + s, 0.42), ext('lowerArm' + s, 0.57)],
+                ['boot-cuff', new RegExp('lowerLeg' + s),
+                    ext('lowerLeg' + s, 0.08), ext('lowerLeg' + s, 0.26)],
+            );
+        }
+        const perBand = {};
+        for (const [zone] of bands) perBand[zone] = 0;
+        // occupancy: 512x512 over the 2048 atlas (each cell = 4x4 texels),
+        // dilated 1 cell to cover triangle interiors between verts
+        const GRID = 512, CELL = 4;
+        const occ = new Uint8Array(GRID * GRID);
+        for (const [nm, y, i, part] of skinned) {
+            for (const [zone, re, yLo, yHi] of bands) {
+                if (y < yLo || y > yHi || !re.test(nm)) continue;
+                perBand[zone]++;
+                const uv = part.getVerticesData(V.UVKind);
+                const u = Math.min(GRID - 1, Math.max(0,
+                    Math.round(uv[i * 2] * GRID)));
+                const v = Math.min(GRID - 1, Math.max(0,
+                    Math.round(uv[i * 2 + 1] * GRID)));
+                for (let du = -1; du <= 1; du++)
+                    for (let dv = -1; dv <= 1; dv++) {
+                        const uu = u + du, vv = v + dv;
+                        if (uu >= 0 && uu < GRID && vv >= 0 && vv < GRID)
+                            occ[vv * GRID + uu] = 1;
+                    }
+                break;
+            }
+        }
+        // metric = mean |Laplacian| of the normal map's R channel, masked
+        const blob = await (await fetch('/assets/athlete_normal.png')).blob();
+        const bmp = await createImageBitmap(blob);
+        const cv = document.createElement('canvas');
+        cv.width = bmp.width; cv.height = bmp.height;
+        const cx = cv.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(bmp, 0, 0);
+        const px = cx.getImageData(0, 0, cv.width, cv.height).data;
+        const W = cv.width, H = cv.height;
+        const R = (x, y) => px[(y * W + x) * 4];
+        let sum = 0, n = 0;
+        for (let gy = 0; gy < GRID; gy++)
+            for (let gx = 0; gx < GRID; gx++) {
+                if (!occ[gy * GRID + gx]) continue;
+                const x0 = gx * CELL, y0 = gy * CELL;
+                for (let dy = 0; dy < CELL; dy++)
+                    for (let dx = 0; dx < CELL; dx++) {
+                        const x = x0 + dx, y = y0 + dy;
+                        if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1)
+                            continue;
+                        const l = 4 * R(x, y) - R(x - 1, y) - R(x + 1, y)
+                            - R(x, y - 1) - R(x, y + 1);
+                        sum += Math.abs(l);
+                        n++;
+                    }
+            }
+        bmp.close && bmp.close();
+        return {
+            metric: n ? +(sum / n * 1e4).toFixed(2) : 0,
+            texels: n,
+            bands: perBand,
+        };
+    });
+
+    console.log('FOLD variance ' + JSON.stringify(r));
+    // Instrument sanity: every crease band must actually see verts.
+    for (const z of ['elbow', 'armpit', 'knee', 'hip', 'glove-cuff',
+        'boot-cuff']) {
+        expect(r.bands[z], `crease band ${z} saw no verts ` +
+            `(${JSON.stringify(r.bands)})`).toBeGreaterThan(20);
+    }
+    // Floor = folds build − 18% (see header): the smoothing guard. A pass
+    // that erases the suit's relief collapses far below it.
+    expect(r.metric, `crease-band normal variance ${r.metric} — suit ` +
+        `relief erased or folds lost (floor 55000)`).toBeGreaterThanOrEqual(
+        55000);
+});
+
 test('styled skis: shaped geometry replaces the slats, boot line carries a binding', async ({ page }) => {
     // The renderer-side ski bundle (reviewer inspection order 2, iter 21→22):
     // each physics driver box (body-model w 0.08 × h 0.03 × d 1.55) is no
