@@ -120,7 +120,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
-| P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
+| P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
@@ -147,20 +147,18 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
 | P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0)). Slice 3 landed (iter 52): shadow filtering = PCF HIGH (32 taps) + pinned `cascadeBlendPercentage` 0.1 + `normalBias` 0.015 + new contact gates; PCSS A/B'd and rejected on measured cost (239.5 ms/frame vs 130.2 PCF high — past the frame-time gate). Slice 4 landed (iter 53): ski gloss split — ORM green-channel roughness atlas (topsheet 0.22 / base 0.92 / sidewalls 0.50, one material, no extra draw call) + mipmapped trilinear 16× aniso ski atlases; snow sheen A/B'd and REJECTED on the grey ramp (flanks +0.013 vs run +0.007 → kicker −0.08 band broke by 0.002; corridor parity knife-edge 0.0022)** | remaining: real-GPU frame time (PCSS revisit rides on it); athlete mats verified in place under the 32° sun (body 0.68 / helmet 0.30 + CC 0.55 / face 0.85 / lens 0.08 + CC 1.0); gates in `tests/drive/quality.spec.js` + `textures.spec.js` + `shadows.spec.js` |
 
-*(iter-50 review-only: no board movement — ./tests/run-all.sh ALL GREEN (unit 76/76,
-golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
-re-baselined and measured, entry 50 below.)*
+*(iter-55 review-only: no board movement except the P2 parking note above —
+./tests/run-all.sh ALL GREEN in 879 s (unit 76/76, golden 30/30, browser 36/36,
+mutation + coverage PASS, drive 63 passed / 2 skipped), five shots regenerated
+and measured, entry 55 below.)*
 
 ## Open questions for the reviewer
-- **Iteration 54 — one call.** Height haze (group 1 leftover): the include-
-  override mechanism is built and probe-verified but NOT LANDED — reverted
-  before commit because the acceptance gate design failed (post chain
-  compresses the peak-transect chroma signal into the rock texture's own
-  noise) and the near-field neutrality run did not fit the budget (entry 54
-  has the numbers, the two GLSL landmines for this Babylon build, and the
-  landing plan). Confirm the disposition (probe now, land with the corrected
-  matte-probe gate first thing in 55, trees after), or name the gate you want
-  for the haze effect.
+- **Iteration 54 — ANSWERED (reviewer 02:50, b912a52): the height haze is
+  PARKED to schedule group 10** — do not spend another iteration on it now;
+  entry 54's mechanism notes (the two GLSL landmines, the matte-probe gate
+  requirement) stay the reference for the group-10 landing attempt. Trees
+  (group 2) start after review 55 and stay until landed. The blue-to-treeline
+  sky gate on the scene camera was re-measured as directed: see entry 55.
 - **Iteration 51 — two calls.**
 - **Iteration 53 — one call.** The P12 material line named "snow
   roughness/sheen re-tuned under the new sky"; I implemented sheen, A/B'd it
@@ -360,6 +358,104 @@ re-baselined and measured, entry 50 below.)*
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 55 — Review-only: suite ALL GREEN + five-shot inspection with measurements; sky gate re-measured (reviewer 02:50); game.js cache-bust repaired — two slices shipped without a bump
+
+**Order acted on:** review-only per the iteration cap. Reviewer items executed:
+b912a52 (landed 02:42 this session) — haze disposition accepted and recorded
+(board + plan group-10 synced, Open question closed), trees confirmed as the
+next group, and the blue-to-treeline gate re-measured on the scene camera
+(below). Standing five-shot inspection done. **Self-review of 54:** docs-only
+tip (cfe8360; render tree = 22e2b79); `test:unit` 76/76 and `test:golden`
+30/30 byte-identical at session start — no 54 regression possible or found.
+
+**Fixed (delivery path, no features):** the game.js cache-bust had missed TWO
+consecutive slices. 9f12b96 (iter 50) set `index.html` to `game.js?v=32`;
+then c7b4984 (52, shadow filtering) and 22e2b79 (53, ski gloss atlas) both
+changed game.js without a bump — the entry-50 defect class recurring, with a
+real consequence: the author's stable viewer (8201, `http.server` sends no
+cache headers) could keep serving the iter-49/50 game.js, i.e. neither the
+shadow slice nor the ski-gloss slice. Bumped to `game.js?v=33`. Query-string
+only; verified by loading through the bumped page (full drive suite, `look`,
+review-measure — all green after the edit).
+
+**Verification:** `./tests/run-all.sh` ALL GREEN in 879 s: unit 76/76, golden
+30/30, browser 36/36, mutation PASS, coverage PASS, drive 63 passed / 2
+skipped (the BAKE_AB / grey-ab opt-ins; count +1 = 53's sheen off-state
+gate). `look` 1/1, five shots regenerated; thirds byte-stable against the
+pre-regeneration measurement (deterministic pipeline). Luminance top/mid/
+bottom vs entry 53: scene 0.5209/0.7616/0.8397 (was 0.5209/0.7615/0.8396),
+figure 0.5397/0.5686/0.7672 (0.5397/0.5681/0.7670), figure_front
+0.8166/0.7521/0.7228 (identical), kicker 0.6033/0.6328/0.7941,
+inrun 0.6373/0.7582/0.8227 — all within ±0.001, no visual regression.
+REVIEW_MEASURE: sky 0.7972, corridor 0.8265, flankNear 0.8508, flankFar
+0.8427, kickerFace 0.7671, inrun 0.7882 — corridor/kickerFace/inrun EXACTLY
+entry 53's baseline; grey ramp corridor−flankNear −0.0243, −flankFar −0.0162
+(gates green); seam-worst-row skyFrac 0.1631 at y=0.475 (entry 50: 0.041 at
+y=0.425 — gate-green; the movement tracks entry 51's sun/exposure rebalance,
+flagged for the next review); athlete shadow under-foot 0.2116 vs ring
+0.7425–0.8126 (a 71% drop — far beyond the ≥15% acceptance); face patch
+0.6686, darkFrac 0.
+
+**Sky gate re-measure (the reviewer 02:50 open check):** scene.png top-third
+r−b **−0.0809** vs the −0.25 band (review 18:05) — unchanged since entry 50
+(−0.083): group 1's sun/exposure work did not move the dome→camera payoff.
+All five canonical cameras read −0.058..−0.098 (scene −0.0809, figure
+−0.0709, figure_front −0.0584, kicker −0.0923, inrun −0.0982, skyTop12
+central band); the sun disc is visible in NONE of them. sky.spec passes on
+its dome probe (zenith/sun/cloud/margin gates green in-suite) — the gap
+remains dome→camera payoff, i.e. entry-50(c), still unanswered.
+
+**What reads wrong now (measured / inspected on the regenerated shots):**
+1. **Trees (P4) — unchanged verdict, now quantified.** Saturated foliage
+   green covers **25.7% of figure.png, 17.3% kicker.png, 16.5% scene.png,
+   8.3% inrun.png**; snow-less cones on bare brown trunks, near-identical
+   shapes; a trunk stands inside the fence line (kicker.png right edge); a
+   canopy clips the corridor at inrun.png top-left. Group 2 starts next.
+2. **Sky payoff (P2 remainder)** — the −0.25 gate above; cumulus also reads
+   as a repeating similar-blob motif across kicker.png's top band (tiled
+   look; the entry-49 autocorrelation-instrument offer extends to the sky
+   layer if the reviewer wants it quantitative).
+3. **Peaks (P6)** — striped grey pyramids, paper-cutout silhouettes in
+   scene/figure/kicker/inrun. Group 4.
+4. **Bib 30 (P7)** — measured on figure_front's bib box (x455–560, y430–575):
+   darkest pixel lum **0.35** against a 0.64 mean — the ink never reaches
+   dark-navy contrast at screen; "3" faint, "0" unreadable; figure.png shows
+   no back digits at all (waist patch only). Entry-45(c) framing re-pitch
+   still open; the contrast fix belongs with the group-7 paint bundle.
+5. **Helmet (P8 / group 7)** — biconical read confirmed on both figure shots
+   (beak over the brow, rearward spike).
+6. **Red junction marks (P3 / group 6)** — strongly-warm pixels are 0.197% of
+   kicker.png (base marks + red lip tubes), 0.033% of scene.png; the footage
+   wants a thin dark edge line instead.
+7. **In-run lanes (P0 footage delta, unscheduled)** — inrun.png: the corridor
+   is one smooth surface; the two parallel lanes + rough divider are not
+   built. Suggest folding into group 3 (P5 terrain touch) rather than the
+   athlete rebuild.
+8. **Snow surfaces (P5)** — table/landing read as one smooth white material
+   at gameplay distance in every framing. Group 3.
+
+**Regressions:** none. Thirds reproduce entry 53 within ±0.001 on all five
+framings; grey-ramp / kicker-face / shadows / sky / quality gates green in
+the same suite; golden 30/30 byte-identical.
+
+**Re-prioritised list (per b912a52 + this review):**
+- 56+ until landed: **group 2, P4 trees** exactly as scheduled
+  (`bake_trees.py` impostor atlases → thin instances + jitter → nearest
+  card meshes → shadows). Today's numbers keep it the single biggest
+  per-pixel offender.
+- Height haze PARKED to group 10 (b912a52); removed from the queue; entry
+  54's landmine notes remain the landing reference.
+- Sky-blue payoff (dome → cameras): needs a reviewer construction call
+  (entry-50(c)) — the cheap levers are dome gradient/band lowering or
+  accepting the dome-probe-only contract. Recommend deciding BEFORE group 4
+  (P6 horizon), which rebuilds every far-field framing.
+- Unchanged routing: red marks → group 6; bib contrast/framing + helmet +
+  blue panel → group 7; in-run lanes → suggest group 3.
+
+**Open / next:** standing reviewer calls — 50(c) sky payoff; 51 (a)/(b);
+53 sheen confirmation; 49 autocorrelation instrument (now also relevant to
+the sky band); 45(c) bib framing. Next work iteration = group 2 trees.
+
 ### 54 — P2 height haze: mechanism proven in a probe, NOT LANDED (reverted before commit)
 
 **Order acted on:** entry 53's Open line — group 1's one unfinished item (P2

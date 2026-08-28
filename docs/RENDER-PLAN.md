@@ -311,7 +311,7 @@ order; a group may span more than one iteration; do not skip ahead.
    annotation), golden-trace comparison, numbered physics proposals → reviewer approval → tuning
    with rebaseline (69–71).
 9. **P9 night snowfall mode** (72–74).
-10. **Performance/polish** — draw calls, LOD, load time, weaker-GPU fallback, cache-busting hygiene (75–76).
+10. **Performance/polish** — draw calls, LOD, load time, weaker-GPU fallback, cache-busting hygiene; the parked P2 height haze (entry-54 mechanism, reviewer 2026-08-28 02:50) (75–76).
 11. **Human-testing buffer** — fix whatever the author reports (77–78).
 12. **Final review, HANDOFF/ADR update for the render pipeline, branch summary** (79–80).
 
