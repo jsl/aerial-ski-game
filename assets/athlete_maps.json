@@ -6,20 +6,20 @@
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6452,
-   "belowHalf": 0.0107,
+   "mean": 0.6429,
+   "belowHalf": 0.0111,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.857,
-   "belowHalf": 0.126,
+   "mean": 0.8533,
+   "belowHalf": 0.1295,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.898,
-   "belowHalf": 0.0478,
+   "mean": 0.8962,
+   "belowHalf": 0.0491,
    "srgb": true
   }
  }
