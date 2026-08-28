@@ -203,3 +203,70 @@ test('field joins its flanks without a normal seam; ground is solid', async ({ p
         .toBeGreaterThan(1000);
     expect(res.baseExists, 'base plane must exist under the field').toBe(true);
 });
+
+// ── Human item 3 (2026-08-27): the kicker is a distinct block again ─────────
+// On main the jump is a 3.4 m-wide block standing ON the flat table; the P1
+// ribbon had started carrying the kicker bezier across the full corridor
+// width (the block reads as a full-width ramp). Gate: beside the block the
+// corridor surface is flat table; inside |x| ≤ 1.7 it is the physics kicker
+// profile; the block edge (wall top) sits between x = 1.69 and 1.71; and the
+// block actually rises clear of the table near the lip.
+test('kicker is a distinct 3.4 m block on the flat table', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function',
+        null, { timeout: 30_000 });
+
+    const res = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const ribbon = scene.getMeshByName('terrainCorridor');
+        if (!ribbon) return { fatal: 'terrainCorridor mesh missing' };
+        const rootY = window.AerialEngine.aerialSki.terrainRootY;
+        const cfg = window._terrainCfg;
+        const FO = 1.025;                                   // game.js FOOT_OFFSET
+        const down = new BABYLON.Vector3(0, -1, 0);
+        const pickY = (x, zz) => {
+            const o = new BABYLON.Vector3(x, rootY(zz, cfg) + 8, zz);
+            const p = scene.pickWithRay(new BABYLON.Ray(o, down), m => m === ribbon);
+            return p && p.hit ? p.pickedPoint.y : null;
+        };
+        const z = cfg.KICKER_END_Z - 0.30;                  // near the lip, clear rise
+        const phys = rootY(z, cfg) - FO;
+        const tableY = rootY(cfg.KICKER_START_Z, cfg) - FO; // flat table height
+        const y = {};
+        for (const [k, x] of Object.entries({ mid: 0, inL: -1.69, inR: 1.69,
+            wallL: -1.72, wallR: 1.72, outL: -1.76, outR: 1.76, farL: -2.5, farR: 2.5 })) {
+            y[k] = pickY(x, z);
+        }
+        return {
+            z: +z.toFixed(2), phys: +phys.toFixed(4), tableY: +tableY.toFixed(4),
+            y: Object.fromEntries(Object.entries(y).map(([k, v]) => [k, v === null ? null : +v.toFixed(4)])),
+            rise: y.mid === null ? null : +(y.mid - tableY).toFixed(4),
+        };
+    });
+
+    expect(res.fatal, res.fatal).toBeUndefined();
+    console.log('KICKER_BLOCK ' + JSON.stringify(res));
+    test.info().annotations.push({ type: 'KICKER_BLOCK', description: JSON.stringify(res) });
+    for (const k of ['mid', 'inL', 'inR', 'wallL', 'wallR', 'outL', 'outR', 'farL', 'farR']) {
+        expect(res.y[k], `pick at ${k} found no ribbon surface`).not.toBeNull();
+    }
+    const near = (a, b, what, tol = 0.02) => expect(Math.abs(a - b),
+        `${what}: ${a.toFixed(4)} vs ${b.toFixed(4)}`).toBeLessThanOrEqual(tol);
+    near(res.y.mid, res.phys, 'block top rides the physics kicker profile');
+    near(res.y.inL, res.phys, 'block top edge (x=-1.69) on the kicker profile');
+    near(res.y.inR, res.phys, 'block top edge (x=+1.69) on the kicker profile');
+    near(res.y.outL, res.tableY, 'corridor is flat table just outside the block wall (x=-1.76)');
+    near(res.y.outR, res.tableY, 'corridor is flat table just outside the block wall (x=+1.76)');
+    near(res.y.farL, res.tableY, 'corridor is flat table beside the block (x=-2.5)');
+    near(res.y.farR, res.tableY, 'corridor is flat table beside the block (x=+2.5)');
+    // Wall steepness: 1.72 sits on the wall face between the 1.70 top edge and
+    // the 1.75 table column; a near-vertical wall is already most of the way
+    // up the rise there (linear slant gives 0.6), a gentle ramp is not.
+    for (const k of ['wallL', 'wallR']) {
+        expect(res.y[k] - res.tableY,
+            `block side wall at ${k} reads near-vertical at z=${res.z}`)
+            .toBeGreaterThanOrEqual(0.5 * res.rise);
+    }
+    expect(res.rise, `block must rise clear of the table at z=${res.z}`)
+        .toBeGreaterThanOrEqual(0.5);
+});

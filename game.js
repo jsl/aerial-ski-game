@@ -2329,14 +2329,26 @@ void main(void) {
     };
     // The ONE ground-height function for anything static that stands on snow:
     // trees plant against it so their bases follow the windlip exactly.
-    const _fieldTopY = (x, z) => terrainRootY(z) - FOOT_OFFSET + _fieldBerm(Math.abs(x));
+    // Human item 3 (2026-08-27): beside the kicker block the corridor stays
+    // FLAT TABLE. The physics profile only leaves the table for the block's
+    // own bezier inside |x| ≤ kickerWidth/2 (terrainRootY returns tableY again
+    // past KICKER_END_Z), so the ribbon must not carry the kicker rise across
+    // the full corridor width — the block is its own solid standing on the
+    // table, with near-vertical side walls at x = ±kickerWidth/2.
+    const _blockHalfW = kickerWidth / 2;
+    const _tableTopY  = _KBP_tY - FOOT_OFFSET;
+    const _fieldTopY = (x, z) => {
+        let y = terrainRootY(z) - FOOT_OFFSET;
+        if (Math.abs(x) > _blockHalfW && z > KICKER_START_Z && z <= KICKER_END_Z) y = _tableTopY;
+        return y + _fieldBerm(Math.abs(x));
+    };
     {
         // Corridor columns (|x| ≤ 5, exact physics surface) then the banked
         // shoulder out to the open field. Column spacing tightens over the
         // windlip (max lateral slope 3.9°, facet normals stay within the 5°
         // continuity gate).
         const XC = [-55, -45, -35, -27, -21, -17, -14, -12.0, -10.7, -9.2, -7.9,
-            -5, -3.6, -2.6, -1.75, -0.85, 0, 0.85, 1.75, 2.6, 3.6, 5,
+            -5, -3.6, -2.6, -1.75, -1.7, -0.85, 0, 0.85, 1.7, 1.75, 2.6, 3.6, 5,
             5.6, 6.7, 7.9, 9.2, 10.7, 12.0, 14, 17, 21, 27, 35, 45, 55];
         const profY = (z) => terrainRootY(z) - FOOT_OFFSET;
         const zones = [
@@ -2478,80 +2490,6 @@ void main(void) {
             } catch (e) { /* headless stub without CreateDisc: the field + skirt still close every view */ }
         }
         window._terrainCorridorReady = true;
-    }
-
-    // Kicker bezier — uses exact same _kBP control points as physics → mesh matches surface.
-    // P0/P1 at table height → flat entry, steepens continuously, no dip below table.
-    {
-        const kBez = function(t) {
-            const u = 1 - t;
-            return {
-                z: u*u*u*_kBP[0][0] + 3*u*u*t*_kBP[1][0] + 3*u*t*t*_kBP[2][0] + t*t*t*_kBP[3][0],
-                y: u*u*u*_kBP[0][1] + 3*u*u*t*_kBP[1][1] + 3*u*t*t*_kBP[2][1] + t*t*t*_kBP[3][1] - FOOT_OFFSET,
-            };
-        };
-        const N_KSEGS = 20;
-        for (let ki = 0; ki < N_KSEGS; ki++) {
-            const p0 = kBez( ki      / N_KSEGS);
-            const p1 = kBez((ki + 1) / N_KSEGS);
-            const pm = kBez((ki + 0.5) / N_KSEGS);
-            const dz = p1.z - p0.z, dy = p1.y - p0.y;
-            const segLen = Math.sqrt(dz * dz + dy * dy);
-            const angle  = Math.atan2(dy, dz);
-            const seg = BABYLON.MeshBuilder.CreateBox('kicker_seg_' + ki, {
-                width:  kickerWidth,
-                height: 0.5,
-                depth:  segLen + 0.04,
-            }, scene);
-            seg.rotation.x = -angle;
-            seg.position.set(0,
-                pm.y - 0.25 * Math.cos(angle),
-                pm.z + 0.25 * Math.sin(angle));
-            seg.material = snowMat;
-        }
-
-        // ── Fill the inside of the kicker: vertical slabs from surface down to table ──
-        {
-            const tableY = _KBP_tY - FOOT_OFFSET;
-            for (let ki = 0; ki < N_KSEGS; ki++) {
-                const p0 = kBez( ki      / N_KSEGS);
-                const p1 = kBez((ki + 1) / N_KSEGS);
-                // Pull top down by 0.3 so corners never clip through the angled surface segs above
-                const surfaceY = Math.min(p0.y, p1.y) - 0.3;
-                const midZ     = (p0.z + p1.z) / 2;
-                const slabH    = surfaceY - tableY;
-                if (slabH <= 0) continue;
-                const slab = BABYLON.MeshBuilder.CreateBox('kicker_fill_' + ki, {
-                    width: kickerWidth, height: slabH, depth: (p1.z - p0.z) + 0.04,
-                }, scene);
-                slab.position.set(0, tableY + slabH / 2, midZ);
-                slab.material = snowMat;
-            }
-        }
-
-        // ── Table continues under the jump all the way to the landing ──────────
-        {
-            const tableY  = _KBP_tY - FOOT_OFFSET;
-            const fillDepth = KICKER_END_Z + 0.5 - KICKER_START_Z;
-            const fillH   = 4.0;
-            const fillBox = BABYLON.MeshBuilder.CreateBox('kickerFill', {
-                width: kickerWidth, height: fillH, depth: fillDepth,
-            }, scene);
-            fillBox.position.set(0, tableY - fillH / 2, KICKER_START_Z + fillDepth / 2);
-            fillBox.material = snowMat;
-        }
-
-        // ── Visual back-face block: drops from kicker lip down to table level ─
-        {
-            const lipY      = _KBP_lY - FOOT_OFFSET;
-            const tableY    = _KBP_tY - FOOT_OFFSET;
-            const dropH     = lipY - tableY;
-            const backBox   = BABYLON.MeshBuilder.CreateBox('kickerBackFace', {
-                width: kickerWidth, height: dropH, depth: 0.5,
-            }, scene);
-            backBox.position.set(0, tableY + dropH / 2 + 0.017, KICKER_END_Z + 0.25);
-            backBox.material = snowMat;
-        }
     }
 
     // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge

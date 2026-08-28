@@ -135,7 +135,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | APPROVED: keep ski d = 1.55, retune the touchdown evaluator | **landed (iter 33, commit 1e20d31)** | measured mechanism: d 1.55 slowed tucked rotation 4.1 % via computeI's ski self-term (I_tuck 5.2250→5.5459), shifting touchdown flipAngle 17–111° (norms: pike 125.5→28.9, tuck-long 343.5→232.7, tuck-short 326.1→308.8) — no window change can restore all three outcomes (opposite directions), so the self-term is pinned at the tuned 1.20 m; ski keeps its 1.55 m reach; 21/30 traces byte-identical to HEAD, 5 node-only (tuck-rate restoration), 3 outcome flips at f=435 exactly; all 30 byte-identical to the pre-1.55 build; airTime 2.300046 s byte-identical everywhere; unit 74/74, golden 30/30, drive 44/2 (the 2 = iter-32's pre-existing mismatches, unchanged) |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
-| — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE (hop feet 0.9–1.4 mm/1.75°; crash rest detector + deterministic trigger); 44 = (3)+(4); then (5)+(6)+(7)** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: frozen via rest detector, gate restAt ≤ 3.5 s (author target ~2–3 s — friction retune queued) + post-freeze < 0.06 m/s; (3) kicker block — mechanism CONFIRMED: `kickerWidth` 3.4 m blocks are buried ≈1 m under the iter-18 ribbon which carries the profile full-width (`game.js:2294`), gates measure the ribbon so both stay green; (4) hands long — glove fingers read long in figure_front.png (lane A iter 1 rebuilt the hand 0.749 ratio — re-shoot before more work); (8) shoulders bulky in profile (lane A iter 2: bideltoid 0.401, gate ≤ 0.41 — re-shoot) |
+| — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE (distinct block restored + hands re-shot in band); NEXT = (5)+(6)+(7), plus the crash restAt retune queued below** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: frozen via rest detector, gate restAt ≤ 3.5 s — **load-sensitive under tonight's box load (restAt up to 5.3 s, see entry 44); friction retune now the FIRST item of the (5)+(6)+(7) iteration**; (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749 ratio confirmed in fresh figure shots, build hard gate (0.65–0.85) already in build_body.py; (8) shoulders bulky — merged lane A iter 2 (bideltoid 0.401 m hard-gated)
 
 ## Open questions for the reviewer
 
@@ -254,6 +254,71 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 44 — Human items (3)+(4): distinct kicker block restored on the flat table; hands re-shot in band; kicker-faces locator now really looks at the block
+
+**Order acted on:** human-testing queue — after (1)+(2), items (3)+(4) were next. Reference frames
+viewed before building (as mandated): `IMG_3765/f_001–f_003` (block from the base), `IMG_7841/video_kicker.jpg`.
+Block proportions read off the footage: width ≈ 1.2–1.9× athlete height, side walls vertical and unbroken
+from the table to where the face curve begins, take-off face a single smooth curve to a near-vertical lip,
+thin dark/red edge line at the wall/face junction, flat snow beside the block at table level. The game's
+3.4 m ("double width") block with its existing red corner tubes matches that shape class.
+
+**Item 3 — the kicker is a distinct block again (mechanism was confirmed in the status board: the
+iter-18 ribbon carried the physics kicker bezier across the full ~10 m corridor width, burying the
+legacy 3.4 m boxes).** Fix is ribbon-side, one construction, no new meshes:
+(a) `_fieldTopY` (game.js) returns flat table (`_KBP_tY − FOOT_OFFSET`) beside the block — for
+|x| > 1.7 while z ∈ (KICKER_START_Z, KICKER_END_Z] — which is exactly the physics profile there
+(terrainRootY itself is table-flat past KICKER_END_Z), so physics and visual never disagree for the
+skier (x ≈ 0 always rides the untouched bezier); (b) ribbon columns added at x = ±1.70 (block top
+edge, on the bezier) so the ±1.70→±1.75 column pair forms near-vertical side walls (5 cm run over up
+to 3.65 m rise ≈ 89°); (c) the legacy buried boxes (`kicker_seg_*`, `kicker_fill_*`, `kickerFill`,
+`kickerBackFace`) retired; the block top/back wall/side walls are all exact ribbon geometry now.
+Bonus: the far flank field no longer carries a 3.4 m-wide phantom ridge across the kicker span.
+`blender/terrain.json` re-extracted (the bake input now reflects the block; lightmap stays disabled).
+
+**New gate** `terrain-corridor.spec.js › kicker is a distinct 3.4 m block on the flat table`, measured at
+z = KICKER_END_Z − 0.30: block top/edges pick −0.0073 vs physics −0.0084 (7 mm), flat table outside the
+wall at ±1.76 and beside at ±2.5 = −3.4492 exactly, wall picks at ±1.72 are 74–76 % up the 3.4419 m rise
+(near-vertical), rise 3.4419 m ≥ 0.5 m. All 4 terrain-corridor tests green (physics-match/crease,
+footprint, dihedral ≤ 5°, block).
+
+**kicker-faces.spec fixed for real this time:** the spec's own side-camera compose was being dragged
+back onto the athlete INSIDE its final `scene.render()` (the big `registerBeforeRender` sim callback
+writes `camera.target.{y,z}` every step — probe: composed target z 23.7 read back z −17.3 after render),
+so the locator had been sampling a distant down-slope view of the block, not the wall. The spec now
+dispatches KeyP (the game's `paused`, which early-returns that whole callback) after `stopRenderLoop`.
+Measured on the true side view: block lum 0.7426, r−b −0.0279, warmFrac 0.11 % (was failing 2.24 %
+on the accidental distant view; iter-25 reference 0.645/−0.106/0.25 %). Updated baked.spec (retired
+names out of the off-state list) and extract-terrain.spec (prefixes trimmed).
+
+**Item 4 — hands:** re-shot `figure.png`/`figure_front.png` and inspected: gloves compact at mid-thigh,
+no long-finger read, wrists-to-fingertip reads ≈ 3/4 of forearm in both hanging views. No rebuild
+needed: lane A iter 1 already rebuilt the hand at ratio 0.749 and `blender/build_body.py` carries the
+hard gate `hand_ratio_gate` (0.65–0.85, target 0.75, called at build end) — item closed as verified.
+
+**Golden:** the fence posts beside the kicker now seat on the flat table, so 3 nodes (`fl_199/223/247`,
+y-position only, ×22 aerial scenarios) re-captured. `audit-ready-stance.js` vs the pre-change traces:
+**physics `state` byte-identical in all 30 scenarios; the ONLY node diffs are those 3 fence posts**
+(display-only re-capture class, same as entries 34/35/37/38/43). Unit 74/74; golden 30/30 after
+re-capture. `game.js?v=26` in index.html; no `assets/` change → ASSET_V stays 12.
+
+**Verification:** unit 74/74; golden 30/30; drive green: terrain-corridor ×4, kicker-faces, grey-ramp,
+review-measure, shadows, sky, venue-dressing, baked, extract-terrain, hop-turn, ready-stance.
+`look` re-run and inspected: `scene.png` shows the block as a distinct white object with red edge
+tubes standing on the continuous table (fence line beside it), `figure.png`/`figure_front.png` as above.
+
+**Open / left on the table:**
+- **crash-ragdoll is red tonight, and it is the queued entry-43 retune, not this iteration:** restAt
+  measured 4.90 / 5.33 s vs the ≤ 3.5 s gate across three runs. Physics state is byte-identical (audit
+  above), so the ragdoll logic is exactly entry 43's; the difference is the box: load average 11–16
+  from external processes tonight, SwiftShader steps get long under load, and the detector (8 frames
+  < 0.12 m/s after 1 s) confirms later in simulated time. Entry 43 already queued the real fix
+  (ploughing friction base 2.5 → ~3.5, static stop 0.35 → ~0.5) which also pulls the median toward
+  the author's 2–3 s — that retune + its 13-trace display-only re-capture is the FIRST item of the
+  next iteration ((5)+(6)+(7) after it).
+- Block-edge normal smear: the top-face/wall shared column at x = ±1.7 averages its normal across the
+  two faces (one 3 cm band along each block edge). Invisible in the shots; note for the P12 pass.
 
 ### 43 — Human items (1)+(2): hop feet-attachment gates (measured 0.9–1.4 mm / 1.75°); crash rest detector + deterministic crash trigger; ASSET_V 12 (commit 66ef359)
 

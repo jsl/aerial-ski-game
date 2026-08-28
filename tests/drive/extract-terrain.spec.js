@@ -22,7 +22,7 @@ const STATIC_PREFIXES = [
     'terrainCorridor',                                  // P1 slice 1+2: continuous corridor + flank field (one mesh)
     'terrainSkirt', 'terrainBase',                      // slice 2 solid-ground closure
     'wUpperMtn',
-    'pk_body_', 'pk_cap_', 'kicker_fill_', 'kickerFill', 'kickerBackFace', 'tr_', 'rock', 'corner',
+    'pk_body_', 'pk_cap_', 'tr_', 'rock', 'corner',
 ];
 
 test('extract static scenery to blender/terrain.json', async ({ page }) => {

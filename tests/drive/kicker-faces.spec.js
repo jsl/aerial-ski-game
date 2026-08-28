@@ -72,6 +72,12 @@ test('kicker block side/back faces read as shaded snow, not plywood', async ({ p
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         scene.getEngine().stopRenderLoop();
+        // Freeze the sim/follow itself (the big registerBeforeRender callback
+        // writes camera.target.{y,z} every step and would drag the composed
+        // side camera back onto the athlete INSIDE our own scene.render(),
+        // losing the framing before the draw — measured iter 44). KeyP sets
+        // the game's `paused`, which early-returns that whole callback.
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP' }));
         window._kfCompose = () => {
             const cfg = window._terrainCfg;
             const lipY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_END_Z, cfg) - 1.025;
@@ -86,16 +92,17 @@ test('kicker block side/back faces read as shaded snow, not plywood', async ({ p
     await page.waitForTimeout(400);
 
     // Locate the block's visible silhouette by picking: every ray whose FIRST
-    // hit lands on a block surface samples that pixel. Since iteration 18's
-    // continuous ground replaced the slabs, the visible block IS the merged
-    // `terrainCorridor` ribbon (the legacy kicker_seg_/kicker_fill_ boxes and
-    // kickerBackFace survive only as buried scaffolding — their tops measure
-    // ≈ 1 m below the physics table level), so the locator accepts the
-    // corridor mesh too, but only where the HIT POINT sits inside the block
-    // footprint ABOVE table level (|x| ≤ 1.75, z across the kicker span,
-    // y > table + 15 cm): outside those bounds the same mesh is just flat
-    // snow, and allowing it here would sample the wrong pixels. The first-hit
-    // rule keeps occlusion semantics (net/trees in front of the wall hide it).
+    // hit lands on a block surface samples that pixel. Since iteration 44
+    // (human item 3) the block IS the corridor ribbon's own geometry: top face
+    // = the physics kicker bezier inside |x| ≤ 1.7, near-vertical side walls
+    // (the ±1.7 → ±1.75 column pair) and the dup-row back wall behind the lip;
+    // the legacy kicker_seg_/kicker_fill_/kickerBackFace boxes are retired.
+    // The locator accepts the corridor mesh, but only where the HIT POINT sits
+    // inside the block footprint ABOVE table level (|x| ≤ 1.75, z across the
+    // kicker span, y > table + 15 cm): outside those bounds the same mesh is
+    // just flat snow, and allowing it here would sample the wrong pixels. The
+    // first-hit rule keeps occlusion semantics (net/trees in front of the wall
+    // hide it).
     const picks = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         window._kfCompose(); // re-assert in this task; no render may precede it here
@@ -103,7 +110,7 @@ test('kicker block side/back faces read as shaded snow, not plywood', async ({ p
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
         const cfg = window._terrainCfg;
         const tabY = AerialEngine.aerialSki.terrainRootY(cfg.KICKER_START_Z, cfg);
-        const blockRe = /^(terrainCorridor|kicker_fill_|kickerBackFace|kicker_seg_)/;
+        const blockRe = /^terrainCorridor$/;
         const pts = [];
         for (let gy = 0.05; gy <= 0.85; gy += 0.01) {
             for (let gx = 0.05; gx <= 0.95; gx += 0.01) {

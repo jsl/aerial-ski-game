@@ -58,10 +58,12 @@ test('the stale lightmap stays OFF and no _baked material reaches terrain', asyn
             out.meshMats[n] = m && m.material ? m.material.name : null;
         }
         return out;
-    // slice 2 retired the w*/corner_ flank fills; wUpperMtn is the only
-    // remaining non-corridor static terrain, kickerFill/kickerBackFace the
-    // block interiors — none may carry a _baked material while OFF.
-    }, ['terrainCorridor', 'kickerFill', 'kickerBackFace', 'wUpperMtn']);
+    // slice 2 retired the w*/corner_ flank fills and human item 3 (iter 44)
+    // retired the buried kickerFill/kickerBackFace block interiors; the block
+    // is the corridor ribbon's own geometry now. wUpperMtn is the only
+    // remaining non-corridor static terrain — none may carry a _baked
+    // material while OFF.
+    }, ['terrainCorridor', 'wUpperMtn']);
 
     expect(info.enabled, 'the temporary bake off-switch was flipped without the ' +
         'rebake landing — restore baked.spec.js\'s on-state assertions first').toBe(false);
