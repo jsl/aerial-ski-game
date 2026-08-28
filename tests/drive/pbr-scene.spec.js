@@ -48,9 +48,9 @@ test('the shim mapped Blinn-Phong properties onto physical values', async ({ pag
 
     const mats = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const pick = (n) => {
-            const m = scene.materials.find(x => x.name === n);
-            return m ? { name: n, roughness: m.roughness, metallic: m.metallic,
+        const pick = (pat) => {
+            const m = scene.materials.find(x => pat.test(x.name));
+            return m ? { name: m.name, roughness: m.roughness, metallic: m.metallic,
                          albedo: m.albedoColor ? [m.albedoColor.r, m.albedoColor.g, m.albedoColor.b] : null }
                      : null;
         };
@@ -58,8 +58,9 @@ test('the shim mapped Blinn-Phong properties onto physical values', async ({ pag
         // terrain materials are mode-dependent, so a hardcoded name can be
         // absent — visor (specularPower 80, shiny) vs the forest-card material
         // (matt) is a pairing that always exists and has a large, meaningful
-        // gap. (The card mat replaced trunkMat/foliageMat in the P4 slice.)
-        return { visor: pick('visor_mat'), ground: pick('forestCardMat') };
+        // gap. (The card mat replaced trunkMat/foliageMat in the P4 slice;
+        // since iter-63 it carries a per-variant suffix, hence the regex.)
+        return { visor: pick(/^visor_mat$/), ground: pick(/^forestCardMat/) };
     });
 
     // The visor had specularPower 80 (shiny); ground had ~0 specular (matt).

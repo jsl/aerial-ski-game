@@ -4886,3 +4886,78 @@ inrun-contact 2/2, ready-stance fails ONLY the pre-existing knee-flex gate
    R−B −0.069, blackFrac 0 — bright, no backface/black regions, sky tone
    unchanged from the pre-merge baseline (Sol finding 6's −0.068…−0.078
    band; sky work untouched this iteration).
+
+### 70 — Review-only: full run-all (Sol blocker 2) finally green after
+repairing one stale shipped drive spec; shots regenerated + measured; sky
+gate still red, corridor no longer the brightest surface, kicker red marks
+still shipped
+
+**Order acted on:** the 16:15 DEFINITIVE ORDER step (0) / Sol blocker 2 —
+the full `./tests/run-all.sh` + dedicated drive suite that entries 67–69 kept
+deferring. No features. Engine untouched; no assets regenerated (ASSET_V
+stays `?v=22`).
+
+**Suite:** unit 76/76; golden 30/30 (no recapture); browser 36/36; mutation
+PASS; coverage PASS (30 traces → 28 behaviours, the two known investigated
+duplicates OPEN-002); drive first ran **71 passed / 2 skipped / 1 FAILED —
+SUITE RED**. The failure was shipped, not flaky: `pbr-scene.spec.js` looked
+up the forest material by the exact name `forestCardMat`, which iter-63's
+four-variant split renamed to `forestCardMat0..3` — red since iter 63, never
+caught because the full drive suite had not been re-run (exactly the entry-60
+failure mode again). Fixed test-side: `pick` now takes a regex
+(`/^forestCardMat/`), same assertion semantics. Rerun: **drive 72 passed /
+2 skipped, 0 failed. FULL RUN-ALL GREEN for the first time since the merge**
+(~19 min drive phase). This closes Sol blocker 2's run-all leg; the per-spec
+drive suite is the same run.
+
+**Shots regenerated (`look` 1/1) and measured** (in-page pixel sampling):
+scene meanRGB [0.719, 0.736, 0.771] R−B −0.052 blackFrac 1.3%·(dark<40) —
+identical to entries 66–69 (no tone drift from iters 67–69, expected: all
+pose-side); figure R−B −0.071; figure_front −0.070; kicker −0.085; inrun
+−0.048. `review-measure`: corridor 0.8265 vs flankNear 0.8509 / flankFar
+0.8427 → **corridor_vs_flankNear −0.0244**; sky-box lum 0.7476 skyFrac 0.986;
+athlete-shadow ring 0.796–0.861 with the under-athlete probe 0.2345 (shadow
+present); seamWorstRow y=0.475 skyFrac 0.1745; face lum 0.669 darkFrac 0.
+
+**Critical review — what now reads wrong (with numbers):**
+1. **Sky gate still red after ~10 iterations**: scene R−B −0.052 vs the
+   reviewer's ≤ −0.25 gate (03:15/06:55 notes). The "strict 15-minute sky
+   colour parameter slice" has been ordered FIRST five times and never
+   attempted. The sky reads white-grey in scene.png's upper frame.
+2. **The run is no longer the brightest surface**: corridor 0.8265 vs
+   flankNear 0.8509 (−0.024). Small, but the goal (and entry-13's parity
+   work) says corridor ≥ flank. Candidate causes: the iter-49 macro detail
+   layer only on the corridor, or flank albedo creep from the snowMat steps.
+3. **Red junction marks on the kicker block are still shipped** (clearly
+   visible in kicker.png at the lip and base, and in scene.png). Reviewer
+   group-6 item (replace with the thin dark edge line) never landed; the
+   kicker-faces gate's warmFrac check passes because the marks are a small
+   pixel fraction — the gate does not cover them.
+4. **B-net reads as a heavy saturated blue lattice**, heavier than the
+   footage's fine net (IMG_3523); the iter-22 scale fix helped but the
+   texture's strand density/opacity still reads wrong at mid distance.
+5. **P6 cone/ribbed pyramid peaks** still dominate every background (P6
+   open); the A7 floating slab sits behind the start pending the reviewer's
+   remove-vs-seat answer (entry 66 question 2).
+6. Good: bib **30** legible front and back in figure_front/figure; athlete
+   intact (no tears/long neck in the ready state — iters 67–69's chain work
+   holds); shadows consistent; no black/backface regions.
+
+**Re-prioritised queue for the next iterations:**
+1. The 15-minute sky colour slice (r−b ≤ −0.25 in scene.png top third) —
+   do it literally first, time-boxed, before anything else.
+2. Kicker red marks → thin dark edge line (P3 group 6 remainder) + extend
+   kicker-faces gate to catch saturated red pixels on the block.
+3. Corridor-vs-flank brightness (−0.024) — restore "run is brightest".
+4. Sol blockers 4–9 remainders + A7 slab disposition (needs the reviewer's
+   answer); P13 tear-detector hard gate + engine stub removal (entry 67/68
+   questions).
+5. P3 remainders (wands, knoll flag, judges' deck, coach figures) and the
+   B-net texture lightening; then P4 slice (d) deciduous majority, (e)
+   near-tree cards; P5 snow chop; P6 horizon; P10/P9 per the plan.
+
+**Open questions for the reviewer:** (1) pbr-scene's material probe now
+regex-matches `forestCardMat*` — fine permanently, or do you want a stable
+unsuffixed probe material? (2) entry 66 question 2 (A7 slab: remove vs seat)
+still blocks that item; (3) entries 67/68 questions (tear-detector hard gate;
+engine stub removal) still unanswered.
