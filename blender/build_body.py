@@ -2839,6 +2839,37 @@ def limb_azim(lx, ly, z, nm, slices):
     return math.atan2(ly - cen[1], lx - cen[0])
 
 
+# ── Fabric folds (task 3, folds slice) ──────────────────────────────────────
+# Structured compression ridges at the suit's crease planes. Since loosen_suit
+# the shell stands off the skin, and loose cloth bunches where the limb bends —
+# but ONLY in the normal map: the high-poly relief here is what the bake
+# records, and the docstring's order of magnitude holds (a fold ridge of
+# ~1.5-2 mm over a ~25 mm wavelength reads as fabric at gameplay distance;
+# centimetres would read as armour plating).
+#
+# Per segment base (L/R suffix stripped), a list of bands:
+#   (zone, along-centre a0, half-width w, amplitude, cycles across the band,
+#    front-bias or None). `along` is the segment_frame coordinate: for the
+#    hanging arms the hand is at along -1 (distal), the elbow at +1; legs run
+#    hip +1 to ankle -1. `front` is +1 towards the chest, so a front-bias of
+#    0.25 puts 25% more ridge on the flexor side (hip crease).
+# Zones (for the FOLD summary line and the browser crease-band gate):
+#   elbow (upper-arm distal + forearm proximal), armpit (upper-arm top),
+#   knee (thigh distal + shin proximal), hip (thigh top, flexor-biased),
+#   glove-cuff (forearm, above the cuff step at along -0.80),
+#   boot-cuff (shin, above the cuff step at along -0.74).
+SUIT_FOLDS = {
+    'upperArm': [('elbow', -0.86, 0.26, 0.0016, 2.0, None),
+                 ('armpit', 0.86, 0.20, 0.0013, 1.5, None)],
+    'lowerArm': [('elbow', 0.74, 0.22, 0.0018, 2.0, None),
+                 ('glove-cuff', -0.70, 0.18, 0.0015, 2.0, None)],
+    'upperLeg': [('knee', -0.88, 0.24, 0.0019, 2.0, None),
+                 ('hip', 0.86, 0.22, 0.0014, 2.0, 0.25)],
+    'lowerLeg': [('knee', 0.80, 0.22, 0.0017, 2.0, None),
+                 ('boot-cuff', -0.62, 0.18, 0.0015, 2.0, None)],
+}
+
+
 def displace_suit(obj, lm):
     """
     Push the high-poly surface around to make it read as a suit.
@@ -2858,6 +2889,7 @@ def displace_suit(obj, lm):
                                    'upperArmR', 'lowerArmR'))
     normals = [v.normal.copy() for v in verts]
     moved = 0
+    fold_hit = {}
     for i, v in enumerate(verts):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
@@ -2894,12 +2926,39 @@ def displace_suit(obj, lm):
         else:
             d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0011
 
-            # Fabric bunches where a limb bends, so the wrinkles concentrate near
-            # the ends of each segment and run around it rather than along it.
-            joint = max(0.0, abs(along) - 0.55) / 0.45
-            if joint > 0:
-                band = bakeutil.fbm(z * 90, x * 26, y * 26, octaves=3)
-                d -= joint * joint * (band - 0.45) * 0.010
+            # Fabric folds (task 3, folds slice): structured compression
+            # ridges at the crease planes — see SUIT_FOLDS. Where a fold band
+            # is active it REPLACES the generic end-of-segment noise below:
+            # the noise is an irregular wrinkle field, and folding both it and
+            # a phase-locked ridge onto the same skin doubles into lumps.
+            fold = 0.0
+            base = name[:-1] if name[-1] in 'LR' else name
+            for (zone, a0, w, amp, cyc, fbias) in SUIT_FOLDS.get(base, ()):
+                t = (along - a0) / w
+                if abs(t) >= 1.0:
+                    continue
+                env = 1.0 - t * t                    # 1 centre, 0 band edges
+                ridge = 0.5 + 0.5 * math.cos(
+                    2.0 * math.pi * (t + 1.0) * 0.5 * cyc)
+                ridge **= 1.4                        # narrow crest, wide root
+                jit = 0.7 + 0.6 * (bakeutil.fbm(
+                    x * 260, y * 260, z * 260, octaves=2) - 0.5)
+                a = amp * env * ridge * jit
+                if fbias is not None:
+                    a *= 1.0 + fbias * front         # flexor side reads more
+                if a > fold:
+                    fold, fold_zone = a, zone
+            if fold > 0.0002:
+                d += fold
+                fold_hit[fold_zone] = fold_hit.get(fold_zone, 0) + 1
+            else:
+                # Fabric bunches where a limb bends, so the wrinkles
+                # concentrate near the ends of each segment and run around it
+                # rather than along it.
+                joint = max(0.0, abs(along) - 0.55) / 0.45
+                if joint > 0:
+                    band = bakeutil.fbm(z * 90, x * 26, y * 26, octaves=3)
+                    d -= joint * joint * (band - 0.45) * 0.010
 
             # Panel seams: a groove up the outboard side of every limb and one up
             # the spine. The single strongest "this is a garment" cue. Angles are
@@ -2940,6 +2999,26 @@ def displace_suit(obj, lm):
             v.co = (x + normals[i].x * d, y + normals[i].y * d, z + normals[i].z * d)
             moved += 1
     log(f'suit displacement applied to {moved}/{len(verts)} high-poly verts')
+    log('FOLD summary: ' + (', '.join(
+        f'{z} {fold_hit[z]} verts' for z in sorted(fold_hit))
+        + ' | bands: ' + ', '.join(
+            f'{b[0]}({b[1]:+.2f}±{b[2]:.2f})'
+            for segs in SUIT_FOLDS.values() for b in segs)))
+    # Hard gate: every crease zone must actually land on the mesh. The
+    # measured population on the folds build: armpit 836, boot-cuff 3312,
+    # elbow 1612, glove-cuff 621, hip 496, knee 1806 — floored at 40% so a
+    # re-placed band (or a segment rename that orphans SUIT_FOLDS keys) fails
+    # the build instead of silently flattening the creases.
+    FOLD_GATE = 0.40
+    fold_ref = {'armpit': 836, 'boot-cuff': 3312, 'elbow': 1612,
+                'glove-cuff': 621, 'hip': 496, 'knee': 1806}
+    missing = [z for z, n in fold_ref.items()
+               if fold_hit.get(z, 0) < n * FOLD_GATE]
+    if missing:
+        raise SystemExit(
+            f'[body] fold gate FAILED: zones below {FOLD_GATE:.0%} of the '
+            f'reference population: ' + ', '.join(
+                f'{z} {fold_hit.get(z, 0)}/{fold_ref[z]}' for z in missing))
 
 
 def paint_suit(obj, lm):
