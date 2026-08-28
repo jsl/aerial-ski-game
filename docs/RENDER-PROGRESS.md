@@ -352,14 +352,11 @@ canonical shots inspected at 21:53:
   the athlete on the first attempt; the spec now dispatches KeyP (pause) before composing
   them — same trick as kicker-faces.spec.
 No engine/ or body-model changes; physics untouched.
-
 **Cache-busting:** `ASSET_V ?v=13 → ?v=14` per the lane-A folds+bib merge instruction, and
 `game.js?v=28 → ?v=29` in index.html for this iteration's game.js change (entry-44 precedent).
-No `assets/` files were regenerated this iteration.
-
-**Verification:** unit **74/74**; golden **30/30, no re-capture** (the accessor incident above
-is the only golden excursion, fully reverted); `hotkeys.spec` **3/3**; game/look specs and the
-fresh five-shot set described below. No engine/ or body-model changes; physics untouched.
+Follow-up commit after `f22eea3`: lane A's FINAL merge (relax_suit, `b9fadf1`, landed
+mid-session) regenerated `assets/` again → **`ASSET_V ?v=15` + `game.js?v=30`**, golden 30/30
+re-checked on the bump. No other `assets/` changes this iteration.
 
 **Open questions for the reviewer:** none new; the URGENT crash state machine (21:45) is
 accepted as iteration 47's first item and its acceptance list (joint angular speed = 0 from
