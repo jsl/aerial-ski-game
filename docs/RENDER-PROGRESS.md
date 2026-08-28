@@ -155,6 +155,130 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 mutation + coverage PASS, drive 63 passed / 2 skipped), five shots regenerated
 and measured, entry 55 below.)*
 
+*(iter-60 review-only: run-all found shipped drive breakage — baked.spec red
+since the iter-56 caster swap, never re-run full-suite until now; repaired
+test-side, shots regenerated + measured, entry 60 below. No features.)*
+
+### 60 — Review-only: run-all exposed shipped drive breakage (baked.spec, red since the iter-56 caster swap) — repaired test-side; five shots regenerated + measured: upright forest confirmed but reads near-black with a detached top cap; bib ink absent at camera; red kicker marks ~1% of frame
+
+**Order acted on:** the reviewer items in this file are all satisfied by iters
+56–59 (sky parameter slice landed; trees stayed the working group through the
+URGENT invertY fix at HEAD 19951b1). Nothing new outstanding → review-only.
+
+**Self-review of 59:** commit is clean and focused (docs, game.js invertY +
+gates, index.html bump, trees.spec, 13 census-only traces). Claims verified at
+HEAD: unit 76/76, golden 30/30 (run-all below). What 59 did NOT run — and 56
+before it — is the FULL drive suite; that omission was hiding real breakage:
+
+**Broken, fixed (outright breakage only, per the review-only mandate):**
+1. `./tests/run-all.sh` RED: `baked.spec.js:122` — "trees are not casting",
+   treesCasting 0 vs > 50. The census still counted the legacy `tr_*`/`fl_*`
+   meshes that iter 56 DELETED; trees now cast via the single thin-instanced
+   `treeShadowProxy` (152). shadows.spec was updated in iter 56; baked.spec was
+   not, and no full drive run happened since. Fix (test-side only): census
+   counts legacy names + proxy `thinInstanceCount`, the same predicate shape
+   shadows.spec uses; `otherCasters` excludes the proxy. Gate intent unchanged
+   (all trees cast under the CSM).
+2. `baked.spec.js:81` black-band gate raced the forest planting: standalone it
+   failed at black32 = 1.68%, inside run-all it passed — 3 standalone re-runs
+   measured black32 0.01673–0.01680 (±0.0001) and black8 0.0000 every time, so
+   the 1.68% is DETERMINISTIC content — the dark impostor forest's pixels —
+   and the in-suite pass had read a mid-plant frame. Fix: `boot()` now waits
+   for `_treeFieldY` (planted) before any pixel read, and the gate is
+   re-derived on the measured evidence: `black8 < 0.5%` (the stale atlas-zero
+   band rendered albedo-black, so dead-light pixels are the band signal;
+   measured 0.0000) and `black32 < 3.5%` (steady state 1.68%; the original
+   9.29% band defect still fails ~3× over). Header comment updated.
+3. `blender/terrain.json` was re-captured by `extract-terrain.spec.js` (it
+   writes the live scene unconditionally). HEAD's capture still carried the
+   legacy `tr_*` cylinders; the new one is the post-iter-56 scene
+   (`wUpperMtn` + `pk_*` peaks, no tr_*/fl_*). Consumers are the disabled
+   `bake_lightmap.py` / `diag_normals.py` only. Committed the re-capture.
+
+**Verification:** pre-fix run-all: unit 76/76, golden 30/30, browser 36/36,
+mutation PASS, coverage PASS (28 distinct behaviours), drive 62 passed /
+2 skipped / 1 failed. Post-fix: baked 3/3 (twice), baked+trees+shadows 5/5,
+`look` 1/1, review-measure 1/1. The fix touches only `tests/drive/baked.spec.js`
+and the re-captured `blender/terrain.json` — no game/engine code — so the other
+62 drive specs are unaffected by construction; a full re-run did not fit this
+session's timebox and is flagged to the reviewer (Open questions).
+
+**Five shots regenerated (`look`) and inspected + measured** (scratch spec
+`~/aerial-agents/scratch/iter-60/review60.spec.js`, output `review60.out`;
+regionStats convention as review-measure):
+1. **Forest is upright everywhere** (iter-59 invertY fix holding in all five
+   framings; instances seated). BUT the bake has a truncation artifact: every
+   spruce shows a detached dark fragment above its spire and a flat-cut tip.
+   The card's row census proves it: visible run at rows 0–4.1% of height, EMPTY
+   gap 4.2–5.2%, canopy 5.3–99.9% — the bake frame sliced the canopy ~4% from
+   the top and a fragment floats free. Entry 59's upward-monotone band profile
+   (0.199→0.708) was the tell: a real spruce tapers to the top; this canopy is
+   WIDEST at the cut.
+2. **Forest tonality over-corrected from green to near-black.** scene.png top
+   third lum 0.4183 (entry 55: 0.5209), mid 0.6936 (0.7616); the top-RIGHT
+   region is 100% forest wall (skyFrac 0.0002, lum 0.2862). dark-foliage-green
+   fraction of scene.png is now 0.24% (entry 55: 16.5% saturated green) — the
+   impostors no longer read as green plants OR as snow-loaded conifers; they
+   read as black silhouettes. The bake's snow mix (normal.z range 0.18–0.70,
+   snowFrac 0.124) is not surviving the straight-on view at distance.
+3. **Sky:** top-third r−b −0.0622 (dome-probe gates pass in-suite; the
+   −0.25-at-camera gap from entry 55 is unchanged: −0.0809 → −0.0622). Left
+   third −0.0801 with cumulus (skyFrac 0.1136); right third −0.0443 with NO sky
+   pixels at all — the forest wall owns it. Snow is properly the brightest
+   surface: snowBottom 0.8448 vs sky 0.4183 (+0.43, footage requirement met).
+4. **Kicker:** red marks persist — redFrac 0.955% of kicker.png (whole frame),
+   1.043% over the block band (filter r > 0.40 ∧ r > g+0.20 ∧ r > b+0.20):
+   the lip outline, table dashes and approach curve (review-50 item 7, group
+   6). The block still reads as a curved fin from the +x camera: no vertical
+   wall against the table and no thin dark edge line at the wall/face junction
+   (plan P0 footage delta, acceptance unmet). kickerThirds 0.4413/0.5743/0.7049.
+5. **REVIEW_MEASURE vs entry 55:** sky 0.7972 (=), corridor 0.8265 (=),
+   flankNear 0.8509 (+0.0001), flankFar 0.8427 (=), kickerFace 0.7658
+   (−0.0013), inrun 0.8278 (+0.0396); grey ramp corridor−flankNear −0.0244 /
+   −flankFar −0.0162 (gates green, unchanged); seam-worst-row skyFrac 0.1721 @
+   y = 0.475 (entry 55: 0.1631 — same row, +0.009, still gate-green, still
+   tracking the entry-51 sun/exposure rebalance); athlete shadow under-foot
+   0.2347 vs ring 0.7961–0.8612 (≈70% drop — presence gate far exceeded);
+   face patch 0.6685, darkFrac 0 (unchanged).
+6. **Bib 30 is INVISIBLE at the look camera:** bib-box darkFrac 0.0000, mean
+   RGB (0.691, 0.698, 0.742); figure-strip blueFrac 2.72% — the suit reads
+   white end-to-end. LOOK confirms it is NOT a texture problem: all three body
+   materials carry albedo/normal/AO (`?v=16`, isReady true), uvSpan 0.992.
+   The bake's ink contrast/patch scale just does not survive screen distance —
+   entry 55 measured darkest-ink lum 0.35; it is now not measurable at all in
+   the front framing. Group 7 (paint bundle) owns the fix.
+7. **A mid-grey mass sits behind the neck in the rear view** (lum 0.3924, vs
+   torso 0.6752 and helmet 0.2540) — between suit and helmet brightness, so a
+   separate mesh/paint region, not shading. Reads as a hood/collar deformity in
+   figure.png. Un-diagnosed; group 7 rebuild scope.
+8. **Surface flatness (P5, group 3):** in-run/landing/table still read as one
+   smooth white material (inrunThirds 0.5338/0.7754/0.8369 vs entry 55
+   0.6373/0.7582/0.8227 — the change is the forest walls, not the snow).
+
+**Regressions:** none found beyond the shipped baked.spec breakage above.
+Golden byte-stable 30/30; grey-ramp/seam/shadow/sky gates all green in-suite;
+thirds moved only where the forest now stands (documented above).
+
+**Re-prioritised list (next iterations):**
+1. **Trees, ONE more iteration (close group 2):** fix the bake truncation
+   (frame the tree with margin or join the top whorl to the leader) + a gate:
+   zero empty row-runs above the canopy body (today's topRuns triple is the
+   regression test); lift the tonality toward the footage's snow-loaded read
+   (raise snow mix / lighten albedo, re-measure snowFrac). Species 2/birch only
+   if the frame fits.
+2. **Group 3 (P5 snow surfaces) starts next** — it already slipped its 58–60
+   window to tree fixes; the flat white landing/table is now a top-5 offender.
+3. Red junction marks + kicker wall/edge-line + venue dressing remainder →
+   group 6 (unchanged routing, now with a 0.96% red-pixel number).
+4. Bib contrast/patch scale, broad blue panel, hood/collar mass → group 7
+   (now with camera-side measurements: bib darkFrac 0, blueFrac 2.7%).
+5. Sky-blue payoff at camera (standing entry-50(c) call) and the P6 cone-peak
+   replacement → groups 4+ as scheduled.
+
+**Open / next:** see Open questions — the baked.spec gate re-derivation and
+the terrain.json re-capture both need a reviewer nod; full-suite re-run is
+owed at the next work iteration.
+
 ### 59 — P4 fix: the impostor forest rendered UPSIDE DOWN (reviewer URGENT) — one-place invertY fix + orientation/seating gates + golden re-capture
 
 **Root cause (reviewer's 04:25 note, confirmed by measurement):** the card
@@ -269,6 +393,22 @@ forest.
   Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
+- **Iteration 60 — three calls.**
+  (a) **baked.spec gate re-derivation** (review-only mandate was "fix outright
+  breakage" — both repairs are test-side, but the black-band gate's numbers
+  changed): black8 < 0.5% is the band/dead-light signal (the atlas-zero band
+  rendered albedo-black; measured 0.0000 today), black32 ceilings at 3.5% over
+  the dark impostor forest's measured 1.68% steady state (the 9.29% defect
+  still fails ~3×). Confirm, or fund a rebake-tonality target and I'll
+  re-derive the band off that instead.
+  (b) **blender/terrain.json re-capture committed**: extract-terrain.spec
+  writes it unconditionally from the live scene; HEAD's copy still described
+  the removed tr_*/fl_* cylinders. Consumers are the (disabled) lightmap bake
+  only. Confirm the commit-as-capture contract.
+  (c) **Full-suite re-run is owed**: post-fix I ran baked (3/3 twice), baked +
+  trees + shadows (5/5), look, review-measure — the fix touches only
+  baked.spec + terrain.json, but the drive suite has not been green-end-to-end
+  IN ONE RUN since iter 55. Next work iteration should open with run-all.
 - **Iteration 54 — ANSWERED (reviewer 02:50, b912a52): the height haze is
   PARKED to schedule group 10** — do not spend another iteration on it now;
   entry 54's mechanism notes (the two GLSL landmines, the matte-probe gate

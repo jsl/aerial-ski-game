@@ -18,8 +18,8 @@
 //
 // So this file currently asserts:
 //   1. the bake stays OFF and no _baked clone leaks onto any terrain material,
-//   2. the ready view carries NO stale-map black band (< 0.5% near-black),
-//   3. the P2 caster contract is unchanged by the switch (athletes/trees cast).
+//   2. the ready view carries NO stale-map black band (black8 < 0.5%; black32
+//      < 3.5% over the dark impostor forest's ~1.68% steady state — iter 60),
 // When the rebake lands: flip window._bakeLightmapEnabled back to true and
 // restore the pre-iter-13 assertions (git history has them) — receivers ≥ 20,
 // uv2 length/span per receiver, ambient/lightmap slot wiring, invertY, and the
@@ -34,6 +34,13 @@ async function boot(page) {
     // The bake decision is synchronous; surfaces are not. Wait until the
     // surface pass has run so luminance probes see final materials.
     await page.waitForFunction(() => window._surfacesApplied !== undefined,
+        null, { timeout: 30_000 });
+    // The impostor forest plants AFTER the surface pass (iter 56) and its
+    // near-black card pixels are part of the ready frame; without this wait
+    // the black-band census races the planting and reads different frames
+    // depending on machine load (measured 1.68% black32 with the forest
+    // planted vs < 0.5% mid-plant, iter 60).
+    await page.waitForFunction(() => window._treeFieldY !== undefined,
         null, { timeout: 30_000 });
 }
 
@@ -113,10 +120,19 @@ test('the ready view shows no stale-map black band', async ({ page }) => {
         };
     });
 
-    console.log('BLACK_COVERAGE ' + JSON.stringify(r));
-    expect(r.black32, `${(r.black32 * 100).toFixed(2)}% of the ready frame reads ` +
-        `near-black — the stale-map band or another dead-light defect is visible`)
+    // Gate re-derived (iter 60, measured on the impostor forest): black8 is
+    // the stale-band signal — the atlas-zero band rendered ALBEDO black
+    // (diffuse = albedo × light = 0), so truly-dead pixels stay < 0.5%.
+    // black32 ceilings at 3.5%: the dark impostor forest legitimately covers
+    // ~1.68% of the ready frame with max-RGB < 32 pixels (measured
+    // 0.0168 ± 0.0001 over 4 runs, black8 = 0.0000), while the defect this
+    // gate exists for measured 0.0929 — still a ~3× fail at the new ceiling.
+    expect(r.black8, `${(r.black8 * 100).toFixed(2)}% of the ready frame reads ` +
+        `truly black — the stale-map band or another dead-light defect is visible`)
         .toBeLessThan(0.005);
+    expect(r.black32, `${(r.black32 * 100).toFixed(2)}% of the ready frame reads ` +
+        `near-black — above the measured dark-forest steady state (1.68%)`)
+        .toBeLessThan(0.035);
 });
 
 test('only the athlete and the trees cast real-time shadows, and the VISIBLE athlete is in the list', async ({ page }) => {
@@ -140,8 +156,14 @@ test('only the athlete and the trees cast real-time shadows, and the VISIBLE ath
             visible: visible.length,
             bodyCasting: list.filter(m => m.name && m.name.startsWith('athleteBody')).length,
             skisCasting: list.filter(m => m.name === 'skiL' || m.name === 'skiR').length,
-            treesCasting: list.filter(m => m.name && /^(tr_|fl_)/.test(m.name)).length,
+            // iter 56 replaced the legacy tr_*/fl_* caster meshes with ONE
+            // thin-instanced treeShadowProxy cone (152 instances); count it
+            // the way shadows.spec does (same predicate shape, same gate).
+            treesCasting: list.filter(m => m.name && /^(tr_|fl_)/.test(m.name)).length +
+                list.filter(m => m.name === 'treeShadowProxy')
+                    .reduce((a, m) => a + (m.thinInstanceCount || 0), 0),
             otherCasters: list.filter(m => m.name && !/^(tr_|fl_)/.test(m.name) &&
+                m.name !== 'treeShadowProxy' &&
                 !m.name.startsWith('athleteBody') && m.name !== 'skiL' && m.name !== 'skiR').length,
         };
     });
