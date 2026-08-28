@@ -292,6 +292,29 @@ Acceptance: a `quality.spec.js` asserts hardware scaling, MSAA samples, anisotro
 mipmaps on all tiled textures, shadow filter mode and SSAO settings, and logs the measured
 frame time; a before/after `look` set is inspected and described in the progress entry.
 
+## Iterations 51–80 — serial schedule (author-approved 2026-08-27 21:55)
+One session at a time (no parallel lanes). Reviews at every multiple of 5. Take the groups in
+order; a group may span more than one iteration; do not skip ahead.
+1. **P12 render quality** + the deferred 32° sun elevation and horizon haze (51–53).
+2. **P4 trees** — `blender/bake_trees.py` impostor atlases (snow-loaded spruce, bare birch/maple,
+   understory), thin instances with jitter, nearest trees as card meshes, snow load, shadows (54–57).
+3. **P5 snow surfaces** — `blender/bake_landing.py` chopped landing with displacement, corduroy
+   in-run, track decals, spray tune (58–60).
+4. **P6 horizon** — layered forested ridgelines, snowy roofs in the valley, no cone peaks (61–62).
+5. **P10 free-look** in ready / after-run / replay with the above-terrain camera clamp (63–64).
+6. **P3 remainder** — landing wands, knoll flag, judges' deck on containers, coaches in red,
+   generic kicker panels (65–66).
+7. **Proportions rebaseline part 2** (torso/legs, APPROVED; ±5% flight-rate guard) + athlete
+   rebuild; **P7 flight pose** (arms overhead in layout, skis together, arms open on landing);
+   lane A leftovers: helmet brim wrap, suit-relief ironing on if not yet, arm-gate instrument (67–68).
+8. **Pose-vs-physics** (former lane D, merged): skeleton-free flip counts (silhouette axis + VLM
+   annotation), golden-trace comparison, numbered physics proposals → reviewer approval → tuning
+   with rebaseline (69–71).
+9. **P9 night snowfall mode** (72–74).
+10. **Performance/polish** — draw calls, LOD, load time, weaker-GPU fallback, cache-busting hygiene (75–76).
+11. **Human-testing buffer** — fix whatever the author reports (77–78).
+12. **Final review, HANDOFF/ADR update for the render pipeline, branch summary** (79–80).
+
 ## Definition of done for the branch
 All P0–P6, P9, P10, P11 and P12 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.

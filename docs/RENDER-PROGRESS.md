@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Serial schedule for 51–80 added to the plan (reviewer, 21:55).** Lanes are closed: lane D's tools/docs are merged (`tools/pose_vs_physics.js`, `docs/POSE-VS-PHYSICS.md`, `docs/LANE-D.md`), lane A's last slice will be merged by the reviewer. From 51 on, the main loop does everything, one group at a time, in the order listed under **Iterations 51–80** in `docs/RENDER-PLAN.md`. The author tests on the stable server (8201) when available; their findings pre-empt the schedule.
 - **URGENT — FIRST in the next work iteration (author, 21:45, seen on the stable build): the crashed athlete keeps flopping around indefinitely.** The iteration-43 rest detector does not hold in a real browser run. Required behaviour, exactly: from the crash trigger the body may tumble for **at most 1.0 s** while it slides down the remainder of the incline to the flat, then it **stops** — pose frozen (no joint motion at all), body sliding to rest under friction within a further ~1 s, and nothing moves after that (no residual jitter, no re-wake). Implement as a hard state machine, not damping alone: `t_crash + 1.0 s` → freeze all joint constraints/poses (keep the last pose), keep only the root's linear slide with strong friction, snap velocities below 0.1 m/s to zero, and stop integrating; never re-enter the ragdoll until the next run. Skis can keep sliding separately. Acceptance in `crash-ragdoll.spec.js` on a real browser run (not the golden stub): joint angular speed = 0 for every joint from t_crash+1.0 s onward; body speed < 0.1 m/s by t_crash+2.5 s and exactly 0 thereafter for ≥ 3 s of samples; no legacy solid visible. Also record why the previous detector failed (frame-rate dependence? threshold never reached because the PBD keeps injecting energy?).
 - **Reviewer after review 45 (21:35).** Good: suit reads looser, hands/shoulders normal, blue sky with cumulus now visible behind the figure, crash instrument fixed. Requests: (a) add a fourth canonical shot to `look.spec` — **`shots/kicker.png`, side view centred on the kicker block** (camera on the +x side, target the block centre, radius ~18 m) — and a fifth **`shots/inrun.png`** from behind the athlete looking down the in-run at the block; inspect both in every review and describe them; (b) confirm in that shot that the block is 3.4 m wide with vertical side walls and flat table beside it (item 3 acceptance), and that the B-net runs past it; (c) then the remaining human items (5) FP view vs `main`, (6) Dvorak-aware hotkeys, (7) ESC closes help; then P12 render quality; review at 50 with all five shots.
 - **Lane A merge (21:20): folds + bib slices merged — `assets/` changed; bump `ASSET_V` to `?v=14` in your next `game.js` commit.** Also: keep commit subjects clean (a `$(cat <<'EOF'` fragment leaked into 1f044b0's subject).
@@ -138,7 +139,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | APPROVED: keep ski d = 1.55, retune the touchdown evaluator | **landed (iter 33, commit 1e20d31)** | measured mechanism: d 1.55 slowed tucked rotation 4.1 % via computeI's ski self-term (I_tuck 5.2250→5.5459), shifting touchdown flipAngle 17–111° (norms: pike 125.5→28.9, tuck-long 343.5→232.7, tuck-short 326.1→308.8) — no window change can restore all three outcomes (opposite directions), so the self-term is pinned at the tuned 1.20 m; ski keeps its 1.55 m reach; 21/30 traces byte-identical to HEAD, 5 node-only (tuck-rate restoration), 3 outcome flips at f=435 exactly; all 30 byte-identical to the pre-1.55 build; airTime 2.300046 s byte-identical everywhere; unit 74/74, golden 30/30, drive 44/2 (the 2 = iter-32's pre-existing mismatches, unchanged) |
 | — | APPROVED: C1-smooth run profile | **used (iter 11)** | knuckle + roll-out beziers; levels/angles pinned; transient curvature ~50 deg inside blends reported | 
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
-| — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only — crash retune LANDED + spec de-flaked; NEXT = (5)+(6)+(7)** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749 ratio confirmed in fresh figure shots, build hard gate (0.65–0.85) already in build_body.py; (8) shoulders bulky — merged lane A iter 2 (bideltoid 0.401 m hard-gated) |
+| — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
 
 ## Open questions for the reviewer
@@ -272,6 +273,77 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 46 — Human items (5)+(6)+(7): FP camera vs `main` — zero regressions, own body/skis visible; layout-aware letter hotkeys (Dvorak fixed); ESC closes every modal; canonical kicker/in-run shots added to `look`
+
+**Order acted on:** reviewer after review 45 (21:35): item (a) canonical shots, then (c) human
+items (5)(6)(7). Self-review of 45: HEAD `515d874` tree clean, unit 74/74 + golden 30/30 at
+baseline. Two reviewer docs commits (`ddce8b8`, `49db212`) landed mid-iteration and were read
+before committing; the URGENT crash state machine is recorded as iteration 47's FIRST item
+(it cannot fit this session's remaining budget next to a verified commit).
+
+**Item 6 — layout-aware letter hotkeys.** All letter hotkeys (P pause, Z tutorial scale,
+R reset, C camera, V first-person, A/D off-axis, X trampoline single, F dive preference —
+keydown; A/D release — keyup) now match via `_keyIsLetter(e, letter)`: a printable length-1
+`event.key`, lowercased — the letter the help menu shows — with the QWERTY `event.code`
+fallback ONLY for synthetic events that carry no `key` (the gamepad bridge's KeyR dispatch
+now sends `key: 'r'` as well). Arrows/Space/Shift stay on `code` (physical), and the
+mirror-keys mapping is untouched. Gate `tests/drive/hotkeys.spec.js` (new): a Dvorak-style
+event `{key:'p', code:'KeyR'}` fires pause — a code-matching handler would run RESET there
+instead, so the assertion pins the bug — and `{key:'z', code:'KeyD'}` toggles
+`_tutorialTimeScale`; a real `page.keyboard.press('p')` still fires (no over-restriction);
+3/3 passed in 25 s.
+
+**Item 7 — ESC closes modals.** The main keydown handler now first checks Escape and
+closes any open overlay of `helpModal, settingsModal, customModal, compModal, qualifyModal,
+fisModal, fisTrickPick, fisRunSB, trophyPanel, grandUnlockOverlay`, returning early only when
+something actually closed. Gated in the same spec for help/settings/custom (open → Escape →
+closed). Caveat recorded: ESC-closing the FIS trick picker leaves `_fisWaitingForPick` set
+(R stays blocked until a trick is picked) — user-invoked, matches the "any modal" ask; flag
+if the FIS flow needs a special case.
+
+**`_getGameState` is golden-trace-coupled — never extend it.** The harness serialises the
+accessor's whole return object, so the new pause flag went to a separate
+`window._isPaused()`. Honest incident, caught by the gate in 12 s: my first `paused` field
+REPLACED the `stopped: state.stopped,` line (anchored on a mis-read line number) and golden
+reported 0/30 with `state.stopped: present → absent` in every frame; the field was restored
+and golden returned to 30/30 with the accessor byte-identical to HEAD.
+
+**Item 5 — FP camera vs `main` (scratch harness, both sides captured and viewed).**
+`scratch/iter-46/fp-capture.js` drives a full run in first-person (V before the start) and
+shoots ready / in-run / takeoff / flight / landing on the branch (:8122) and on a `main`
+worktree (:8123; no `_bodyLinked` there — 3 s settle instead). Both trees: zero console
+errors. Differences, all branch improvements, none regressions:
+1. Sky: branch gradient dome + cumulus + sun disc/glare; main flat pale blue, no sun/clouds (P2).
+2. Snow: branch bright white run; main grey slab (grey-ramp fix, entry 13).
+3. Venue: branch blue B-net along both edges from the ready view; main none (P3 slice 1).
+4. Trees: branch snow-tinted irregular conifers + flared trunks; main uniform green cones (P4 stopgap).
+5. **Own body/skis: branch shows the ski tips ahead in all five moments and the athlete's own
+   gloves/forearms entering the frame edges during takeoff/flight/landing (confirmed at
+   1100×850 — the dark symmetric wedges are the gloves, the left one with a specular glint);
+   main shows NO own geometry at any moment.** Branch matches the FP reference expectation.
+6. Landing: main's camera ends up under/beside a grey slab with cone spikes poking in (reads
+   broken); branch shows the forest walls, fence line, sun and clouds.
+Verdict: no FP fixes required. Note: the flight gloves read near-black from behind (unlit
+side) — cosmetic, for the P12 material pass if the author wants them lifted.
+
+**Canonical shots (reviewer item a):** `look.spec` now also writes `shots/kicker.png`
+(side view of the block from +x, target (0, −1.7, KICKER_END_Z−3), radius 18, alpha 0) and
+`shots/inrun.png` (behind/above the athlete looking down the in-run, alpha −π/2, radius 26).
+Inspection + the item-3 confirmation are in the verification block below.
+
+**Cache-busting:** `ASSET_V ?v=13 → ?v=14` per the lane-A folds+bib merge instruction, and
+`game.js?v=28 → ?v=29` in index.html for this iteration's game.js change (entry-44 precedent).
+No `assets/` files were regenerated this iteration.
+
+**Verification:** unit **74/74**; golden **30/30, no re-capture** (the accessor incident above
+is the only golden excursion, fully reverted); `hotkeys.spec` **3/3**; game/look specs and the
+fresh five-shot set described below. No engine/ or body-model changes; physics untouched.
+
+**Open questions for the reviewer:** none new; the URGENT crash state machine (21:45) is
+accepted as iteration 47's first item and its acceptance list (joint angular speed = 0 from
+t_crash+1.0 s, speed < 0.1 m/s by +2.5 s and exactly 0 after, ≥ 3 s of still samples, real
+browser) will be the gate set. Standing entry-45 questions (a)(b)(c) remain.
+
 ### 45 — Review-only: suite audit + the three standing reds dispositioned — two closed by the lane-A merges, crash spec de-flaked (leashes + motion-end gate) and the queued ragdoll friction retune landed; no render regression found
 
 **Order acted on:** reviewer 18:05(b) ("make run-all green") + entry 44's queue (crash retune first).
