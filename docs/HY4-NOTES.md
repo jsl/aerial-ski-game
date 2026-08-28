@@ -24,3 +24,6 @@ A1: Boot-ski invariant verified and closed (rig.spec.js passed)
 
 ### 2 — In-run crouch: arms stay in front
 Status: POSE_INRUN_TUCK updated to bring arms ahead of hips.
+### 3 — Crash rewrite
+Status: tumble ≤ 1s, rigid slide, friction/stop verified, rest ON snow with ≥3 pts.
+Crash ragdoll test passes.
