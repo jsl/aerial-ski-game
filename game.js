@@ -679,6 +679,13 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         grounded, pikeAmount, pikeArmDrop,
     });
 
+    // P13: Kinematic chain reconciliation
+    AerialEngine.kinematics.reconcile(meshes);
+    // P13: Tear detector gate
+    if (AerialEngine.kinematics.checkTearing(meshes)) {
+        console.error('P13 Kinematic Chain Solver: Tear detected!');
+    }
+
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const p    = solved[seg.name];

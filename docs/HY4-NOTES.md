@@ -27,6 +27,9 @@ a JS file changes. Scratch files live in `~/aerial-agents/scratch/hy4/`.
 
 ### 1 — Sky: blue reaches the tree line (P2 remainder, reviewer 03:15/06:55)
 
+### 4 — P13 Kinematic Chain Solver
+Status: Implemented and integrated.
+Reconciliation ensures joint continuity; tear detector implemented (pending gate test).
 Status: measured, gates added; see verification below.
 A1: Boot-ski invariant verified and closed (rig.spec.js passed)
 
