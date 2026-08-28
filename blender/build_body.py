@@ -79,6 +79,8 @@ import math
 import os
 import sys
 
+import numpy as np
+
 from mathutils import Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -2117,6 +2119,274 @@ def loosen_suit(body, joints):
             f'nothing (segment rename or a moved anchor?)')
 
 
+# ── Suit-only smoothing (task 3, relief slice — reviewer 20:55 item 1) ──────
+#
+# MEASURED with the reviewer's prescribed instrument (mean |Laplacian| of the
+# normal map's R channel over the suit-material UV mask of the 2048 atlas):
+#   pre-lane bake (38bf9bc)  4.73  over 1.60 M texels
+#   current bake             7.48  over 1.45 M texels
+# The lane's fabric relief is present and STRONGER than pre-lane, so the
+# vacuum-packed read is not a texture problem. The normal bake records only
+# displace_suit's millimetre relief — the high-poly is the low mesh + simple
+# subdivision + displacement, so their common shape cancels in the bake and
+# the muscle relief the eye reads through the shell lives in the LOW-POLY
+# GEOMETRY (base-mesh musculature, girth-matched, then stood off 1:1 by
+# loosen_suit, which preserves every bulge).
+#
+# The smoothing pass that erases it is therefore geometry-side, and physical:
+# loose fabric drapes — it spans across a pectoral or a biceps instead of
+# moulding it. relax_suit removes the z-high-passed radius field (the relief)
+# from the suit region's verts, leaving taper, ellipses and volume intact.
+# Same weight field as loosen_suit: head, glove, boot and the deltoid cap have
+# weight zero by construction, so the bideltoid band, the hands and every
+# contact gate cannot read this pass. z is never touched.
+RELAX_STRENGTH = 0.70        # fraction of the relief field removed
+RELAX_Z_SIGMA = 0.012        # relief reference: z-Gaussian width (m)
+RELAX_GATE = 0.55            # relief RMS must drop >= 55% per zone
+RELAX_VOLUME_GATE = 0.002    # per-zone mean radius may drift <= 2 mm
+
+
+def relax_suit(body, joints):
+    """
+    Iron the muscle relief out of the suit shell (task 3, relief slice).
+
+    A z-Gaussian of the radius field (within each segment, about the segment's
+    own vertical axis) gives the relief-free reference. Muscle relief — pecs,
+    abdominal packets, biceps, calves — is z-LOCALIZED in 4-12 cm bands, while
+    limb taper is linear in z and the cross-sections are z-invariant ellipses,
+    so the difference field r - r_ref is the relief and nothing else. Each
+    candidate vert is then pulled along its own radial ray by
+    strength * weight * relief; a per-row mean-radius restore gives back the
+    residual so breadth gates read the same shell. (A surface Laplacian was
+    tried first and rejected on measurement: it diffuses azimuthally,
+    circularizes the ellipses and reads the whole cross-section as relief.)
+
+    Hard gates (all before the bake):
+      RELAX_GATE        per-zone relief RMS drops >= 55% against the frozen
+                        reference
+      RELAX_VOLUME_GATE per-zone mean radius drifts <= 2 mm
+      inner-envelope    no leg/arm row's innermost vert moves inboard more
+                        than 2 mm (loosen_suit's clamp survives the iron)
+    """
+    def clamp01(t):
+        return min(1.0, max(0.0, t))
+
+    def sstep(t):
+        t = clamp01(t)
+        return t * t * (3 - 2 * t)
+
+    vs = body.data.vertices
+    dom = dominant_segments(body)
+    torso_c = bl('torso')
+    t_top = torso_c.z + SEGMENTS['torso']['h'] / 2
+    sh_z = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
+    knee_z = (bl('upperLegL').z - SEGMENTS['upperLegL']['h'] / 2
+              + bl('lowerLegL').z + SEGMENTS['lowerLegL']['h'] / 2) / 2
+    hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    elbow_z = bl('lowerArmL').z + SEGMENTS['lowerArmL']['h'] / 2
+    ankle_z = {s: bl(f'lowerLeg{s}').z - SEGMENTS[f'lowerLeg{s}']['h'] / 2
+               for s in ('L', 'R')}
+
+    # The SAME field loosen_suit offsets with, normalised to weight 1 wherever
+    # the zone stands off at its full amount: the fades (yoke, deltoid cap,
+    # hip, knee, elbow, wrist, boot cuff) ramp the weight, so relax fades out
+    # exactly where the offset does.
+    cand = {}
+    for i, v in enumerate(vs):
+        nm = dom[i]
+        if nm is None or nm not in SEGMENTS:
+            continue
+        if nm != 'torso' and not nm.endswith(('L', 'R')):
+            continue
+        base = nm[:-1] if nm[-1] in 'LR' else nm
+        z = v.co.z
+        if base == 'torso':
+            w = sstep((t_top - z) / 0.14)
+            if z < hip_z + 0.04:
+                t = sstep((hip_z + 0.04 - z) / 0.08)
+                w = (1 - t) + SUIT_OFFSET['upperLeg'] / SUIT_OFFSET['torso'] * t
+        elif base in ('upperLeg', 'lowerLeg'):
+            az = ankle_z[nm[-1]]
+            if base == 'lowerLeg' and z <= az + 0.02:
+                continue
+            t = sstep((knee_z + 0.04 - z) / 0.08)
+            w = (1 - t) + SUIT_OFFSET['lowerLeg'] / SUIT_OFFSET['upperLeg'] * t
+            if base == 'lowerLeg':
+                w *= sstep((z - az - 0.02) / 0.08)
+        elif base in ('upperArm', 'lowerArm'):
+            t = sstep((elbow_z + 0.03 - z) / 0.06)
+            w = (1 - t) + SUIT_OFFSET['lowerArm'] / SUIT_OFFSET['upperArm'] * t
+            w *= sstep((sh_z - 0.04 - z) / 0.08)
+            if base == 'lowerArm':
+                wz = bl(nm).z - SEGMENTS[nm]['h'] / 2
+                w *= sstep((z - wz) / 0.06)
+        else:
+            continue
+        if w <= 0:
+            continue
+        cand[i] = min(1.0, w)
+
+    n = len(vs)
+    P = np.array([v.co[:] for v in vs], dtype=np.float64)
+    wgt = np.zeros(n)
+    for i, w in cand.items():
+        wgt[i] = w
+
+    # Per-segment radial frames: every vert's radius about its OWN segment's
+    # vertical axis.
+    axes_all = {}
+    dom_names = []
+    for i in range(n):
+        nm = dom[i] or ''
+        dom_names.append(nm)
+        if nm and nm not in axes_all:
+            c = bl(nm)
+            axes_all[nm] = (c.x, c.y)
+    dom_arr = np.array(dom_names)
+    ax_arr = np.zeros((n, 2))
+    for nm, (axx, ayy) in axes_all.items():
+        m = dom_arr == nm
+        ax_arr[m, 0] = axx
+        ax_arr[m, 1] = ayy
+    r0 = np.hypot(P[:, 0] - ax_arr[:, 0], P[:, 1] - ax_arr[:, 1])
+
+    # Relief reference: a z-Gaussian of the radius field WITHIN each segment.
+    # Muscle relief (pecs, abs packets, biceps, calves) is z-LOCALIZED in
+    # 4-12 cm bands; limb taper is linear in z (a Gaussian is blind to it) and
+    # the cross-sections are z-invariant ellipses (never mixed, so preserved
+    # exactly). The difference r - r_ref is therefore the relief and nothing
+    # else. A surface Laplacian was tried first and REJECTED on measurement:
+    # it diffuses azimuthally, circularizes the ellipses, and reads the whole
+    # cross-section shape as "relief" (thigh RMS 29 mm is the ellipse, not
+    # muscle).
+    cand_idx = np.array(sorted(cand))
+    r_ref = r0.copy()
+    sig2 = RELAX_Z_SIGMA * RELAX_Z_SIGMA
+    for nm in sorted({dom[i] for i in cand}):
+        idx = cand_idx[dom_arr[cand_idx] == nm]
+        if len(idx) < 16:
+            continue
+        zi = P[idx, 2][:, None]
+        kw = np.exp(-((zi - zi.T) ** 2) / sig2)
+        r_ref[idx] = kw @ r0[idx] / kw.sum(axis=1)
+    relief0 = r0 - r_ref
+
+    # The iron: pull each vert along its own radial ray by
+    # strength * weight * relief. z never moves; verts without weight never
+    # move; the ellipse and the taper survive in the reference.
+    r_new = r0 - (RELAX_STRENGTH * wgt) * relief0
+    f = np.where(wgt > 0, r_new / np.maximum(1e-6, r0), 1.0)
+    P1 = P.copy()
+    P1[:, 0] = ax_arr[:, 0] + (P[:, 0] - ax_arr[:, 0]) * f
+    P1[:, 1] = ax_arr[:, 1] + (P[:, 1] - ax_arr[:, 1]) * f
+
+    # Per-row mean-radius restore about the segment's own axis, so the shell
+    # keeps exactly the volume the girth/stand-off gates measured.
+    axes = {}
+    rows = {}
+    for i in cand:
+        nm = dom[i]
+        if nm not in axes:
+            c = bl(nm)
+            axes[nm] = (c.x, c.y)
+        rows.setdefault((nm, int(round(P[i, 2] / 0.01))), []).append(i)
+    for key, idxs in rows.items():
+        ax, ay = axes[key[0]]
+        full = [i for i in idxs if cand[i] > 0.5]
+        if len(full) < 8:
+            continue
+        ra = np.hypot(P[full, 0] - ax, P[full, 1] - ay).mean()
+        rb = np.hypot(P1[full, 0] - ax, P1[full, 1] - ay).mean()
+        s = min(1.03, max(0.97, ra / max(1e-6, rb)))
+        for i in idxs:
+            P1[i, 0] = ax + (P1[i, 0] - ax) * s
+            P1[i, 1] = ay + (P1[i, 1] - ay) * s
+
+    # Gates. Relief metric: RMS of (r - r_ref) per zone over full-weight
+    # verts, against the FROZEN reference, before vs after.
+    def zone_rms(Px):
+        r = np.hypot(Px[:, 0] - ax_arr[:, 0], Px[:, 1] - ax_arr[:, 1])
+        d = (r - r_ref) ** 2
+        out = {}
+        for nm in sorted({dom[i] for i in cand}):
+            idx = [i for i in cand if dom[i] == nm and cand[i] > 0.5]
+            if len(idx) < 16:
+                continue
+            base = nm[:-1] if nm[-1] in 'LR' else nm
+            out[base] = math.sqrt(float(d[idx].sum()) / len(idx))
+        return out
+
+    rel0 = zone_rms(P)
+    rel1 = zone_rms(P1)
+
+    parts, worst = [], None
+    for b, e0 in sorted(rel0.items()):
+        e1 = rel1.get(b, e0)
+        drop = 1 - e1 / max(1e-9, e0)
+        parts.append(f'{b} {e0 * 1000:.1f}->{e1 * 1000:.1f} mm '
+                     f'(-{drop:.0%})')
+        if drop < RELAX_GATE and worst is None:
+            worst = b
+    vol_parts, vol_worst = [], None
+    for b in sorted({k[0] for k in rows}):
+        idxs = [i for k, il in rows.items() if k[0] == b for i in il
+                if cand[i] > 0.5]
+        if len(idxs) < 32:
+            continue
+        ax, ay = axes[b]
+        r0 = np.hypot(P[idxs, 0] - ax, P[idxs, 1] - ay).mean()
+        r1 = np.hypot(P1[idxs, 0] - ax, P1[idxs, 1] - ay).mean()
+        vol_parts.append(f'{b} {(r1 - r0) * 1000:+.2f}')
+        if abs(r1 - r0) > RELAX_VOLUME_GATE and vol_worst is None:
+            vol_worst = (b, r1 - r0)
+
+    # Inner-envelope guard: loosen_suit clamped each leg/arm row's innermost
+    # verts to a per-side floor; the iron must not push any side's innermost
+    # vert inboard past that settlement (a bounding-box L/R "gap" is useless
+    # here — the two clouds legitimately interleave at the crotch).
+    env = {}
+    for i in cand:
+        nm = dom[i]
+        base = nm[:-1] if nm[-1] in 'LR' else nm
+        if base in ('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm'):
+            key = (nm, int(round(P[i, 2] / 0.01)))
+            e = env.setdefault(key, [1e9, 1e9])
+            e[0] = min(e[0], abs(P[i, 0]))
+            e[1] = min(e[1], abs(P1[i, 0]))
+    drops = []
+    for key, e in env.items():
+        drops.append((e[1] - e[0], key))
+    env_msg = ''
+    if drops:
+        worst_env, worst_key = min(drops)
+        env_msg = (f' | inner envelope worst drift {worst_env * 1000:+.1f} mm '
+                   f'at {worst_key[0]} z~{worst_key[1] * 0.01:+.2f}')
+        if worst_env < -0.002:
+            raise SystemExit(
+                f'[body] relax gate FAILED: {worst_key[0]} row z~'
+                f'{worst_key[1] * 0.01:+.2f} inner envelope moved inboard '
+                f'{worst_env * 1000:.1f} mm (limit 2) — the iron pushed a '
+                f'concave inner face across its settle floor')
+
+    log('RELAX summary: relief RMS ' + ' | '.join(parts)
+        + ' | mean radius ' + ', '.join(vol_parts) + ' mm'
+        + env_msg + f' | {len(cand)} suit verts weighted')
+    if worst is not None:
+        raise SystemExit(
+            f'[body] relax gate FAILED at {worst}: relief RMS dropped '
+            f'{(1 - rel1[worst] / max(1e-9, rel0[worst])):.0%} '
+            f'(gate >= {RELAX_GATE:.0%}) — raise RELAX_STRENGTH/ITERS')
+    if vol_worst is not None:
+        raise SystemExit(
+            f'[body] relax gate FAILED at {vol_worst[0]}: mean radius drifted '
+            f'{vol_worst[1] * 1000:+.2f} mm (gate <= '
+            f'{RELAX_VOLUME_GATE * 1000:.0f} mm) — see RELAX summary line')
+    for i in cand:
+        v = vs[i]
+        v.co = (P1[i, 0], P1[i, 1], P1[i, 2])
+
+
+
 BIDELTOID_GATE = 0.41                 # hard ceiling (m)
 BIDELTOID_TARGET = (0.38, 0.40)       # author's target band at standing 1.515
 CAP_OUTER_X = 0.198                   # post-fix outboard limit about the bone plane
@@ -3831,6 +4101,79 @@ def patch_skin_binds_verify(path, want):
     return worst
 
 
+# ── Suit normal-map variance gate (task 3, relief slice) ────────────────────
+#
+# The reviewer's instrument, run on every build: mean |Laplacian| of the baked
+# normal map's R channel over the SUIT region of the atlas (faces whose verts
+# are all dominantly torso/leg/arm segments). This is the FABRIC detail — the
+# weave, seams, folds and cuffs displace_suit writes — and it is what a future
+# pass must not erase while smoothing. Measured on the pre-relax build: 7.48
+# (pre-lane bake 4.73). SOFT this iteration (floor None): the in-build suit
+# mask differs slightly from the scratch instrument's, so the floor gets
+# calibrated on this iteration's logged value and hardened next iteration —
+# the repo's usual instrument-first pattern.
+SUIT_NM_FLOOR = None
+
+
+def suit_nm_variance_gate(low, out_dir):
+    """Log and hard-floor the suit-region normal-map high-frequency energy."""
+    uvl = low.data.uv_layers.active.data
+    own = dominant_segments(low)
+    suit = {'torso', 'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
+            'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
+    tris = []
+    for poly in low.data.polygons:
+        vs_ = poly.vertices
+        if all(own[v] in suit for v in vs_):
+            uvs = [uvl[li].uv for li in poly.loop_indices]
+            for k in range(1, len(uvs) - 1):
+                tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    img = bpy.data.images.load(os.path.join(out_dir, 'athlete_normal.png'))
+    w, h = img.size
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    bpy.data.images.remove(img)
+    R = buf[0::4].reshape(h, w)
+    lap = (4 * R[1:-1, 1:-1] - R[:-2, 1:-1] - R[2:, 1:-1]
+           - R[1:-1, :-2] - R[1:-1, 2:])
+    mask = np.zeros((h, w), bool)
+    rs_x, rs_y = float(w - 1), float(h - 1)
+    for a, b, c in tris:
+        p = np.array([a, b, c], dtype=np.float64) \
+            * np.array([rs_x, rs_y])
+        x0, x1 = int(p[:, 0].min()), int(np.ceil(p[:, 0].max()))
+        y0, y1 = int(p[:, 1].min()), int(np.ceil(p[:, 1].max()))
+        x1, y1 = min(x1, w - 1), min(y1, h - 1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        xs, ys = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+        d = ((p[1, 1] - p[2, 1]) * (p[0, 0] - p[2, 0])
+             + (p[2, 0] - p[1, 0]) * (p[0, 1] - p[2, 1]))
+        if abs(d) < 1e-9:
+            continue
+        w0 = ((p[1, 1] - p[2, 1]) * (xs - p[2, 0])
+              + (p[2, 0] - p[1, 0]) * (ys - p[2, 1])) / d
+        w1 = ((p[2, 1] - p[0, 1]) * (xs - p[2, 0])
+              + (p[0, 0] - p[2, 0]) * (ys - p[2, 1])) / d
+        inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
+        mask[ys[inside], xs[inside]] = True
+    m = mask[1:-1, 1:-1]
+    n = int(m.sum())
+    if n < 10000:
+        raise SystemExit(
+            f'[body] suit NM variance gate FAILED: suit mask covers only '
+            f'{n} texels — the suit zoning collapsed')
+    # 0-255 units, matching the scratch instrument (pre-relax build 7.48,
+    # pre-lane bake 4.73).
+    v = float(np.abs(lap[m]).mean()) * 255.0
+    log(f'SUIT NM VARIANCE: {v:.2f} mean|Laplacian|R over {n} suit texels '
+        f'(floor {SUIT_NM_FLOOR}, pre-relax 7.48, pre-lane 4.73)')
+    if SUIT_NM_FLOOR is not None and v < SUIT_NM_FLOOR:
+        raise SystemExit(
+            f'[body] suit NM variance gate FAILED: {v:.2f} < {SUIT_NM_FLOOR:.2f}'
+            f' — the fabric relief was erased from the bake')
+
+
 def main():
     clear()
     body = load_base()
@@ -3929,6 +4272,31 @@ def main():
             f'z={prof["step_z"]:+.3f} — that is the hard notch, not an anatomical '
             f'waist')
     loosen_suit(body, joints)
+    # OPT-IN until green: the iron's gates trip on an unexplained -39 mm
+    # inner-envelope move at upperLegR z~-0.35 (a relief-reference artifact
+    # under diagnosis) — the pass must not ship half-verified. Run with
+    # --relax-suit on to develop it; the default build is byte-identical in
+    # behaviour to the pre-relax pipeline.
+    if arg('--relax-suit', 'off') == 'on':
+        relax_suit(body, joints)
+        # The pass is geometry-side, so re-ask the two silhouette gates that
+        # ran before it (cheap): the deltoid cap has relax weight zero, and
+        # the row radius restore keeps the taper — assert, don't hope.
+        bide_w, bide_z = bideltoid_report(body)
+        if bide_w > BIDELTOID_GATE:
+            raise SystemExit(
+                f'[body] bideltoid gate FAILED after relax: '
+                f'{bide_w * 1000:.0f} mm at z={bide_z:+.2f} '
+                f'(gate {BIDELTOID_GATE * 1000:.0f} mm)')
+        prof = leg_profile(body, 'post-relax')
+        if prof['step'] > 0.030:
+            raise SystemExit(
+                f'[body] leg profile has a {prof["step"] * 1000:.1f} mm slope '
+                f'step at z={prof["step_z"]:+.3f} after relax — the iron '
+                f'notched the leg')
+    else:
+        log('relax_suit DORMANT (--relax-suit on to enable): relief iron '
+            'written but not verified — see docs/LANE-A.md entry 9')
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     high = make_highpoly(low, lm)
@@ -4003,6 +4371,7 @@ def main():
             f'[body] only {leg_frac:.3f} of low-poly leg vertices read blue '
             f'from the baked albedo — the stripe is not landing on the legs '
             f'(paint azimuth or bake transfer)')
+    suit_nm_variance_gate(low, out_dir)
 
     # The high-poly has done its job. Leaving it in would export a second body.
     bpy.data.objects.remove(high, do_unlink=True)
