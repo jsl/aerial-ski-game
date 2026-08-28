@@ -142,6 +142,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Reviewer order 18–20 | **18 = P1 slice 2 (iter 18); 19 = rebaseline part 1 (iter 19), rebuild deferred; 20 = this review (iter 20); 21 = binds+bib+dt clamp; 22 = styled skis + fence scale** | the ONE Blender rebuild bundle: bib ✓ (21), styled skis + binding ✓ (22, renderer-side); REMAINING renderer/Blender: straight arms, loose suit, cranium/brim re-check (own build session); rebaseline part 2 (torso/legs) pending entry-19 construction approval |
 | — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
+| — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
 
 ## Open questions for the reviewer
 - **Iteration 45 — three calls.**
@@ -274,6 +275,75 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 47 — URGENT (author 21:45): hard crash state machine — tumble ≤ 1.0 s → frozen pose → rigid slide → stopped; the threshold rest detector is gone
+
+**Order acted on:** the author's URGENT stable-build report (21:45), recorded as iteration
+47's first item by entry 46; first in the human-testing queue order.
+
+**Why the iter-43 detector failed in a real browser** (recorded as the acceptance asks):
+it was a threshold instrument — 8 consecutive frames of maxSpeed < 0.12 m/s over ALL 16
+parts AND both released skis at rest, armed only after t > 1.0 s — over a PBD loop with no
+true energy drain: the angular-limit clamps and hard length projections keep injecting
+displacement into propped, non-contacting parts that the static-friction stop (a contact
+branch) never touches, so a propped body sits in a visible limit cycle at or above the
+0.12 m/s gate and never yields 8 quiet frames in the browser. The headless harness's
+clamped dt happened to settle the sampled scenarios, which is why the gates were green
+while the stable build flopped. Frame-rate dependence is secondary: the trigger now uses
+accumulated ragdoll time only.
+
+**The machine** (game.js `_crashRagdollStep`, renderer-side, `state` untouched):
+`tumble` (full PBD, unconditional cap R.t ≥ 1.0 s) → `slide` (pose FROZEN in world space;
+the frozen pose translates as ONE rigid piece — every part gets the same delta, so joint
+angles are constant by construction — with exp(−5·dt) friction, velocity carried from the
+freeze frame's mean part velocity, y following the local slope plane, and any residual
+penetration lifting the WHOLE body; joints are never re-solved) → `stopped` (slideV
+zeroed, `resting`/`restAt` set, nothing integrates; probe speed is a literal 0.0). Skis
+keep their own slide and self-stop as before. The physics root keeps sliding engine-side
+under the frozen pose; the write-back keeps projecting into the live root frame (the
+entry-43 mechanism), so nothing glides. exp(−5·dt) puts any crash speed below 0.1 m/s
+within ~1 s of the freeze (15 m/s → 0.1 in 0.94 s), inside the author's envelope.
+
+**Instrument fix found on the way:** `_crashVLen` floors a zero vector to 1e-9, so the
+spray block's speed read a phantom ~1e-8 m/s on a perfectly still body (it showed up as
+"nonzero after stop" in the new exactly-0 gate — displacement was EXACTLY 0.0; the floor
+divided by dt). The spray speed now computes the norm directly, unfloored, so `stopped`
+reads exactly 0. From the freeze onward the probe reports the machine's own velocity
+state (not a displacement/dt ratio), so frame-time jitter cannot straddle the 0.1 gate.
+
+**Golden:** the harness also records the athlete's node transforms, and 13 `aerial-*`
+scenarios end in crashes, so the crash-tail node records necessarily changed. Re-captured
+all 30 with `tests/golden/capture.js` and ran `tests/golden/audit-ready-stance.js`
+against the pre-change traces: **physics `state` IDENTICAL in all 30 scenarios**; node
+diffs confined to the athlete hierarchy (drivers, boot/face details), crash-tail frames
+only (through f=895). Same display-only class as entries 34/43/45; no `engine/` change.
+
+**Spec** (`tests/drive/crash-ragdoll.spec.js`, gates rewritten to the author's
+acceptance): (1) machine reaches `stopped`; (2) joint angular speed ≤ 1e-4 rad/s from the
+freeze onward, measured on 5 probe joints (neck/knees/elbows); (3) >0.1 m/s crossings end
+by t_crash + 2.5 s and speed is EXACTLY 0 (=== 0) from `stopped` onward for ≥ 3 s of
+samples; (4) rendered torso agrees (≤ 2.8 s; the 2.5 s contract + the SwiftShader
+wall-clock stretch of entries 40/43/45). Gap/penetration/legacy/visibility/ski-rest gates
+unchanged and still green. Reading flagged for the reviewer: sub-0.1 nonzero frames BEFORE
+the stop are the tumble/slide decay tail (the machine's velocity only decreases);
+"exactly 0 thereafter" is enforced from `stopped`.
+
+**Verification numbers** (solo runs this session): crash spec PASS — restAt 1.10–1.21 s,
+worst joint angular speed 0.00e+0 rad/s (bit-identical angles under the rigid slide),
+bodyMotionEnd 0.71 s (gate ≤ 2.5 s), exactly-0 span 9.06 s (gate ≥ 3 s), rendered torso
+motion end 0.71 s (gate ≤ 2.8 s). Unit 74/74. Golden 30/30 after the re-capture (audit
+PASS). rig.spec 11/11. `look` 1/1, shots regenerated; PNG viewing unavailable in this
+session (read :img supports svg only), so the static shots are covered by look's own
+luminance gates + the numbers above — no visual regression expected (no material, asset
+or camera change; crash-only behaviour). Cache-bust game.js?v=30 → 31. Scratch
+`~/aerial-agents/scratch/iter-47/` cleaned (audit copy removed).
+
+**Open:** (a) the slide phase only engages when the freeze-time mean speed is ≥ 0.1 m/s;
+in this run's crash the tumble had already slowed below the threshold (motion end
+0.71 s < the 1.0 s cap), i.e. the visible effect of the machine is a hard stop at ≤ ~2 s
+worst case; (b) the author's 2–3 s median concern from entry 45 is now structurally
+bounded (1.0 s tumble + ≤ 1.0 s slide) rather than tuned — the 3.8 s envelope is moot;
+(c) next in the queue: P12 quality pass.
+
 ### 46 — Human items (5)+(6)+(7): FP camera vs `main` — zero regressions, own body/skis visible; layout-aware letter hotkeys (Dvorak fixed); ESC closes every modal; canonical kicker/in-run shots added to `look`
 
 **Order acted on:** reviewer after review 45 (21:35): item (a) canonical shots, then (c) human

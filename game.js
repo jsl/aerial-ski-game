@@ -1706,8 +1706,27 @@ void main(void) {
     window._crashFloorY = function (z) { return _crashFloorY(z); };
     // Ragdoll settle probe (human item 2): rest state for the drive spec.
     window._ragdollProbe = function () {
-        return ragdoll ? { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
-                           t: ragdoll.t, restAt: ragdoll.restAt } : null;
+        if (!ragdoll) return null;
+        // Joint angles (rad) for the crash spec's "no joint motion after the
+        // freeze" gate: neck at the torso axis, knees/elbows at their joints.
+        const B = ragdoll.byName;
+        const ang = function (j, a, b) {
+            const ux = a.p.x - j.p.x, uy = a.p.y - j.p.y, uz = a.p.z - j.p.z;
+            const vx = b.p.x - j.p.x, vy = b.p.y - j.p.y, vz = b.p.z - j.p.z;
+            const lu = Math.hypot(ux, uy, uz) || 1e-9;
+            const lv = Math.hypot(vx, vy, vz) || 1e-9;
+            const c = Math.max(-1, Math.min(1, (ux * vx + uy * vy + uz * vz) / (lu * lv)));
+            return Math.acos(c);
+        };
+        return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
+                 t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 ang: {
+                     neck: ang(B.neck, B.torsoBottom, B.headTop),
+                     kneeL: ang(B.kneeL, B.hipL, B.ankleL),
+                     kneeR: ang(B.kneeR, B.hipR, B.ankleR),
+                     elbL: ang(B.elbowL, B.shL, B.wristL),
+                     elbR: ang(B.elbowR, B.shR, B.wristR),
+                 } };
     };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
@@ -3851,7 +3870,7 @@ void main(void) {
             hard: HARD, headRest: dist(P.neck, P.headTop),
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
-            maxSpeed: 99, sprayT: 0, t: 0,
+            maxSpeed: 99, sprayT: 0, t: 0, phase: 'tumble', slideV: null,
         };
     }
 
@@ -3865,16 +3884,16 @@ void main(void) {
         const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
         const _rq = character.root.rotationQuaternion || R.qRoot;
         const qRootInv = _crashQConj(_rq);
-        // When the rest detector has fired (R.resting), the ragdoll pose is
-        // FROZEN in world space — but the physics root KEEPS SLIDING under it
-        // (the crash only froze state.vz at impact and the slope keeps
-        // re-accelerating it), so the world→root write-back below must keep
-        // running every frame or the frozen root-local pose would ride the
-        // sliding root and the body would visibly glide down the out-run
-        // (measured: rendered torso speed 10.1 m/s with a naive full freeze).
-        // Everything from integration to spray is skipped; only the
-        // transform write-back executes.
-        if (!R.resting) {
+        // When the hard freeze has fired (R.phase leaves 'tumble'), the
+        // ragdoll pose is FROZEN in world space — but the physics root KEEPS
+        // SLIDING under it (the crash only froze state.vz at impact and the
+        // slope keeps re-accelerating it), so the world→root write-back
+        // below must keep running every frame or the frozen root-local pose
+        // would ride the sliding root and the body would visibly glide down
+        // the out-run (measured: rendered torso speed 10.1 m/s with a naive
+        // full freeze). Once frozen the pose is never re-solved: only the
+        // rigid slide step and the transform write-back execute.
+        if (R.phase === 'tumble') {
         // ── Verlet integrate (2 substeps for stability at clamped dt) ─────
         const nSub = dt > 0.026 ? 3 : 2;
         const h = dt / nSub;
@@ -4048,6 +4067,7 @@ void main(void) {
                 }
             }
         }
+        }
         // ── Skis: flat slide on the surface, yaw spin, come to rest ───────
         for (const sk of R.skis) {
             if (!sk.resting) {
@@ -4072,7 +4092,11 @@ void main(void) {
         // ── Trailing spray while the body ploughs, scaled to speed ────────
         R.maxSpeed = 0;
         for (const pt of R.parts) {
-            const sp = _crashVLen(_crashVSub(pt.p, pt.prev)) / Math.max(dt, 1e-4);
+            // NOTE: no _crashVLen here — it floors 0 to 1e-9, which would
+            // turn the stopped body's EXACT zero displacement into a phantom
+            // ~1e-8 m/s creep (the author's "exactly 0 thereafter").
+            const _dx = pt.p.x - pt.prev.x, _dy = pt.p.y - pt.prev.y, _dz = pt.p.z - pt.prev.z;
+            const sp = Math.sqrt(_dx * _dx + _dy * _dy + _dz * _dz) / Math.max(dt, 1e-4);
             if (sp > R.maxSpeed) R.maxSpeed = sp;
         }
         R.sprayT -= dt;
@@ -4080,28 +4104,72 @@ void main(void) {
             R.sprayT = 0.12;
             _spawnSnowBurst(R.torso.x, R.torso.y - 0.35, R.torso.z, 14, Math.min(2.2, R.maxSpeed / 6));
         }
-        // ── Rest detector (human item 2): freeze the pose once settled ────
-        // A few tumbles, a slide, then a STILL resting pose: total ragdoll
-        // motion after impact ≈ 2–3 s. Count consecutive slow frames — body
-        // displacement rate below 0.12 m/s (imperceptible at game camera
-        // distance, and safely under the 0.1 m/s settle gate once the last
-        // 4 cm of creep decay) and every released ski at rest — after at
-        // least 1 s of ragdoll time (no freezing during a mid-tumble lull).
-        // After 8 such frames (~0.13 s at 60 fps) mark R.resting; the step
-        // then skips the physics and only re-projects the frozen world pose
-        // into the still-sliding root frame — the settle gate and "no
-        // residual jitter / no motion afterwards" hold by construction.
-        // restAt records the ragdoll time of the freeze.
-        if (!R.resting) {
-            const _skisStill = R.skis.every(sk =>
-                sk.resting && Math.hypot(sk.vel.x, sk.vel.z) < 0.03);
-            if (R.t > 1.0 && R.maxSpeed < 0.12 && _skisStill) {
-                R.restFrames = (R.restFrames || 0) + 1;
-                if (R.restFrames >= 8) { R.resting = true; R.restAt = R.t; }
-            } else R.restFrames = 0;
+        // ── Hard crash state machine (author URGENT, 21:45) ──────────────
+        // Not a threshold detector any more. The iter-43 rest detector (8
+        // consecutive frames of maxSpeed < 0.12 m/s + both skis still) held
+        // on the headless harness but not in a real browser: the PBD loop
+        // has no true energy drain — the angular-limit clamps and hard
+        // length projections keep injecting displacement into propped
+        // (non-contacting) parts that the static-friction stop never
+        // touches — so a propped body sits in a visible limit cycle at or
+        // above the 0.12 m/s threshold and never yields 8 quiet frames. A
+        // wall of time is frame-rate independent: tumble at most 1.0 s,
+        // then freeze the pose and slide it as ONE rigid piece.
+        if (R.phase === 'tumble' && R.t >= 1.0) {
+            // Freeze: capture the body's mean horizontal velocity, kill all
+            // internal velocities (prev = p), switch to the rigid slide.
+            let _sx = 0, _sz = 0;
+            for (const pt of R.parts) {
+                _sx += (pt.p.x - pt.prev.x) / Math.max(dt, 1e-4);
+                _sz += (pt.p.z - pt.prev.z) / Math.max(dt, 1e-4);
+            }
+            R.slideV = { x: _sx / R.parts.length, z: _sz / R.parts.length };
+            for (const pt of R.parts) {
+                pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+            }
+            R.phase = 'slide';
+            R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
+        } else if (R.phase === 'slide') {
+            // Rigid slide with strong friction: the frozen pose translates
+            // as one piece (every part gets the SAME delta — zero joint
+            // motion by construction), rides the local slope plane, and any
+            // residual penetration lifts the WHOLE body (never re-solves
+            // joints). exp(-5·dt): below 0.1 m/s within ~1 s from any crash
+            // speed (15 m/s → 0.1 in 0.94 s), per the author's envelope.
+            const _dec = Math.exp(-5 * dt);
+            R.slideV.x *= _dec; R.slideV.z *= _dec;
+            const _vH = Math.hypot(R.slideV.x, R.slideV.z);
+            if (_vH < 0.1) {
+                R.slideV.x = 0; R.slideV.z = 0;
+                for (const pt of R.parts) {
+                    pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                }
+                R.phase = 'stopped'; R.resting = true; R.restAt = R.t;
+                // Report the machine's velocity state, not a displacement
+                // ratio: the spray block's p−prev reading lags a frame and
+                // divides by the CURRENT dt, so frame-time jitter straddles
+                // the 0.1 boundary on the decay tail. The machine's speed
+                // ends at exactly 0 — the author's "exactly 0 thereafter".
+                R.maxSpeed = 0;
+            } else {
+                const _dx = R.slideV.x * dt, _dz = R.slideV.z * dt;
+                const _eps = 0.05;
+                const _slope = (terrainRootY(R.torso.z + _eps) - terrainRootY(R.torso.z - _eps)) / (2 * _eps);
+                const _dy = _slope * R.slideV.z * dt;
+                let _lift = 0;
+                for (const pt of R.parts) {
+                    pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                    pt.p.x += _dx; pt.p.y += _dy; pt.p.z += _dz;
+                    const _short = (_crashFloorY(pt.p.z) + pt.r) - pt.p.y;
+                    if (_short > _lift) _lift = _short;
+                }
+                if (_lift > 0) {
+                    for (const pt of R.parts) pt.p.y += _lift;
+                }
+                R.maxSpeed = _vH;
+            }
         }
-        // ── Write driver transforms (root-local, bones follow as always) ──
-        } else { R.maxSpeed = 0; }
+    // ── Write driver transforms (root-local, bones follow as always) ──
         // Arm segments are passed (distal, proximal) so the written +Y matches
         // the arm drivers' own frame (+Y = elbow/wrist end); torso/head/legs
         // pass (proximal, distal) per their +Y-proximal frames. See the note

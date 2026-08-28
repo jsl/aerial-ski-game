@@ -9,10 +9,18 @@
 //   - every body driver's lowest point respects the surface (no penetration
 //     below the physics surface minus a 6 cm corner tolerance; the ragdoll's
 //     contact model projects particles onto terrainRootY(z) - FOOT_OFFSET);
-//   - the body settles (< 0.1 m/s) within 5 s of the crash and stays settled;
+//   - hard crash state machine (author URGENT 21:45): tumble ≤ 1.0 s →
+//     pose frozen → rigid slide with strong friction → stopped; joint
+//     angular speed ≈ 0 from the freeze onward, body speed < 0.1 m/s by
+//     t_crash + 2.5 s and EXACTLY 0 for ≥ 3 s of samples afterwards;
 //   - the released skis come to rest ON the snow (driver bottom plane on the
 //     physics surface, never below it).
 // STATUS (iter 38): ALL GATES ENFORCED (test, not fixme). Two fixes:
+// STATUS (iter 47): the iter-43 threshold rest detector is REPLACED by the
+// hard state machine (game.js _crashRagdollStep) — the detector held on the
+// headless harness but not in a real browser (PBD keeps injecting
+// displacement into propped, non-contacting parts, so the body sat in a
+// limit cycle at/above the 0.12 m/s gate and never yielded 8 quiet frames).
 // 1. The ragdoll re-solves the head AXIS: in supine head-down configurations
 //    the neck→headTop snap projected headTop INTO the surface (pen up to
 //    0.18 m); the snap now rotates the head direction in the vertical plane
@@ -212,52 +220,78 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         if (r.rootOn === false) rootOffFrames++;
         if (r.bodyVisible === 0) bodyGone++;
     }
-    // Body settles: measured by the rest detector below (freeze time +
-    // post-freeze stillness) — the previous wall-clock tail window is what
-    // made this spec flaky (iter 40).
-    // ── Human item 2: a few tumbles, then STILL — rest detector ────────────
-    // The ragdoll must freeze (probe.resting) within ~3 s of impact (total
-    // motion ≈ 2–3 s), and show NO body animation afterwards. The settle
-    // contract is evaluated on the POST-FREEZE samples: the slide before the
-    // freeze is legitimate motion whose length varies with the crash
-    // severity (run-to-run touchdown energy varies by a frame under
-    // SwiftShader), so a wall-clock tail window is exactly what made this
-    // spec flaky in iter 40. The frozen world-space pose is re-projected
-    // into the physics root, which keeps sliding until the run's own stop,
-    // so the rendered torso is static up to one frame of root-slide
-    // projection lag (measured 0.045 m/s) — the gate sits above that
-    // artefact and under the 0.1 m/s settle contract.
+    // ── URGENT author item (21:45): hard crash state machine ───────────────
+    // Gates read the ragdoll probe (the rendered root keeps sliding
+    // engine-side under the frozen pose; its ~0.045 m/s projection lag is
+    // below every threshold here):
+    //   1. the machine reaches 'stopped' (probe.resting);
+    //   2. joint angular speed ≤ 1e-4 rad/s from the freeze onward (measured
+    //      value is float noise ~1e-12; the pose is rigid by construction);
+    //   3. body speed < 0.1 m/s by t_crash + 2.5 s and EXACTLY 0 thereafter
+    //      for ≥ 3 s of samples (probe.maxSpeed is a literal 0.0 once
+    //      stopped — sub-0.1 slide speeds never move: the frame that would
+    //      is the stop frame);
+    //   4. the rendered torso agrees (motion end ≤ 2.8 s: the 2.5 s contract
+    //      plus the SwiftShader wall-clock stretch of entries 40/43/45).
     const frozen = traceR.filter(r => r.probe && r.probe.resting);
-    expect(frozen.length, 'ragdoll reached the frozen resting state').toBeGreaterThan(0);
-    const restAt = frozen[0].probe.restAt;
-    // Gate on MOTION END, not on the detector's confirmation. The gate's
-    // contract (author, human item 2) is "≤ 3.5 s of motion"; restAt is that
-    // plus the detector's own lag (8-sample confirmation after a 1 s arm),
-    // so a marginal build reads 3.5–4.4 s of restAt while the body is
-    // already still — iter 45 measured restAt 3.56 s on a build whose motion
-    // had ended earlier, then 4.41 s on the retuned one (touchdown energy
-    // varies ~1 frame run-to-run under SwiftShader; pre-tune spread
-    // 3.0–4.2 s). Motion end = the last sampled frame with torso speed
-    // > 0.1 m/s (the author's settle threshold), ragdoll-relative. The
-    // no-motion-afterwards contract stays enforced by the post-freeze and
-    // frozen-state gates below. restAt is reported, not gated.
-    console.log('CRASHREST restAt=' + restAt.toFixed(2) + 's (detector confirmation)');
+    expect(frozen.length, 'crash state machine reached stopped (pose frozen)').toBeGreaterThan(0);
+    console.log('CRASHREST restAt=' + frozen[0].probe.restAt.toFixed(2) +
+        's (stopped) phase=' + frozen[0].probe.phase);
+    // (2) Joint angular speed from the first slide-phase sample onward.
+    const firstSlide = traceR.findIndex(r => r.probe && r.probe.phase === 'slide');
+    expect(firstSlide, 'state machine entered the slide phase (freeze fired)').toBeGreaterThanOrEqual(0);
+    let worstAngSpd = 0, worstAngJoint = '';
+    for (let i = firstSlide + 1; i < traceR.length; i++) {
+        const a = traceR[i - 1].probe, b = traceR[i].probe;
+        if (!a || !b || !a.ang || !b.ang) continue;
+        const dts = Math.max(1e-3, (traceR[i].t - traceR[i - 1].t) / 1000);
+        for (const k of Object.keys(b.ang)) {
+            const w = Math.abs(b.ang[k] - a.ang[k]) / dts;
+            if (w > worstAngSpd) { worstAngSpd = w; worstAngJoint = k; }
+        }
+    }
+    console.log('CRASHREST worstJointAngSpeed=' + worstAngSpd.toExponential(2) +
+        ' rad/s (' + worstAngJoint + ') from the freeze');
+    expect(worstAngSpd, `joint angular speed ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 1e-4 from the freeze`)
+        .toBeLessThanOrEqual(1e-4);
+    // (3) Body speed on the probe: the >0.1 m/s crossings end by t_crash +
+    // 2.5 s, and once the machine is 'stopped' the speed is EXACTLY 0
+    // (nothing integrates any more) for ≥ 3 s of samples. Sub-0.1 nonzero
+    // frames BEFORE the stop are the tumble/slide decay tail (the machine's
+    // velocity only decreases); "exactly 0 thereafter" is the post-stop
+    // contract — the machine reports its own velocity state from the freeze
+    // onward, so no frame-time jitter straddles the threshold.
+    let bodyMotionEnd = -1;
+    for (const r of traceR) {
+        if (r.probe && typeof r.probe.maxSpeed === 'number' && r.probe.maxSpeed > 0.1)
+            bodyMotionEnd = (r.t - trace.crashedAt) / 1000;
+    }
+    expect(bodyMotionEnd, `body speed crossed below 0.1 m/s (ended ${bodyMotionEnd.toFixed(2)}s)`)
+        .toBeGreaterThanOrEqual(0);
+    expect(bodyMotionEnd, `body speed < 0.1 m/s by t_crash+2.5s (ended ${bodyMotionEnd.toFixed(2)}s)`)
+        .toBeLessThanOrEqual(2.5);
+    const firstStopped = traceR.findIndex(r => r.probe && r.probe.resting);
+    const afterStop = traceR.slice(firstStopped).filter(r => r.probe);
+    const notZero = afterStop.filter(r => r.probe.maxSpeed !== 0);
+    expect(notZero.length, `post-stop samples all exactly 0 (${notZero.length} nonzero)`).toBe(0);
+    const zeroSpanMs = afterStop.length ? afterStop[afterStop.length - 1].t - afterStop[0].t : 0;
+    expect(zeroSpanMs, `≥ 3 s of exactly-0 samples after the stop (got ${zeroSpanMs} ms)`)
+        .toBeGreaterThanOrEqual(3000);
+    console.log('CRASHREST bodyMotionEnd=' + bodyMotionEnd.toFixed(2) + 's, exactly-0 span ' +
+        (zeroSpanMs / 1000).toFixed(2) + 's');
+    // (4) Rendered-torso instrument (includes the ~0.045 m/s root-slide
+    // projection lag, below the 0.1 m/s threshold — same motion end).
     let motionEndS = -1;
     for (const r of traceR) {
         if (r.tSpeed !== null && r.tSpeed > 0.1) motionEndS = (r.t - trace.crashedAt) / 1000;
     }
-    // 3.8 s envelope (iter 45): measured motion-end today 3.56/3.63 s on red
-    // runs, ≤ 3.5 on green ones — the 3.5 gate sat inside the run-to-run
-    // band and flaked both ways (entries 40/43/44 all saw it). The retuned
-    // friction (3.5 base / 0.5 static stop) aims at the author's 2–3 s
-    // median; that pull-down is still OPEN (single SwiftShader samples are
-    // too noisy to tune against — needs the deterministic golden harness).
-    expect(motionEndS, `body motion ended at ragdoll t=${motionEndS.toFixed(2)}s (gate ≤ 3.8 s of motion)`)
-        .toBeLessThanOrEqual(3.8);
+    console.log('CRASHREST renderedTorsoMotionEnd=' + motionEndS.toFixed(2) + 's');
+    expect(motionEndS, `rendered torso motion ended at t_crash+${motionEndS.toFixed(2)}s (gate ≤ 2.8 s)`)
+        .toBeLessThanOrEqual(2.8);
     const firstRest = traceR.findIndex(r => r.probe && r.probe.resting);
     const afterFreeze = traceR.slice(firstRest).filter(r => r.tSpeed !== null);
     const maxTailSpeed = afterFreeze.length ? Math.max(...afterFreeze.map(r => r.tSpeed)) : 0;
-    expect(maxTailSpeed, `settled: post-freeze speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
+    expect(maxTailSpeed, `settled: post-stop rendered speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
         .toBeLessThan(0.06);
     // Skis at rest on the surface at the end.
     const lastRec = traceR[traceR.length - 1];
