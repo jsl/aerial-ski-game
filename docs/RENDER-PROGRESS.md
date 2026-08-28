@@ -424,6 +424,13 @@ suite run; golden byte-identical after both game.js/index.html fixes.
 
 **Open / next:** the three calls under Open questions; then schedule group 1.
 
+**Commit hygiene note (self-recorded, not amended):** the 9f12b96 message was composed
+via a `$(cat <<'EOF')` heredoc that the session's shell wrapper passed through literally
+— the subject carries a leading `$(cat <<'EOF'` line and the trailer is followed by a
+stray `EOF`/`)`. Content is complete and correct; per the never-amend rule and the
+entry-21:20 precedent (1f044b0) it is left in history and recorded here. This note and
+all future commit messages on this session use plain `-m` arguments.
+
 ### 49 — P12 slice 2: snow macro-variation layer (detailMap) + world-metre corridor UVs — the run's maps were inert
 
 **Order acted on:** reviewer queue after the iter-47/48 items: P12 quality
