@@ -132,7 +132,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
-| P9 | Night snowfall mode | open | ref: IMG_3396, measured in `docs/REFERENCE-FOOTAGE.md` |
+| P4 | Forest | **slice 1 landed (iter 56); iter-59: upside-down-render fix (invertY) + orientation/seating gates** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 152 thin-instanced cross-cards = 1 draw call (was ~304 cylinders); alpha-cut shadows replaced by solid `treeShadowProxy` cones sharing the card matrices after the depth-pass cost was measured (149.9→109.6 ms spliced); quality 120.1 ms (gate <150); iter-59: card texture `invertY` false→true (the forest rendered tip-down), gates: invertY pinned, PNG band/corner/trunk census, instance seating vs `_treeFieldY` (worst 2e−6 m), golden re-captured (legacy-node census only, physics byte-identical); open: billboards from the 8-view atlas, near-tree meshes, birch/understory |
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45)** | iter-43: rest detector freezes the pose (8 frames < 0.12 m/s + skis still), write-back keeps running after the freeze (root slides under the frozen pose; naive freeze glided at 10.1 m/s), trigger state-driven; **iter-45: ploughing friction 2.5→3.5, static stop 0.35→0.5 (entry-43's queued median pull), settle gate now measures motion end ≤ 3.8 s (last sample > 0.1 m/s) instead of restAt (detector confirmation, lag-inflated); state ×30 identical (audit), 13 crash traces re-captured; 2–3 s median validation on the golden harness still open** |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -153,6 +153,60 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ./tests/run-all.sh ALL GREEN in 879 s (unit 76/76, golden 30/30, browser 36/36,
 mutation + coverage PASS, drive 63 passed / 2 skipped), five shots regenerated
 and measured, entry 55 below.)*
+
+### 59 — P4 fix: the impostor forest rendered UPSIDE DOWN (reviewer URGENT) — one-place invertY fix + orientation/seating gates + golden re-capture
+
+**Root cause (reviewer's 04:25 note, confirmed by measurement):** the card
+texture was built `new BABYLON.Texture(url, scene, false, false)` — the 4th
+arg is `invertY = false`, the glTF convention that the athleteBody maps need
+(the ~game.js:1703 landmine comment). The bake PNG is authored upright
+(`save_rgba` writes Blender bottom-up rows; verified by viewing the file) and
+the crossed planes use Babylon-default UVs, so `invertY = false` sampled v=0
+at the file's TOP row: every tree rendered tip-down with its trunk end 14.6 m
+up. **Fix, once, game-side:** `invertY = true` (Babylon's default). The bake
+and atlas are untouched — no re-bake, no ASSET_V bump (assets/ unchanged at
+?v=16). `index.html` game.js cache-bust 34→35 (game.js changed).
+
+**Gates added to `trees.spec.js` (the reviewer's two asks):**
+- Render half: material `invertY === true` pinned (the flag that regressed).
+- Bake half: the card PNG sampled in-page via canvas — 8 alpha bands strictly
+  non-decreasing upward (measured 0.199 → 0.708 bottom→top; this cone-stack
+  spruce's coverage INCREASES upward — sparse lowest whorl, dense layered
+  spire), top-corner max alpha < 0.02 (measured 0 — sky), bottom-centre mean
+  alpha > 0.6 (measured 0.8904 — trunk). A flipped image fails corners + trunk
+  + monotone profile simultaneously.
+- Seating: every thin-instance base within 0.02 m of the planting field via
+  `window._treeFieldY` (the exact `_fieldTopY` the placement loop uses —
+  measured worst |Δ| 0.000002 m ×152); card local geometry base y=0 read from
+  the position buffer (`getBoundingInfo()` on a thin-instanced mesh returns
+  world bounds over ALL instances — min read −32.82, the lowest planting — so
+  the gate samples vertices instead).
+- Gate repair: iter 56 asserted `transparencyMode === 2` "PBRMATERIAL_ALPHATEST";
+  Babylon's `MATERIAL_ALPHATEST` is 1 (the game assigns the named constant;
+  measured 1). Gate now compares against the named constant.
+
+**Half-done previous iteration fixed — golden was red at HEAD.** Entry 56
+shipped without running golden. At HEAD `npm run test:golden` = **8/30**: audit
+across all 30 scenarios found ZERO diff lines other than `nodes.fl_*` /
+`nodes.tr_*` presence — the legacy tree cylinders that slice 1 removed from
+the trace's scene census; no physics field differs. Re-captured the 30 traces
+(inventory-only rebaseline, the same node-census class as iters 6/11/13);
+verify now 30/30. (Unit at HEAD checked in a scratch worktree: 76/76 — unit
+was green; only golden was stale. My own edit first dropped the
+`const treeMat` declaration line — caught by unit at 51/66 and restored
+immediately; recorded because it produced 15 red unit files mid-session.)
+
+**Verification:** `npm run test:unit` 76/76; `npm run test:golden` 30/30 after the
+audit-only re-capture; drive trees + shadows + pbr-scene + quality **12/12**
+(TREES_MEASURE: instances 152, forestActive 1, invertY true, seatWorst
+0.000002, bands 0.199→0.708 monotone, topCornerMaxAlpha 0, trunk 0.8904);
+`look` regenerated — `scene.png`, `kicker.png`, `figure.png`,
+`figure_front.png` inspected: spruce upright everywhere (tips up, trunks
+seated on the field, no floating silhouettes), athlete and venue unchanged.
+
+**Open / next:** schedule group 2 continues — camera-facing billboards from
+the 8-view atlas, low-poly near trees, birch + understory (P4 plan line).
+No new reviewer questions this iteration.
 
 ### 56 — P4 slice 1: Blender-baked spruce impostor forest (one draw call)
 

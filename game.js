@@ -2775,6 +2775,10 @@ void main(void) {
             });
         }
     }
+    // Drive-spec probe (trees.spec.js): the exact planting function, so the
+    // seating gate can prove card bases sit on the visual field — the reason
+    // this slice plants on _fieldTopY and not the physics-only height.
+    window._treeFieldY = _fieldTopY;
 
     if (spots.length) {
         const q1 = BABYLON.MeshBuilder.CreatePlane('treeCardQ1',
@@ -2788,8 +2792,15 @@ void main(void) {
         cards.name = 'treeCards';
 
         const treeMat = makePBR('forestCardMat', scene);
+        // V orientation (the iter-56 upside-down-forest regression): the card
+        // PNG is authored upright (trunk at the file's bottom row) and the
+        // plane UVs are Babylon-default, so the texture must flip on upload —
+        // invertY = true, Babylon's default. invertY = false is the glTF
+        // convention (athleteBody_mat, game.js ~1703) and samples v=0 at the
+        // file's TOP row: every tree rendered tip-down, trunk-first from the
+        // sky. Gate: trees.spec.js pins invertY + the atlas' own row order.
         treeMat.albedoTexture = new BABYLON.Texture(
-            'assets/tree_spruce_card.png' + ASSET_V, scene, false, false);
+            'assets/tree_spruce_card.png' + ASSET_V, scene, false, true);
         treeMat.albedoTexture.hasAlpha = true;
         treeMat.albedoTexture.anisotropicFilteringLevel = 4;   // 16 costs real time in the CSM depth passes
         treeMat.useAlphaFromAlbedoTexture = true;
