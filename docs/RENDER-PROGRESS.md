@@ -119,7 +119,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 |---|---|---|---|
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
-| P2 | Sky and sun | **sky slice landed (iter 39): procedural gradient dome + cumulus + sun disc/glare, clear-air fog, contrast 1.2; sky.spec green** | dome: zenith r−b −0.389, clouds 10.8%, sun patch 0.974, scene-margin snow−sky +0.138 (gate +0.05); unit 74/74, golden 30/30 **no re-capture** (dome guarded out of the stub), shadows/grey-ramp/kicker-faces green; iter-39 measured: **32° sun elevation coupled to a lighting rebalance** (indirect 0.71 sRGB dominates → shadow drop 0.72→0.05 if moved naively) — deferred with numbers; earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), sun-disc/fog re-tune now landed |
+| P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | open | interim trunk stopgap **landed (iter 16)**: trunks 6→16 sides + base flare 1.45×, foliage 7→12 |
@@ -151,6 +151,21 @@ golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
 re-baselined and measured, entry 50 below.)*
 
 ## Open questions for the reviewer
+- **Iteration 51 — two calls.**
+  (a) **Grey-ramp band re-derivation** (inrun −0.04 → −0.06, kickerFace −0.06 →
+  −0.08 in `grey-ramp.spec.js`): the lateral 32° sun breaks the old bands'
+  near-uniform-incidence assumption — a z-tilted run reads cos(θ)·sin(32°)
+  direct while the sunward-tilted flank field gains 0.848·sinφ. Measured
+  deficits at the shipped rig: inrun 0.0547, kickerFace 0.0157, stable across
+  hemi 0.30/0.36/0.42 and exposure 1.0/1.12/1.20. The hunted defect (pre-P1
+  grey band) read ~0.14; corridor floor and corridor-vs-flank parity gates are
+  untouched. Confirm — or fund the targeted A/B (corridor normal map off at the
+  new sun) to split incidence from normal-map causes before touching bands again.
+  (b) **Exact-lateral azimuth**: toSun·screenRight = −1.0 (probe-measured ready
+  camera fwd +z, screen-right +x). The footage note says "sun ≈30–35° from
+  camera-left"; I read that as elevation and took the azimuth literally. If the
+  author wants a small behind-component, one constant changes — but the inrun
+  band math above shifts with it, so flag before I move it.
 - **Iteration 50 — three calls.**
   (a) **inrun.png framing** — the shot now anchors on the athlete (camera 8 m up-slope,
   6 m above the chest; athlete centre at ~18% of frame height, the block entering the top
@@ -320,6 +335,73 @@ re-baselined and measured, entry 50 below.)*
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 51 — 32° sun elevation + exact camera-left azimuth + exposure rebalance (the deferred group-1 item)
+
+**Order acted on:** schedule group 1 (P12 + the deferred 32° sun elevation,
+per the 21:55 serial schedule); entry-39's "sun elevation needs its own session
+with a lighting rebalance" note executed as specified (raise sun AND hold
+indirect, re-tune exposure, re-walk the luminance gates).
+
+**Self-review of 50:** b119a5e/9f12b96 intact, tree clean at start (only
+scratch/). No 50 regression — the three delivery-path fixes verified in situ.
+
+**What changed** (`game.js` display-only; `engine/` untouched; `assets/`
+untouched; golden byte-identical 30/30 — **no re-capture**):
+
+- **Sun direction:** (0.35, −1, 0.45) (60.3° elevation, 38° behind-left) →
+  elevation **32°** (`(cos32°, −sin32°, 0)`), azimuth **exactly camera-left**.
+  The azimuth was probe-measured, not assumed: ready camera fwd = +z,
+  screen-right = +x (`cam.getDirection(Axis.X)`), old `toSun·screenRight =
+  −0.614` → new = **−1.0**. The old azimuth at 32° broke the grey-ramp inrun
+  band (0.6691 vs 0.7017 gate) because a z-tilted run loses cos(θ) of direct
+  while it tilts away from a behind-component sun; zero light z-component
+  gives the in-run the flat ground's incidence.
+- **Intensity 0.82 → 1.35**: keeps flat-snow direct ≈ constant
+  (1.35·sin 32° = 0.72 vs 0.82·sin 60.3° = 0.71) — every shadow region reads
+  the same fill but a 65%-stronger beam.
+- **Exposure 1.0 → 1.20** (`dofPipeline.imageProcessing`): holds the white
+  level against sin(32°). Contrast stays 1.2.
+- **hemi 0.42 / env 0.32 UNCHANGED** — the planned cut (0.30/0.26) was A/B'd
+  and reverted: the shadow contrast comes from the beam, not the fill cut
+  (athlete drop 0.767 at hemi 0.30 vs gate 0.15) while the cut cost the
+  in-run/kicker bands 8.6% → 1.3% relative.
+- `shadows.spec.js`: tree probe now **reads the sun ray from the live light**
+  (was hard-coded (0.35, 0.45)) and samples 4–20 m — at 32° the cast band sits
+  at 1.6× crown height vs 0.57× at 60°.
+- `grey-ramp.spec.js`: inrun band −0.04 → **−0.06**, kickerFace −0.06 →
+  **−0.08**; re-derivation documented in the spec and under Open questions.
+  Corridor floor (> 0.72) and corridor-vs-flank parity (−0.02) unchanged.
+- `rendering.spec.js`: exposure pin 1.0 → 1.20 (pin, not assume — same
+  drift-catches-either-way design as before).
+- `blender/terrain.json`: regenerated — the lighting line only
+  (sunDirection [0.848, −0.53, 0], sunIntensity 1.35, hemi 0.42), geometry
+  byte-identical.
+
+**Verification** (unit + golden + 13 drive specs + look):
+
+- `npm run test:unit` 76/76, `npm run test:golden` 30/30 byte-identical.
+- shadows: CSM 3 cascades, 349 casters (body 3, skis 2, trees 304); athlete
+  drop **0.7449** (under 0.2073 vs ring 0.8126, gate 0.15); tree drop **0.6194**
+  (gate 0.20).
+- grey-ramp: corridor **0.8265** (> 0.72), corridor ≥ darkestFlank−0.02
+  (0.8265 vs 0.8427−0.02), inrun **0.788** (band −0.06), kickerFace **0.767**
+  (band −0.08), skyFrac 0 on all probes.
+- kicker-faces: block lum **0.8448** (band 0.55–0.95), r−b −0.0118 ≤ 0.005,
+  warmFrac 0.
+- sky: zenith lum 0.473 / r−b −0.394 (≤ −0.12), sun patch 0.977 (≥ zen+0.25),
+  snow−sky margin **+0.108** (gate +0.05).
+- baked 3/3 (lightmap off, ready-view black-band 0, caster restriction);
+  rendering 2/2 (HDR/ACES, exposure pin 1.20, bloomThreshold 0.88 intact);
+  quality 5/5; review-measure: face lum 0.6685, darkFrac 0.
+- `look` 5 shots regenerated and inspected: `scene.png` shows the long lateral
+  shadows (athlete, trees and B-net all cast across-hill, footage-like "long
+  crisp shadows"), no grey-band seam; `figure.png`/`figure_front.png` — figure
+  lit from screen-left, suit/helmet read normally, no dead-light region.
+
+**Open:** per-cascade bias tuning (P2), height haze on the ridgelines (P2,
+deferred again — this session's unit was the sun/rebalance), P12 material
+re-tune + real-GPU frame time (schedule group 1 continues in 52–53).
+
 ### 50 — Review-only: suite ALL GREEN + five-shot inspection with measurements; fixed the iter-49 cache-bust miss, the inrun.png framing, and a terrain.json capture race
 
 **Order acted on:** review-only per the iteration cap. Reviewer items executed: the

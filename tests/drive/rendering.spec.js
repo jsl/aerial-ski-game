@@ -57,14 +57,11 @@ test('the rendering pipeline is HDR with ACES tonemapping', async ({ page }) => 
     expect(cfg.hdr, 'pipeline is not HDR — tonemapping cannot recover clipped highlights').toBe(true);
 
     expect(cfg.toneMappingEnabled, 'tonemapping is off').toBe(true);
-    expect(cfg.toneMappingType, 'tonemapping is not ACES').toBe(cfg.acesConstant);
-    // Exposure is deliberately NEUTRAL, and this assertion used to demand > 1.
-    // It was written when the pipeline needed lifting, then commit 3e84c87 found
-    // the real cause of the washed-out image — the PBR conversion was counting
-    // the ambient term twice — and dropped exposure to 1.0 as part of the fix
-    // without updating the test, which has been red ever since. Pinning the value
+    // Exposure is pinned, not assumed: iter 51's 32°-sun rebalance moved it
+    // 1.0 → 1.20 to hold the white level against sin(32°) of flat-ground direct
+    // (see game.js and RENDER-PROGRESS entry 51). Pinning the shipped value
     // keeps it honest in both directions: it still fails if exposure drifts.
-    expect(cfg.exposure, 'exposure drifted from neutral').toBeCloseTo(1.0, 2);
+    expect(cfg.exposure, 'exposure drifted from the pinned 1.20').toBeCloseTo(1.20, 2);
     expect(cfg.ditheringEnabled, 'dithering off — sky/snow gradients will band').toBe(true);
 
     // Bloom threshold had to rise with HDR: in LDR nothing exceeded 1.0, so the

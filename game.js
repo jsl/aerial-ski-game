@@ -1028,7 +1028,10 @@ function _startGame() {
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
-    hemi.intensity   = 0.42; // IBL supplies part of the fill (see environmentTexture);
+    hemi.intensity   = 0.42; // iter 51: UNCHANGED by the 32°-sun rebalance — measured A/B:
+                         // the shadow contrast comes from the sun's 0.82→1.35, not the
+                         // fill cut (drop 0.767 at hemi 0.30 vs gate 0.15), while the cut
+                         // cost the in-run/kicker bands 8.6%→1.3% relative (entry 51)
                          // this split re-tuned in iter 17 (kicker faces, below)
     // Sky fill is COOL (blue dome) — and the ground term is a bright snow
     // bounce, not a dark cave floor. A snowfield's vertical faces (the kicker
@@ -1042,18 +1045,31 @@ function _startGame() {
     hemi.diffuse     = new BABYLON.Color3(0.85, 0.92, 1.0);
     hemi.groundColor = new BABYLON.Color3(0.40, 0.46, 0.55);
 
-    // Directional sun light — afternoon angle from upper-left-back.
-    // NOTE (iter 39, P2): a 32° elevation (the plan's footage number) was tried
-    // here with intensity compensated (×1.33, sin-scaling) — the sky and the
-    // disc read it fine, but the hemi+IBL indirect (~0.71 sRGB measured) so
-    // dominates underneath that the athlete shadow drop collapsed 0.80 → 0.05
-    // (gates 0.15/0.20) and the in-run grey-ramp band missed by 0.0006. The
-    // elevation move is therefore coupled to a full sun/indirect/exposure
-    // rebalance (P12-quality retune) — deferred with numbers in the progress
-    // entry. The dome reads THIS light's direction for the disc.
-    const sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.35, -1, 0.45), scene);
-    sunLight.position  = new BABYLON.Vector3(-30, 60, -40);
-    sunLight.intensity = 0.82;
+    // Directional sun light — 32° elevation (the plan's footage number, IMG_7841),
+    // azimuth EXACTLY from camera-left (light travels +x; the ready camera looks
+    // +z with screen-right +x, so toSun·screenRight = −1). Iter 51: the elevation
+    // move is coupled to a sun/indirect/exposure rebalance, exactly as iter 39's
+    // deferred note demanded (the naive ×1.33 attempt collapsed the athlete
+    // shadow drop 0.80 → 0.05 because hemi+IBL fill dominates the shadow
+    // regions). Rebalance as shipped: sun 0.82 → 1.35 keeps the flat-snow direct
+    // term ≈ constant (1.35·sin 32° = 0.72 vs 0.82·sin 60.3° = 0.71) so every
+    // shadow region reads the same fill but a 65%-stronger beam; the A/B showed
+    // the contrast comes from the beam, not from cutting fill (drop 0.767 at
+    // hemi 0.30 vs 0.15 gate) while the cut cost the in-run/kicker bands
+    // 8.6% → 1.3% relative — so hemi 0.42 / env 0.32 stay, and exposure 1.0 → 1.20
+    // holds the white level against sin(32°). The lateral azimuth is also the
+    // footage's framing AND geometry: zero light z-component gives the tilted
+    // in-run the flat ground's incidence, which holds the grey-ramp inrun band
+    // that the old 38°-behind-left azimuth broke at 32° (0.6691 vs 0.7017).
+    // Gates re-measured in entry 51 (shadows 0.15/0.20, grey-ramp corridor 0.72,
+    // kicker band 0.55–0.95, sky margin +0.05).
+    // The dome reads THIS light's direction for the disc.
+    const SUN_ELEV = 32 * Math.PI / 180;
+    const sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(
+        Math.cos(SUN_ELEV), -Math.sin(SUN_ELEV), 0), scene);
+    sunLight.position  = new BABYLON.Vector3(
+        -100 * Math.cos(SUN_ELEV), 100 * Math.sin(SUN_ELEV), 0);
+    sunLight.intensity = 1.35;
     sunLight.diffuse   = new BABYLON.Color3(1.0, 0.96, 0.85); // warm afternoon tint
     sunLight.specular  = new BABYLON.Color3(1.0, 0.96, 0.85);
 
@@ -1209,6 +1225,7 @@ void main(void) {
         // zeroes on horizontal normals), which painted the kicker block's
         // side/back walls plywood-tan. The cool hemi rig above now carries the
         // vertical fill; measured A/B in tests/drive + RENDER-PROGRESS entry 17.
+        // Iter 51: UNCHANGED by the 32°-sun rebalance (see the hemi note above).
         scene.environmentIntensity = 0.32;
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
@@ -1504,7 +1521,8 @@ void main(void) {
             dofPipeline.imageProcessing.toneMappingEnabled = true;
             dofPipeline.imageProcessing.toneMappingType =
                 BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-            dofPipeline.imageProcessing.exposure = 1.0;
+            dofPipeline.imageProcessing.exposure = 1.20;  // iter 51: the 32° sun ships less flat-ground
+                                                          // direct (sin 32°); exposure holds the white level
             dofPipeline.imageProcessing.contrast = 1.2;   // P2: the real sky now supplies dynamic range; was 1.6
 
             // Dithering breaks up 8-bit banding in large smooth gradients. The

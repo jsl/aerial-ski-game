@@ -128,19 +128,23 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     const ringMax = Math.max(...ringLums.map(p => p.lum));
     const dropAthlete = +((ringMax - underLum) / ringMax).toFixed(4);
 
-    // ── 3. Tree probe. Sun travels along d=(0.35,-1,0.45), so a crown's ground
-    //       shadow is displaced from its trunk along u=-(dx,dz)/|..|. Sample
-    //       snow at 4/6.5/9 m along that ray (beyond canopy reach, inside the
-    //       cast band) and controls 12 m in the opposite direction and to both
-    //       sides — controls must read bright snow. Ground truth per tree = the
-    //       trunk mesh's bbox bottom (the game plants trunks exactly on the
-    //       terrain). Three nearest trees are candidates; one qualifying pair
-    //       passes.
+    // ── 3. Tree probe. The crown's ground shadow is displaced from its trunk
+    //       along the sun's horizontal ray u = −(dx,dz)/|..|, READ FROM THE LIVE
+    //       LIGHT (iter 51 moved the sun to 32° elevation, azimuth exactly
+    //       camera-left — the ray is no longer the old (0.35,0.45)). At 32° the
+    //       cast band sits at 1.6 × crown height from the trunk, so samples run
+    //       4–20 m (the old 60° sun put the band at 0.57 × height, 4–9 m was
+    //       enough). Controls 12 m in the opposite direction and to both sides —
+    //       controls must read bright snow. Ground truth per tree = the trunk
+    //       mesh's bbox bottom (the game plants trunks exactly on the terrain).
+    //       Three nearest trees are candidates; one qualifying pair passes.
     const treePx = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const cam = scene.activeCamera;
         const c = window._shCentre;
-        const ux = -0.35 / Math.hypot(0.35, 0.45), uz = -0.45 / Math.hypot(0.35, 0.45);
+        const _sun = scene.lights.find(l => l.getClassName() === 'DirectionalLight');
+        const _hn = Math.hypot(_sun.direction.x, _sun.direction.z);
+        const ux = -_sun.direction.x / _hn, uz = -_sun.direction.z / _hn;
         const trunks = scene.meshes.filter(m => m.name && /^tr_/.test(m.name))
             .map(m => {
                 m.computeWorldMatrix(true);
@@ -170,7 +174,7 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
             nTrunks: scene.meshes.filter(m => m.name && /^tr_/.test(m.name)).length,
             trees: trunks.map((tr) => ({
                 name: tr.name, x: +tr.x.toFixed(1), y: +tr.groundY.toFixed(1), z: +tr.z.toFixed(1),
-                shadow: [4, 6.5, 9].map(d =>
+                shadow: [4, 8, 12, 16, 20].map(d =>
                     proj(new BABYLON.Vector3(tr.x + d * ux, tr.groundY + 0.05, tr.z + d * uz))),
                 ctrl: [
                     proj(new BABYLON.Vector3(tr.x - 12 * ux, tr.groundY + 0.05, tr.z - 12 * uz)),
