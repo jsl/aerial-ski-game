@@ -1164,7 +1164,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=13';
+    const ASSET_V = '?v=14';
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -2079,6 +2079,10 @@ void main(void) {
             flipPower: flipPower,
         };
     };
+    // Pause flag for the hotkey spec — deliberately NOT a _getGameState()
+    // field: the golden harness serialises that object whole, so its key set
+    // is frozen by the traces.
+    window._isPaused = function () { return paused; };
 
     // Ready-stance diagnostics for the drive spec: per-ski clearance of the
     // 5 lowest-edge samples against the physics surface (terrainRootY(z) -
@@ -4336,7 +4340,7 @@ void main(void) {
 
         // Circle → reset to top (KeyR)
         if (circleBtn && !_gpCirclePrev) {
-            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR', bubbles: true }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR', key: 'r', bubbles: true }));
         }
         _gpCirclePrev = circleBtn;
 
@@ -4353,13 +4357,44 @@ void main(void) {
 
     }
 
+    // Layout-aware letter hotkeys (human-testing item 6): the help menu shows
+    // letters, so the key that fires must be the one that TYPES that letter
+    // (event.key) — not the physical QWERTY slot (event.code), which a
+    // Dvorak/AZERTY user's keycaps disagree with. Only length-1 (printable)
+    // key values match, so modifier/named keys can never trigger a letter
+    // hotkey. Synthetic events (gamepad bridge, old tests) may carry only
+    // .code — fall back to the QWERTY code for those.
+    function _keyIsLetter(e, letter) {
+        if (typeof e.key === 'string' && e.key.length === 1) {
+            return e.key.toLowerCase() === letter;
+        }
+        return e.code === 'Key' + letter.toUpperCase();
+    }
+
     window.addEventListener('keydown', e => {
-        if (e.code === 'KeyP') { paused = !paused; return; }
-        if (e.code === 'KeyZ') {
+        // ESC closes any open modal overlay (human-testing item 7): help,
+        // settings, custom, comp, qualify, FIS modal / trick picker / run
+        // board, trophy and the secret panel. Return only when something
+        // actually closed, so ESC stays free for the game otherwise.
+        if (e.key === 'Escape' || e.code === 'Escape') {
+            let _closedOverlay = false;
+            for (const id of ['helpModal', 'settingsModal', 'customModal',
+                'compModal', 'qualifyModal', 'fisModal', 'fisTrickPick',
+                'fisRunSB', 'trophyPanel', 'grandUnlockOverlay']) {
+                const _ov = document.getElementById(id);
+                if (_ov && _ov.classList.contains('open')) {
+                    _ov.classList.remove('open');
+                    _closedOverlay = true;
+                }
+            }
+            if (_closedOverlay) return;
+        }
+        if (_keyIsLetter(e, 'p')) { paused = !paused; return; }
+        if (_keyIsLetter(e, 'z')) {
             window._tutorialTimeScale = (window._tutorialTimeScale === 0.5) ? 1.0 : 0.5;
             return;
         }
-        if (e.code === 'KeyR') {
+        if (_keyIsLetter(e, 'r')) {
             // In competition mode, only allow reset once stopped or crashed at the bottom
             if (_compParam && !state.stopped && !state.crashed) return;
             // Realistic FIS mode: block reset until the player has picked their next trick
@@ -4507,12 +4542,12 @@ void main(void) {
             readyState = true; readyTurnT = 0.0;
             return;
         }
-        if (e.code === 'KeyC') {
+        if (_keyIsLetter(e, 'c')) {
             cameraMode = (cameraMode + 1) % 3;
             _snapCamera(cameraMode);
             return;
         }
-        if (e.code === 'KeyV') {
+        if (_keyIsLetter(e, 'v')) {
             firstPersonMode = !firstPersonMode;
             _fpPos = null; // reset lerp state so next entry snaps in cleanly
             scene.activeCamera = firstPersonMode ? fpCamera : camera;
@@ -4535,7 +4570,7 @@ void main(void) {
         if (e.code === 'ShiftLeft') {
             if (!state.crashed && !state.grounded) state.pikeTarget = 1.0;
         }
-        if (_kcode === 'KeyA') {
+        if (_keyIsLetter(e, 'a')) {
             if (!state.crashed && !state.grounded) offAxisTarget = 0.28;
         }
         if (_kcode === 'ArrowUp' || _kcode === 'ArrowDown') {
@@ -4606,7 +4641,7 @@ void main(void) {
                 frontFlipQueued = true; // queued for next landing contact
             }
         }
-        if (_kcode === 'KeyD' && !state.crashed) {
+        if (_keyIsLetter(e, 'd') && !state.crashed) {
             if (!state.grounded) {
                 offAxisTarget = -0.28;
             } else if (_poolDiveMode) {
@@ -4616,10 +4651,10 @@ void main(void) {
                 singleFlipQueued = !singleFlipQueued;
             }
         }
-        if (_kcode === 'KeyX' && !state.crashed && _trampolineMode) {
+        if (_keyIsLetter(e, 'x') && !state.crashed && _trampolineMode) {
             singleFlipQueued = !singleFlipQueued;
         }
-        if (_kcode === 'KeyF' && !state.crashed && _poolDiveMode) {
+        if (_keyIsLetter(e, 'f') && !state.crashed && _poolDiveMode) {
             poolDiveFlipDirPref = poolDiveFlipDirPref === 1 ? -1 : 1;
             if (state.grounded) state.flipDir = poolDiveFlipDirPref;
             _updateDiveStanceHUD();
@@ -4661,8 +4696,8 @@ void main(void) {
                      : e.code;
         if (_kcode === 'Space') state.tuckTarget = 0.0;
         if (e.code  === 'ShiftLeft') state.pikeTarget = 0.0;
-        if (e.code  === 'KeyA') { if (offAxisTarget > 0) offAxisTarget = 0.0; }
-        if (_kcode  === 'KeyD') { if (offAxisTarget < 0) offAxisTarget = 0.0; }
+        if (_keyIsLetter(e, 'a')) { if (offAxisTarget > 0) offAxisTarget = 0.0; }
+        if (_keyIsLetter(e, 'd')) { if (offAxisTarget < 0) offAxisTarget = 0.0; }
         if (_kcode === 'ArrowDown') { powerWrapDown = false; downHalfTwistFired = false; }
         if (_kcode === 'ArrowUp') { arrowUpDown = false; frontFlipQueued = false; }
         if (_kcode === 'ArrowLeft' && leftDown) {

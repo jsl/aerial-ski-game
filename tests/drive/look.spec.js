@@ -94,4 +94,40 @@ test('look', async ({ page }) => {
     });
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'scene.png') });
+
+    // Canonical kicker shot (reviewer after review 45): side view centred on
+    // the kicker block from the +x side, radius ~18 m. Reviewed every
+    // iteration for: block 3.4 m wide, near-vertical side walls, flat table
+    // beside it, B-net running past (terrain-corridor.spec gates the numbers).
+    // Pause first: the sim's registerBeforeRender callback rewrites
+    // camera.target every step (entry-44 finding), which would drag the
+    // framing back onto the athlete — same trick as kicker-faces.spec.
+    await page.keyboard.press('p');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        const KEZ = window._getGameState().KICKER_END_Z;
+        cam.setTarget(new BABYLON.Vector3(0, -1.7, KEZ - 3));
+        cam.alpha = 0;               // camera sits on the +x side
+        cam.beta = Math.PI / 2.15;   // just above block-top height
+        cam.radius = 18;
+        cam.fov = 0.8;
+    });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'kicker.png') });
+
+    // Canonical in-run shot: from behind and above the (ready) athlete,
+    // looking down the in-run at the kicker block.
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        const KEZ = window._getGameState().KICKER_END_Z;
+        cam.setTarget(new BABYLON.Vector3(0, -2.5, KEZ - 3));
+        cam.alpha = -Math.PI / 2;    // camera sits on the -z side (uphill)
+        cam.beta = Math.PI / 2.9;    // elevated, looking down the in-run
+        cam.radius = 26;
+    });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'inrun.png') });
 });

@@ -330,7 +330,28 @@ side) — cosmetic, for the P12 material pass if the author wants them lifted.
 **Canonical shots (reviewer item a):** `look.spec` now also writes `shots/kicker.png`
 (side view of the block from +x, target (0, −1.7, KICKER_END_Z−3), radius 18, alpha 0) and
 `shots/inrun.png` (behind/above the athlete looking down the in-run, alpha −π/2, radius 26).
-Inspection + the item-3 confirmation are in the verification block below.
+
+**Verification:** unit **74/74**; golden **30/30, no re-capture** (the accessor incident above
+is the only golden excursion, fully reverted); `hotkeys.spec` **3/3** on the final tree; full
+drive suite re-run in-flight during the session: **55 passed / 2 skipped / 0 failed in 12.2 min**
+(provenance caveat: that run started before the accessor fix landed, so it mixes two game.js
+revisions — the targeted final-tree runs are the authoritative signal). `look` green; the five
+canonical shots inspected at 21:53:
+- `kicker.png` (+x side view, radius 18): the block stands as a distinct white object on the
+  flat table — curved take-off face rising to the lip with the red corner tubes on the lip
+  edge, near-vertical wall silhouette, flat snow beside it on both sides, the blue B-net
+  running continuously PAST the block on both lines, cloud band + blue sky above. Matches the
+  terrain-corridor.spec numbers (block top 7 mm off physics, walls ≈89°, table −3.4492 flat).
+  Item-3 acceptance confirmed visually.
+- `inrun.png` (behind/above the athlete, radius 26): down-the-in-run view — ready athlete
+  centred in the corridor, continuous blue B-net fencing both edges receding to the block,
+  red lip tubes + junction marks on the block ahead, forest walls both sides, grey ridgeline
+  peaks behind. Exactly the requested framing.
+- Framing gotcha, fixed in `look.spec`: the sim's `registerBeforeRender` callback rewrites
+  `camera.target` every step (the entry-44 finding), which dragged both new shots back onto
+  the athlete on the first attempt; the spec now dispatches KeyP (pause) before composing
+  them — same trick as kicker-faces.spec.
+No engine/ or body-model changes; physics untouched.
 
 **Cache-busting:** `ASSET_V ?v=13 → ?v=14` per the lane-A folds+bib merge instruction, and
 `game.js?v=28 → ?v=29` in index.html for this iteration's game.js change (entry-44 precedent).
