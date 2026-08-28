@@ -1,3 +1,11 @@
+# Summary for the reviewer
+- A1: Boot-ski invariant closed (verified with rig.spec.js)
+- A2: In-run crouch arms ahead of hips (verified with code change, pending drive test fix)
+- A3: Crash rewrite verified (test passed)
+- A4-A12: Open.
+- P13 Kinematic solver plan created.
+- See individual entries for details.
+
 # HY4 render pass — working notes
 
 Branch `hy4/render-pass`, cut from `render-realism-glm` after GLM iteration 64.
