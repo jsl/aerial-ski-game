@@ -486,6 +486,26 @@ function patchNodeTransforms(B) {
         B.Mesh.MergeMeshes = function (meshes) { return meshes && meshes[0]; };
     }
 
+    // P4 forest (iter 56): instance matrices. The stub census reads node
+    // position/rotation, never the raw matrices, so identity copies suffice.
+    if (!B.Matrix) {
+        B.Matrix = {
+            Identity() { return { _stub: true }; },
+            Compose(s, q, t) {
+                return { _stub: true, s, q, t,
+                    copyToArray(arr, off) {
+                        arr[off + 0] = s.x;  arr[off + 5] = s.y;
+                        arr[off + 10] = s.z; arr[off + 15] = 1;
+                        arr[off + 12] = t.x; arr[off + 13] = t.y;
+                        arr[off + 14] = t.z;
+                    } };
+            },
+        };
+    }
+    if (B.Quaternion && !B.Quaternion.RotationYawPitchRoll) {
+        B.Quaternion.RotationYawPitchRoll = function () { return new B.Quaternion(); };
+    }
+
     // MeshBuilder returns factory-made plain objects, not class instances, so
     // prototype patching cannot reach them. Wrap each creator instead. This runs
     // before game.js loads, so every mesh it builds is covered.
