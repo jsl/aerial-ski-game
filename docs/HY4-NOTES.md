@@ -1,6 +1,6 @@
 # Summary for the reviewer
 - A1: Boot-ski invariant closed (verified with rig.spec.js)
-- A2: In-run crouch arms ahead of hips (verified with code change, pending drive test fix)
+- A2: In-run crouch arms ahead of hips closed (verified with rig.spec.js)
 - A3: Crash rewrite verified (test passed)
 - A4-A12: Open.
 - P13 Kinematic solver plan created.
@@ -31,10 +31,8 @@ a JS file changes. Scratch files live in `~/aerial-agents/scratch/hy4/`.
 Status: Implemented and integrated.
 Reconciliation ensures joint continuity; tear detector implemented (pending gate test).
 Status: measured, gates added; see verification below.
-A1: Boot-ski invariant verified and closed (rig.spec.js passed)
-
-### 2 — In-run crouch: arms stay in front
-Status: POSE_INRUN_TUCK updated to bring arms ahead of hips.
+- A1: Boot-ski invariant implemented (toe+heel binding) and verified (rig.spec.js passed)
+- A2: In-run crouch arms ahead of hips implemented and verified (rig.spec.js passed)
 ### 3 — Crash rewrite
 Status: tumble ≤ 1s, rigid slide, friction/stop verified, rest ON snow with ≥3 pts.
 Crash ragdoll test passes.
