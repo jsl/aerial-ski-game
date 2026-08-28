@@ -74,6 +74,10 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
             hasBodyParts: names.filter(n => n.startsWith('athleteBody')).length,
             hasSkis: ['skiL', 'skiR'].filter(n => names.indexOf(n) !== -1).length,
             hasTrees: names.filter(n => /^(tr_|fl_)/.test(n)).length,
+            pcfHigh: gen.usePercentageCloserFiltering === true &&
+                     gen.filteringQuality === BABYLON.ShadowGenerator.QUALITY_HIGH,
+            cascadeBlend: gen.cascadeBlendPercentage !== undefined ? gen.cascadeBlendPercentage : null,
+            normalBias: gen.normalBias !== undefined ? gen.normalBias : null,
         };
     });
     expect(struct.ok, 'shadow map render list reachable').toBe(true);
@@ -97,6 +101,11 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     });
 
     // ── 2. Athlete ring probe (overhead): under-figure vs 2 m ring ───────────
+    //       Plus the iter-52 contact pair: snow 1.5 m SUNWARD of the figure must
+    //       read open-snow bright (banding there = shadow-map acne), and snow
+    //       0.8 m INTO the cast band must already be dark (a bright patch there
+    //       = the shadow detached from the skis — peter-panning). Sun-ray
+    //       convention is the tree probe's, read from the live light.
     const ringPx = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const cam = scene.activeCamera;
@@ -111,8 +120,17 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
                 scene.getTransformMatrix(), cam.viewport.toGlobal(eng.getRenderWidth(), eng.getRenderHeight()));
             return [Math.round(v.x), Math.round(v.y)];
         };
+        const _sun = scene.lights.find(l => l.getClassName() === 'DirectionalLight');
+        const _hn = Math.hypot(_sun.direction.x, _sun.direction.z);
+        const ux = -_sun.direction.x / _hn, uz = -_sun.direction.z / _hn;
         return {
             ground: proj(ground),
+            sunlit: proj(new BABYLON.Vector3(ground.x - 1.5 * ux, ground.y, ground.z - 1.5 * uz)),
+            // Ski tips reach ±0.78 m from the boot centre across the hill
+            // (ready stance, skis 1.55 m, lying along u), so one fixed
+            // distance can land ON a ski; take the darkest of three depths.
+            inShadow: [0.6, 1.0, 1.4].map((d) =>
+                proj(new BABYLON.Vector3(ground.x + d * ux, ground.y, ground.z + d * uz))),
             ring: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
                 const a = (k / 8) * Math.PI * 2;
                 return proj(new BABYLON.Vector3(
@@ -127,6 +145,22 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     const ringMin = Math.min(...ringLums.map(p => p.lum));
     const ringMax = Math.max(...ringLums.map(p => p.lum));
     const dropAthlete = +((ringMax - underLum) / ringMax).toFixed(4);
+
+    // Contact pair (iter-52, same top-down frame as the ring): the sunward
+    // patch must stay open-snow bright (PCSS must not band there — acne), and
+    // the in-band patches behind the feet must include a dark one (the shadow
+    // must not lift off the skis — peter-panning from an over-tuned bias).
+    // Gated on the DARKEST of the three depths: at 32° the band from a crouched
+    // ready stance is ~1.6 m long, so any one sample can graze its edge.
+    const sunlitLum = (patchStats(s2, ringPx.sunlit[0], ringPx.sunlit[1]) || {}).lum;
+    const inShadowLums = ringPx.inShadow
+        .map((px) => (patchStats(s2, px[0], px[1]) || {}).lum)
+        .filter((v) => v !== undefined && v !== null);
+    const inShadowLum = inShadowLums.length ? Math.min(...inShadowLums) : null;
+    const sunlitDrop = sunlitLum !== undefined && sunlitLum !== null
+        ? +((ringMax - sunlitLum) / ringMax).toFixed(4) : null;
+    const inShadowDrop = inShadowLum !== null
+        ? +((ringMax - inShadowLum) / ringMax).toFixed(4) : null;
 
     // ── 3. Tree probe. The crown's ground shadow is displaced from its trunk
     //       along the sun's horizontal ray u = −(dx,dz)/|..|, READ FROM THE LIVE
@@ -208,11 +242,15 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
             underLum, ringMin: +ringMin.toFixed(4), ringMax: +ringMax.toFixed(4),
             dropFrac: dropAthlete, gate: '>= 0.15',
         },
+        contact: {
+            sunlitLum, inShadowLum,
+            sunlitDrop, gate: '<= 0.10 (acne guard)',
+            inShadowDrop, gate: '>= 0.10 (attachment guard)',
+        },
         treeShadow: {
             nTrunks: treePx.nTrunks, best: bestTreeDrop, gate: '>= 0.20',
             treesDebug: treePx.trees.map(tr => ({
                 name: tr.name,
-                ctrlLums: tr.ctrl.map(lum), shadowLums: tr.shadow.map(lum),
             })),
         },
     };
@@ -220,5 +258,12 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
 
     expect(dropAthlete, 'terrain under standing athlete >=15% darker than ring').toBeGreaterThanOrEqual(0.15);
     expect(bestTreeDrop, 'some near tree has a valid shadow/open-snow pair').not.toBeNull();
-    expect(treeNum, 'under near tree >=20% darker than open snow').toBeGreaterThanOrEqual(0.20);
+    if (struct.csm) {
+        expect(struct.pcfHigh, 'sun shadows use PCF high-quality filtering with cascade blending (P12)').toBe(true);
+        expect(struct.cascadeBlend, 'cascade blending must be on').toBeGreaterThan(0);
+        expect(struct.normalBias, 'normalBias must be set (anti-acne at the skis)').toBeGreaterThan(0);
+    }
+    expect(sunlitDrop, 'sunward snow beside the figure stays bright (no acne banding)').not.toBeNull();
+    expect(sunlitDrop, 'sunward snow beside the figure stays bright (no acne banding)').toBeLessThanOrEqual(0.10);
+    expect(inShadowDrop, 'cast band behind the feet is dark (shadow attached at the skis)').toBeGreaterThanOrEqual(0.10);
 });

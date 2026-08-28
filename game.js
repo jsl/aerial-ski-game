@@ -1092,11 +1092,27 @@ function _startGame() {
             shadowGen.stabilizeCascades   = true;
             shadowGen.shadowMaxZ          = 200;   // beyond this the bake handles statics
             try { shadowGen.autoCalcDepthBounds = true; } catch (e) { /* keep manual bounds */ }
-            if (BABYLON.ShadowGenerator && BABYLON.ShadowGenerator.QUALITY_MEDIUM !== undefined) {
+            // P12/P2 filtering: percentage-closer filtering at HIGH quality
+            // (32 taps); the cascade seams are hidden by blending, and
+            // cascadeBlendPercentage is pinned explicitly so a future Babylon
+            // default change cannot silently unblend them.
+            // Contact-hardening (PCSS) was A/B'd in an iter-52 probe: at
+            // QUALITY_HIGH it cost 239.5 ms/frame vs 130.2 for PCF high on the
+            // verification rig — 2.4x, past the quality.spec frame-time gate —
+            // and at QUALITY_MEDIUM (127.4) it bought nothing over PCF high.
+            // Revisit only with a real-GPU frame-time measurement (P12 open).
+            const SGQ = BABYLON.ShadowGenerator;
+            if (SGQ && SGQ.QUALITY_MEDIUM !== undefined) {
                 shadowGen.usePercentageCloserFiltering = true;
-                shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_MEDIUM;
+                shadowGen.filteringQuality = SGQ.QUALITY_HIGH;
             }
-            shadowGen.bias = 0.0002;               // tuned per cascade at render time
+            shadowGen.cascadeBlendPercentage = 0.1;
+            // normalBias offsets the depth sample along the surface normal in
+            // world units — removes acne at the skis WITHOUT the light leak at
+            // the contact that a larger depth bias causes (peter-panning). The
+            // shadows.spec athlete-drop gate (>= 0.15) fails if it is too big.
+            shadowGen.bias = 0.0002;
+            shadowGen.normalBias = 0.015;
         } else {
             shadowGen.usePoissonSampling = true;   // legacy fallback, pre-CSM behaviour
             shadowGen.bias = 0.0002;

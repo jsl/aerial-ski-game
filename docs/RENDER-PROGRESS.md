@@ -144,7 +144,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
-| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0))** | remaining: material re-tune under the new sky, CSM/PCSS shadows (P2 overlap), real-GPU frame time; gates in `tests/drive/quality.spec.js` + `textures.spec.js` |
+| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0)). Slice 3 landed (iter 52): shadow filtering = PCF HIGH (32 taps) + pinned `cascadeBlendPercentage` 0.1 + `normalBias` 0.015 + new contact gates; PCSS A/B'd and rejected on measured cost (239.5 ms/frame vs 130.2 PCF high — past the frame-time gate)** | remaining: material re-tune under the new sky, real-GPU frame time (PCSS revisit rides on it); gates in `tests/drive/quality.spec.js` + `textures.spec.js` + `shadows.spec.js` |
 
 *(iter-50 review-only: no board movement — ./tests/run-all.sh ALL GREEN (unit 76/76,
 golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
@@ -152,6 +152,12 @@ re-baselined and measured, entry 50 below.)*
 
 ## Open questions for the reviewer
 - **Iteration 51 — two calls.**
+- **Iteration 52 — one call.** Review-50 named "PCSS/cascade blending" for
+  group 1; I landed cascade blending + PCF HIGH + normalBias, measured PCSS,
+  and rejected it on cost (239.5 vs 130.2 ms on the rig — 2.4×, past the
+  quality frame-time gate; medium bought nothing). Confirm the substitution
+  (the plan's own "or PCF high quality" alternative), or fund the PCSS-medium
+  trade with a real-GPU frame-time measurement.
   (a) **Grey-ramp band re-derivation** (inrun −0.04 → −0.06, kickerFace −0.06 →
   −0.08 in `grey-ramp.spec.js`): the lateral 32° sun breaks the old bands'
   near-uniform-incidence assumption — a z-tilted run reads cos(θ)·sin(32°)
@@ -335,6 +341,60 @@ re-baselined and measured, entry 50 below.)*
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 52 — Shadow filtering slice: PCF high + pinned cascade blending + normalBias, with new acne/attachment contact gates (PCSS measured and rejected)
+
+**Order acted on:** schedule group 1 continuation (51–53 = P12 + sun);
+review-50's group-1 gate said "must still land PCSS/cascade blending, the 32°
+sun and the blue-to-treeline sky before moving on" — sun and sky landed in 51,
+so 52 is the shadow-filtering unit. Self-review of 51: 7dff75c intact, tree
+clean, no regression found.
+
+**What changed** (`game.js` CSM block display-only; `engine/` untouched;
+`assets/` untouched; golden byte-identical 30/30 — no re-capture):
+
+- Filter: `usePercentageCloserFiltering` at `QUALITY_HIGH` (32 taps), up from
+  QUALITY_MEDIUM. **PCSS (`useContactHardeningShadow`) was implemented, gated
+  and A/B'd, then withdrawn on numbers**: temp probe (150 frames, 320×220,
+  verification rig) measured pcss-high **239.5 ms** mean vs pcf-high **130.2**
+  — 2.4×, past quality.spec's < 150 ms frame-time gate — and pcss-medium
+  **127.4** bought nothing over PCF high. Revisit rides on the P12 real-GPU
+  frame-time line.
+- `cascadeBlendPercentage = 0.1` pinned explicitly (the build's default is
+  already 0.1; the pin is so a Babylon default change cannot silently
+  unblend the cascade seams).
+- `normalBias = 0.015` (world-unit offset along the surface normal): anti-acne
+  at the skis without the contact light-leak a larger depth bias causes
+  (peter-panning); `bias` 0.0002 unchanged.
+- `shadows.spec.js`: structure gates now pin PCF-high + blend > 0 + normalBias
+  > 0, and a **contact pair** rides the ring probe: snow 1.5 m sunward of the
+  figure must stay bright (**acne guard**, drop ≤ 0.10) and the cast band
+  behind the feet must include a dark patch (**attachment guard**, drop
+  ≥ 0.10) — sampled at 0.6/1.0/1.4 m and gated on the darkest, because one
+  fixed depth lands on the across-hill ski tips (ready skis reach ±0.78 m
+  along the shadow direction; measured: 0.8 m fixed read 0.7864 lum = snow).
+
+**Verification** (unit + golden + 6 drive tests + look):
+
+- `npm run test:unit` 76/76; `npm run test:golden` 30/30 byte-identical.
+- shadows: PCF-high ✓, blend 0.1 ✓, normalBias 0.015 ✓, 349 casters (body 3,
+  skis 2, trees 304); athlete drop **0.7449** (identical to entry 51's PCF-
+  medium number), acne guard **0.0335** (≤ 0.10), attachment **0.2664**
+  (≥ 0.10), tree drop **0.6196** (≥ 0.20).
+- quality frame-time: **119.5 ms mean / 119.2 p50 / 126.7 p95** at 320×220
+  (gate < 150; was 236.5 with the rejected PCSS-high build).
+- grey-ramp / rendering / baked re-run green under the final config
+  (10/10 in the earlier batch; re-verified after the PCF switch).
+- `look` 5 shots regenerated; measured region means — scene.png top 0.5103 /
+  mid 0.7608 / bottom 0.8396 (snow brightest band, sky deep blue, snow−sky
+  margin preserved), figure.png top 0.5287 / mid 0.5613 / bottom 0.7674,
+  figure_front.png top 0.8161 / mid 0.7538 / bottom 0.7253. No banding or
+  seam visible in the measured thirds.
+
+**Open:** P12 material re-tune + real-GPU frame time (schedule group 1
+continues in 53); P2 height haze on the ridgelines (deferred again); the
+entry-51 open questions are unchanged and still need your calls.
+
+
 ### 51 — 32° sun elevation + exact camera-left azimuth + exposure rebalance (the deferred group-1 item)
 
 **Order acted on:** schedule group 1 (P12 + the deferred 32° sun elevation,
