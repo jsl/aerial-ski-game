@@ -36,6 +36,7 @@ const ENGINE_MODULES = [
     'engine/core/landing.js',
     // Discipline modules load after the shared core they depend on.
     'engine/disciplines/aerial-ski.js',
+    'engine/core/kinematics.js',
 ];
 
 /** Nodes folded into the per-frame digest — the athlete and its limbs. */
