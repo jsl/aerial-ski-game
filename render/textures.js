@@ -70,6 +70,82 @@ function heightToNormal(H, size, strength) {
 }
 
 /**
+ * Periodic macro-variation field. The lattice valueNoise above does NOT wrap
+ * at x/y = 1 (hash2(8, y) ≠ hash2(0, y)), which is fine inside one recipe
+ * evaluation but would paint a seam line across the snow every tile period if
+ * used for a ~45 m macro layer. Integer-wavenumber plane waves are periodic on
+ * the unit square by construction, so the tile is seamless at ANY uScale.
+ * Zero-mean sine sum → the height's mean is exactly 0.5.
+ */
+const MACRO_WAVES = (function () {
+    const waves = [];
+    // Two drift octaves: 5 broad undulations (wavenumbers 1-4) + 10 mid.
+    for (let i = 0; i < 5; i++) {
+        waves.push({ kx: 1 + (i % 4), ky: 1 + ((i * 3 + 1) % 4), a: 2 });
+    }
+    for (let i = 0; i < 10; i++) {
+        waves.push({ kx: 2 + (i % 5), ky: 2 + ((i * 7 + 3) % 5), a: 1 });
+    }
+    for (let i = 0; i < waves.length; i++) {
+        waves[i].ph = hash2(i * 7 + 13, i * 11 + 5) * Math.PI * 2;
+    }
+    return waves;
+})();
+
+function macroField(x, y) {
+    let sum = 0, norm = 0;
+    for (let i = 0; i < MACRO_WAVES.length; i++) {
+        const w = MACRO_WAVES[i];
+        sum += w.a * Math.sin(2 * Math.PI * (w.kx * x + w.ky * y) + w.ph);
+        norm += w.a;
+    }
+    return 0.5 + sum / (2 * norm);
+}
+
+/**
+ * Snow macro-variation layer for PBRMaterial.detailMap — the "second,
+ * larger-scale variation layer" of P12. This Babylon build's detail shader
+ * does, exactly:
+ *   albedo: baseColor.rgb * 2 * mix(0.5, texel.r, diffuseBlendLevel)
+ *   normal: (nx, ny) packed in texel (A, G) as v*0.5+0.5, whiteout-blended
+ *           with the bump normal, scaled by bumpLevel
+ * so the tile stores R = B = 0.5 + drift (mean 0.5 → mean multiplier exactly
+ * 1.0, protecting the grey-ramp gates) and G/A a gentle normal from the same
+ * drift field. Returns null without a real canvas, like makeSurface.
+ */
+function makeDetail(BABYLON, scene, size, opts) {
+    const o = opts || {};
+    const dtex = new BABYLON.DynamicTexture('tex_snowmacro_d',
+        { width: size, height: size }, scene, true);
+    const dctx = dtex.getContext();
+    if (!dctx || !dctx.createImageData) return null;
+
+    const H = new Float32Array(size * size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) H[y * size + x] = macroField(x / size, y / size);
+    }
+    const nrm = heightToNormal(H, size, o.strength || 1.2);
+    const img = dctx.createImageData(size, size);
+    for (let i = 0; i < size * size; i++) {
+        const drift = Math.max(0, Math.min(1, 0.5 + (H[i] - 0.5) * (o.drift || 0.16)));
+        img.data[i * 4]     = drift * 255;          // R: albedo modulation
+        img.data[i * 4 + 1] = nrm[i * 4 + 1];       // G: ny
+        img.data[i * 4 + 2] = drift * 255;          // B: unused by the shader
+        img.data[i * 4 + 3] = nrm[i * 4];           // A: nx
+    }
+    dctx.putImageData(img, 0, 0);
+    dtex.update(false);
+    dtex.gammaSpace = false;                        // data, not colour
+    const s = o.scale || 1;
+    dtex.uScale = s;
+    dtex.vScale = s;
+    dtex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    dtex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    dtex.anisotropicFilteringLevel = 16;
+    return { detail: dtex };
+}
+
+/**
  * Surface recipes. Each returns a height value in 0..1 for a point on the unit
  * square, plus an albedo multiplier so the colour varies with the form rather
  * than being uniform over a bumpy surface — flat colour on bumpy geometry is
@@ -194,7 +270,7 @@ function makeSurface(BABYLON, scene, recipe, size, opts) {
     return { normal: nrmTex, albedo: albTex };
 }
 
-const api = { makeSurface, RECIPES, fbm, valueNoise };
+const api = { makeSurface, makeDetail, macroField, RECIPES, fbm, valueNoise };
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

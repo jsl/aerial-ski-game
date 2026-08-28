@@ -143,9 +143,16 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
-| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4)** | remaining: second snow variation layer, material re-tune under the new sky, CSM/PCSS shadows (P2 overlap), real-GPU frame time; gates in `tests/drive/quality.spec.js` |
+| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0))** | remaining: material re-tune under the new sky, CSM/PCSS shadows (P2 overlap), real-GPU frame time; gates in `tests/drive/quality.spec.js` + `textures.spec.js` |
 
 ## Open questions for the reviewer
+- **Iteration 49 — one call.** The plan's "no visible tiling repeat within
+  20 m" has no direct gate: the slice proves map presence (uv buffer,
+  metre-scale spec gates) and mean-neutrality, and the shots show no grid,
+  but I did not build a tiling-autocorrelation instrument. If you want it
+  quantitative, I can add a screen-space autocorrelation check on a top-down
+  ortho snow render to quality.spec — say so and it lands with the next P12
+  slice.
 - **Iteration 48 — two calls.**
   (a) **Adaptive-resolution floor:** the P12 fallback never renders below CSS
   resolution (`maxScaling = 1.0`), so on DPR-1 machines it is inert and slow
@@ -286,6 +293,58 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 49 — P12 slice 2: snow macro-variation layer (detailMap) + world-metre corridor UVs — the run's maps were inert
+
+**Order acted on:** reviewer queue after the iter-47/48 items: P12 quality
+continues (schedule group 1 of 51–80). No Reviewer-feedback item was pending
+beyond the standing five-shot requirement (regenerated, described below).
+
+**Found (root cause first):** `terrainCorridor`/`terrainSkirt` were built with
+positions/normals only — **no uv buffer**. The iter-6/13 corridor "detail
+normal map" therefore sampled a constant texel on the run and was inert there;
+the tiling this slice targets did not even exist on the corridor yet.
+
+**Landed (renderer-only; no `engine/`, no `assets/`, no ASSET_V bump):**
+- `render/textures.js`: `macroField` — integer-wavenumber plane waves, so the
+  macro tile is periodic by construction (the lattice `valueNoise` does NOT
+  wrap; a 45 m lattice tile would paint a seam line across the snow every
+  period). Mean is exactly 0.5. `makeDetail` builds the PBR detail tile in
+  this Babylon build's exact format (verified in the bundled shader):
+  albedo = `base * 2 * mix(0.5, texel.r, diffuseBlendLevel)`, normal packed in
+  texel (A, G), whiteout-blended with the bump normal by `bumpLevel`. Tile:
+  R = B = 0.5 ± drift(±8%), G/A = gentle normal from the same field.
+- `game.js`: corridor + skirt carry uv1 = world metres ((x, z)); snowMat now
+  tiles in metres — fine layer 1.4 m (recipe corduroy = 48 lines/tile ≈ 3 cm,
+  real groomer spacing; uScale = 1/1.4) plus the P12 "second, larger-scale
+  variation layer" via `detailMap` at 45 m (diffuseBlendLevel 1.0, bumpLevel
+  0.6). `window._snowDetail` exposes the config for specs.
+- Corridor albedo 0.975/0.99 → 0.98/0.995: with the normal map ACTIVE for the
+  first time, its small E[nz]<1 shading bias returns; the step holds flank
+  parity (gate margin had thinned to 0.0023 against ~0.01 run-to-run flank
+  variance; inside textures.spec's ±0.01 band).
+- `tests/unit/textures.test.js` (2 tests): periodicity < 1e-9 on both edges
+  and mean-0.5 neutrality. `tests/drive/textures.spec.js`: gate rewritten to
+  the metre contract + corridor uv presence (vMax > 50) + detail-layer gates
+  (enabled, uScale 1/45, 512, gammaSpace false, levels).
+
+**Verification:** unit 76/76 (2 new); golden 30/30 byte-identical
+(display-only class); textures 2/2; grey-ramp + baked + terrain-corridor +
+quality batch 15 passed / 0 failed; look 1/1 — scene/figure/figure_front/
+kicker/inrun regenerated.
+
+**Numbers:** detail tile R channel measured in-page 0.463–0.545, mean 0.5002
+(multiplier 1.0004 — grey-ramp neutral). Grey-ramp camera probe (scratch):
+corridor mean 0.7819 vs flankNear 0.7996 (gate ≥ 0.7796) — PASS; before
+(HEAD): corridor 0.779 vs flank 0.7889 — the flank itself moved +0.010
+between loads, i.e. run variance is ~0.01 and the mean-neutral design holds.
+Corridor-region luminance std 5.49 → 5.69/255 (region includes cast shadows,
+so directional only — the uv buffer + spec are the presence proof). Shots:
+no tiling grid, no seam lines; kicker block unchanged (3.4 m, vertical walls);
+corridor and flanks read the same white.
+
+**Open / next:** P12 remainder — material re-tune under the new sky,
+CSM/PCSS shadows (P2 overlap), real-GPU frame time.
+
 ### 48 — P12 render quality, slice 1: devicePixelRatio rendering + adaptive fallback, sampling/texturing pass, SSAO 32 — sharpen measured and withdrawn
 
 **Order acted on:** reviewer queue NEXT after the iter-47 URGENT crash machine

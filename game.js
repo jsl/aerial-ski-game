@@ -1343,9 +1343,9 @@ void main(void) {
         if (!T) return 0;
         // material name fragment -> recipe, tiling scale, bump strength
         const RULES = [
-            // P12: snow is what the camera skis over at grazing angles — its
-            // tiles render at 1024; the other recipes stay at 256.
-            [/^snowMat$/,                 'snow',    26, 0.9, 1024],
+            // snowMat is special-cased below (metre UVs + the P12 macro
+            // detail layer); the other snow rules stay face-fraction tiles at
+            // 1024 for the grazing-angle surfaces.
             [/rock/i,                     'rock',     6, 1.0],
             [/trunk/i,                    'bark',     4, 1.0],
             [/foliage/i,                  'foliage',  5, 0.8],
@@ -1388,12 +1388,49 @@ void main(void) {
                 // up to keep the run at least as bright as the flanks
                 // (measured 0.7666 -> 0.779 vs flanks 0.7905/0.8015;
                 // grey-ramp gate corridor >= darkestFlank - 0.02).
-                mat.albedoColor = new BABYLON.Color3(0.975, 0.99, 1.0);
+                // iter 49: the corridor's normal map is ACTIVE for the first
+                // time (metre uv1 landed this iteration — before it sampled a
+                // constant texel), so its small E[nz]<1 shading bias returns;
+                // albedo steps +0.005 to hold flank parity (gate margin was
+                // 0.0023 against a ~0.01 run-to-run flank variance).
+                mat.albedoColor = new BABYLON.Color3(0.98, 0.995, 1.0);
+                // P12 slice 2: terrainCorridor/terrainSkirt carry WORLD-METRE
+                // uv1 ((x, z) as generated), so tile sizes here are metres:
+                // fine layer 1.4 m (recipe corduroy = 48 lines/tile ≈ 3 cm —
+                // real groomer spacing) and the macro drift layer ~45 m. The
+                // old scale: 26 assumed face-fraction UVs the corridor never
+                // had — with no uv buffer at all every texel sampled (0,0)
+                // and both maps were inert on the run.
+                const SNOW_FINE_M = 1.4;
+                const SNOW_MACRO_M = 45;
                 const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 1024, {
-                    scale: 26, strength: 1.05,
+                    scale: 1 / SNOW_FINE_M, strength: 1.05,
                 });
                 if (surfSnow) mat.bumpTexture = surfSnow.normal;
                 else mat.bumpTexture = null;
+                // Second, larger-scale variation layer (P12): albedo drift
+                // + gentle normal, mean multiplier exactly 1.0 so the
+                // grey-ramp tuning above is untouched. Periodic waves make
+                // the 45 m tile seamless — no repeat is visible inside 20 m.
+                const det = T.makeDetail
+                    && T.makeDetail(BABYLON, scene, 512, { scale: 1 / SNOW_MACRO_M });
+                if (det && mat.detailMap) {
+                    mat.detailMap.texture = det.detail;
+                    mat.detailMap.isEnabled = true;
+                    mat.detailMap.diffuseBlendLevel = 1.0;
+                    mat.detailMap.bumpLevel = 0.6;
+                    window._snowDetail = {
+                        enabled: true,
+                        fineTileM: SNOW_FINE_M,
+                        macroTileM: SNOW_MACRO_M,
+                        macroUScale: det.detail.uScale,
+                        macroSize: det.detail.getSize().width,
+                        diffuseBlendLevel: mat.detailMap.diffuseBlendLevel,
+                        bumpLevel: mat.detailMap.bumpLevel,
+                    };
+                } else {
+                    window._snowDetail = { enabled: false };
+                }
                 applied++;
                 continue;
             }
@@ -2404,7 +2441,7 @@ void main(void) {
         zs.push(...JOINS);
         zs.sort((a, b) => a - b);
 
-        const positions = [], indices = [];
+        const positions = [], indices = [], uvs = [];
         const DEG = Math.PI / 180;
         const eps = 0.01;
         const slopeAt = (z) => Math.atan(
@@ -2434,7 +2471,7 @@ void main(void) {
         for (const st of strips) {
             const first = base;
             for (const r of st) {
-                for (const x of XC) positions.push(x, _fieldTopY(x, r.z), r.z);
+                for (const x of XC) { positions.push(x, _fieldTopY(x, r.z), r.z); uvs.push(x, r.z); }
                 base += XC.length;
             }
             for (let ri = 1; ri < st.length; ri++) {
@@ -2453,6 +2490,7 @@ void main(void) {
         const normals = [];
         BABYLON.VertexData.ComputeNormals(positions, indices, normals);
         vd.normals = normals;
+        vd.uvs = uvs;
         vd.applyToMesh(ribbon);
         ribbon.material = snowMat;
         ribbon.receiveShadows = true;
@@ -2473,11 +2511,11 @@ void main(void) {
             const edgeRowZ = (z) => XC.map((x) => ({ x, y: _fieldTopY(x, z), z }));
             const dropToBase = (pts) => pts.map((p) => ({ x: p.x, y: BASE_Y, z: p.z }));
 
-            const sPos = [], sIdx = [];
+            const sPos = [], sIdx = [], sUVs = [];
             const pushWall = (ptsA, ptsB) => {   // top rail + bottom rail → quad strip
                 const first = sPos.length / 3;
-                for (const p of ptsA) sPos.push(p.x, p.y, p.z);
-                for (const p of ptsB) sPos.push(p.x, p.y, p.z);
+                for (const p of ptsA) { sPos.push(p.x, p.y, p.z); sUVs.push(p.x, p.z); }
+                for (const p of ptsB) { sPos.push(p.x, p.y, p.z); sUVs.push(p.x, p.z); }
                 const n = ptsA.length;
                 for (let i = 0; i < n - 1; i++) {
                     sIdx.push(first + i, first + n + i, first + i + 1,
@@ -2498,8 +2536,8 @@ void main(void) {
             const sNrm = [];
             BABYLON.VertexData.ComputeNormals(sPos, sIdx, sNrm);
             svd.normals = sNrm;
+            svd.uvs = sUVs;
             svd.applyToMesh(skirt);
-            skirt.material = snowMat;
             skirt.receiveShadows = true;
 
             // Base plane under everything, same snow underside contract.
