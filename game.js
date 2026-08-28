@@ -6786,7 +6786,8 @@ void main(void) {
             }
             _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u,
                                   hop: _hop, flexK: _k, drop: _hopDrop,
-                                  yawFrac: HOP_TURN.yawFrac(_u) };
+                                  yawFrac: HOP_TURN.yawFrac(_u),
+                                  legF: _legF };
         } else if (!crashActive && character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
             // Hand the skis back to the pose solver's euler rotations
             character.meshes.skiL.rotationQuaternion = null;
@@ -6808,6 +6809,27 @@ void main(void) {
             const preZL = character.meshes.upperLegL && character.meshes.upperLegL.position.z;
             const preZR = character.meshes.upperLegR && character.meshes.upperLegR.position.z;
             _pinBootsToSkis(character.meshes);
+            // Sol-8 (ready-stance knee flex): the pin derives both legs' rx
+            // from the ski pitch — physically right, a binding clamps boot to
+            // ski — so the stance block's knee term never survives into the
+            // measured flex; only its hip term does (0.45·legF = 0.117 rad,
+            // under the 0.1745 rad gate). Re-apply the stance flex AFTER the
+            // pin, entirely in the uphill THIGH term: the root/skis are
+            // already seated, and a thigh-pitch change moves only the thigh
+            // centre, so the seating gates stay exact.
+            if (readyState && state.tuckAmount < 0.05 &&
+                _readyStance.last && _readyStance.last.legF > 0.001) {
+                const _ulL = character.meshes.upperLegL;
+                const _llL = character.meshes.lowerLegL;
+                if (_ulL && _llL) {
+                    const _f = 0.85 * _readyStance.last.legF; // 0.221 rad = 12.7° ≥ 10° gate
+                    _ulL.rotation.x = _llL.rotation.x + _f;
+                    _ulL.position.y = _llL.position.y + 0.18 * Math.cos(_llL.rotation.x)
+                                    + 0.18 * Math.cos(_ulL.rotation.x);
+                    _ulL.position.z = _llL.position.z + 0.18 * Math.sin(_llL.rotation.x)
+                                    + 0.18 * Math.sin(_ulL.rotation.x);
+                }
+            }
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1);
             if (readyState && state.tuckAmount < 0.05) {

@@ -152,7 +152,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 | Priority | Item | State | Notes |
 |---|---|---|---|
-| P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); physics state byte-identical ×30, traces re-captured display-only; open: tear-detector hard gate, stub removal (engine edit needs APPROVED), Sol-8 knee-flex |
+| P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1); Sol-8 knee-flex fixed (iter 69)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); iter 69: ready-stance knee flex re-applied after the boot–ski pin in the thigh term, ready-stance fully green; physics state byte-identical ×30, traces re-captured display-only; open: tear-detector hard gate, stub removal (engine edit needs APPROVED) |
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
@@ -4659,6 +4659,47 @@ spec). This iteration finished and landed exactly that work; nothing new.
 - P1 slice 1 corridor ribbon (fixes the 0.0941 m post-turn float + slopeBox
   4.7 cm defect), P2 sky/sun, crash rewrite items 2/2b, P13 chain solver, the
 - body+suit rebuild, P8 mesh-hands-forward bind fix.
+
+### 69 — Sol blocker 8 fixed: ready-stance knee flex re-applied AFTER the
+boot–ski pin, in the thigh term; ready-stance spec fully green for the first
+time since the pin landed
+
+**Order acted on:** the pre-existing Sol-8 knee-flex gate failure carried in
+entries 66–68 (`flexL−flexR = 0.117 < 0.1745 rad`). Engine untouched; no
+assets regenerated (ASSET_V stays `?v=22`).
+
+**Root cause (confirms entry 66's diagnosis):** `_pinBootsToSkis` derives
+BOTH legs' rx from the ski pitch every frame, so the stance block's knee term
+(`_ll.rotation.x -= 0.85·_legF`) is discarded and only its hip term survives
+into the pin's `solverFlex` (0.45·0.26 = 0.117 rad). Entry 66's pre-pin
+attempt (bigger `_ul` coefficient) perturbed gate-crouch seating because the
+changed pre-pin transforms feed the hop-crouch overlay and the pin feedback.
+
+**Fix (`game.js`, one block after `_pinBootsToSkis` in the display pass):**
+in the ready state (tuck < 0.05, `_legF > 0.001` from `_readyStance.last`)
+re-apply the stance flex AFTER the pin as `_ulL.rotation.x = ll.rx +
+0.85·_legF` (= 0.221 rad = 12.7°) and re-derive the thigh centre from the
+shin top with the standard 0.18/0.18 chord. The root and skis are already
+seated when this runs, and a thigh-pitch change moves only the thigh centre,
+so every seating/roll gate is exact by construction; the existing
+preZ→postZ arm-follow compensation absorbs the thigh Δz (hands stay beside
+thighs). `_readyStance.last` now records `legF`.
+
+**Verification:** unit 76/76 (fail 0); golden: physics `state` byte-identical
+×30 vs HEAD traces first (audit script
+`~/aerial-agents/scratch/iter-69/audit_state.js`, 0 diffs), then re-captured
+display-only — 30/30. Drive: ready-stance **1/1 fully green incl. the Sol-8
+gate** (first pass since the pin landed in entry 65), inrun-contact + chain +
+hop-turn 8/8, `look` 1/1. Shots regenerated + inspected (athlete intact on
+the skis, bib 30 legible in figure_front, no tears/black regions); tone
+unchanged from entry 68: scene meanRGB [0.719, 0.736, 0.771] R−B −0.052,
+figure −0.071, figure_front −0.070. `game.js?v=25` cache bust.
+
+**Open / not done:** Sol blocker 2 (run-all + dedicated full drive suite) not
+re-run this iteration; tear-detector hard gate (entry 68 question 2) still
+open; A7 slab disposition (entry 66 question 2) awaiting the reviewer.
+
+**Open questions for the reviewer:** none new.
 
 ### 68 — Sol blocker 1 part 2: shoulder re-anchor — both arm chains rigidly
 re-anchored at the pitched torso's top, blend-scaled; hard chain gates in
