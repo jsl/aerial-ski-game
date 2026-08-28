@@ -1,23 +1,29 @@
 'use strict';
-// P4 forest slice 1 (iter 56): the whole forest is ONE thin-instanced
-// cross-card impostor mesh sampling the Blender-baked spruce
-// (blender/bake_trees.py → assets/tree_spruce_card.png + 8-view atlas).
-// Gates the plan's P4 acceptance: instance count, ≤ small draw calls for the
-// whole forest, alpha-cut material wired to the baked atlas, planted on the
-// terrain field with the corridor kept clear.
+// P4 forest slices 1+3: the forest is thin-instanced cross-card impostors
+// sampling FOUR distinct Blender-baked spruce variants
+// (blender/bake_trees.py → assets/tree_spruce_card_0..3.png + 8-view atlases).
+// Gates the plan's P4 acceptance: instance count, ≤ 20 draw calls for the whole
+// forest (4 shipped: one per variant mesh), alpha-cut materials wired to the
+// baked cards, planted on the terrain with the corridor kept clear.
 //
 // Iter 59: orientation + seating gates (reviewer URGENT after iter 56 —
 // the forest rendered UPSIDE DOWN because the card texture was built with
 // invertY = false, the glTF convention, instead of Babylon's default true
 // for a hand-authored upright PNG on default plane UVs). Gates:
 //   - the material's invertY is true (the render-side half of the contract),
-//   - the card PNG itself is authored upright (trunk/needles dense in the
-//     bottom rows, transparent sky in the top corners — the bake-side half),
+//   - each card PNG is authored upright (trunk/needles dense in the bottom
+//     rows, transparent sky in the top corners — the bake-side half),
 //   - every instance base sits on the visual field it was planted on
 //     (|plant y − _treeFieldY(x,z)| tiny; card geometry base is y=0 local).
+//
+// Iter 63 (review-60 (c)): species-variant gates — all four variant meshes
+// present and populated (mix counts), per-instance scale inside the reviewer's
+// 0.7–1.4 band with a real spread (no clone-row forest), per-variant conifer
+// census (the iter-62 gates applied to every card), and a measurable
+// silhouette difference between variants (16-band width-profile L1).
 const { test, expect } = require('@playwright/test');
 
-test('forest is one thin-instanced impostor draw call fed by the baked atlas', async ({ page }) => {
+test('forest is thin-instanced impostor draw calls fed by the baked spruce variants', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
@@ -26,261 +32,295 @@ test('forest is one thin-instanced impostor draw call fed by the baked atlas', a
     const s = await page.evaluate(async () => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const legacy = scene.meshes.filter(m => m.name && /^(tr_|fl_)/.test(m.name)).length;
-        const cards = scene.getMeshByName('treeCards');
-        if (!cards) return { legacy, hasCards: false };
-        const mats = cards.thinInstanceGetWorldMatrices
-            ? cards.thinInstanceGetWorldMatrices() : [];
-        const n = mats.length;
-        let minAbsX = Infinity, maxAbsX = 0, minY = Infinity, maxY = -Infinity;
-        let seatWorst = 0;
+        const cardMeshes = scene.meshes.filter(m => /^treeCards\d+$/.test(m.name));
+        if (!cardMeshes.length) return { legacy, hasCards: false };
         const fieldY = window._treeFieldY;
-        for (const mm of mats) {
-            const x = mm.m[12], y = mm.m[13], z = mm.m[14];
-            const ax = Math.abs(x);
-            if (ax < minAbsX) minAbsX = ax;
-            if (ax > maxAbsX) maxAbsX = ax;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-            if (fieldY) {
-                seatWorst = Math.max(seatWorst, Math.abs(y - fieldY(x, z)));
-            }
-        }
-        // whole forest = the one source mesh; nothing else may share its look
-        const am = scene.getActiveMeshes();
-        let forestActive = 0;
-        for (let i = 0; i < am.length; i++) {
-            const m = am.data[i];
-            if (m === cards || /^(tr_|fl_)/.test(m.name || '')) forestActive++;
-        }
-        const mat = cards.material;
 
-        // Local geometry base from the vertex buffer — NOT getBoundingInfo(),
-        // which on a thin-instanced mesh reports world bounds across every
-        // instance (≈ the lowest planting on the hill).
-        const pos = cards.getVerticesData('position');
+        // Shared-geometry check on variant 0's local quad: base at y=0. NOT
+        // getBoundingInfo(), which on a thin-instanced mesh reports world
+        // bounds across every instance (≈ the lowest planting on the hill).
+        const pos = cardMeshes[0].getVerticesData('position');
         let localMinY = Infinity;
         for (let i = 1; i < pos.length; i += 3) localMinY = Math.min(localMinY, pos[i]);
-        const bboxMinY = Math.round(localMinY * 1e6) / 1e6;
 
-        // Card PNG row order, sampled in-page: draw the exact texture the
-        // material uses onto a canvas and measure alpha by band/corner.
-        let card = null;
-        try {
-            const url = mat.albedoTexture.url;
-            const img = new Image();
-            img.src = url;
-            await img.decode();
-            const cv = document.createElement('canvas');
-            cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-            const cx = cv.getContext('2d', { willReadFrequently: true });
-            cx.drawImage(img, 0, 0);
-            const d = cx.getImageData(0, 0, cv.width, cv.height).data;
-            const w = cv.width, h = cv.height;
-            const alphaAt = (px, py) => d[(py * w + px) * 4 + 3] / 255;
-            const NB = 16; // horizontal bands, index 0 = the file's TOP rows
-            const bands = new Array(NB).fill(0);
-            for (let py = 0; py < h; py++) {
-                const b = Math.min(NB - 1, Math.floor((py / h) * NB));
-                let op = 0;
-                for (let px = 0; px < w; px++) if (d[(py * w + px) * 4 + 3] >= 128) op++;
-                bands[b] += op / w;
+        // Per-variant instance data straight off the thin-instance buffers.
+        const variants = cardMeshes.map(m => {
+            const mats = m.thinInstanceGetWorldMatrices
+                ? m.thinInstanceGetWorldMatrices() : [];
+            let seatWorst = 0, minAbsX = Infinity, maxAbsX = 0;
+            let minS = Infinity, maxS = 0;
+            let minY = Infinity;
+            for (const mm of mats) {
+                const x = mm.m[12], y = mm.m[13], z = mm.m[14];
+                const ax = Math.abs(x);
+                if (ax < minAbsX) minAbsX = ax;
+                if (ax > maxAbsX) maxAbsX = ax;
+                if (y < minY) minY = y;
+                if (fieldY) seatWorst = Math.max(seatWorst, Math.abs(y - fieldY(x, z)));
+                // Yaw-only rotation + uniform scale: the first column's norm
+                // IS the per-instance scale.
+                const sc = Math.hypot(mm.m[0], mm.m[1], mm.m[2]);
+                if (sc < minS) minS = sc;
+                if (sc > maxS) maxS = sc;
             }
-            for (let b = 0; b < NB; b++) bands[b] /= (h / NB);
-            const cornerBox = (x0, y0) => {
-                let mx = 0;
-                for (let py = y0; py < y0 + 48; py++)
-                    for (let px = x0; px < x0 + 48; px++) mx = Math.max(mx, alphaAt(px, py));
-                return mx;
+            const mat = m.material;
+            return {
+                name: m.name,
+                instances: mats.length,
+                minAbsX: minAbsX === Infinity ? null : Math.round(minAbsX * 1e4) / 1e4,
+                maxAbsX: Math.round(maxAbsX * 1e4) / 1e4,
+                minY: minY === Infinity ? null : minY,
+                seatWorst: Math.round(seatWorst * 1e6) / 1e6,
+                minS: minS === Infinity ? null : Math.round(minS * 1e4) / 1e4,
+                maxS: maxS === 0 ? null : Math.round(maxS * 1e4) / 1e4,
+                isActive: m.isEnabled() && m.isVisible,
+                localMinY: Math.round(localMinY * 1e6) / 1e6,
+                matName: mat ? mat.name : null,
+                tex: mat && mat.albedoTexture ? {
+                    url: mat.albedoTexture.url,
+                    w: mat.albedoTexture.getSize().width,
+                    h: mat.albedoTexture.getSize().height,
+                    hasAlpha: mat.albedoTexture.hasAlpha,
+                    ready: mat.albedoTexture.isReady(),
+                    aniso: mat.albedoTexture.anisotropicFilteringLevel,
+                    invertY: mat.albedoTexture.invertY,
+                } : null,
+                alphaTestIsCut: mat
+                    ? mat.transparencyMode === BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST
+                    : null,
+                alphaCutOff: mat ? mat.alphaCutOff : null,
+                backFaceCulling: mat ? mat.backFaceCulling : null,
             };
-            // Row runs: contiguous spans of visible (>0.02 mean alpha) rows.
-            // One sky run at the top, then ONE canopy run to the bottom —
-            // any interior gap is the floating-fragment regression.
-            const rowA = [];
-            for (let py = 0; py < h; py++) {
-                let a = 0;
-                for (let px = 0; px < w; px++) a += alphaAt(px, py);
-                rowA.push(a / w);
-            }
-            const runs = [];
-            let cur = null;
-            for (let py = 0; py < h; py++) {
-                const vis = rowA[py] > 0.02;
-                if (!cur || cur.vis !== vis) {
-                    cur = { vis, top: py / h, bot: py / h };
-                    runs.push(cur);
-                } else cur.bot = py / h;
-            }
-            // Per-band opaque width fraction (16 bands, top-down) for the
-            // taper gate, plus colour + trunk measures.
-            const widths = new Array(NB).fill(0);
-            let rSum = 0, gSum = 0, bSum = 0, n = 0;
-            for (let py = 0; py < h; py++) {
-                const band = Math.min(NB - 1, Math.floor((py / h) * NB));
-                let wRow = 0;
-                for (let px = 0; px < w; px++) {
-                    const i = (py * w + px) * 4;
-                    if (d[i + 3] >= 128) {
-                        wRow++;
-                        rSum += d[i] / 255; gSum += d[i + 1] / 255;
-                        bSum += d[i + 2] / 255; n++;
+        });
+
+        // Forest draw calls: active card meshes (one per variant) — the plan's
+        // P4 cap is ≤ 20 for the whole forest.
+        let forestActive = 0;
+        const am = scene.getActiveMeshes();
+        for (let i = 0; i < am.length; i++) {
+            if (/^treeCards\d+$/.test(am.data[i].name || '')) forestActive++;
+        }
+
+        // Card PNG census, sampled in-page per variant texture: draw the exact
+        // texture the material uses onto a canvas and measure alpha/bands.
+        const measureCard = async (url) => {
+            try {
+                const img = new Image();
+                img.src = url;
+                await img.decode();
+                const cv = document.createElement('canvas');
+                cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+                const cx = cv.getContext('2d', { willReadFrequently: true });
+                cx.drawImage(img, 0, 0);
+                const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+                const w = cv.width, h = cv.height;
+                const alphaAt = (px, py) => d[(py * w + px) * 4 + 3] / 255;
+                const NB = 16; // horizontal bands, index 0 = the file's TOP rows
+                // Row runs: contiguous spans of visible (>0.02 mean alpha)
+                // rows. One sky run at the top, then ONE canopy run to the
+                // bottom — any interior gap is the floating-fragment
+                // regression.
+                const rowA = [];
+                for (let py = 0; py < h; py++) {
+                    let a = 0;
+                    for (let px = 0; px < w; px++) a += alphaAt(px, py);
+                    rowA.push(a / w);
+                }
+                const runs = [];
+                let cur = null;
+                for (let py = 0; py < h; py++) {
+                    const vis = rowA[py] > 0.02;
+                    if (!cur || cur.vis !== vis) {
+                        cur = { vis, top: py / h, bot: py / h };
+                        runs.push(cur);
+                    } else cur.bot = py / h;
+                }
+                // Per-band opaque width fraction + colour + trunk measures.
+                const widths = new Array(NB).fill(0);
+                let rSum = 0, gSum = 0, bSum = 0, n = 0;
+                for (let py = 0; py < h; py++) {
+                    const band = Math.min(NB - 1, Math.floor((py / h) * NB));
+                    let wRow = 0;
+                    for (let px = 0; px < w; px++) {
+                        const i = (py * w + px) * 4;
+                        if (d[i + 3] >= 128) {
+                            wRow++;
+                            rSum += d[i] / 255; gSum += d[i + 1] / 255;
+                            bSum += d[i + 2] / 255; n++;
+                        }
                     }
+                    widths[band] += wRow / w;
                 }
-                widths[band] += wRow / w;
-            }
-            for (let bI = 0; bI < NB; bI++) widths[bI] /= (h / NB);
-            const lumMean = n ? (0.2126 * rSum + 0.7152 * gSum + 0.0722 * bSum) / n : 0;
-            // Trunk zone = rows 85-97%: centre 96 px vs the outer columns.
-            let trunkCentre = 0, trunkSides = 0;
-            const y0 = Math.round(0.85 * h), y1 = Math.round(0.97 * h);
-            for (let py = y0; py < y1; py++) {
-                let c = 0, s = 0;
-                for (let px = 0; px < w; px++) {
-                    const a = alphaAt(px, py);
-                    if (Math.abs(px - (w >> 1)) < 48) c += a;
-                    else if (px < 0.06 * w || px > 0.94 * w) s += a;
+                for (let bI = 0; bI < NB; bI++) widths[bI] /= (h / NB);
+                const lumMean = n ? (0.2126 * rSum + 0.7152 * gSum + 0.0722 * bSum) / n : 0;
+                // Trunk zone = rows 85-97%: centre 96 px vs the outer columns.
+                let trunkCentre = 0, trunkSides = 0;
+                const y0 = Math.round(0.85 * h), y1 = Math.round(0.97 * h);
+                for (let py = y0; py < y1; py++) {
+                    let c = 0, sd = 0;
+                    for (let px = 0; px < w; px++) {
+                        const a = alphaAt(px, py);
+                        if (Math.abs(px - (w >> 1)) < 48) c += a;
+                        else if (px < 0.06 * w || px > 0.94 * w) sd += a;
+                    }
+                    trunkCentre += c / 96;
+                    trunkSides += sd / Math.round(0.06 * w) / 2;
                 }
-                trunkCentre += c / 96;
-                trunkSides += s / Math.round(0.06 * w) / 2;
+                trunkCentre /= (y1 - y0);
+                trunkSides /= (y1 - y0);
+                const cornerBox = (x0, y0c) => {
+                    let mx = 0;
+                    for (let py = y0c; py < y0c + 48; py++)
+                        for (let px = x0; px < x0 + 48; px++) mx = Math.max(mx, alphaAt(px, py));
+                    return mx;
+                };
+                return {
+                    w, h,
+                    widths: widths.map(v => Math.round(v * 1e4) / 1e4),
+                    runs: runs.map(r => ({ vis: r.vis, top: +r.top.toFixed(4), bot: +r.bot.toFixed(4) })),
+                    lum: Math.round(lumMean * 1e4) / 1e4,
+                    meanRGB: n ? [+(rSum / n).toFixed(3), +(gSum / n).toFixed(3), +(bSum / n).toFixed(3)] : [0, 0, 0],
+                    trunkCentre: Math.round(trunkCentre * 1e4) / 1e4,
+                    trunkSides: Math.round(trunkSides * 1e4) / 1e4,
+                    topCornerMaxAlpha: Math.round(Math.max(cornerBox(0, 0), cornerBox(w - 48, 0)) * 1e4) / 1e4,
+                };
+            } catch (e) {
+                return { error: String(e) };
             }
-            trunkCentre /= (y1 - y0);
-            trunkSides /= (y1 - y0);
-            card = {
-                w, h,
-                bands: bands.map(v => Math.round(v * 1e4) / 1e4),
-                runs: runs.map(r => ({ vis: r.vis, top: +r.top.toFixed(4), bot: +r.bot.toFixed(4) })),
-                widths: widths.map(v => Math.round(v * 1e4) / 1e4),
-                lum: Math.round(lumMean * 1e4) / 1e4,
-                meanRGB: n ? [+(rSum / n).toFixed(3), +(gSum / n).toFixed(3), +(bSum / n).toFixed(3)] : [0, 0, 0],
-                trunkCentre: Math.round(trunkCentre * 1e4) / 1e4,
-                trunkSides: Math.round(trunkSides * 1e4) / 1e4,
-                topCornerMaxAlpha: Math.round(Math.max(cornerBox(0, 0), cornerBox(w - 48, 0)) * 1e4) / 1e4,
-            };
-        } catch (e) {
-            card = { error: String(e) };
+        };
+        const cards = [];
+        for (const v of variants) {
+            cards.push(await measureCard(v.tex ? v.tex.url : 'about:blank'));
+        }
+
+        // Variant distinctness (review-60 (c): "no two neighbours match"):
+        // pairwise L1 between the 16-band opaque-width profiles.
+        const widthL1 = [];
+        for (let i = 0; i < cards.length; i++) {
+            for (let j = i + 1; j < cards.length; j++) {
+                const d = cards[i].widths.reduce(
+                    (a, v, k) => a + Math.abs(v - (cards[j].widths[k] || 0)), 0);
+                widthL1.push(+d.toFixed(4));
+            }
         }
 
         return {
-            legacy, hasCards: true, instances: n, forestActive,
-            isActive: cards.isEnabled() && cards.isVisible,
-            minAbsX: minAbsX === Infinity ? null : minAbsX,
-            maxAbsX, minY: minY === Infinity ? null : minY, maxY,
-            seatWorst: Math.round(seatWorst * 1e6) / 1e6,
-            bboxMinY,
+            legacy, hasCards: true,
+            meshCount: cardMeshes.length,
+            total: variants.reduce((a, v) => a + v.instances, 0),
+            forestActive,
             hasFieldProbe: !!fieldY,
-            matName: mat ? mat.name : null,
-            tex: mat && mat.albedoTexture ? {
-                name: mat.albedoTexture.name,
-                w: mat.albedoTexture.getSize().width,
-                h: mat.albedoTexture.getSize().height,
-                hasAlpha: mat.albedoTexture.hasAlpha,
-                ready: mat.albedoTexture.isReady(),
-                aniso: mat.albedoTexture.anisotropicFilteringLevel,
-                invertY: mat.albedoTexture.invertY,
-            } : null,
-            card,
-            alphaTest: mat ? mat.transparencyMode : null,
-            alphaCutOff: mat ? mat.alphaCutOff : null,
-            alphaTestIsCut: mat
-                ? mat.transparencyMode === BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST
-                : null,
-            backFaceCulling: mat ? mat.backFaceCulling : null,
-            roughness: mat ? mat.roughness : null,
+            minScale: Math.min(...variants.map(v => v.minS)),
+            maxScale: Math.max(...variants.map(v => v.maxS)),
+            widthL1,
+            variants, cards,
         };
     });
+
     console.log('TREES_MEASURE ' + JSON.stringify(s));
-
+    // ── Scene-side gates ────────────────────────────────────────────────────
     expect(s.legacy, 'legacy per-tree trunk/foliage cylinders must be gone').toBe(0);
-    expect(s.hasCards, 'treeCards impostor mesh exists').toBe(true);
-    expect(s.isActive, 'treeCards enabled and visible').toBe(true);
-    expect(s.instances, 'a real forest, not a token row').toBeGreaterThan(150);
-    expect(s.forestActive, 'whole forest renders as ONE draw call')
-        .toBeLessThanOrEqual(1);
-    expect(s.minAbsX, 'corridor clearance kept (|x| >= ~7)').toBeGreaterThanOrEqual(6.9);
-    expect(s.maxAbsX, 'forest stays on the terrain (|x| <= ~58)').toBeLessThanOrEqual(58.1);
-    expect(s.minY, 'card bases planted at a sane terrain height').toBeGreaterThan(-80);
-    expect(s.hasFieldProbe, 'window._treeFieldY probe exposed').toBe(true);
-    expect(s.bboxMinY, 'card local geometry base is y=0 (trunk row at the quad base)')
-        .toBeGreaterThanOrEqual(-0.01);
-    expect(s.bboxMinY).toBeLessThanOrEqual(0.01);
-    expect(s.seatWorst,
-        'every instance base sits on the field it was planted on (seating)')
-        .toBeLessThanOrEqual(0.02);
-    expect(s.alphaTestIsCut,
-        'alpha-cut mode: transparencyMode === PBRMATERIAL_ALPHATEST ' +
-        '(= MATERIAL_ALPHATEST = 1; measured 1 IS the alpha-cut mode, ' +
-        'ALPHA_BLEND is 2)')
-        .toBe(true);
-    expect(s.alphaCutOff, 'alpha cutoff set').toBeGreaterThan(0);
-    expect(s.backFaceCulling, 'crossed quads read from both sides').toBe(false);
-    expect(s.tex, 'albedo texture wired').not.toBeNull();
-    expect(s.tex.ready, 'atlas texture actually loaded').toBe(true);
-    expect(s.tex.hasAlpha, 'atlas carries alpha').toBe(true);
-    expect([s.tex.w, s.tex.h], 'card texture is the baked 512x1024 frame')
-        .toEqual([512, 1024]);
-    expect(s.tex.aniso, 'tree atlas aniso (cost-capped, non-tiled texture)').toBe(4);
-    // V orientation — the iter-56 regression. Both halves of the contract:
-    expect(s.tex.invertY,
-        'card texture must flip on upload (invertY=true, Babylon default); ' +
-        'invertY=false is the glTF convention and rendered the forest tip-down')
-        .toBe(true);
-    expect(s.card.error, 'card PNG sampled without error').toBeUndefined();
-
-    // The bake-side half: the PNG on disk must be authored upright AND be a
-    // coherent conifer. Iter 62 re-derived these gates for the re-rendered
-    // bake (camera-orbit + pinned ortho fit: the old card cropped the tree
-    // into a floating top fragment and wiped the branch droop, rendering
-    // columnar spike stacks). Bands index 0 = the file's TOP rows (canvas
-    // py=0). Measured on the new bake: sky margin 0-8.4%, then ONE
-    // contiguous canopy run to the file bottom; width taper monotone
-    // 0.027 → 0.842 → trunk 0.07; trunk bands brown, canopy bands green.
-    expect(s.card.runs[0].vis, 'the file starts with an empty sky margin')
-        .toBe(false);
-    expect(s.card.runs[0].bot, 'sky margin above the tip (whole tree in frame)')
-        .toBeGreaterThan(0.0);
-    expect(s.card.runs[0].bot, 'tip not cropped by the frame top')
-        .toBeLessThanOrEqual(0.12);
-    const interiorGaps = s.card.runs.filter(
-        (r, i) => i > 0 && i < s.card.runs.length - 1 && !r.vis);
-    expect(interiorGaps.length,
-        'no empty row-run inside the canopy body (the iter-60 floating ' +
-        'fragment regression): ' + JSON.stringify(s.card.runs))
-        .toBe(0);
-    expect(s.card.runs[s.card.runs.length - 1].vis,
-        'the canopy runs through the file bottom (trunk seated at the base)')
-        .toBe(true);
-
-    // Conifer taper: the widest row-band sits in the lower third and every
-    // band ABOVE it is narrower (≤ +12% noise tolerance), with the top band
-    // ≤ 25% of the widest (review-60 (a)).
-    const wMax = Math.max(...s.card.widths);
-    const wMaxBand = s.card.widths.indexOf(wMax);
-    expect(wMaxBand, 'widest whorl in the lower third of the card')
-        .toBeGreaterThanOrEqual(10);
-    for (let i = 1; i <= wMaxBand; i++) {
-        expect(s.card.widths[i - 1] <= s.card.widths[i] * 1.12 + 0.004,
-            'width shrinks monotonically toward the tip below band ' + i +
-            ' (' + s.card.widths[i - 1] + ' vs ' + s.card.widths[i] + ')')
+    expect(s.hasCards, 'treeCards impostor meshes exist').toBe(true);
+    expect(s.meshCount, 'FOUR spruce variant meshes (review-60 (c))').toBe(4);
+    expect(s.total, 'a real forest, not a token row').toBeGreaterThan(150);
+    for (const v of s.variants) {
+        expect(v.isActive, v.name + ' enabled and visible').toBe(true);
+        expect(v.instances, v.name + ' carries a real share of the forest (mix count)')
+            .toBeGreaterThanOrEqual(15);
+        expect(v.minAbsX, v.name + ' corridor clearance kept (|x| >= ~7)')
+            .toBeGreaterThanOrEqual(6.9);
+        expect(v.maxAbsX, v.name + ' forest stays on the terrain (|x| <= ~58)')
+            .toBeLessThanOrEqual(58.1);
+        expect(v.minY, v.name + ' card bases planted at a sane terrain height')
+            .toBeGreaterThan(-80);
+        expect(v.seatWorst, v.name + ' every instance base sits on its field (seating)')
+            .toBeLessThanOrEqual(0.02);
+        expect(v.localMinY, v.name + ' card local geometry base is y=0')
+            .toBeGreaterThanOrEqual(-0.01);
+        expect(v.localMinY).toBeLessThanOrEqual(0.01);
+        expect(v.alphaTestIsCut, v.name + ' alpha-cut mode (PBRMATERIAL_ALPHATEST)').toBe(true);
+        expect(v.alphaCutOff, v.name + ' alpha cutoff set').toBeGreaterThan(0);
+        expect(v.backFaceCulling, v.name + ' crossed quads read from both sides').toBe(false);
+        expect(v.tex, v.name + ' albedo texture wired').not.toBeNull();
+        expect(v.tex.ready, v.name + ' card texture actually loaded').toBe(true);
+        expect(v.tex.hasAlpha, v.name + ' card carries alpha').toBe(true);
+        expect([v.tex.w, v.tex.h], v.name + ' card texture is the baked 512x1024 frame')
+            .toEqual([512, 1024]);
+        expect(v.tex.aniso, v.name + ' card aniso (cost-capped, non-tiled texture)').toBe(4);
+        // V orientation — the iter-56 regression, both halves of the contract.
+        expect(v.tex.invertY, v.name + ' card texture must flip on upload (invertY=true)')
             .toBe(true);
+        expect(v.tex.url, v.name + ' samples its OWN variant card, not another’s')
+            .toContain('_' + v.name.slice(-1) + '.png');
     }
-    expect(s.card.widths[0], 'top band ≤ 25% of the widest whorl (spire)')
-        .toBeLessThanOrEqual(0.25 * wMax);
+    expect(s.forestActive, 'whole forest renders in ≤ 4 draw calls (plan cap 20)')
+        .toBeLessThanOrEqual(4);
 
-    // Colour: the impostor must not read as a black silhouette against the
-    // snow (review-60 (b)): mean solid-pixel luminance ≥ 0.18, green leads.
-    expect(s.card.lum, 'mean impostor luminance ≥ 0.18, got ' + s.card.lum)
-        .toBeGreaterThanOrEqual(0.18);
-    expect(s.card.meanRGB[1], 'green channel leads the canopy mean')
-        .toBeGreaterThan(s.card.meanRGB[0]);
-    expect(s.card.meanRGB[1]).toBeGreaterThan(s.card.meanRGB[2]);
+    // Review-60 (c) scale band + spread: per-instance 0.7–1.4, not a clone row.
+    expect(s.minScale, 'instance scale ≥ 0.7 (review-60 (c))').toBeGreaterThanOrEqual(0.695);
+    expect(s.maxScale, 'instance scale ≤ 1.4 (review-60 (c))').toBeLessThanOrEqual(1.405);
+    expect(s.maxScale / s.minScale, 'real scale spread across the forest')
+        .toBeGreaterThanOrEqual(1.5);
+    expect(s.hasFieldProbe, 'window._treeFieldY probe exposed').toBe(true);
 
-    // Trunk visible over the bottom ~15%: opaque at the centre line, sky at
-    // the base sides (no canopy skirt down there).
-    expect(s.card.trunkCentre, 'trunk column present at the base')
-        .toBeGreaterThan(0.05);
-    expect(s.card.trunkSides, 'no canopy at the base sides (bare trunk)')
-        .toBeLessThan(0.01);
+    // ── Card-census gates (bake-side half), per variant ────────────────────
+    for (let vi = 0; vi < s.cards.length; vi++) {
+        const card = s.cards[vi];
+        const tag = 'card ' + vi;
+        expect(card.error, tag + ' sampled without error').toBeUndefined();
 
-    expect(s.card.topCornerMaxAlpha,
-        'top corners are transparent sky (alpha ~0 at the frame top edges)')
-        .toBeLessThan(0.02);
+        // Iter-62 gates re-derived for the camera-orbit bake. Bands index 0 =
+        // the file's TOP rows (canvas py=0).
+        expect(card.runs[0].vis, tag + ' starts with an empty sky margin').toBe(false);
+        // Sky margin above the tip must EXIST (tip not cropped by the frame
+        // top) but stay < 25%: every variant shares the 14.6 m card frame, so
+        // the shortest variant (11.9 m) legitimately carries ~20% sky while
+        // still dominating its card. The iter-62 bound (≤ 12%) described the
+        // one 13.6 m tree and is meaningless across heights.
+        expect(card.runs[0].bot, tag + ' tip not cropped, tree fills its card')
+            .toBeLessThanOrEqual(0.25);
+        const interiorGaps = card.runs.filter(
+            (r, i) => i > 0 && i < card.runs.length - 1 && !r.vis);
+        expect(interiorGaps.length, tag + ' no empty row-run inside the canopy body')
+            .toBe(0);
+        expect(card.runs[card.runs.length - 1].vis,
+            tag + ' canopy runs through the file bottom (trunk seated)').toBe(true);
+
+        // Conifer taper: widest band in the lower third, monotone toward the
+        // tip, top band ≤ 25% of the widest (review-60 (a)).
+        const wMax = Math.max(...card.widths);
+        const wMaxBand = card.widths.indexOf(wMax);
+        expect(wMaxBand, tag + ' widest whorl in the lower third')
+            .toBeGreaterThanOrEqual(10);
+        for (let i = 1; i <= wMaxBand; i++) {
+            expect(card.widths[i - 1] <= card.widths[i] * 1.12 + 0.004,
+                tag + ' width shrinks monotonically toward the tip below band ' + i)
+                .toBe(true);
+        }
+        expect(card.widths[0], tag + ' top band ≤ 25% of the widest whorl (spire)')
+            .toBeLessThanOrEqual(0.25 * wMax);
+
+        // Colour (review-60 (b)): not a black silhouette; green leads.
+        expect(card.lum, tag + ' mean impostor luminance ≥ 0.18, got ' + card.lum)
+            .toBeGreaterThanOrEqual(0.18);
+        expect(card.meanRGB[1], tag + ' green channel leads the canopy mean')
+            .toBeGreaterThan(card.meanRGB[0]);
+        expect(card.meanRGB[1]).toBeGreaterThan(card.meanRGB[2]);
+
+        // Trunk visible over the bottom ~15%.
+        expect(card.trunkCentre, tag + ' trunk column present at the base')
+            .toBeGreaterThan(0.05);
+        expect(card.trunkSides, tag + ' no canopy at the base sides (bare trunk)')
+            .toBeLessThan(0.01);
+        expect(card.topCornerMaxAlpha, tag + ' top corners are transparent sky')
+            .toBeLessThan(0.02);
+    }
+
+    // Variants must be measurably DIFFERENT trees (review-60 (c): "no two
+    // neighbours match"): every pairwise 16-band width-profile L1 ≥ 0.02
+    // (the bake asserts the same gate from the PNGs directly).
+    for (const d of s.widthL1) {
+        expect(d, 'variant silhouette profiles distinct (L1 ' + d + ' < 0.02)')
+            .toBeGreaterThanOrEqual(0.02);
+    }
 });

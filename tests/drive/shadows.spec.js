@@ -180,9 +180,9 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
         const _sun = scene.lights.find(l => l.getClassName() === 'DirectionalLight');
         const _hn = Math.hypot(_sun.direction.x, _sun.direction.z);
         const ux = -_sun.direction.x / _hn, uz = -_sun.direction.z / _hn;
-        const cards = scene.getMeshByName('treeCards');
-        const mm = cards && cards.thinInstanceGetWorldMatrices
-            ? cards.thinInstanceGetWorldMatrices() : [];
+        const cards = scene.meshes.filter(m => /^treeCards\d+$/.test(m.name));
+        const mm = cards.flatMap(c => c.thinInstanceGetWorldMatrices
+            ? c.thinInstanceGetWorldMatrices() : []);
         const n = mm.length;
         let trunks = [];
         if (n) {

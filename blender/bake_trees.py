@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
-"""P4 forest impostor bake: a snow-loaded spruce rendered to an impostor atlas.
+"""P4 forest impostor bake: FOUR distinct snow-loaded spruce variants rendered
+to impostor atlases (review-60 (c): 3–4 variants so no two neighbours match).
 
-Builds one deterministic spruce (tapered trunk + drooping branch layers with
-snow blended in by world-space normal.z — no add-ons), renders it with CYCLES
-(headless, CPU) into:
+Each variant is a deterministic spruce (tapered trunk + drooping branch layers
+with snow blended in by world-space normal.z — no add-ons) differing in seed,
+height, radial envelope, droop aggressiveness and needle tint; rendered with
+CYCLES (headless, CPU) into, per variant tag 0–3:
 
-  assets/tree_spruce_card.png   1024x2048 RGBA — the straight-on view used by
-                                the game's cross-card impostors (slice 1)
-  assets/tree_spruce_atlas.png  8 horizontal views x 1 elevation, 2048x512
-                                (256x512 tiles) — input for the camera-facing
-                                billboard slice
+  assets/tree_spruce_card_<tag>.png   512x1024 RGBA — the straight-on view used
+                                      by the game's cross-card impostors
+  assets/tree_spruce_atlas_<tag>.png  8 horizontal views x 1 elevation,
+                                      2048x512 (256x512 tiles) — input for
+                                      the camera-facing billboard slice
+
+Every variant is framed at the SAME 7.3 x 14.6 m window (the card quad
+CARD_W/CARD_H in game.js), so the renderer needs no per-variant geometry —
+the shared cross-card quad scales per instance.
 
 Both carry straight alpha; the material shades pre-lit albedo (sun at the
 game's 32 deg elevation from camera-left), so the impostor needs no lightmap.
 Usage:
 
   blender -b --factory-startup --python blender/bake_trees.py -- \
-      [--out ../assets] [--samples 24] [--card 1024x2048]
+      [--out ../assets] [--samples 24] [--card 512x1024]
 
 Logs per-tile alpha coverage / mean luminance / snow-white fraction and fails
-the build when a tile is empty or blown out.
+the build when a tile is empty or blown out, or when two variants' 16-band
+silhouette profiles are not measurably distinct.
 """
 
 import argparse
@@ -38,9 +45,6 @@ from mathutils import Euler, Vector
 TRUNK_H = 3.2
 TRUNK_R0 = 0.30
 TRUNK_R1 = 0.14
-TOP_Z = 13.6          # total height incl. the top spike
-NEEDLE = (0.090, 0.200, 0.120)    # inside the review-60 spruce band
-                                   # (0.08-0.14, 0.18-0.28, 0.10-0.16)
 TRUNK_COL = (0.16, 0.105, 0.07)
 SNOW = (0.93, 0.95, 0.98)
 
@@ -103,12 +107,36 @@ def _add_cone(r0, r1, depth, mat, loc, quat=None, seg=8):
     return o
 
 
-def build_spruce():
-    rng = random.Random(30115)
+# Review-60 (c): FOUR DISTINCT spruce variants, not four clones of one tree.
+# Each entry varies the jitter seed, the height, the radial envelope, the
+# droop aggressiveness and the needle tint. All tints stay inside the
+# review-60 spruce band (0.08–0.14, 0.18–0.28, 0.10–0.16); all tops stay
+# under the shared 14.6 m frame so no variant's spike is cropped.
+VARIANTS = [
+    dict(tag='0', seed=30115, top_z=13.6, r_mul=1.00, droop_bias=0.0,
+         needle=(0.090, 0.200, 0.120)),   # the iter-62 tree, unchanged
+    dict(tag='1', seed=92041, top_z=14.3, r_mul=0.88, droop_bias=3.0,
+         needle=(0.100, 0.215, 0.130)),   # tall, narrow, denser upright cast
+    dict(tag='2', seed=4517,  top_z=11.9, r_mul=1.18, droop_bias=-3.0,
+         needle=(0.085, 0.190, 0.115)),   # short, wide, heavy drooping skirt
+    dict(tag='3', seed=77003, top_z=12.8, r_mul=1.05, droop_bias=1.5,
+         needle=(0.095, 0.205, 0.125)),   # mid-size, loose asymmetry
+]
+
+# The game's card quad frame (CARD_W/CARD_H in game.js; iter-62's
+# TOP_Z 13.6 + 1.0 margin). EVERY variant bakes into this same window, so
+# shorter trees simply carry more sky margin at the top of their card.
+FRAME_H = 14.6
+FRAME_W = FRAME_H * (512 / 1024)   # 7.3 — 1:2 card aspect
+
+
+def build_spruce(cfg):
+    rng = random.Random(cfg['seed'])
+    top_z = cfg['top_z']
     # Snow keyed lower on normal.z than the 0.18-0.70 of iters 56-61: the
     # straight-on view washed the mix out and the forest read near-black
     # (review-60 tonality complaint). 0.12-0.60 loads the up-facing sides.
-    mat_needle = _mat_snow('needle', NEEDLE, 0.12, 0.60, 1.0)
+    mat_needle = _mat_snow('needle', cfg['needle'], 0.12, 0.60, 1.0)
     mat_trunk = _mat_snow('trunk', TRUNK_COL, 0.30, 0.95, 0.55)
 
     _add_cone(TRUNK_R0, TRUNK_R1, TRUNK_H, mat_trunk,
@@ -122,16 +150,21 @@ def build_spruce():
     prev_r = None
     for i in range(n_layers):
         t = i / (n_layers - 1)
-        z = 2.6 + t * (TOP_Z - 3.6)
-        layer_r = 2.35 * (1.0 - t) ** 0.85 + 0.15
+        z = 2.6 + t * (top_z - 3.6)
+        layer_r = 2.35 * cfg['r_mul'] * (1.0 - t) ** 0.85 + 0.15
         layer_r *= rng.uniform(0.80, 1.20)
         if prev_r is not None:
             layer_r = min(layer_r, prev_r * 0.97)
         prev_r = layer_r
         # Bottom whorls sweep UP (negative droop) so the trunk stays visible
         # over the tree's bottom ~15% (review-60 (a)); upper layers droop.
-        droop = math.radians(-9 + 16 * min(t / 0.14, 1.0) + 22 * t)
+        # droop_bias shifts the whole cast: + more upright, − more skirt.
+        droop = math.radians(cfg['droop_bias'] - 9
+                             + 16 * min(t / 0.14, 1.0) + 22 * t)
         n_br = max(6, 13 - int(6 * t))
+        # Thicker branchlets than iter 56 (0.24): layered skirts instead
+        # of isolated spikes once the droop orientation survives.
+        r0 = 0.30 * (0.55 + 0.45 * (1 - t))
         for j in range(n_br):
             phi = j * (2 * math.pi / n_br) + golden * (i % 3) + rng.uniform(-0.12, 0.12)
             br_len = layer_r * rng.uniform(0.92, 1.10)
@@ -141,9 +174,6 @@ def build_spruce():
             start = Vector((math.cos(phi) * 0.22, math.sin(phi) * 0.22, z))
             quat = d.to_track_quat('Z', 'Y')
             centre = start + d * (br_len / 2)
-            # Thicker branchlets than iter 56 (0.24): layered skirts instead
-            # of isolated spikes once the droop orientation survives.
-            r0 = 0.30 * (0.55 + 0.45 * (1 - t))
             _add_cone(r0, 0.02, br_len, mat_needle, centre, quat, seg=7)
 
     # top spike: base buried in the topmost whorls (11.2) so the silhouette
@@ -152,8 +182,8 @@ def build_spruce():
         # shows only near its spire, not through the mid canopy (iter-62
         # row-census gate: no empty row-run inside the canopy body).
         if i < n_layers - 1:
-            z_mid = z + (z + (TOP_Z - 3.6) / (n_layers - 1) - z) * 0.5
-            t_mid = (z_mid - 2.6) / (TOP_Z - 3.6)
+            z_mid = z + (z + (top_z - 3.6) / (n_layers - 1) - z) * 0.5
+            t_mid = (z_mid - 2.6) / (top_z - 3.6)
             r_mid = layer_r * 0.72
             droop_mid = droop + math.radians(6)
             for j in range(max(3, n_br // 2)):
@@ -167,7 +197,32 @@ def build_spruce():
                 centre = start + d * (br_len / 2)
                 _add_cone(r0 * 0.7, 0.02, br_len, mat_needle, centre, quat, seg=6)
     _add_cone(0.35, 0.01, 2.4, mat_needle,
-              (0, 0, TOP_Z - 1.0), seg=8)
+              (0, 0, top_z - 1.0), seg=8)
+
+    # Spike-zone filler whorls: bury the top spike's base so the silhouette is
+    # continuous from tip to skirt in EVERY variant (the iter-62 census gate
+    # "no empty row-run inside the canopy body", per card). Variant 1 — tall,
+    # narrow, +3 deg cast — exposed bare-spike slivers where the topmost
+    # whorl's drooping branches pulled away from the spike; THREE filler rows
+    # chain the spike base into the whorl stack (measured: 2 rows left one
+    # 3 cm gap at z≈11.5 on the 14.3 m variant).
+    for k in range(3):
+        z_f = top_z - 1.7 - 0.55 * k
+        t_f = (z_f - 2.6) / (top_z - 3.6)
+        r_f = max(0.45, 2.35 * cfg['r_mul'] * (1.0 - t_f) ** 0.85 * 0.45)
+        droop_f = math.radians(cfg['droop_bias'] - 9 + 16 * min(t_f / 0.14, 1.0)
+                               + 22 * t_f)
+        n_f = 8
+        for j in range(n_f):
+            phi = j * (2 * math.pi / n_f) + golden * k
+            br_len = r_f * rng.uniform(0.90, 1.10)
+            d = Vector((math.cos(phi) * math.cos(droop_f),
+                        math.sin(phi) * math.cos(droop_f),
+                        -math.sin(droop_f)))
+            start = Vector((math.cos(phi) * 0.12, math.sin(phi) * 0.12, z_f))
+            quat = d.to_track_quat('Z', 'Y')
+            centre = start + d * (br_len / 2)
+            _add_cone(0.16, 0.02, br_len, mat_needle, centre, quat, seg=6)
 
 
 # ── Lighting / camera ─────────────────────────────────────────────────────────
@@ -247,6 +302,19 @@ def stats(tile):
             'snowFrac': round(white, 4)}
 
 
+def _card_widths16(card):
+    """Fraction of opaque pixels per horizontal 16th of the card, file TOP
+    first — the same banding trees.spec.js computes, so the bake-side
+    distinctness gate and the spec gate measure the same profile."""
+    a = card[..., 3] >= 0.5
+    h = a.shape[0]
+    widths = []
+    for b in range(16):
+        lo, hi = round(b * h / 16), round((b + 1) * h / 16)
+        widths.append(round(float(a[lo:hi].mean()), 4))
+    return widths
+
+
 def main():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     ap = argparse.ArgumentParser()
@@ -273,46 +341,64 @@ def main():
     scn.view_settings.view_transform = 'Standard'
     scn.view_settings.look = 'None'
 
-    _clear()
-    build_spruce()
-    setup_world_and_sun()
-
-    bpy.ops.object.camera_add(location=(0, -30, TOP_Z / 2))
-    scn.camera = bpy.context.active_object
-
-    # frame: full tree height + margin; width from the 1:2 aspect
-    frame_h = TOP_Z + 1.0
-    ortho_w = args.ortho if args.ortho > 0 else frame_h * (cw / ch)
-
-    tmp = os.path.join(args.out, '_tree_tmp')
     os.makedirs(args.out, exist_ok=True)
+    tmp = os.path.join(args.out, '_tree_tmp')
     os.makedirs(tmp, exist_ok=True)
 
-    report = {'views': args.views, 'card': {}, 'tiles': []}
+    # Fixed frame for every variant — the card quad's window (game.js
+    # CARD_W/CARD_H). --ortho only overrides for calibration probes.
+    frame_h = FRAME_H
+    ortho_w = args.ortho if args.ortho > 0 else FRAME_W
 
-    card_p = os.path.join(tmp, 'card.png')
-    render_view(card_p, cw, ch, 0.0, ortho_w, frame_h)
-    card = load_rgba(card_p)
-    save_rgba(card, os.path.join(args.out, 'tree_spruce_card.png'))
-    report['card'] = dict(size=[cw, ch], **stats(card))
+    report = {'views': args.views, 'frame': [round(ortho_w, 3), round(frame_h, 3)],
+              'variants': []}
 
-    atlas = np.zeros((th, tw * args.views, 4), dtype=np.float32)
-    for k in range(args.views):
-        yaw = k * 360.0 / args.views
-        p = os.path.join(tmp, 'tile_%d.png' % k)
-        render_view(p, tw, th, yaw, ortho_w, frame_h)
-        tile = load_rgba(p)
-        atlas[:, k * tw:(k + 1) * tw] = tile
-        report['tiles'].append({'view': int(yaw), **stats(tile)})
-    save_rgba(atlas, os.path.join(args.out, 'tree_spruce_atlas.png'))
+    for cfg in VARIANTS:
+        _clear()          # also removes the previous iteration's camera
+        build_spruce(cfg)
+        setup_world_and_sun()
+        bpy.ops.object.camera_add(location=(0, -30, frame_h / 2))
+        scn.camera = bpy.context.active_object
 
-    for t in report['tiles']:
-        assert 0.05 <= t['coverage'] <= 0.60, 'tree tile coverage out of band: %s' % t
-        assert 0.05 <= t['lum'] <= 0.98, 'tree tile luminance out of band: %s' % t
-    assert 0.05 <= report['card']['coverage'] <= 0.60, 'card coverage out of band'
+        vrep = {'tag': cfg['tag'], 'topZ': cfg['top_z'], 'tiles': []}
 
-    covs = [t['coverage'] for t in report['tiles']]
-    report['coverageSpread'] = round(max(covs) - min(covs), 4)
+        card_p = os.path.join(tmp, 'card_%s.png' % cfg['tag'])
+        render_view(card_p, cw, ch, 0.0, ortho_w, frame_h)
+        card = load_rgba(card_p)
+        save_rgba(card, os.path.join(args.out, 'tree_spruce_card_%s.png' % cfg['tag']))
+        vrep['card'] = dict(size=[cw, ch], **stats(card))
+        vrep['widths16'] = _card_widths16(card)
+
+        atlas = np.zeros((th, tw * args.views, 4), dtype=np.float32)
+        for k in range(args.views):
+            yaw = k * 360.0 / args.views
+            p = os.path.join(tmp, 'tile_%s_%d.png' % (cfg['tag'], k))
+            render_view(p, tw, th, yaw, ortho_w, frame_h)
+            tile = load_rgba(p)
+            atlas[:, k * tw:(k + 1) * tw] = tile
+            vrep['tiles'].append({'view': int(yaw), **stats(tile)})
+        save_rgba(atlas, os.path.join(args.out, 'tree_spruce_atlas_%s.png' % cfg['tag']))
+
+        for t in vrep['tiles']:
+            assert 0.05 <= t['coverage'] <= 0.60, 'tree tile coverage out of band: %s' % t
+            assert 0.05 <= t['lum'] <= 0.98, 'tree tile luminance out of band: %s' % t
+        assert 0.05 <= vrep['card']['coverage'] <= 0.60, 'card coverage out of band'
+        covs = [t['coverage'] for t in vrep['tiles']]
+        vrep['coverageSpread'] = round(max(covs) - min(covs), 4)
+        report['variants'].append(vrep)
+
+    # Review-60 (c) distinctness: no two variants may share the same
+    # silhouette. L1 distance between their 16-band opaque-width profiles.
+    pairs = []
+    for i in range(len(report['variants'])):
+        for j in range(i + 1, len(report['variants'])):
+            wi, wj = report['variants'][i]['widths16'], report['variants'][j]['widths16']
+            pairs.append({'pair': [i, j],
+                          'd': round(sum(abs(a - b) for a, b in zip(wi, wj)), 4)})
+    report['widthL1'] = pairs
+    report['widthL1min'] = min(p['d'] for p in pairs)
+    assert report['widthL1min'] >= 0.02, \
+        'spruce variants are not visually distinct (widthL1min %s)' % report['widthL1min']
 
     for f in os.listdir(tmp):
         os.remove(os.path.join(tmp, f))

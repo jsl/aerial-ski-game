@@ -1289,9 +1289,9 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=18';   // 18: tree bake re-render — camera orbit + pinned
-                               // ortho fit (real drooping silhouette), lighter
-                               // needle, heavier snow (bake_trees.py)
+    const ASSET_V = '?v=19';   // 19: four spruce variants (review-60 (c)) —
+                               // bake_trees.py seeds/heights/radial envelopes,
+                               // card_0..3 + atlas_0..3
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -2718,13 +2718,15 @@ void main(void) {
     }
 
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
-    // P4 slice 1: every tree is ONE cross-card impostor — two crossed alpha-cut
-    // quads sampling the Blender-baked snow-loaded spruce
-    // (assets/tree_spruce_card.png from blender/bake_trees.py; the 8-view atlas
-    // ships alongside for the later camera-facing billboard slice). Thin
-    // instances keep the whole forest on one draw call and one shadow-map
-    // caster entry (the alpha-cut shadow path is the B-net strip's, proven in
-    // venue-dressing.spec). Low-poly near trees for parallax are a later slice.
+    // P4 slices 1+3: every tree is a cross-card impostor — two crossed alpha-cut
+    // quads sampling one of FOUR distinct Blender-baked snow-loaded spruce
+    // variants (review-60 (c): assets/tree_spruce_card_0..3.png from
+    // blender/bake_trees.py; the per-variant 8-view atlases ship alongside for
+    // the later camera-facing billboard slice). One cloned mesh + matrix buffer
+    // per variant (4 draw calls, plan cap ≤ 20); the shadow proxy cone stays a
+    // single full-forest mesh. The alpha-cut shadow path is the B-net strip's,
+    // proven in venue-dressing.spec. Low-poly near trees for parallax are a
+    // later slice.
     {
     // Deterministic hash → float in [0, 1) from two integers
     function _tRng(a, b) {
@@ -2740,9 +2742,16 @@ void main(void) {
     const xCells = 6;  // covers X ≈ ±60
 
     // Baked card frame in metres. MUST match blender/bake_trees.py's framing:
-    // frame height = TOP_Z + 1.0 = 14.6, ortho width = height × (1024/2048).
+    // every variant is baked at the SAME frame (14.6 m tall, 7.3 m wide), so
+    // one quad size serves all variants; per-instance scale does the rest.
     const CARD_W = 7.3, CARD_H = 14.6;
-
+    // The four spruce variants baked by blender/bake_trees.py (review-60 (c)).
+    const TREE_CARD_URLS = [
+        'assets/tree_spruce_card_0.png',
+        'assets/tree_spruce_card_1.png',
+        'assets/tree_spruce_card_2.png',
+        'assets/tree_spruce_card_3.png',
+    ];
     const spots = [];
     for (let gx = -xCells; gx <= xCells; gx++) {
         for (let gz = 0; gz < zCells; gz++) {
@@ -2765,8 +2774,10 @@ void main(void) {
             const prob = (1 - Math.exp(-distFromCourse * 0.10)) * sideFactor;
             if (rp > prob) continue;
 
-            // Alpine conifers: total height ~11–18 units (scale 0.85–1.75)
-            const s = 0.85 + rs * 0.90;
+            // Review-60 (c) scale band 0.7–1.4 (was 0.85–1.75): total height
+            // 10.2–20.4 m for the 14.6 m card. Per-tree variety comes from
+            // scale × yaw × one of FOUR distinct baked spruce variants.
+            const s = 0.70 + rs * 0.70;
 
             // Plant against the SAME field function the terrain mesh samples:
             // with the slice-2 windlip beside the corridor, a physics-only
@@ -2774,6 +2785,8 @@ void main(void) {
             spots.push({
                 x: tx, y: _fieldTopY(tx, tz), z: tz, s: s,
                 yaw: _tRng(gx * 13, gz * 17) * Math.PI,  // per-tree variety
+                v: Math.floor(_tRng(gx * 29 + 3, gz * 31 + 5)
+                    * TREE_CARD_URLS.length),            // which spruce variant
             });
         }
     }
@@ -2783,46 +2796,63 @@ void main(void) {
     window._treeFieldY = _fieldTopY;
 
     if (spots.length) {
-        const q1 = BABYLON.MeshBuilder.CreatePlane('treeCardQ1',
-            { width: CARD_W, height: CARD_H }, scene);
-        q1.position.set(0, CARD_H / 2, 0);
-        const q2 = BABYLON.MeshBuilder.CreatePlane('treeCardQ2',
-            { width: CARD_W, height: CARD_H }, scene);
-        q2.position.set(0, CARD_H / 2, 0);
-        q2.rotation.y = Math.PI / 2;
-        const cards = BABYLON.Mesh.MergeMeshes([q1, q2], true, true);
-        cards.name = 'treeCards';
+        // ONE cross-card shape, built once per variant (fresh planes each
+        // time — Mesh.clone is not in the golden harness's BABYLON stub and
+        // 4 quads cost nothing): a merged mesh + material + thin-instance
+        // matrix buffer per spruce variant = 4 draw calls for the whole
+        // forest (the plan's P4 cap is ≤ 20).
+        const buildCardMesh = (name) => {
+            const q1 = BABYLON.MeshBuilder.CreatePlane(name + '_q1',
+                { width: CARD_W, height: CARD_H }, scene);
+            q1.position.set(0, CARD_H / 2, 0);
+            const q2 = BABYLON.MeshBuilder.CreatePlane(name + '_q2',
+                { width: CARD_W, height: CARD_H }, scene);
+            q2.position.set(0, CARD_H / 2, 0);
+            q2.rotation.y = Math.PI / 2;
+            const merged = BABYLON.Mesh.MergeMeshes([q1, q2], true, true);
+            merged.name = name;
+            return merged;
+        };
 
-        const treeMat = makePBR('forestCardMat', scene);
         // V orientation (the iter-56 upside-down-forest regression): the card
-        // PNG is authored upright (trunk at the file's bottom row) and the
+        // PNGs are authored upright (trunk at the file's bottom row) and the
         // plane UVs are Babylon-default, so the texture must flip on upload —
         // invertY = true, Babylon's default. invertY = false is the glTF
         // convention (athleteBody_mat, game.js ~1703) and samples v=0 at the
         // file's TOP row: every tree rendered tip-down, trunk-first from the
-        // sky. Gate: trees.spec.js pins invertY + the atlas' own row order.
-        treeMat.albedoTexture = new BABYLON.Texture(
-            'assets/tree_spruce_card.png' + ASSET_V, scene, false, true);
-        treeMat.albedoTexture.hasAlpha = true;
-        treeMat.albedoTexture.anisotropicFilteringLevel = 4;   // 16 costs real time in the CSM depth passes
-        treeMat.useAlphaFromAlbedoTexture = true;
-        treeMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;   // = 2 (MATERIAL_ALPHATEST); stub-safe
-        treeMat.alphaCutOff = 0.5;
-        treeMat.backFaceCulling = false;   // crossed quads read from both sides
-        treeMat.roughness = 0.95;
-        cards.material = treeMat;
-
-        const buf = new Float32Array(spots.length * 16);
-        spots.forEach((t, i) => {
+        // sky. Gate: trees.spec.js pins invertY per variant + each card's row
+        // order.
+        const byVariant = TREE_CARD_URLS.map(() => []);
+        spots.forEach(t => byVariant[t.v].push(t));
+        const _compose = (t, buf, i) => {
             BABYLON.Matrix.Compose(
                 new BABYLON.Vector3(t.s, t.s, t.s),
                 BABYLON.Quaternion.RotationYawPitchRoll(t.yaw, 0, 0),
                 new BABYLON.Vector3(t.x, t.y, t.z)
             ).copyToArray(buf, i * 16);
+        };
+        TREE_CARD_URLS.forEach((url, vi) => {
+            const mesh = buildCardMesh('treeCards' + vi);
+            const mat = makePBR('forestCardMat' + vi, scene);
+            mat.albedoTexture = new BABYLON.Texture(url + ASSET_V, scene, false, true);
+            mat.albedoTexture.hasAlpha = true;
+            mat.albedoTexture.anisotropicFilteringLevel = 4;   // 16 costs real time in the CSM depth passes
+            mat.useAlphaFromAlbedoTexture = true;
+            mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;   // alpha-cut
+            mat.alphaCutOff = 0.5;
+            mat.backFaceCulling = false;   // crossed quads read from both sides
+            mat.roughness = 0.95;
+            mesh.material = mat;
+
+            const list = byVariant[vi];
+            if (list.length) {
+                const buf = new Float32Array(list.length * 16);
+                list.forEach((t, i) => _compose(t, buf, i));
+                mesh.thinInstanceSetBuffer('matrix', buf, 16, true);
+            }
+            mesh.freezeWorldMatrix();
+            mat.freeze();   // static material: skip per-frame define rebinds
         });
-        cards.thinInstanceSetBuffer('matrix', buf, 16, true);
-        cards.freezeWorldMatrix();
-        treeMat.freeze();   // static material: skip per-frame define rebinds
 
         // Shadow proxy. The CSM depth pass pays a texture fetch + discard per
         // alpha-tested card fragment: measured 40 ms/frame on the SwiftShader
@@ -2830,7 +2860,8 @@ void main(void) {
         // cards spliced out of the depth list). A solid 6-sided cone sharing
         // the card matrices shadows every tree for a fraction of that and
         // keeps the plan's "all trees cast". alpha 0 keeps it out of the
-        // visible frame; only the depth pass rasterises it.
+        // visible frame; only the depth pass rasterises it. ONE cone mesh
+        // carries the whole forest: the shadow shape is variant-independent.
         const proxyMat = makePBR('treeShadowProxyMat', scene);
         proxyMat.alpha = 0;
         proxyMat.disableLighting = true;
@@ -2841,7 +2872,9 @@ void main(void) {
         const proxies = BABYLON.Mesh.MergeMeshes([proxy], true, true);
         proxies.name = 'treeShadowProxy';
         proxies.material = proxyMat;
-        proxies.thinInstanceSetBuffer('matrix', buf, 16, true);
+        const proxyBuf = new Float32Array(spots.length * 16);
+        spots.forEach((t, i) => _compose(t, proxyBuf, i));
+        proxies.thinInstanceSetBuffer('matrix', proxyBuf, 16, true);
         proxies.freezeWorldMatrix();
         proxyMat.freeze();
     }
@@ -6605,11 +6638,11 @@ void main(void) {
 
         scene.meshes.forEach(m => {
             if (m.name === '__root__' || !m.getTotalVertices || m.getTotalVertices() === 0) return;
-            // treeCards does not RECEIVE: self-shadowing 152 alpha-tested
+            // treeCards* do not RECEIVE: self-shadowing ~150 alpha-tested
             // quads measurably blows the quality frame-time gate and reads
             // as acne on the cutout edge. The terrain keeps receiving their
             // cast shadows.
-            if (m.name === 'treeCards' || m.name === 'treeShadowProxy') return;
+            if (/^treeCards/.test(m.name) || m.name === 'treeShadowProxy') return;
             m.receiveShadows = true;
         });
         window._shadowCasters = casters.size;

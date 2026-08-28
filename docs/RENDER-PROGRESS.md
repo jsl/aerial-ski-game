@@ -145,7 +145,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
-| P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates** | `blender/bake_trees.py` (3 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.197, snowFrac 0.272, card lum 0.539); 152 thin-instanced cross-cards = 1 draw call; solid `treeShadowProxy` cones share the card matrices; **iter-62 root causes (measured): `render_view` wiped every mesh's droop quaternion (rotation_mode switch + yaw rewrite → all branch cones rendered as vertical white-tipped spikes, all 8 atlas views identical, coverage spread 0.005), and the ortho AUTO sensor fit framed only ~10.5 m of the intended 14.6 (spike tip cropped into the entry-60 "floating fragment" above a 1% empty band). Fix: orbit the CAMERA (mesh rotations never touched) + `sensor_fit='HORIZONTAL'` pinned.** Construction: monotone jittered layer radii, thicker branchlets, internode fillers, upswept bottom whorls (trunk exposed bottom ~15%), tip spike seated at z 11.2, needle albedo (0.090, 0.200, 0.120) in the review-60 band, snow mix 0.18–0.70 → 0.12–0.60; gates re-derived in `trees.spec.js`: sky-margin-then-one-canopy-run (no interior gaps), 16-band width taper monotone with top ≤ 25% of widest, card lum ≥ 0.18, green leads, trunk centre/sides census; open: billboards from the 8-view atlas (views now genuinely differ), near-tree meshes, birch/understory variants |
+| P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates; iter-63: FOUR distinct spruce variants (review-60 (c)) + 0.7–1.4 scale band + variant gates** | `blender/bake_trees.py` bakes card_0..3 + atlas_0..3 in the shared 7.3×14.6 frame (per-variant seed/height 11.9–14.3/radial envelope/droop/needle tint, all inside the review-60 band; spike-zone filler whorls keep every silhouette continuous); 152 thin instances over 4 meshes = 4 draw calls (cap ≤ 20), one full-forest proxy cone buffer; widthL1min 0.339, lum 0.520–0.558; gates in `trees.spec.js` (mix counts ≥ 15/variant, scale 0.695–1.405 spread ≥ 1.5, per-variant census, pairwise L1 ≥ 0.02); ASSET_V 19; open: deciduous majority, near-tree cards, 8-view billboards |
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45)** | iter-43: rest detector freezes the pose (8 frames < 0.12 m/s + skis still), write-back keeps running after the freeze (root slides under the frozen pose; naive freeze glided at 10.1 m/s), trigger state-driven; **iter-45: ploughing friction 2.5→3.5, static stop 0.35→0.5 (entry-43's queued median pull), settle gate now measures motion end ≤ 3.8 s (last sample > 0.1 m/s) instead of restAt (detector confirmation, lag-inflated); state ×30 identical (audit), 13 crash traces re-captured; 2–3 s median validation on the golden harness still open** |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
@@ -170,6 +170,84 @@ and measured, entry 55 below.)*
 *(iter-60 review-only: run-all found shipped drive breakage — baked.spec red
 since the iter-56 caster swap, never re-run full-suite until now; repaired
 test-side, shots regenerated + measured, entry 60 below. No features.)*
+
+### 63 — P4 trees slice 3 (review-60 (c)): four distinct spruce variants +
+0.7–1.4 scale band + variant gates; one self-inflicted renderer regression
+(lost proxy material → white cones) caught by the look eye check, not by any
+gate
+
+**Order acted on:** review-60 order (3) — "then the P4 tree slices per the
+04:50 targets"; item (c) species variants + jitter/spread gates. (d) the bare
+deciduous majority, (e) near-tree card meshes and the 8-view billboard slice
+remain.
+
+**Bake (`blender/bake_trees.py`, ASSET_V 18→19):** `build_spruce` is now
+parameterized; `VARIANTS` bakes four deterministic spruces differing in seed,
+height (11.9 / 12.8 / 13.6 / 14.3 m), radial envelope (r_mul 0.88–1.18),
+droop aggressiveness (±3°) and needle tint (all inside the review-60 spruce
+band). Every variant is rendered into the SAME 7.3×14.6 m card frame the game
+quad assumes, so shorter trees simply carry more sky margin. New build gates:
+per-variant tile coverage/luminance bands (unchanged limits) and a
+distinctness assert — pairwise L1 ≥ 0.02 between 16-band opaque-width
+profiles (measured min 0.339, max 0.874). Outputs renamed to
+`tree_spruce_card_0..3.png` / `tree_spruce_atlas_0..3.png`; the un-suffixed
+files are removed. One real defect surfaced and was fixed build-side: the
+tall/narrow variant 1 left the top spike's base bare (two 1–3-row empty
+slivers at 18–21% from the card top); 3 spike-zone filler whorls chain the
+spike into the whorl stack (2 rows left one 3 cm gap at z≈11.5; measured, so
+3 it is).
+
+**Renderer (`game.js`):** one cross-card mesh + material + thin-instance
+matrix buffer per variant (fresh planes each — `Mesh.clone` is not in the
+golden harness's BABYLON stub and 4 quads cost nothing); 4 draw calls total
+(plan cap ≤ 20). The shadow proxy stays ONE mesh with a single full-forest
+buffer (shadow shape is variant-independent). Per-instance scale band moved
+to the reviewer's 0.7–1.4 (was 0.85–1.75); variant index is a deterministic
+grid hash. receiveShadows exclusion widened to `/^treeCards/`.
+
+**Regression found by the look shots, fixed:** a botched edit dropped
+`proxies.material = proxyMat`, so the 152 alpha-0 proxy cones rendered
+default-white — the forest became giant white cones. NO gate caught it
+(depth pass/shadow probes don't read the colour pass); the scene.png eye
+check did, and a hide-the-proxy probe confirmed the diagnosis. Restored, and
+the probe screenshots are in
+`~/aerial-agents/scratch/iter-63/probe_*.png`. Lesson recorded: nothing
+asserts the proxies stay invisible in the colour pass — candidate for a
+`trees.spec` luminance gate next iteration.
+
+**Gate re-derivations (documented in the spec):** "tip not cropped" was
+≤ 0.12 sky margin for iter-62's single 13.6 m tree; with per-height variants
+in the shared frame the shortest legitimately carries ~20% sky → ≤ 0.25
+(tree fills ≥ ¾ of the card). The iter-62 census gates (runs/taper/lum/green/
+trunk/corners) now run per variant card.
+
+**Golden:** census-only re-capture (30/30). Before capturing, verified every
+diff line in all failing scenarios was a `treeCard*` node rename
+(`treeCardQ1/Q2` → `treeCardsN_q1/q2`) — zero physics fields; same route as
+iters 56/59/62 for display-only changes.
+
+**Verification:** unit 76/76; golden 30/30 (census-only recapture); drive
+green: trees, shadows (its `treeCards` lookup updated to `treeCards\d+`),
+quality (frame-time gate), baked, bib-number, venue-dressing (13/13 in one
+run). Bake report: per-variant card coverage 0.187–0.199, lum 0.520–0.558,
+snowFrac 0.251–0.289, atlas coverage spread 0.0013–0.0033 (views genuinely
+differ), widthL1min 0.339. Scene measure: 152 instances (40/40/36/36 per
+variant), scale 0.7016–1.3949 (spread 1.99, band 0.695–1.405 gated),
+seatWorst ≤ 0.02, forestActive 4. Shots inspected by eye: scene.png —
+varied spruce wall (narrow spires to wide skirts, trunks visible, snow on
+upper layers), no white cones; figure.png/figure_front.png — athlete, blue
+suit and bib "30" unaffected, spruces with trunks behind; kicker.png — block
++ B-net + varied backdrop. ASSET_V ?v=19, index.html bust 38.
+
+**Open / not done:** (d) bare deciduous majority + understory (~60% of
+instances per the 04:50 note), (e) near-tree card meshes, per-variant
+8-view billboards — next P4 slices. Full `run-all` still owed at the next
+review window (six affected specs run green today). Proxy-invisibility
+colour-pass gate not yet written.
+
+**Open questions for the reviewer:** none new; the golden census recapture
+and the 0.12→0.25 sky-margin re-derivation are documented above if you want
+to eyeball them.
 
 ### 62 — P4 trees, close group 2: bake re-render (review-60 item 3) — the
 "floating fragment" and the "columnar spike stacks" were TWO renderer-side
