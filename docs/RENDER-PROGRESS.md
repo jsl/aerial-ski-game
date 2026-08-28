@@ -301,7 +301,10 @@ hard gate `hand_ratio_gate` (0.65–0.85, target 0.75, called at build end) — 
 y-position only, ×22 aerial scenarios) re-captured. `audit-ready-stance.js` vs the pre-change traces:
 **physics `state` byte-identical in all 30 scenarios; the ONLY node diffs are those 3 fence posts**
 (display-only re-capture class, same as entries 34/35/37/38/43). Unit 74/74; golden 30/30 after
-re-capture. `game.js?v=26` in index.html; no `assets/` change → ASSET_V stays 12.
+re-capture. `game.js?v=26` in index.html. Iteration itself regenerated no `assets/`, but the lane-A
+suit stand-off merge (`48bf272`, flagged by the concurrent docs commit `772be91`) landed mid-session,
+so the follow-up commit `e1ff5b4` bumps `ASSET_V` 12 → 13 (`game.js?v=27`); unit 74/74, golden
+30/30 unchanged on the bump.
 
 **Verification:** unit 74/74; golden 30/30; drive green: terrain-corridor ×4, kicker-faces, grey-ramp,
 review-measure, shadows, sky, venue-dressing, baked, extract-terrain, hop-turn, ready-stance.
