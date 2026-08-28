@@ -780,6 +780,102 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
     }
 }
 
+// ── In-run crouch: hands forward (human-testing #2 item 5, 2026-08-28) ─────
+// While grounded with the crouch engaged the arms hold the footage's in-run
+// posture — hands ahead of the hips by 0.25–0.40 m in the body frame, below
+// shoulder height (IMG_3768 in-run frames) — instead of hanging behind them
+// (measured pre-fix: hand z − hip z = −0.09…−0.15 m). The upward sweep starts
+// only at the kicker transition (see the armLTarget override in the frame
+// loop), so this blend must yield to armRaise: weight w = tuck·(1−armRaise).
+// Renderer-side only (ADR-0002): lives OUTSIDE applyPose so the solver stays
+// byte-identical to computePose (the pose-solver differential unit test).
+// Target construction reuses the shipped applyGamepadLateral pivot maths at
+// stickX = 0, drop = 0.72: gap-free shoulder pivot, dir = (0, cos φ, −sin φ).
+function _inrunArmForward(meshes, tuck, armRaise) {
+    const w = (tuck || 0) * (1 - (armRaise || 0));
+    if (w <= 0.001) return;
+    const phi   = Math.PI * 0.60;
+    const dirY  = Math.cos(phi), dirZ = -Math.sin(phi);
+    // Forward bias: with the boot–ski pin also moving the thigh (the hip
+    // reference) forward in the crouch, the pivot target plus this bias must
+    // land hand z − hip z inside the author's −0.40…−0.25 band (browser-
+    // measured: −0.47…−0.48 at bias −0.05 → −0.05 + 0.09 correction).
+    const zBias = 0.08;
+    const sides = [
+        { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.175 },
+        { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.175 },
+    ];
+    for (const s of sides) {
+        const uMesh = meshes[s.upper], lMesh = meshes[s.lower];
+        if (!uMesh || !lMesh) continue;
+        const zBase = BASE_Z[s.upper] || 0;
+        const tu = { x: s.xPivot, y: 0.150 + dirY * 0.150, z: zBase + dirZ * 0.150 + zBias };
+        const tl = { x: s.xPivot, y: 0.150 + dirY * 0.425, z: zBase + dirZ * 0.425 + zBias };
+        uMesh.position.x += (tu.x - uMesh.position.x) * w;
+        uMesh.position.y += (tu.y - uMesh.position.y) * w;
+        uMesh.position.z += (tu.z - uMesh.position.z) * w;
+        uMesh.rotation.x += (-phi - uMesh.rotation.x) * w;
+        lMesh.position.x += (tl.x - lMesh.position.x) * w;
+        lMesh.position.y += (tl.y - lMesh.position.y) * w;
+        lMesh.position.z += (tl.z - lMesh.position.z) * w;
+        lMesh.rotation.x += (-phi - lMesh.rotation.x) * w;
+    }
+}
+
+// ── Boot–ski invariant (human-testing #2 item 1 / P13, 2026-08-28) ─────────
+// The ski is bound to the boot at toe AND heel in every non-crash state. The
+// pose tables place the ski and the shin independently, so in the in-run tuck
+// the boot sole sat 11 mm THROUGH the ski top and 12 cm behind the binding
+// centre (measured), and the hop-turn fold lifted the boots up to 0.24 m off
+const _BOOT_SKI = { station: 0.0, hl: 0.18, skiHh: 0.015 };
+function _pinBootsToSkis(meshes) {
+    if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
+    for (const side of ['L', 'R']) {
+        const sk = meshes['ski' + side], ll = meshes['lowerLeg' + side],
+              ul = meshes['upperLeg' + side];
+        if (!sk || !ll || !ul) continue;
+        // Ski top-plane direction (its local +Y) and forward (local +Z),
+        // quaternion-rotated (the _quatRotateVec sandwich with the products
+        // folded for v = (0,1,0) / (0,0,1); no Vector3 allocation).
+        let upY, upZ, fwY, fwZ;
+        if (sk.rotationQuaternion) {
+            const q = sk.rotationQuaternion;
+            upY = q.w * q.w + q.x * q.x - q.y * q.y - q.z * q.z;
+            upZ = 2 * (q.y * q.z + q.x * q.w);
+            fwY = 2 * (q.y * q.z - q.x * q.w);
+            fwZ = q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z;
+        } else {
+            const rx = sk.rotation.x, c = Math.cos(rx), s = Math.sin(rx);
+            upY = c; upZ = s; fwY = -s; fwZ = c;
+        }
+        // Binding station on the ski top plane.
+        const ax = sk.position.x;
+        const ay = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * _BOOT_SKI.station;
+        const az = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * _BOOT_SKI.station;
+        // Shin takes the SKI's pitch: a binding clamps boot to ski rigidly,
+        // so boot pitch = ski pitch (author gate ±2°). Leaving the solver's
+        // shin pitch put left a Δpitch of up to ~50° in the hop fold, which
+        // reads as a sole-to-ski-top gap of hl·sin(Δpitch) at the binding
+        // stations (measured 0.22 m) — and even at rest 1.6° breached the
+        // 5 mm gate. The crouch's leg fold is absorbed by the thigh below.
+        const ll0rx = ll.rotation.x;                 // solver shin pitch
+        const solverFlex = ul.rotation.x - ll0rx;    // solver knee flex
+        const rxL = Math.atan2(upZ, upY), cL = Math.cos(rxL), sL = Math.sin(rxL);
+        ll.rotation.x = rxL;
+        ll.position.x = ax;
+        ll.position.y = ay + _BOOT_SKI.hl * cL;
+        ll.position.z = az + _BOOT_SKI.hl * sL;
+        // Thigh keeps the SOLVER's knee flex, transplanted onto the
+        // ski-pitched shin, so the ready stance's uphill-knee flexion and
+        // the tuck's leg fold survive the invariant.
+        const rxU = rxL + solverFlex, cU = Math.cos(rxU), sU = Math.sin(rxU);
+        ul.rotation.x = rxU;
+        ul.position.x = ax;
+        ul.position.y = ay + 2 * _BOOT_SKI.hl * cL + _BOOT_SKI.hl * cU;
+        ul.position.z = az + 2 * _BOOT_SKI.hl * sL + _BOOT_SKI.hl * sU;
+    }
+}
+
 // ── HUD builder ────────────────────────────────────────────────────────────
 function buildHUD(scene) {
     const ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI', true, scene);
@@ -2320,6 +2416,61 @@ void main(void) {
     window._hopTurnPhases = function () {
         return { dur: READY_TURN_DUR, crouchEnd: HOP_TURN.crouchEnd, takeoff: HOP_TURN.takeoff,
                  touchdown: HOP_TURN.touchdown, hopHeight: HOP_TURN.hopHeight, kMax: HOP_TURN.kMax };
+    };
+
+    // Boot–ski invariant + in-run arm-hold probe (human-testing #2 items 1+5,
+    // drive-tested in tests/drive/inrun-contact.spec.js). All numbers are
+    // body-frame (root-relative), computed with the same maths as the pin
+    // above: sole = shin's local −Y end; ski top plane evaluated AT the toe
+    // (−0.205) and heel (+0.245) binding stations, pitch included.
+    window._bootSkiProbe = function () {
+        const r = { boots: {}, arms: {} };
+        for (const side of ['L', 'R']) {
+            const sk = character.meshes['ski' + side];
+            const ll = character.meshes['lowerLeg' + side];
+            if (!sk || !ll) continue;
+            let upY, upZ, fwY, fwZ;
+            if (sk.rotationQuaternion) {
+                const q = sk.rotationQuaternion;
+                upY = q.w * q.w + q.x * q.x - q.y * q.y - q.z * q.z;
+                upZ = 2 * (q.y * q.z + q.x * q.w);
+                fwY = 2 * (q.y * q.z - q.x * q.w);
+                fwZ = q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z;
+            } else {
+                const rx = sk.rotation.x, c = Math.cos(rx), s2 = Math.sin(rx);
+                upY = c; upZ = s2; fwY = -s2; fwZ = c;
+            }
+            const cL = Math.cos(ll.rotation.x), sL = Math.sin(ll.rotation.x);
+            const soleY = ll.position.y - _BOOT_SKI.hl * cL;
+            const soleZ = ll.position.z - _BOOT_SKI.hl * sL;
+            const gaps = {};
+            for (const st of ['toe', 'heel']) {
+                const zs = st === 'toe' ? -0.205 : 0.245;
+                const topY = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * zs;
+                const topZ = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * zs;
+                // Sole plane is parallel to the ski top plane (rigid
+                // binding): the gap is the distance along the top plane's
+                // normal (its local +Y = (upY, upZ) in the body y–z plane).
+                gaps[st] = +((soleY - topY) * upY + (soleZ - topZ) * upZ).toFixed(4);
+            }
+            r.boots[side] = { toe: gaps.toe, heel: gaps.heel,
+                              pitchDelta: +(ll.rotation.x - Math.atan2(upZ, upY)).toFixed(4) };
+        }
+        // Hand (shin-style −Y end of the lower arm) vs hip/shoulder.
+        for (const side of ['L', 'R']) {
+            const la = character.meshes['lowerArm' + side];
+            const ul = character.meshes['upperLeg' + side];
+            const ua = character.meshes['upperArm' + side];
+            if (!la || !ul || !ua) continue;
+            const rx = la.rotation.x, c = Math.cos(rx), s2 = Math.sin(rx);
+            r.arms[side] = {
+                handY: +(la.position.y - 0.125 * c).toFixed(4),
+                handZ: +(la.position.z - 0.125 * s2).toFixed(4),
+                hipZ: +ul.position.z.toFixed(4),
+                shoulderY: +ua.position.y.toFixed(4),
+            };
+        }
+        return r;
     };
 
     window.applySkierColors = function() {
@@ -5327,6 +5478,10 @@ void main(void) {
                 const qSpinR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, f.spinAngle);
                 character.root.rotationQuaternion = qFaceR.multiply(qFlipR).multiply(qSpinR);
             }
+            if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode && !crashActive) {
+                _pinBootsToSkis(character.meshes);
+                _inrunArmForward(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
+            }
             camera.target.y = f.rootY;
             camera.target.z = f.posZ;
             if (firstPersonMode) _updateFpCamera(dt);
@@ -6300,6 +6455,19 @@ void main(void) {
         state.armRaise += Math.abs(dRaise) <= armStep ? dRaise : Math.sign(dRaise) * armStep;
         // Fade snap and raise back out on landing
         if (state.grounded) { state.armSnapTarget = 0; state.armRaiseTarget = 0; }
+        // ── Arms sweep up through the kicker curve (human-testing #2 item 5) ──
+        // The in-run forward hold (review note: "from the transition into the
+        // kicker the arms rise together and are straight overhead by the lip")
+        // releases here: entering the kicker arc sets drop→0 (raised side of
+        // the sweep) and raise→1; ARM_DROP_RATE completes both in ~0.25 s, so
+        // the arms are overhead by the lip. The grounded fade above is undone
+        // deliberately; _inrunArmForward's w = tuck·(1−armRaise) hands the
+        // pose over to the raise blend as armRaise climbs.
+        if (state.grounded && !_poolDiveMode && !_trampolineMode && !_trampolineMatMode &&
+            state.posZ >= KICKER_START_Z && state.posZ <= KICKER_END_Z + 1.0) {
+            armLTarget = 0; armRTarget = 0;
+            state.armRaiseTarget = 1;
+        }
 
         // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
         const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2 && !_trampolineMode && !_poolDiveMode;
@@ -6517,6 +6685,35 @@ void main(void) {
             // Hand the skis back to the pose solver's euler rotations
             character.meshes.skiL.rotationQuaternion = null;
             character.meshes.skiR.rotationQuaternion = null;
+        }
+
+        // ── Boot–ski invariant + in-run arm hold (display-side, ADR-0002) ─────
+        // Runs AFTER the pose solver and the ready/hop overlays, so it wins on
+        // the final transforms every frame (see the helpers at the top of the
+        // file for the measured defects). Crash is the allowed violation.
+        // Includes the READY state: the invariant is "every non-crash state",
+        // and at rest the L boot sat 5.1 mm off with a 12.7° shin-vs-ski
+        // pitch residual — both breach the author's gates.
+        if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode && !crashActive) {
+            // In the ready state the transplanted knee flex moves the thigh
+            // (the hip) forward ~6 cm; the hanging arm chains follow by the
+            // same Δz so the hands stay beside the thighs. Once the run
+            // starts, _inrunArmForward owns the arm z instead.
+            const preZL = character.meshes.upperLegL && character.meshes.upperLegL.position.z;
+            const preZR = character.meshes.upperLegR && character.meshes.upperLegR.position.z;
+            _pinBootsToSkis(character.meshes);
+            _inrunArmForward(character.meshes, state.tuckAmount,
+                             state.grounded ? state.armRaise : 1);
+            if (readyState && state.tuckAmount < 0.05) {
+                for (const [side, preZ] of [['L', preZL], ['R', preZR]]) {
+                    if (preZ === null || preZ === undefined) continue;
+                    const dz = character.meshes['upperLeg' + side].position.z - preZ;
+                    for (const seg of ['upperArm', 'lowerArm']) {
+                        const m = character.meshes[seg + side];
+                        if (m) m.position.z += dz;
+                    }
+                }
+            }
         }
 
         // ── First-person camera update ────────────────────────────────────────

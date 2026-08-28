@@ -32,6 +32,8 @@ const ALLOWED_FUNCTIONS = {
     _startGame:          'scene/loop orchestration — wiring, not simulation',
     makePBR:             'material factory — a StandardMaterial->PBR compat shim, renderer',
     _buildStyledSki:     'styled ski geometry/texture factory, parents children to the physics drivers — renderer',
+    _inrunArmForward:    'in-run crouch arm-hold blend on the mesh drivers — renderer (ADR-0002)',
+    _pinBootsToSkis:     'boot–ski seating fix-up on the mesh drivers after applyPose — renderer (ADR-0002)',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
