@@ -152,6 +152,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 | Priority | Item | State | Notes |
 |---|---|---|---|
+| P13 | Kinematic chain solver | **real reconciliation landed (iter 67, Sol blocker 1 partial)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass (hip/neck/knee/ankle/ski, zero at authored endpoints, full mid-blend); physics state byte-identical ×30, traces re-captured display-only; open: torso/shoulder anchor, tear-detector hard gate, stub removal (engine edit needs APPROVED) |
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
@@ -4658,6 +4659,67 @@ spec). This iteration finished and landed exactly that work; nothing new.
 - P1 slice 1 corridor ribbon (fixes the 0.0941 m post-turn float + slopeBox
   4.7 cm defect), P2 sky/sun, crash rewrite items 2/2b, P13 chain solver, the
 - body+suit rebuild, P8 mesh-hands-forward bind fix.
+
+### 67 — Sol blocker 1: P13 reconciliation is real now (was a pre-write
+no-op); blend-scaled hip/neck/knee/ankle/ski chain pass, game-side
+
+**Order acted on:** the 16:15 DEFINITIVE ORDER step (1) — Sol blocker 1,
+"HY4's `kinematics.reconcile` is a stub". Engine untouched (no APPROVED line
+covers it); the fix is renderer-side in `game.js`'s `applyPose`.
+
+**Root cause (measured):** `AerialEngine.kinematics.reconcile(meshes)` was
+called BEFORE the solved pose was written to the meshes (game.js ~683), so it
+reconciled stale transforms that the SEGMENTS loop then overwrote — a
+guaranteed no-op. Its CHAIN ski link was also wrong (0.18 offset vs the real
+0.015 ankle→ski). Separately, nothing reconciled the hip or the neck: direct
+`computePose` measurement shows mid-tuck blend drift tears the knee by up to
+0.044 m and stretches the neck (flight tuck head 0.34 vs rigid-chain 0.40)
+— the author's shredded-torso/long-neck complaint.
+
+**Fix (`applyPose`, after the pose write):** one always-on chain pass —
+hip (upper-leg tops at the torso's −Y end, h=0.55), neck (head centre =
+torso top + 0.125 along the head's +Y, constant length), knee/ankle/ski
+(the proven pike fix-up math, now unconditional) — SCALED by
+s = max(4·tuck·(1−tuck), pike>0), i.e. full mid-blend where the drift tears,
+zero at the authored pose endpoints (the tables deliberately bend the spine
+there; a first full-strength version failed inrun-contact's hand-vs-hip band
+and was withdrawn for this blend scaling). The engine stub call was removed;
+`checkTearing` now runs AFTER the reconciliation and measures real joints.
+
+**Golden:** re-captured (30/30). Audit first: physics `state` byte-identical
+to the pre-change traces in all 30 scenarios, zero diffs; node diffs confined
+to the athlete subtree (upperLeg/lowerLeg/ski ± decorations, head/neck, and
+downstream pin/arm-compensation feedback on arms/torso/root) — the documented
+display-only re-capture route (iters 56/59/62). Audit scripts:
+`~/aerial-agents/scratch/iter-67/audit_state.js` / `audit_nodes.js`.
+
+**Verification:** unit 76/76 (pose-solver differential test's exclusion set
+updated to the always-on chain segments — test-side contract, see the file);
+golden 30/30; drive: inrun-contact 2/2 (boots ≤5 mm through hop, hands in
+band), hop-turn green, ready-stance fails ONLY the pre-existing Sol-8
+knee-flex gate — confirmed identical on HEAD via stash; rig/body/game/
+athlete-wired green; venue-dressing green on rerun (one parallel-run flake);
+look regenerated: scene meanRGB [0.719,0.736,0.771] R−B −0.052 darkFrac 0,
+figure R−B −0.071, figure_front R−B −0.069 — unchanged tone, no black/backface
+regions; figure/figure_front inspected: athlete, bib, skis, fence, forest all
+as entry-66 (ready state is an endpoint, so the pass is inert there).
+`game.js?v=23` bust bumped; no assets regenerated, ASSET_V untouched.
+
+**Open / not done:** torso/arm chain reconciliation (shoulder pivot moves
+with the pitched torso; arms are exact in both the arc-drop and gamepad-lateral
+paths, but the shoulder anchor is not re-anchored — next slice of blocker 1,
+needs care against `applyGamepadLateral`); Sol-8 knee-flex fix still open per
+entry 66's question 1; Sol blockers 2, 4–9 open.
+
+**Open questions for the reviewer:**
+1. Sol blocker 1 acceptance asks for a tear detector ≤ 3× rest edge and hands
+   within 3 cm of the pose tables. The detector now runs post-reconciliation
+   (console.error gate only — no spec asserts it). Want a hard drive gate on
+   it, and should the leg/head chain gates (joint gap ≤ 1 cm mid-blend) go
+   into `rig.spec.js` as permanent numeric gates?
+2. The stub `reconcile` in `engine/core/kinematics.js` is now dead code
+   (called nowhere). Removing it needs an engine edit — OK to delete under a
+   follow-up, or leave it?
 
 ### 66 — post-merge golden gate: A7 `wUpperMtn` tweak reverted (Sol major 5),
 probe hand endpoint fixed to the wrist (Sol major 3); Sol major 8

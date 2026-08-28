@@ -679,12 +679,9 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         grounded, pikeAmount, pikeArmDrop,
     });
 
-    // P13: Kinematic chain reconciliation
-    AerialEngine.kinematics.reconcile(meshes);
-    // P13: Tear detector gate
-    if (AerialEngine.kinematics.checkTearing(meshes)) {
-        console.error('P13 Kinematic Chain Solver: Tear detected!');
-    }
+    // P13 (Sol blocker 1): the engine stub ran reconciliation BEFORE the pose
+    // was written — a no-op. The real chain solve runs below, AFTER the solved
+    // transforms land on the meshes; the tear detector then measures real state.
 
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
@@ -697,11 +694,44 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         mesh.rotation.z = p.rz;
     }
 
-    // ── Kinematic knee fix for pike ────────────────────────────────────────
-    // Independent lerping of each segment's position breaks joint continuity
-    // at intermediate pikeAmount values. Repin lower legs and skis to the
-    // upper legs so the knee joint is always connected.
-    if (pikeAmount > 0) {
+    // ── P13 kinematic chain reconciliation (always on, blend-scaled) ───────
+    // Blending each segment's position independently breaks joint continuity
+    // at intermediate blend values (mid-tuck tear, stretched neck). The
+    // correction pulls each segment onto its parent's joint anchor, but it is
+    // SCALED by s = 4·blend·(1−blend): zero at the authored pose endpoints
+    // (the tables deliberately bend the spine etc. there), full mid-blend
+    // where the drift actually tears. The pike pass (engaged whenever
+    // pikeAmount > 0) keeps its historical full-strength behaviour.
+    // Renderer-side only (ADR-0002).
+    {
+        const sTuck  = 4 * tuck * (1 - tuck);
+        const sBlend = Math.max(sTuck, pikeAmount > 0 ? 1 : 0);
+        if (sBlend > 0) {
+        const torso = meshes.torso;
+        if (torso) {
+            const trx = torso.rotation.x;
+            const cT  = Math.cos(trx);
+            const sT  = Math.sin(trx);
+            // Hip: the upper legs' +Y ends sit at the torso's −Y end (h = 0.55).
+            const hipY = torso.position.y - 0.275 * cT;
+            const hipZ = torso.position.z - 0.275 * sT;
+            // Neck: head centre = torso top + 0.125 along the head's own +Y
+            // (0.005 neck + 0.12 half-head) — constant neck length, so the
+            // flight-tuck blend can no longer stretch it.
+            const head = meshes.head;
+            if (head) {
+                const hrx = head.rotation.x;
+                head.position.y = torso.position.y + 0.275 * cT + 0.125 * Math.cos(hrx);
+                head.position.z = torso.position.z + 0.275 * sT + 0.125 * Math.sin(hrx);
+            }
+            for (const side of ['L', 'R']) {
+                const ulMesh = meshes['upperLeg' + side];
+                if (!ulMesh) continue;
+                const urx = ulMesh.rotation.x;
+                ulMesh.position.y = hipY - 0.18 * Math.cos(urx);
+                ulMesh.position.z = hipZ - 0.18 * Math.sin(urx);
+            }
+        }
         for (const side of ['L', 'R']) {
             const ulMesh = meshes['upperLeg' + side];
             const llMesh = meshes['lowerLeg' + side];
@@ -721,6 +751,11 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
             skMesh.position.y = ankleY - 0.015 * cosRx;
             skMesh.position.z = ankleZ - 0.015 * sinRx;
         }
+        }
+    }
+    // P13 tear detector gate (post-reconciliation, so it measures real joints)
+    if (AerialEngine.kinematics.checkTearing(meshes)) {
+        console.error('P13 Kinematic Chain Solver: Tear detected!');
     }
 
     // ── Reposition gloves to always sit at the wrist ───────────────────────

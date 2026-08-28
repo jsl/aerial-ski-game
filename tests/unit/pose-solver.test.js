@@ -8,10 +8,11 @@
 // return value. That is a genuine differential test against the shipped code,
 // not a comparison against a hand-copy.
 //
-// Note on scope: applyPose ALSO runs a knee/ski IK fix-up, but only when
-// pikeAmount > 0, and repositions the gloves. Those are rendering concerns and
-// deliberately stay out of computePose, so leg segments are excluded from the
-// comparison whenever pike is engaged.
+// Note on scope: applyPose ALSO runs an ALWAYS-ON kinematic chain
+// reconciliation (P13, iter 67 — upper/lower legs, skis and head re-anchored
+// to constant joint lengths after the pose lands) and repositions the gloves.
+// Those are rendering concerns and deliberately stay out of computePose, so
+// the chain-driven segments are excluded from the comparison unconditionally.
 
 const test   = require('node:test');
 const assert = require('node:assert');
@@ -32,11 +33,11 @@ function mulberry32(seed) {
 const sim  = createSim({ search: '' });
 const live = sim.ctx;
 
-/** Segments the IK fix-up rewrites when pike is engaged. */
-const IK_SEGMENTS = new Set([
-    'lowerLegL', 'lowerLegR', 'skiL', 'skiR',
+/** Segments the always-on P13 chain reconciliation rewrites. */
+const CHAIN_SEGMENTS = new Set([
+    'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'skiL', 'skiR',
+    'head',
 ]);
-
 function runCase(params) {
     const meshes = live._characterMeshes;
     live.applyPose(
@@ -48,10 +49,9 @@ function runCase(params) {
 
     const got = computePose(params);
     const segs = require('../../engine/core/body-model.js').SEGMENTS;
-
     for (const seg of segs) {
-        // Legs are rewritten by the IK pass when piked — that is renderer work.
-        if (params.pikeAmount > 0 && IK_SEGMENTS.has(seg.name)) continue;
+        // Chain segments are re-anchored by the renderer's always-on P13 pass.
+        if (CHAIN_SEGMENTS.has(seg.name)) continue;
 
         const mesh = meshes[seg.name];
         if (!mesh || !mesh.position) continue;
