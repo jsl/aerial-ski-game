@@ -30,3 +30,6 @@ shots/
 
 # Reference footage (author-supplied clips and extracted frames; not source)
 reference/
+
+# reference/ is local data; ignore the path itself (a tracked symlink once overwrote the directory on merge)
+reference
