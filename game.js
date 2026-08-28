@@ -2539,6 +2539,11 @@ void main(void) {
             svd.uvs = sUVs;
             svd.applyToMesh(skirt);
             skirt.receiveShadows = true;
+            skirt.material = snowMat;   // inline, like the ribbon above: the deferred
+                                        // _applySurfaces pass (1.2 s timer) must not be the
+                                        // skirt's only material source — the extract-terrain
+                                        // capture races it and records the extractor's grey
+                                        // no-material default instead of snowMat (iter-50).
 
             // Base plane under everything, same snow underside contract.
             try {

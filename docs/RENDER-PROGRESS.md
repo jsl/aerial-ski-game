@@ -145,7 +145,33 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
 | P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0))** | remaining: material re-tune under the new sky, CSM/PCSS shadows (P2 overlap), real-GPU frame time; gates in `tests/drive/quality.spec.js` + `textures.spec.js` |
 
+*(iter-50 review-only: no board movement — ./tests/run-all.sh ALL GREEN (unit 76/76,
+golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
+re-baselined and measured, entry 50 below.)*
+
 ## Open questions for the reviewer
+- **Iteration 50 — three calls.**
+  (a) **inrun.png framing** — the shot now anchors on the athlete (camera 8 m up-slope,
+  6 m above the chest; athlete centre at ~18% of frame height, the block entering the top
+  of frame, both B-net lines receding). It replaced the block-targeted framing that could
+  never contain the athlete (measured 0 non-snow pixels in the corridor strip) — confirm
+  the composition or name the radius/target you want inspected every review.
+  (b) **terrain.json capture race** — extract-terrain is capture-only (it never compares
+  against the committed file), so material drift is invisible to the suite; today's
+  capture raced the 1.2 s `_applySurfaces` timer and recorded the extractor's grey
+  no-material default for terrainSkirt. Fixed the cause (inline `skirt.material =
+  snowMat`, same as the ribbon) and committed the deterministic regeneration (exactly
+  iter-49's albedo step ×14 snowMat meshes; byte-identical across two runs). If you want
+  the capture hardened (assert every STATIC_PREFIXES mesh carries a non-default
+  material), say so and it lands with the next slice.
+  (c) **Sky saturation measurement point** — sky.spec's own probe passes, but the five
+  canonical gameplay framings measure sky r−b −0.06..−0.10 against your −0.25 band
+  (review 18:05). Move the gate to the canonical scene camera's clean sky slice (what the
+  player sees), or is the dome probe the intended contract? Numbers in entry 50.
+  Also re-raising the unanswered entry-45(c) items (bib-30 framing, sky payoff re-pitch):
+  today's figure_front shows only "3" legible and figure.png shows no back number, so the
+  substance is still open.
+
 - **Iteration 49 — one call.** The plan's "no visible tiling repeat within
   20 m" has no direct gate: the slice proves map presence (uv buffer,
   metre-scale spec gates) and mean-neutrality, and the shots show no grid,
@@ -293,6 +319,111 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 50 — Review-only: suite ALL GREEN + five-shot inspection with measurements; fixed the iter-49 cache-bust miss, the inrun.png framing, and a terrain.json capture race
+
+**Order acted on:** review-only per the iteration cap. Reviewer items executed: the
+standing five-shot inspection (review-45 (a), including the (b) kicker-block
+confirmation from `kicker.png`) and a re-check of this file's Open questions — no new
+`APPROVED:` lines were pending. **Self-review of 49:** commit 8f4f894 intact, tree
+clean, `./tests/run-all.sh` ALL GREEN (1027 s: unit 76/76, golden 30/30, browser 36/36,
+mutation PASS, coverage PASS, drive 62/0 in 16.9 min). No 49 regression; three
+delivery-path defects found and fixed (below — no features added).
+
+**Fixed (all delivery/instrumentation path):**
+1. **Cache-bust catch:** 8f4f894 changed `game.js` AND `render/textures.js` but left
+   `index.html` at `game.js?v=31` / `render/textures.js?v=16` — the entry-44/46/47 bump
+   practice was missed, so the author's browser could serve the previous iteration's
+   render code from cache. Bumped to `?v=32` / `?v=17`. Query-string only; served bytes
+   identical (loader.spec green in the same suite).
+2. **inrun.png framing broken since it was added (iter 46):** the ready athlete stands
+   at `SLOPE_START_Z + 2` (−17.3 in the default world), 8–38 m uphill of the block
+   depending on `?world=`, while the camera targeted the block at radius 26 from uphill —
+   the athlete was permanently BEHIND the camera. Measured on the iter-49 shot: **0
+   non-snow pixels in the corridor strip** (x 0.35–0.65, y 0.5–1.0 at 1100×850).
+   `look.spec` now anchors on the `athleteBody` absolute position (chest), camera 8 m
+   up-slope / 6 m above (beta atan2(8,6), r 10, fov 0.8): athlete centre at ~18% of
+   frame height, the block entering the top of frame, corridor + B-net receding both
+   edges, near-field corridor snow below. World-agnostic (all constants derive from the
+   live athlete position). Verified in the regenerated shot: helmet, suit, skis-on-snow,
+   both fence lines and the block's red lip tubes all read.
+3. **terrain.json capture race + stale iter-49 materials:** the drive suite's
+   extract-terrain run regenerated `blender/terrain.json` and left it MODIFIED (the spec
+   is capture-only — it never compares, so the suite stays green while the committed
+   bake metadata drifts). Two distinct problems: (a) the committed file predated
+   iter-49's snowMat albedo step (0.975/0.99 → 0.98/0.995); (b) today's capture raced
+   the 1.2 s `_applySurfaces` timer and recorded the extractor's grey no-material
+   default (0.8/0.8/0.8, r 0.8) for `terrainSkirt`, which never gets a material at
+   construction — only the deferred name-regex pass assigns one. Fixed the cause (inline
+   `skirt.material = snowMat`, same as the ribbon; also removes a 1.2 s grey-skirt
+   window at boot) and committed the REGENERATED file: diff vs HEAD is exactly the
+   albedo step on all 14 snowMat meshes (corridor, skirt, base, 11 pk_caps), and the
+   regeneration is byte-identical across two runs. Golden re-run after the game.js
+   line: 30/30 byte-identical; unit 76/76.
+
+**Verification:** unit 76/76; golden 30/30 (re-run post-fix); browser 36/36; mutation +
+coverage PASS; drive 62/0; `look` 1/1 (in-suite AND re-run standalone on the final
+tree); five canonical shots regenerated at 1100×850. Luminance top/mid/bottom vs the
+entry-48 baseline: scene 0.464/0.721/0.791 (was 0.464/0.718/0.786), figure
+0.481/0.509/0.746 (0.481/0.509/0.731), figure_front 0.769/0.740/0.727
+(0.770/0.747/0.720), kicker 0.547/0.590/0.745 (0.547/0.591/0.728) — all within ±0.017,
+no visual regression; inrun 0.599/0.719/0.782 (top band +0.075 vs entry 48 — the fixed
+composition, expected). REVIEW_MEASURE on the final tree: sky 0.7556; corridor 0.7819
+vs flankNear 0.7996 / flankFar 0.7884; kickerFace 0.7491; grey ramp corridor−flankNear
+**−0.0177** (gate passes; the plan's "run brightest" parity still unmet); seam worst
+row skyFrac 4.1% at y=0.425 (horizon-adjacent row); athlete shadow: under-foot patch
+0.1987 vs ring 0.756–0.803 (strong dark reading — shadow present, far beyond the ≥15%
+acceptance); face patch lum 0.619.
+
+**What reads wrong now (measured / inspected):**
+1. **Trees (P4) — the dominant offender in every framing.** Saturated uniform green
+   cone stacks on bare brown trunks, near-identical shapes and scales, no snow load on
+   foliage. Everything else in the far field reads past them. Schedule group 2 as
+   planned; nothing about today's shots argues for a different construction than
+   `bake_trees.py` impostors.
+2. **Sky from the gameplay cameras (P2 remainder).** Sky probes r−b: scene −0.083,
+   figure −0.084, figure_front −0.062, kicker −0.104, inrun −0.091 — the blue reads
+   ~1/3 as strong as the reviewer's −0.25 band; the sun disc is visible in NO canonical
+   shot; cumulus is faint (figure.png) or absent (scene/figure_front). sky.spec passes
+   on its own probe — the gap is between the dome probe and what the canonical cameras
+   actually frame. The deferred "32° sun elevation + horizon haze" (schedule group 1)
+   is exactly the right next slice.
+3. **Peaks (P6).** Flat-shaded grey angular pyramids, paper cut-out silhouettes in
+   every far-field view (scene, figure, inrun).
+4. **Suit/bib (P7).** The blue is still a pinstripe (thin line down the outer left leg
+   + a small waist patch), not the footage's broad panel. Bib patch is low-contrast;
+   from figure_front only "3" is legible — the second digit drowns in fabric shading —
+   and figure.png shows NO back number at all. Entry-45(c) re-raised above.
+5. **NEW — helmet shape (P8/build).** Close-ups show the helmet reads as a biconical
+   shell: a pointed beak over the brow AND a rearward spike (figure.png is unambiguous
+   at the brim). Small `shape_helmet` fix; belongs in the next rebuild bundle
+   (proportions part 2, schedule group 7) rather than its own iteration.
+6. **Snow surfaces (P5).** Table/landing read as one smooth white material at gameplay
+   distance; no corduroy/chop differentiation. The iter-49 macro layer is mean-neutral
+   by design and did NOT close the corridor brightness deficit (corridor −1.8% vs near
+   flank, above) — the P5 bake remains the lever for both texture and silhouette.
+7. **Dressing remainder (P3).** Red junction marks at the block base read as stray red
+   sticks lying on the snow (kicker.png); a few B-net posts lean oddly (scene.png left
+   edge); the fence mesh reads coarser than real B-net. Cosmetic, queue as planned.
+
+**Regressions:** none measured. Luminance triples within ±0.017 on the four unchanged
+framings; grey-ramp, baked, quality, sky, terrain-corridor gates all green in the same
+suite run; golden byte-identical after both game.js/index.html fixes.
+
+**Re-prioritised list (vs the approved 51–80 serial schedule):**
+- Confirm group 1 as scheduled (P12 remainder + the deferred 32° sun/haze): the
+  sky/sun gap is the largest per-pixel win still available from the gameplay cameras,
+  and it feeds the reviewer's −0.25 question above.
+- Then group 2 (P4 trees) exactly as scheduled — today's shots say it is the single
+  biggest visual offender.
+- Pull forward as ONE bundled `paint_suit`/`shape_helmet` session inside any convenient
+  group (NOT separate iterations): helmet beak/spike trim (pairs naturally with
+  proportions part 2, group 7), bib-30 contrast/size + back number, blue panel
+  broadening. All three are athlete-paint/build work; one Blender rebuild, one ASSET_V
+  bump.
+- No change to groups 3–12.
+
+**Open / next:** the three calls under Open questions; then schedule group 1.
+
 ### 49 — P12 slice 2: snow macro-variation layer (detailMap) + world-metre corridor UVs — the run's maps were inert
 
 **Order acted on:** reviewer queue after the iter-47/48 items: P12 quality

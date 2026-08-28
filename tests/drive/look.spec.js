@@ -118,15 +118,26 @@ test('look', async ({ page }) => {
     await page.screenshot({ path: path.join(OUT, 'kicker.png') });
 
     // Canonical in-run shot: from behind and above the (ready) athlete,
-    // looking down the in-run at the kicker block.
+    // looking down the in-run at the kicker block. Anchor on the athlete's
+    // real rest position: they stand at SLOPE_START_Z + 2 (8-38 m uphill of
+    // the block depending on ?world=), so targeting the block left the
+    // athlete permanently behind the camera (iter-50 finding — the corridor
+    // in inrun.png measured 0 non-snow pixels). Camera 8 m up-slope and 6 m
+    // above the chest (beta = atan2(8, 6), r = 10): the athlete reads centre
+    // at ~18% of frame height, the block enters the upper frame (its
+    // direction sits ~15 deg above the view axis, inside the 0.8 rad FOV on
+    // the 19 deg in-run slope), near-field corridor snow fills the bottom.
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const cam = scene.activeCamera;
-        const KEZ = window._getGameState().KICKER_END_Z;
-        cam.setTarget(new BABYLON.Vector3(0, -2.5, KEZ - 3));
-        cam.alpha = -Math.PI / 2;    // camera sits on the -z side (uphill)
-        cam.beta = Math.PI / 2.9;    // elevated, looking down the in-run
-        cam.radius = 26;
+        const gs = window._getGameState();
+        const body = scene.meshes.find((m) => (m.name || '').indexOf('athleteBody') === 0);
+        const p = body ? body.getAbsolutePosition() : { x: 0, y: -2.5, z: gs.posZ };
+        cam.setTarget(new BABYLON.Vector3(0, p.y + 1, p.z));
+        cam.alpha = -Math.PI / 2;         // camera sits on the -z side (uphill)
+        cam.beta = Math.atan2(8, 6);      // 8 m behind, 6 m above the chest
+        cam.radius = 10;
+        cam.fov = 0.8;
     });
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'inrun.png') });
