@@ -338,6 +338,15 @@ order; a group may span more than one iteration; do not skip ahead.
 11. **Human-testing buffer** — fix whatever the author reports (77–78).
 12. **Final review, HANDOFF/ADR update for the render pipeline, branch summary** (79–80).
 
+## Iterations 81–105 — author-approved extension (2026-08-28 20:00)
+Same serial rules and review cadence (every multiple of 5). Continue the 51–80 schedule from
+wherever it stands at iteration 80 — expected remaining order: lighter B-net → P6 ridgelines →
+P4 tree slices (deciduous majority, understory, near-camera cards) → P5 snow surfaces (chop bake,
+corduroy, tracks) → P10 free-look + camera clamp → P3 dressing remainder → proportions part 2 /
+P7 flight pose → pose-vs-physics tuning (proposals → reviewer approval) → P9 night mode →
+performance/polish (incl. the parked height haze) → author-testing buffer → final review,
+HANDOFF/ADR update, branch summary (105). Author defects reported along the way pre-empt this list.
+
 ## Definition of done for the branch
 All P0–P6, P9, P10, P11 and P12 landed with tests; P7–P8 as far as they go; `./tests/run-all.sh` green;
 `docs/RENDER-PROGRESS.md` current; a fresh set of shots described in the progress file.
