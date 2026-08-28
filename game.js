@@ -731,6 +731,29 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
                 ulMesh.position.y = hipY - 0.18 * Math.cos(urx);
                 ulMesh.position.z = hipZ - 0.18 * Math.sin(urx);
             }
+            // Shoulders: the pose tables anchor both arm chains at the fixed
+            // pivot (y = 0.150, BASE_Z), which drifts off the torso's +Y end
+            // as the torso pitches (mid-tuck blend). Translate each side's
+            // two arm segments RIGIDLY by the pivot gap — the tables' arm
+            // shape is preserved exactly, only the shoulder joint moves, and
+            // the pass is inert at the authored pose endpoints (sBlend = 0).
+            const shoulderY = torso.position.y + 0.275 * cT;
+            const shoulderZ = torso.position.z + 0.275 * sT;
+            for (const side of ['L', 'R']) {
+                const uMesh = meshes['upperArm' + side];
+                const lMesh = meshes['lowerArm' + side];
+                if (!uMesh || !lMesh) continue;
+                const rx = uMesh.rotation.x, rz = uMesh.rotation.z;
+                const crz = Math.cos(rz);
+                // dir = M_x(rx) * M_z(rz) * (0,1,0): the arm's local +Y in
+                // parent space (Euler order YXZ, ry = 0).
+                const dirY = crz * Math.cos(rx);
+                const dirZ = crz * Math.sin(rx);
+                const dY = shoulderY - (uMesh.position.y + 0.150 * dirY);
+                const dZ = shoulderZ - (uMesh.position.z + 0.150 * dirZ);
+                uMesh.position.y += dY; uMesh.position.z += dZ;
+                lMesh.position.y += dY; lMesh.position.z += dZ;
+            }
         }
         for (const side of ['L', 'R']) {
             const ulMesh = meshes['upperLeg' + side];
@@ -2507,6 +2530,53 @@ void main(void) {
             };
         }
         return r;
+    };
+
+    // P13 chain probe (display-only): applies a pose blend to the live
+    // character meshes and reports the post-reconciliation joint gaps —
+    // shoulder (upperArm +Y end vs torso +Y end), hip, knee, ankle and the
+    // neck length. Drives chain.spec.js; the next render frame overwrites
+    // the meshes, so game state is untouched.
+    window._poseProbe = function (tuck, grounded, pikeAmount) {
+        const M = character.meshes;
+        applyPose(M, tuck, 1, 1, 0, 0, 0, grounded !== false, pikeAmount || 0, 0);
+        const gaps = {};
+        const t = M.torso;
+        const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
+        const topY = t.position.y + 0.275 * tc, topZ = t.position.z + 0.275 * ts;
+        const botY = t.position.y - 0.275 * tc, botZ = t.position.z - 0.275 * ts;
+        const h = M.head;
+        if (h) {
+            const hc = Math.cos(h.rotation.x), hs = Math.sin(h.rotation.x);
+            gaps.neck = +Math.hypot(
+                (h.position.y - 0.125 * hc) - topY,
+                (h.position.z - 0.125 * hs) - topZ).toFixed(4);
+        }
+        for (const side of ['L', 'R']) {
+            const ua = M['upperArm' + side];
+            if (ua) {
+                const crz = Math.cos(ua.rotation.z);
+                const dY = crz * Math.cos(ua.rotation.x), dZ = crz * Math.sin(ua.rotation.x);
+                gaps['shoulder' + side] = +Math.hypot(
+                    (ua.position.y + 0.150 * dY) - topY,
+                    (ua.position.z + 0.150 * dZ) - topZ).toFixed(4);
+            }
+            const ul = M['upperLeg' + side], ll = M['lowerLeg' + side], sk = M['ski' + side];
+            if (!ul || !ll) continue;
+            const uc = Math.cos(ul.rotation.x), us = Math.sin(ul.rotation.x);
+            const kneeY = ul.position.y - 0.18 * uc, kneeZ = ul.position.z - 0.18 * us;
+            gaps['hip' + side] = +Math.hypot(
+                (ul.position.y + 0.18 * uc) - botY,
+                (ul.position.z + 0.18 * us) - botZ).toFixed(4);
+            const lc = Math.cos(ll.rotation.x), ls = Math.sin(ll.rotation.x);
+            gaps['knee' + side] = +Math.hypot(
+                (ll.position.y + 0.18 * lc) - kneeY,
+                (ll.position.z + 0.18 * ls) - kneeZ).toFixed(4);
+            if (sk) gaps['ankle' + side] = +Math.hypot(
+                (sk.position.y + 0.015 * lc) - (ll.position.y - 0.18 * lc),
+                (sk.position.z + 0.015 * ls) - (ll.position.z - 0.18 * ls)).toFixed(4);
+        }
+        return gaps;
     };
 
     window.applySkierColors = function() {

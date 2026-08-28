@@ -8,9 +8,9 @@
 // return value. That is a genuine differential test against the shipped code,
 // not a comparison against a hand-copy.
 //
-// Note on scope: applyPose ALSO runs an ALWAYS-ON kinematic chain
 // reconciliation (P13, iter 67 — upper/lower legs, skis and head re-anchored
-// to constant joint lengths after the pose lands) and repositions the gloves.
+// to constant joint lengths after the pose lands; iter 68 — both arm segments
+// rigidly re-anchored at the shoulder, y/z only) and repositions the gloves.
 // Those are rendering concerns and deliberately stay out of computePose, so
 // the chain-driven segments are excluded from the comparison unconditionally.
 
@@ -38,6 +38,10 @@ const CHAIN_SEGMENTS = new Set([
     'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'skiL', 'skiR',
     'head',
 ]);
+/** Arm segments: only y/z are re-anchored (x, rx, rz stay under test). */
+const ARM_YZ_SEGMENTS = new Set([
+    'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR',
+]);
 function runCase(params) {
     const meshes = live._characterMeshes;
     live.applyPose(
@@ -46,7 +50,6 @@ function runCase(params) {
         params.layArmT, params.armRaise, params.grounded,
         params.pikeAmount, params.pikeArmDrop,
     );
-
     const got = computePose(params);
     const segs = require('../../engine/core/body-model.js').SEGMENTS;
     for (const seg of segs) {
@@ -59,6 +62,12 @@ function runCase(params) {
         assert.ok(g, `computePose returned nothing for ${seg.name}`);
 
         const label = (f) => `${seg.name}.${f} with ${JSON.stringify(params)}`;
+        if (ARM_YZ_SEGMENTS.has(seg.name)) {
+            assert.strictEqual(g.x,  mesh.position.x, label('x'));
+            assert.strictEqual(g.rx, mesh.rotation.x, label('rx'));
+            assert.strictEqual(g.rz, mesh.rotation.z, label('rz'));
+            continue;
+        }
         assert.strictEqual(g.x,  mesh.position.x, label('x'));
         assert.strictEqual(g.y,  mesh.position.y, label('y'));
         assert.strictEqual(g.z,  mesh.position.z, label('z'));

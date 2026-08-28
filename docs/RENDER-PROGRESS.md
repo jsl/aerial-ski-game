@@ -152,7 +152,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 | Priority | Item | State | Notes |
 |---|---|---|---|
-| P13 | Kinematic chain solver | **real reconciliation landed (iter 67, Sol blocker 1 partial)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass (hip/neck/knee/ankle/ski, zero at authored endpoints, full mid-blend); physics state byte-identical ×30, traces re-captured display-only; open: torso/shoulder anchor, tear-detector hard gate, stub removal (engine edit needs APPROVED) |
+| P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); physics state byte-identical ×30, traces re-captured display-only; open: tear-detector hard gate, stub removal (engine edit needs APPROVED), Sol-8 knee-flex |
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
@@ -4659,6 +4659,67 @@ spec). This iteration finished and landed exactly that work; nothing new.
 - P1 slice 1 corridor ribbon (fixes the 0.0941 m post-turn float + slopeBox
   4.7 cm defect), P2 sky/sun, crash rewrite items 2/2b, P13 chain solver, the
 - body+suit rebuild, P8 mesh-hands-forward bind fix.
+
+### 68 — Sol blocker 1 part 2: shoulder re-anchor — both arm chains rigidly
+re-anchored at the pitched torso's top, blend-scaled; hard chain gates in
+`chain.spec.js`
+
+**Order acted on:** the 16:15 DEFINITIVE ORDER step (1), remainder of Sol
+blocker 1 — entry 67's open item "the shoulder anchor is not re-anchored".
+Engine untouched.
+
+**Root cause (measured):** the pose tables anchor both arm chains at the fixed
+pivot (y = 0.150, BASE_Z) regardless of torso pitch, so at mid-blend
+(sBlend = 4·tuck·(1−tuck) > 0) the arms stay at the unpitched pivot while the
+torso top (their shoulder joint) swings away: shoulder gap 0.4251 m at
+tuck 0.5 (probe-measured before the fix).
+
+**Fix (`applyPose`, inside the existing sBlend > 0 block):** each side's two
+arm segments are translated RIGIDLY by the pivot gap (torso top = torso ±Y end
+±0.275·(cos rx, sin rx); the arm's shoulder joint = upperArm centre +
+0.150·(its +Y dir from the YXZ Euler)). Rigid translation preserves the
+pose-table arm shape exactly (hands, elbows, arc-drop geometry), so the
+inrun-contact hand band and the arc-drop/gamepad-lateral exactness are
+untouched; the pass is inert at the authored endpoints (sBlend = 0), where the
+tables are deliberately free-standing (entry 67 decision).
+
+**New instrument + gates:** `window._poseProbe(tuck, grounded, pike)` in
+game.js (display-only, next frame overwrites) reports post-reconciliation
+shoulder/neck/hip/knee/ankle gaps; `tests/drive/chain.spec.js` gates
+shoulder/neck/hip ≤ 1 cm whenever the pass is engaged (tuck 0.5 flight +
+grounded, pike 0.5) and knee/ankle residual ≤ bend chord
+2·0.18·sin(|Δrx|/2) + 1 cm. Measured after the fix: shoulder 0.4251 → 0,
+neck 0, hip ≤ 0.008 mid-blend.
+
+**Golden:** physics `state` byte-identical (verify.js reports ZERO `state.`
+field diffs in all 30 scenarios; node diffs confined to
+`nodes.lowerArmL`/`lowerArmL_elbow` — display-only, entry-67 route);
+re-captured, 30/30.
+
+**Verification:** unit 76/76 (pose-solver differential: arm segments added to
+the renderer-side correction set, y/z only — x/rx/rz stay differential-checked);
+golden 30/30; drive: chain 5/5, inrun-contact 2/2, hop-turn green,
+ready-stance fails ONLY the pre-existing Sol-8 knee-flex gate (0.117,
+identical on HEAD); `look` regenerated and inspected: athlete intact, bib "30"
+legible in figure_front, tone unchanged (scene meanRGB [0.719,0.736,0.771]
+R−B −0.052; figure −0.071; figure_front −0.070 — ready state is an endpoint,
+pass inert). `game.js?v=24` cache bust; no assets regenerated, ASSET_V
+untouched.
+
+**Open / not done:** `_inrunArmForward` still blends toward its own fixed-pivot
+targets (gap-free internally; the re-anchor is inert at full tuck where it
+operates — mid-blend flight/grounded crouch without the override is covered by
+chain.spec); Sol-8 knee-flex fix still open (entry 66 question 1); Sol
+blockers 2, 4–9 open; tear-detector hard gate and engine stub removal per
+entry 67's questions.
+
+**Open questions for the reviewer:**
+1. chain.spec's knee/ankle gate measures the cross-axis residual (each
+   segment's own axis), which is authored knee-bend geometry, not a gap —
+   gated at bend chord + 1 cm. OK as the permanent form, or do you want the
+   anchor-continuity form (trivially 0 by construction) instead?
+2. The tear detector (≤ 3× rest edge) still only console.errors from
+   checkTearing. Want it promoted into chain.spec as a hard gate this branch?
 
 ### 67 — Sol blocker 1: P13 reconciliation is real now (was a pre-write
 no-op); blend-scaled hip/neck/knee/ankle/ski chain pass, game-side
