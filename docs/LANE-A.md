@@ -39,7 +39,8 @@ summary lines; `DRIVE_PORT=8199 npx playwright test --config tests/drive/playwri
 inspected and described. Each iteration ends with a commit and an entry below.
 
 ## Reviewer feedback
-- (none yet)
+- **Reviewer (20:55) — next batch (2 iterations), in order:** (1) **Muscle relief must be gone from the suit**: measure the normal-map high-frequency variance in the suit UV region on the current bake vs the pre-lane build; if pectoral/abdominal/biceps/calf relief still reads (view `figure_front.png`/`figure.png` at the look camera), add the suit-only smoothing pass and re-measure; gate on the variance ratio. (2) **Task 4, helmet brim** wraps behind the ears — no skin patch from the rear quarter (add a rear-quarter shot check). (3) **ARM GATES**: the arms are visually correct and verified by the reviewer (entry 32 of the main progress log); the instrument's 20.7 mm / 24.3 mm / 10.5° / 28 mm readings therefore measure the wrong thing — recalibrate the instrument to what the eye sees (e.g. measure on the skinned browser geometry along the driver axis as the hand gate does) and turn it hard at limits a correct build passes; do not move geometry to satisfy a bad instrument. Keep entries short; assets rebuilt → merge note for `ASSET_V`.
+
 
 ## Merge notes (for the reviewer)
 - `ASSET_V` in `game.js` must be bumped at merge time whenever `assets/` changed in this lane.
