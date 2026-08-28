@@ -343,3 +343,74 @@ notes, standing).
   iteration 2 plus a geometry pass; the biggest remaining lane item.
 - Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — the
   bib panel is build-side hard-gated, no game.js wiring.
+
+### 9 — Suit-relief instrument lands; relax_suit iron written opt-in (dormant)
+
+**What changed.** Reviewer-feedback item 1, first slice: MEASURE, then
+build the smoothing pass. (1) The reviewer's instrument, implemented in
+scratch (`~/aerial-agents/scratch/lane-A/relief/suit_nm_variance.py`,
+Blender python + numpy; glb suit-material primitive + PNG decode): mean
+|Laplacian| of the normal map's R channel over the suit-material UV
+mask of the 2048 atlas — **pre-lane bake (38bf9bc) 4.73 over 1.60 M
+texels vs current 7.48 over 1.45 M texels**. The lane's fabric relief
+is present and STRONGER than pre-lane, so the vacuum-packed read is
+geometry, not texture: the normal bake records only displace_suit's
+millimetre relief (high = low + simple subdiv + displacement, so shape
+cancels) — the muscle relief lives in the LOW-POLY mesh, preserved 1:1
+by loosen_suit. (2) `suit_nm_variance_gate` in build_body.py: the same
+instrument in-build on every bake, log line `SUIT NM VARIANCE` —
+SOFT this iteration (floor None) per the repo's instrument-first
+pattern; in-build 7.48 over 1.42 M texels reproduces the scratch number
+exactly, so the floor lands at ~85% ≈ 6.3 next iteration. (3)
+`relax_suit`: the suit-only smoothing pass. Z-high-passed radius field
+per segment (about the segment's own axis) as the relief reference —
+muscle relief is z-LOCALIZED (4–12 cm bands), taper is linear in z,
+cross-sections are z-invariant ellipses, so r − r_ref is the relief and
+nothing else; each candidate vert is pulled along its own radial ray by
+0.70 × weight × relief; per-1 cm-row mean-radius restore keeps volume;
+weight field = loosen_suit's (head/glove/boot/deltoid cap zero by
+construction; z never touched). Hard gates inside the pass: relief-RMS
+drop ≥ 55% per zone, per-zone mean-radius drift ≤ 2 mm, inner-envelope
+inboard move ≤ 2 mm; bideltoid and leg-step gates re-asked after.
+A surface-Laplacian reference was tried first and REJECTED on
+measurement: it diffuses azimuthally, circularizes the ellipses and
+reads the whole cross-section as "relief" (thigh RMS 29.5 mm = the
+ellipse, not muscle).
+
+**STATUS: the pass is DORMANT, opt-in via `--relax-suit on`.** Its
+gates trip on an unexplained **−39 mm inner-envelope move at upperLegR
+z≈−0.35** — a relief-reference artifact (56 mm "dip" in r against the
+z-Gaussian at one inner-thigh vert) not yet diagnosed, and I will not
+ship a half-verified geometry pass. The default build is
+behaviour-identical to iteration 8: the exported glb is BYTE-IDENTICAL
+(md5) — no merge action beyond the standing `ASSET_V` note.
+
+**Verification.** Blender build `--res 2048 --samples 96` green
+(default, relax dormant): all gates unmoved — BIDELTOID 0.401 ≤ 0.41,
+HAND 0.75..0.75, SUIT GIRTH chest +24.0 / waist +32.2 / thigh +39.3 /
+calf +9.0 / forearm +10.5 mm, deltoid +0.0, FOLD populations 836/3312/
+1612/621/496/1806 (identical), `SUIT NM VARIANCE 7.48`, stripe 0.070.
+`DRIVE_PORT=8199`: **rig 11/11**, **look 1/1** on the rebuilt assets;
+glb md5-identical to 4e3068d. `git diff 4e3068d -- build_body.py`:
+369 insertions, 0 deletions (no baseline line removed — the export
+block's `arm.select_set(True)` was briefly lost to a bad edit during
+the session and restored before commit; glb exports with its skin,
+verified by patch_skin_binds passing).
+
+**Assets rebuilt** (normal/albedo rebaked — Cycles sampling noise,
+metric stable) → `ASSET_V` at merge time (standing Merge note).
+
+**Open / next in lane priority.**
+- Land relax_suit: diagnose the −39 mm inner-thigh reference artifact
+  (suspect: sparse-z vert rows making the normalized z-Gaussian mix
+  rows 2–4 cm away), then `--relax-suit on`, tune, harden
+  SUIT_NM_FLOOR ≈ 6.3, flip the pass default-on, and re-shoot
+  figure_front/figure for the relief check. The gates to satisfy are
+  already written.
+- Reviewer item 2 (helmet brim behind the ears + rear-quarter shot
+  check) — untouched this iteration.
+- Reviewer item 3 (ARM GATES recalibration on skinned browser geometry
+  along the driver axis, then hard) — untouched.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — the
+  dormant pass changes no game.js wiring and the shipped glb is
+  unchanged.
