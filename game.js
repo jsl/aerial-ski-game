@@ -217,9 +217,13 @@ function _buildStyledSki(scene, driver, seg, assets) {
     }
 
     // Shared per-page resources: one atlas + one material pair for both skis.
+    // P12: the atlas is built mipmapped — this Babylon build's samplingMode is
+    // getter-only and a mipmapped DynamicTexture is already trilinear — with
+    // anisotropicFilteringLevel 16, the same treatment every makeSurface tile
+    // gets (iter 48).
     if (!assets.tex) {
         const tex = new BABYLON.DynamicTexture('skiTopTex',
-            { width: 512, height: 512 }, scene, false);
+            { width: 512, height: 512 }, scene, true);
         const c = tex.getContext();
         c.fillStyle = '#eef1f4'; c.fillRect(0, 0, 512, 512);
         // Sidewall strips run the full length at both edges.
@@ -242,12 +246,46 @@ function _buildStyledSki(scene, driver, seg, assets) {
             c.closePath(); c.fill();
         }
         tex.update(false);
+        tex.anisotropicFilteringLevel = 16;
+
+        // P12 "glossy topsheet and matte base": per-zone roughness painted into
+        // the ORM green channel of a SECOND atlas on the SAME uv layout as the
+        // albedo above — one material shades all three zones, no extra draw
+        // call. G is the absolute roughness (the roughness property becomes
+        // the multiplier and is pinned to 1); R is painted white and B is
+        // painted white with their ORM readers explicitly OFF (AO and metallic
+        // — the ski stays a dielectric).
+        // Zone rects in canvas coords (x = u*512, y = (1-v)*512) match the
+        // albedo painting exactly:
+        //   topsheet quads u 0.08..0.92, v 0.02..0.72 -> x 41..470, y 143..502;
+        //   base quads      u 0.12..0.88, v 0.79..0.93 -> x 61..451, y 36..108;
+        //   sidewalls/caps sample the point (u,v)=(0.04,0.86) -> (20,72), left
+        //   as the default fill.
+        const rgh = new BABYLON.DynamicTexture('skiRoughTex',
+            { width: 512, height: 512 }, scene, true);
+        const rc = rgh.getContext();
+        rc.fillStyle = 'rgb(255,128,255)';   // sidewalls + caps: roughness 0.50
+        rc.fillRect(0, 0, 512, 512);
+        rc.fillStyle = 'rgb(255,56,255)';    // painted topsheet: 0.22, glossy
+        rc.fillRect(41, 143, 429, 359);
+        rc.fillStyle = 'rgb(255,235,255)';   // matte P-tex base: 0.92
+        rc.fillRect(61, 36, 390, 72);
+        rgh.update(false);
+        rgh.anisotropicFilteringLevel = 16;
 
         const bodyMat = makePBR('skiVis_mat', scene);
         bodyMat.albedoTexture = tex;
         bodyMat.albedoColor   = new BABYLON.Color3(1, 1, 1);
         bodyMat.metallic      = 0;
-        bodyMat.roughness     = 0.42;
+        bodyMat.roughness     = 1.0;   // multiplier only — the map IS the roughness
+        bodyMat.metallicTexture = rgh;
+        // This build's defaults are the ALPHA ORM variant (roughness from alpha
+        // = TRUE, green = FALSE) — both must be set explicitly or the map
+        // silently reads a uniform roughness off the alpha channel.
+        bodyMat.useRoughnessFromMetallicTextureAlpha = false;
+        bodyMat.useRoughnessFromMetallicTextureGreen = true;
+        bodyMat.useMetallicFromMetallicTextureBlue   = false;
+        bodyMat.useAmbientOcclusionFromMetallicTextureRed = false;
 
         const bindMat = makePBR('skiBind_mat', scene);
         bindMat.diffuseColor  = new BABYLON.Color3(0.13, 0.13, 0.145);
@@ -2368,6 +2406,18 @@ void main(void) {
     // be seen (skirt inner faces seen from below a drift), so nothing can ever
     // read as an unlit backface hole.
     snowMat.backFaceCulling = false;
+
+    // P12 "snow roughness/sheen re-tuned under the new sky" (iter 53) — MEASURED
+    // AND REJECTED, same class as iter 7's translucency finding. Sheen (enabled
+    // here at intensity 0.35 / roughness 0.75 for the A/B) lifts GRAZING views:
+    // at this camera the flat flank fields respond more (+0.013: darkestFlank
+    // 0.8427 -> 0.8561) than the tilted run surfaces (+0.007: kickerFace
+    // 0.767 -> 0.7741), so the kicker band −0.08 broke by 0.002 and corridor
+    // parity survived on a 0.0022 knife edge. The deficit is proportional to
+    // intensity — any visible sheen re-opens the grey ramp the last six
+    // iterations closed. Roughness 0.46 also re-verified (iter 7: moves
+    // nothing); under the 32° beam the run already holds flank parity, and the
+    // footage wants the run the BRIGHTEST surface, not the flanks.
 
     // Snow's surface detail now comes from the general procedural texturing
     // pass (_applySurfaces) rather than a snow-specific one-off, so it gets an

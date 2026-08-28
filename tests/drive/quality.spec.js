@@ -110,6 +110,75 @@ test('snow tiles render at 1024 with trilinear mip filtering and 16x anisotropy'
     }
 });
 
+test('P12 material re-tune: ski gloss split by zone; snow sheen A/B rejected', async ({ page }) => {
+    await boot(page);
+
+    const m = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const ski = scene.materials.find(x => x.name === 'skiVis_mat');
+        const snow = scene.materials.find(x => x.name === 'snowMat');
+        const tex = (n) => {
+            const t = scene.textures.find(x => x.name === n);
+            if (!t) return null;
+            return {
+                width: t.getSize().width,
+                trilinear: t.samplingMode === BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+                aniso: t.anisotropicFilteringLevel,
+            };
+        };
+        return {
+            ski: ski ? {
+                roughMapName: ski.metallicTexture ? ski.metallicTexture.name : null,
+                green: ski.useRoughnessFromMetallicTextureGreen,
+                alpha: ski.useRoughnessFromMetallicTextureAlpha,
+                blueMetallic: ski.useMetallicFromMetallicTextureBlue,
+                redAO: ski.useAmbientOcclusionFromMetallicTextureRed,
+                roughness: ski.roughness,
+                metallic: ski.metallic,
+            } : null,
+            roughTex: tex('skiRoughTex'),
+            topTex: tex('skiTopTex'),
+            snow: snow ? {
+                roughness: snow.roughness,
+                sheenOn: snow.sheen ? snow.sheen.isEnabled : null,
+                sheenIntensity: snow.sheen ? snow.sheen.intensity : null,
+            } : null,
+        };
+    });
+
+    // ── Ski: glossy topsheet, matte base, via the ORM green channel ──────────
+    expect(m.ski, 'skiVis_mat missing').not.toBeNull();
+    expect(m.ski.roughMapName, 'ski roughness map missing').toBe('skiRoughTex');
+    // This Babylon build defaults to the ALPHA ORM variant; if the flags
+    // drift back, the map silently reads a UNIFORM roughness off alpha=1 and
+    // the glossy/matte split disappears with every boolean still truthy-ish.
+    expect(m.ski.green, 'roughness must come from the green channel').toBe(true);
+    expect(m.ski.alpha, 'alpha roughness must stay off (build default is on)').toBe(false);
+    expect(m.ski.blueMetallic, 'blue metallic must stay off — dielectric').toBe(false);
+    expect(m.ski.redAO, 'red AO must stay off').toBe(false);
+    expect(m.ski.roughness, 'roughness property is the map multiplier, pinned 1').toBe(1);
+    expect(m.ski.metallic).toBe(0);
+    expect(m.roughTex, 'skiRoughTex missing').not.toBeNull();
+    expect(m.roughTex.trilinear, 'skiRoughTex must be trilinear').toBe(true);
+    expect(m.roughTex.aniso, 'skiRoughTex aniso must be 16').toBe(16);
+    expect(m.topTex, 'skiTopTex missing').not.toBeNull();
+    expect(m.topTex.trilinear, 'skiTopTex must be trilinear (mipmapped)').toBe(true);
+    expect(m.topTex.aniso, 'skiTopTex aniso must be 16').toBe(16);
+
+    // ── Snow: sheen A/B'd and REJECTED (iter 53) ─────────────────────────────
+    // Sheen lifts grazing views, and at this camera the FLAT flank fields
+    // respond more (+0.013) than the tilted run surfaces (+0.007): kickerFace
+    // 0.7741 broke its −0.08 band by 0.002 and corridor parity fell to a
+    // 0.0022 knife edge. The deficit scales with intensity, so any visible
+    // sheen re-opens the grey ramp. Gate the off-state (same
+    // drift-catches-either-way design as the sharpen pin above).
+    expect(m.snow, 'snowMat missing').not.toBeNull();
+    expect(m.snow.roughness).toBeGreaterThan(0.3);
+    expect(m.snow.roughness).toBeLessThan(0.6);
+    expect(m.snow.sheenOn,
+        'snow sheen must stay off — iter-53 A/B re-opened the grey ramp').toBe(false);
+});
+
 test('SSAO2 runs at 32 samples with the bilateral blur', async ({ page }) => {
     await boot(page);
 

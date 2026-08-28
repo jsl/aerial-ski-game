@@ -144,7 +144,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
-| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0)). Slice 3 landed (iter 52): shadow filtering = PCF HIGH (32 taps) + pinned `cascadeBlendPercentage` 0.1 + `normalBias` 0.015 + new contact gates; PCSS A/B'd and rejected on measured cost (239.5 ms/frame vs 130.2 PCF high — past the frame-time gate)** | remaining: material re-tune under the new sky, real-GPU frame time (PCSS revisit rides on it); gates in `tests/drive/quality.spec.js` + `textures.spec.js` + `shadows.spec.js` |
+| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4). Slice 2 landed (iter 49): corridor metre UVs + 45 m macro detail layer — the corridor's maps were INERT before (no uv buffer at all; every texel sampled (0,0)). Slice 3 landed (iter 52): shadow filtering = PCF HIGH (32 taps) + pinned `cascadeBlendPercentage` 0.1 + `normalBias` 0.015 + new contact gates; PCSS A/B'd and rejected on measured cost (239.5 ms/frame vs 130.2 PCF high — past the frame-time gate). Slice 4 landed (iter 53): ski gloss split — ORM green-channel roughness atlas (topsheet 0.22 / base 0.92 / sidewalls 0.50, one material, no extra draw call) + mipmapped trilinear 16× aniso ski atlases; snow sheen A/B'd and REJECTED on the grey ramp (flanks +0.013 vs run +0.007 → kicker −0.08 band broke by 0.002; corridor parity knife-edge 0.0022)** | remaining: real-GPU frame time (PCSS revisit rides on it); athlete mats verified in place under the 32° sun (body 0.68 / helmet 0.30 + CC 0.55 / face 0.85 / lens 0.08 + CC 1.0); gates in `tests/drive/quality.spec.js` + `textures.spec.js` + `shadows.spec.js` |
 
 *(iter-50 review-only: no board movement — ./tests/run-all.sh ALL GREEN (unit 76/76,
 golden 30/30, browser 36/36, mutation + coverage PASS, drive 62/0), five shots
@@ -152,6 +152,15 @@ re-baselined and measured, entry 50 below.)*
 
 ## Open questions for the reviewer
 - **Iteration 51 — two calls.**
+- **Iteration 53 — one call.** The P12 material line named "snow
+  roughness/sheen re-tuned under the new sky"; I implemented sheen, A/B'd it
+  on the shipped rig, and REJECTED it on the grey ramp (entry 53: flanks +0.013
+  vs run +0.007 at intensity 0.35 — kicker −0.08 band broke by 0.002, corridor
+  parity knife-edge 0.0022, deficit ∝ intensity). Confirm the rejection
+  (off-state now gated in quality.spec, sharpen-pin pattern), or fund a
+  different construction — e.g. sheen on the flanks only, or an anisotropy
+  pass on the corduroy — with its own grey-ramp budget.
+
 - **Iteration 52 — one call.** Review-50 named "PCSS/cascade blending" for
   group 1; I landed cascade blending + PCF HIGH + normalBias, measured PCSS,
   and rejected it on cost (239.5 vs 130.2 ms on the rig — 2.4×, past the
@@ -341,6 +350,72 @@ re-baselined and measured, entry 50 below.)*
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 53 — P12 material re-tune: ski gloss split via ORM roughness atlas; snow sheen A/B'd and rejected on the grey ramp
+
+**Order acted on:** schedule group 1, final iteration (51–53 = P12 + sun + haze);
+entry 52's open line named "P12 material re-tune + real-GPU frame time
+(schedule group 1 continues in 53)". Height haze (P2) did not fit again — it
+is group 1's one unfinished item and now heads the queue (see Open).
+
+**Self-review of 52:** c7b4984 intact, tree clean at start; `test:unit` 76/76
+and `test:golden` 30/30 re-run green before starting. No 52 regression found.
+
+**What changed** (`game.js` display-only; `engine/` untouched; `assets/`
+untouched; golden byte-identical 30/30 — no re-capture):
+
+- **Skis — glossy topsheet, matte base (P12).** `skiVis_mat` now carries
+  `skiRoughTex`, a second 512² DynamicTexture painting absolute roughness into
+  the ORM green channel on the SAME uv layout as the albedo: painted topsheet
+  0.22, matte P-tex base 0.92, sidewalls/caps 0.50 — one material, zero extra
+  draw calls. The `roughness` property becomes the multiplier (pinned 1.0);
+  R/B painted white with their ORM readers explicitly off (AO and metallic —
+  the ski stays dielectric). This Babylon build's ORM default is the ALPHA
+  variant (`useRoughnessFromMetallicTextureAlpha` true, green false) — both
+  flags are set explicitly or the map silently reads a uniform roughness off
+  alpha = 1. Both ski atlases are now mipmapped (trilinear by construction in
+  this build; `samplingMode` is getter-only) with aniso 16 — the same
+  treatment the makeSurface tiles got in iter 48.
+- **Snow sheen — MEASURED AND REJECTED**, same class as iter 7's translucency
+  finding. Sheen lifts grazing views, and at this camera the flat flank fields
+  respond more (+0.013: darkestFlank 0.8427 → 0.8561) than the tilted run
+  surfaces (+0.007: kickerFace 0.767 → 0.7741) — the kicker −0.08 band broke
+  by 0.002 and corridor-vs-flank parity fell to a 0.0022 knife edge. The
+  deficit is proportional to intensity, so any visible sheen re-opens the grey
+  ramp six iterations closed. Reverted; rationale comment at the snowMat
+  block, off-state gate in quality.spec (sharpen-pin pattern). Roughness 0.46
+  re-verified (iter 7 measured it moving nothing).
+- **Athlete mats verified in place under the 32° sun — no change needed:**
+  bodyMat 0.68 matte lycra, helmetMat 0.30 + clearCoat 0.55/0.18, faceMat
+  0.85, goggle lens 0.08 + clearCoat 1.0 (lens gates already in
+  athlete-wired.spec).
+
+**Verification** (`test:unit` + `test:golden` + 45 drive tests + `look`):
+
+- `npm run test:unit` 76/76; `npm run test:golden` 30/30 byte-identical.
+- quality 6/6 incl. the new "ski gloss split / snow sheen rejected" gate;
+  materials 2/2; grey-ramp 2/2 — post-revert numbers are EXACTLY the entry-51
+  baseline: corridor 0.8265, darkestFlank 0.8427, kickerFace 0.767, inrun
+  0.7882, skyFrac 0 everywhere (the A/B build's 0.8383/0.8561/0.7741/0.8108
+  is what broke it); shadows 3/3 (athlete drop 0.7449, acne 0.0335,
+  attachment 0.2568, tree 0.6196 — identical to entry 52); rig/athlete-wired/
+  rendering green; sanity batch athlete + kicker-faces + pbr-scene + textures
+  9/9 (textures determinism covers the new atlas).
+- Frame-time: **119.0 mean / 118.8 p50 / 125.6 p95** at 320×220 (gate < 150;
+  entry 52: 119.5/119.2/126.7) — the extra atlas + mips cost nothing
+  measurable on SwiftShader; the real-GPU line stays open.
+- `look` 5 shots regenerated. Thirds: scene 0.5209/0.7615/0.8396 (entry 52:
+  0.5103/0.7608/0.8396), figure 0.5397/0.5681/0.7670, figure_front
+  0.8166/0.7521/0.7229. Ski-gloss probe: brightest blue-dominant pixel in the
+  ski band 0.68–0.69 (figure/figure_front/inrun) against ~0.30 flat-lit
+  luminance of the #14568c band albedo — the topsheet's specular response is
+  visibly present. Inspected scene.png (long lateral athlete shadow, bright
+  corridor, unchanged) and the two figure shots (styled skis with glossy
+  blue topsheet band, dark matte-reading bases in shadow).
+
+**Open:** P2 height haze on the ridgelines (group 1 leftover — deferred since
+50, first in line for group 2 alongside P4 trees); real-GPU frame time (PCSS
+revisit rides on it) — only SwiftShader numbers available in this environment.
+
 ### 52 — Shadow filtering slice: PCF high + pinned cascade blending + normalBias, with new acne/attachment contact gates (PCSS measured and rejected)
 
 **Order acted on:** schedule group 1 continuation (51–53 = P12 + sun);
