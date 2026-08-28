@@ -414,3 +414,63 @@ metric stable) → `ASSET_V` at merge time (standing Merge note).
 - Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — the
   dormant pass changes no game.js wiring and the shipped glb is
   unchanged.
+
+### 10 — relax_suit lands default-on (reviewer item 1 complete: clearance-capped iron, NM floor hardened)
+
+**What changed.** The dormant pass's −39 mm inner-envelope trip is
+DIAGNOSED and FIXED; the iron is on in the default build. Root cause: the
+z-Gaussian relief reference averaged radius ACROSS AZIMUTHS, and radius is
+multi-valued in z at every wrap — measured phantoms +72 mm (crotch sheet),
+−62 mm (knee convergence) and f = 1.56 (the iron EXPANDED the concave
+arm-torso gap sheet 56% radially, punching it toward the torso). New
+geometry in `relax_suit` (`blender/build_body.py`): azimuth-aware
+reference kernel (σ_φ 0.55 rad, chunked 512-row kernel), σ_z 0.012→0.035
+(muscle bands span 4–12 cm), candidate exclusions (verts across the
+midline from their own segment axis, |x| < 0.55·|axis x| interleave,
+near-axis r < 45 mm convergence), SHRINK-ONLY iron (bulges only —
+concave drape is what fabric does), a per-vert clearance cap (cut ≤ zone
+stand-off − 3 mm: the suit can never be ironed into its own body;
+deepest cuts measured 6.4 mm calf / 7 mm biceps / 18 mm torso flank), an
+envelope enforcement net (any vert that would cross its row's pre-iron
+inner envelope is reverted whole: 34 reverts, worst drift −0.5 mm), and
+an honest metric: POSITIVE-part relief RMS over >0.9-weight verts (the
+fades are no-op territory; the ankle/boot boundary cliff read as 35–50 mm
+of phantom calf relief inside them). `SUIT_NM_FLOOR` None→**6.3 hard**
+(7.48 pre-relax, 7.32 with the iron — the fabric folds live in the bake's
+displacement and the geometry pass doesn't touch them; pre-lane 4.73).
+Deep zones cannot reach a uniform 40% RMS drop because the stand-off
+budget caps the cut — that reality is logged per zone as `RELAX SOFT-GATE
+miss` lines (upperArm −14%); hardening is deferred until the eye rules on
+the shots. `--relax-suit off` reproduces the pre-relax geometry.
+
+**Verification.** Blender default build (no flag) green end-to-end in
+27 s: every gate line unmoved — BIDELTOID 0.401 m (pre AND post-relax
+re-ask), ARM GATES soft-unmoved (20.7 mm / 24.3 mm / 10.5 deg / 28.0 mm),
+HAND 0.75..0.75, SUIT GIRTH chest +24.0 / waist +32.2 / thigh +39.3 /
+calf +9.0 / forearm +10.5 mm, deltoid band +0.0, FOLD populations
+835/3315/1610/621/495/1801; RELAX summary torso 7.6→4.2 mm (−44%) /
+upperArm 10.7→9.3 (−14%) / upperLeg 5.6→2.1 (−63%), volume drift
+≤ 1.65 mm (gate 4), envelope −0.5 mm; SUIT NM VARIANCE 7.32 ≥ floor 6.3;
+BODY_EXPORTED 8995 verts. Browser `DRIVE_PORT=8199`: **rig 11/11**,
+**look 1/1**. Shots inspected: `figure_front.png` — chest/abdomen read as
+one smooth draped panel, no pectoral or abdominal lumps, arm shell clean;
+`figure.png` (rear quarter) — back and glute shelf smoothed into the
+shell, no spinal lumps; the pale neck/shoulder hump remains (pre-existing,
+iter-6 A-B note).
+
+**Assets rebuilt** → `ASSET_V` must be bumped at merge time (standing
+Merge note).
+
+**Open / next in lane priority.**
+- Deep-zone smoothness: calf/biceps relief is capped by the 8–12 mm
+  stand-off; if the eye wants smoother calves the lever is raising
+  `SUIT_OFFSET['lowerLeg']` (build constant, no body-model change), then
+  re-tuning the cap; RELAX SOFT-GATE hardens after that.
+- Boot-ankle boundary: reference cliff documented, excluded from the
+  metric; a future pass could add a junction-aware reference.
+- Reviewer item 3 (ARM GATES recalibration on skinned browser geometry,
+  then hard) and item 2 (helmet brim behind the ears + rear-quarter shot
+  check) — untouched this iteration.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — no
+  game.js wiring; the iron is build-side, gated hard on envelope,
+  clearance and volume, soft-logged per zone.
