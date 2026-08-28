@@ -45,6 +45,71 @@ inspected and described. Each iteration ends with a commit and an entry below.
 - `ASSET_V` in `game.js` must be bumped at merge time whenever `assets/` changed in this lane.
 
 ## Progress
+### 7 — Fabric folds at the suit creases (task 3, folds slice: build-side hard FOLD gate + browser smoothing guard)
+
+**What changed.** Task 3, second slice — the folds. Iteration 6 stood the
+shell off the skin; loose cloth bunches where the limb bends, so this lands
+structured compression ridges at the creases. New `SUIT_FOLDS` table +
+fold field in `displace_suit` (high-poly bake relief — stays in the normal
+map by design, so low-poly geometry and every contact/geometry gate are
+untouched): elbows (upper-arm distal band −0.86±0.26 + forearm proximal
++0.74±0.22 in along-units), knees (−0.88±0.24 / +0.80±0.22), hips
+(+0.86±0.22, biased 25% to the flexor side), armpits (+0.86±0.20), glove
+cuffs (−0.70±0.18) and boot cuffs (−0.62±0.18). Amplitude 1.3–1.9 mm,
+1.5–2 ridge cycles per band, `ridge^1.4` (narrow crest, wide root), fbm
+phase/amplitude jitter. Where a fold band is active it REPLACES the generic
+end-of-segment fbm wrinkle noise — noise-on-ridge doubled into lumps.
+**New hard FOLD gate**: each zone must land ≥ 40% of the measured
+population (armpit 836, boot-cuff 3312, elbow 1612, glove-cuff 621, hip
+496, knee 1806 verts) — an orphaned `SUIT_FOLDS` key (segment rename) now
+fails the build instead of silently flattening the creases.
+
+`tests/drive/rig.spec.js` (athlete gates only) — new gate "fabric folds
+read at the creases (suit normal-map variance)": the task-3 smoothing-guard
+instrument. Zones the shipped glb by dominant skin weight, bands verts at
+the creases using each zone's MEASURED y extent, maps them to
+`athlete_normal.png` through their UVs, reads mean |Laplacian| of R over
+262k masked texels. **Instrument finding worth keeping: bone transform
+nodes are unreliable for band placement** — forearm nodes sit at the
+elbow, shin nodes at segment CENTRE, and `upperArm` has no transform node
+at all (`nodeY` returned null and `Math.min(null, y)` silently read 0, so
+a node-based armpit band sampled mid-upper-arm). The gate now derives its
+windows from the zones' own vertex extents (fractions of measured
+min..max), no node reads. Measured on identical masks: pre-folds 66251,
+folds 67265 (+1.5% — the ridges are smooth ~25 mm waves and add little
+Laplacian energy; this metric is the GUARD against a relief-erasing
+smoothing pass, floored at 55000 = folds − 18%; fold PRESENCE is the
+build gate's job). Also asserts every crease band sees > 20 verts.
+
+**Verification.** Blender build `--res 2048 --samples 96` green in 31 s
+(OPTIX), fold populations identical across two runs (deterministic); gates
+unmoved: BIDELTOID 0.401 ≤ 0.41, HAND 0.75..0.75, SUIT GIRTH chest
+180→204 (+24.0) / waist 183→209 (+25.9) / thigh 174→213 (+39.3) / calf
+92→101 (+9.0) / forearm 88→99 (+10.5) mm, deltoid band +0.0, ARM GATES
+soft-unmoved (20.7 mm / 24.3 mm / 10.5 deg / 28.0 mm). Browser at
+`DRIVE_PORT=8199`: **rig 11/11** (10 old + the new folds gate; metric
+67265 ≥ 55000, bands elbow 378 / armpit 393 / knee 389 / hip 92 /
+glove-cuff 228 / boot-cuff 1093), **look 1/1**. Shots inspected:
+`figure.png` / `figure_front.png` — the shell stand-off holds and the
+sleeves/thighs now carry a faint horizontal fabric undulation instead of
+the dead-smooth read; subtle by design (millimetre relief — the
+`displace_suit` docstring's anti-armour-plating order of magnitude).
+
+**Assets rebuilt** → `ASSET_V` must be bumped at merge time (Merge notes).
+
+**Open / next in lane priority.**
+- Task 3 remainder: bib as a looser panel (extra stand-off on bib-region
+  verts; touches chest breadth so the SUIT_GIRTH_GATE chest band
+  18–34 mm needs re-checking), and fold visibility tuning if the author
+  wants the creases to read harder (raise amplitudes toward 2.5 mm).
+- Task 4 (helmet brim behind the ears) and task 5 (ARM GATES hard — still
+  20.7/24.3/10.5/28.0 vs limits 10/10/10/5) after that.
+- Housekeeping note for the reviewer: the first commit of this iteration
+  was created with a mangled message ("."; heredoc quoting failure) and
+  repaired by `git commit --amend -F` seconds later, before anything could
+  consume it — final SHA 2b226e6 carries the full message.
+- Reviewer at merge time: (1) bump `ASSET_V`; (2) nothing else — folds are
+  build-side hard-gated + browser-smoothing-guarded, no game.js wiring.
 
 ### 6 — Suit shell stood off the skin (task 3, offset slice: chest +24, waist +26, thigh +39 mm, hard-gated)
 
