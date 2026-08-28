@@ -930,6 +930,60 @@ function _startGame() {
     }
     const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: false });
 
+    // ── P12: render at device pixel ratio, with an adaptive fallback ────────
+    // A CSS pixel is not a hardware pixel on hi-dpi displays; rendering at 1x
+    // CSS resolution is the "visibly soft image" tell. The multiplier is
+    // capped at 2 because beyond that the eye buys nothing. The per-frame
+    // adapter is the safety valve: if the frame time overshoots the 14 ms
+    // budget for 2 s, the scaling level walks up — first giving back the
+    // extra device pixels, never dropping below full CSS resolution — and
+    // walks back to base after 5 s of headroom, so a transient stall (shader
+    // compile, tab switch) is not a permanent quality loss.
+    const _quality = {
+        baseScaling: 1 / Math.min(window.devicePixelRatio || 1, 2),
+        maxScaling: 1.0,   // the fallback never renders below CSS resolution
+        slowMs: 0,         // ms accumulated over the 14 ms budget
+        fastMs: 0,         // ms accumulated under it
+        raises: 0,
+        restores: 0,
+        armed: false,      // first frames compile shaders; ignore them
+        warm: 0,
+    };
+    if (typeof engine.setHardwareScalingLevel === 'function') {
+        engine.setHardwareScalingLevel(_quality.baseScaling);
+    }
+    function _qualityStep(dtMs) {
+        if (!(dtMs > 0)) return;
+        if (typeof engine.setHardwareScalingLevel !== 'function') return;
+        if (!_quality.armed) {
+            _quality.warm += dtMs;
+            if (_quality.warm < 1500) return;
+            _quality.armed = true;
+        }
+        const lvl = engine.getHardwareScalingLevel();
+        if (dtMs > 14) {
+            _quality.fastMs = 0;
+            _quality.slowMs += dtMs;
+            if (_quality.slowMs >= 2000 && lvl < _quality.maxScaling) {
+                engine.setHardwareScalingLevel(Math.min(_quality.maxScaling, lvl * 1.25));
+                _quality.slowMs = 0;
+                _quality.raises++;
+            }
+        } else {
+            _quality.slowMs = 0;
+            _quality.fastMs += dtMs;
+            if (_quality.fastMs >= 5000 && lvl > _quality.baseScaling) {
+                // Snap straight back to base: improving resolution is never
+                // jarring the way a drop is, and a ladder walk would spend
+                // half a minute below the quality the machine can hold.
+                engine.setHardwareScalingLevel(_quality.baseScaling);
+                _quality.fastMs = 0;
+                _quality.restores++;
+            }
+        }
+    }
+
+
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = _trampolineMode
@@ -1289,13 +1343,15 @@ void main(void) {
         if (!T) return 0;
         // material name fragment -> recipe, tiling scale, bump strength
         const RULES = [
-            [/^snowMat$/,                 'snow',    26, 0.9],
+            // P12: snow is what the camera skis over at grazing angles — its
+            // tiles render at 1024; the other recipes stay at 256.
+            [/^snowMat$/,                 'snow',    26, 0.9, 1024],
             [/rock/i,                     'rock',     6, 1.0],
             [/trunk/i,                    'bark',     4, 1.0],
             [/foliage/i,                  'foliage',  5, 0.8],
             [/torso|Arm|Leg|athleteBody/, 'fabric',  10, 0.5],
             [/head|helmet|visor|goggles/, 'shell',    6, 0.35],
-            [/ski[LR]_mat|matGround|land|table|pit/i, 'snow', 18, 0.6],
+            [/ski[LR]_mat|matGround|land|table|pit/i, 'snow', 18, 0.6, 1024],
         ];
         // Materials that carry BAKED maps must never be touched here. The
         // "already textured" guard below would usually cover them, but the body
@@ -1333,7 +1389,7 @@ void main(void) {
                 // (measured 0.7666 -> 0.779 vs flanks 0.7905/0.8015;
                 // grey-ramp gate corridor >= darkestFlank - 0.02).
                 mat.albedoColor = new BABYLON.Color3(0.975, 0.99, 1.0);
-                const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 256, {
+                const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 1024, {
                     scale: 26, strength: 1.05,
                 });
                 if (surfSnow) mat.bumpTexture = surfSnow.normal;
@@ -1347,7 +1403,7 @@ void main(void) {
             const rule = RULES.find(r => r[0].test(mat.name.replace(/_baked$/, '')));
             if (!rule) continue;
             const base = [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
-            const surf = T.makeSurface(BABYLON, scene, rule[1], 256, {
+            const surf = T.makeSurface(BABYLON, scene, rule[1], rule[4] || 256, {
                 scale: rule[2], strength: rule[3] * 2.6, baseColor: base,
             });
             if (!surf) continue;                            // headless: no canvas
@@ -1369,11 +1425,12 @@ void main(void) {
     try {
         const ssao = new BABYLON.SSAO2RenderingPipeline('ssao', scene,
             { ssaoRatio: 1.0, blurRatio: 1.0 }, [camera]);
-        ssao.samples       = 16;
+        ssao.samples       = 32;
         ssao.radius        = 1.2;
         ssao.totalStrength = 0.9;
         ssao.expensiveBlur = true;
         ssao.base          = 0.15;   // keep some ambient in the occluded areas
+        window._ssao = ssao;         // quality.spec.js gate
     } catch (e) { /* SSAO is a bonus, not a requirement */ }
 
     // ── Depth of field + bloom pipeline ──────────────────────────────────────
@@ -1399,7 +1456,7 @@ void main(void) {
         }
         // Subtle bloom — white snow and bright sky get a soft glow
         dofPipeline.bloomEnabled   = true;
-        dofPipeline.bloomWeight    = 0.18;
+        dofPipeline.bloomWeight    = 0.10;  // P12: bloom ≤ 0.1 — only sun/specular should glow
         dofPipeline.bloomThreshold = 0.88;  // raised: HDR values exceed 1.0, so 0.72 over-blooms
         dofPipeline.bloomScale     = 0.5;
 
@@ -1422,11 +1479,21 @@ void main(void) {
 
         // MSAA. Thin geometry — ski edges, poles, rails — is where aliasing
         // reads as "game", and it is the cheapest thing to fix on this GPU.
-        dofPipeline.samples     = 4;
+        // P12: 8x where the GL context allows it, else the 4x fallback.
+        dofPipeline.samples     = Math.min(8, engine.getCaps().maxMSAASamples || 4);
         dofPipeline.fxaaEnabled = false;   // redundant alongside MSAA
+
+        // P12 sharpen: MEASURED AND WITHDRAWN (iter 48). edgeAmount 0.4 — the
+        // plan's 0.3–0.5 band — rings hard on this frame: SharpenPostProcess's
+        // (center − blur) construction undershoots the whole snow/tree boundary
+        // field, and the ready-view near-black coverage goes 0.003% → 2.18%
+        // (edge 0.3: 1.71%), tripling the baked.spec dead-light gate. Revisit
+        // with a scene-safe construction (luma-only unsharp or CAS) if the
+        // MSAA softness ever needs it.
     } catch(e) {
         dofPipeline = null;
     }
+    window._dofPipeline = dofPipeline;   // quality.spec.js gate
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
@@ -2204,73 +2271,6 @@ void main(void) {
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
-    // ── Procedural snow surface detail ──────────────────────────────────────
-    // Generates a tiling normal map at runtime rather than shipping an image.
-    // Flat untextured snow is the most obvious remaining tell — real snow has
-    // wind ripple, groomer corduroy and a fine granular break-up, and a normal
-    // map gets all three without adding a single triangle.
-    //
-    // Height is built from three octaves plus a directional corduroy ripple,
-    // then converted to a normal by finite differences (Sobel-style central
-    // difference on the height field).
-    function _makeSnowNormalMap(scene, size) {
-        const tex = new BABYLON.DynamicTexture('snowNormal',
-            { width: size, height: size }, scene, true);
-        const ctx = tex.getContext();
-        if (!ctx || !ctx.createImageData) return tex;   // headless stub
-
-        // Deterministic value noise — same surface every load, so the look does
-        // not drift between sessions.
-        const hash = (x, y) => {
-            let h = (x * 374761393 + y * 668265263) | 0;
-            h = (h ^ (h >>> 13)) * 1274126177;
-            return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
-        };
-        const smooth = (t) => t * t * (3 - 2 * t);
-        function valueNoise(x, y) {
-            const xi = Math.floor(x), yi = Math.floor(y);
-            const xf = x - xi, yf = y - yi;
-            const u = smooth(xf), v = smooth(yf);
-            const a = hash(xi, yi),     b = hash(xi + 1, yi);
-            const c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
-            return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
-        }
-
-        // Height field. Wrapping coordinates keep the texture tileable.
-        const H = new Float32Array(size * size);
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const fx = x / size, fy = y / size;
-                let h = 0;
-                h += valueNoise(fx * 8,  fy * 8)  * 0.55;   // drifts
-                h += valueNoise(fx * 24, fy * 24) * 0.28;   // wind ripple
-                h += valueNoise(fx * 96, fy * 96) * 0.17;   // granular break-up
-                // Corduroy: the groomer leaves fine parallel lines down the fall line.
-                h += Math.sin(fy * Math.PI * 2 * 48) * 0.035;
-                H[y * size + x] = h;
-            }
-        }
-
-        const img = ctx.createImageData(size, size);
-        const STRENGTH = 2.6;
-        const at = (x, y) => H[((y + size) % size) * size + ((x + size) % size)];
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const dx = (at(x + 1, y) - at(x - 1, y)) * STRENGTH;
-                const dy = (at(x, y + 1) - at(x, y - 1)) * STRENGTH;
-                // Normalise (-dx, -dy, 1) into tangent space, encoded 0..255.
-                const len = Math.sqrt(dx * dx + dy * dy + 1);
-                const i = (y * size + x) * 4;
-                img.data[i]     = ((-dx / len) * 0.5 + 0.5) * 255;
-                img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
-                img.data[i + 2] = ((1 / len)   * 0.5 + 0.5) * 255;
-                img.data[i + 3] = 255;
-            }
-        }
-        ctx.putImageData(img, 0, 0);
-        tex.update(false);
-        return tex;
-    }
 
     // Snow is physically based now. StandardMaterial is Blinn-Phong and cannot
     // express what actually makes snow look like snow: a rough specular response
@@ -6432,7 +6432,24 @@ void main(void) {
         catch (e) { window._surfacesApplied = 0; }
     }, 1200);
 
-    engine.runRenderLoop(() => scene.render());
+    // P12 instrumentation for the drive specs (tests/drive/quality.spec.js):
+    // what the render actually runs at, and the adapter's decision counters.
+    window._quality = {
+        get scaling()      { return engine.getHardwareScalingLevel(); },
+        get baseScaling()  { return _quality.baseScaling; },
+        get maxScaling()   { return _quality.maxScaling; },
+        set maxScaling(v)  { _quality.maxScaling = v; },
+        get msaa()         { return dofPipeline ? dofPipeline.samples : 0; },
+        get sharpen()      { return !!(dofPipeline && dofPipeline.sharpenEnabled); },
+        get raises()       { return _quality.raises; },
+        get restores()     { return _quality.restores; },
+        get armed()        { return _quality.armed; },
+        step: _qualityStep,
+    };
+    engine.runRenderLoop(() => {
+        try { _qualityStep(engine.getDeltaTime()); } catch (e) { /* never block a frame */ }
+        scene.render();
+    });
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', _startGame);

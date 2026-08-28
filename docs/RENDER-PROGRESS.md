@@ -143,8 +143,19 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Human-testing queue (author 16:40, reviewer order) | **43 = (1)+(2) DONE; 44 = (3)+(4) DONE; 45 = review-only; 46 = (5)+(6)+(7) DONE; NEXT = URGENT crash state machine (first), then P12 quality, loose suit, P10, proportions part 2, trees, snow chop, pose-vs-physics, night mode** | (1) hop feet: gated ≤5 mm/≤3° every hop frame, measured 1.39/0.90 mm and 1.75°; (2) crash settle: rest detector + deterministic trigger (43), **friction retune landed iter 45 (ploughing 2.5→3.5, static stop 0.35→0.5), gate now motion-end ≤ 3.8 s (restAt confirmation logged separately); author's 2–3 s median validation on the golden harness is the open piece** (entry 45); (3) kicker block — restored as ribbon geometry: flat table beside the block, physics bezier inside \|x\| ≤ 1.7, near-vertical ±1.70→±1.75 walls, gate in terrain-corridor.spec; (4) hands long — lane A rebuild's 0.749…
 | — | Human item 8 (shoulders) | **gated hard and green (iter 45 run): bideltoid worst 0.4011 m (gate 0.36–0.41), profile flat 0.39–0.40 across the deltoid band** | author target band 0.38–0.40 — measured value sits at the TOP edge, 1 mm over; accept or push another mm in the next lane-A rebuild (open question below) |
 | — | URGENT crash state machine (author 21:45) | **landed (iter 47)** | tumble ≤ 1.0 s → frozen pose → rigid slide (exp(−5·dt), slope-following, rigid pen lift, joints never re-solved) → stopped; threshold detector REMOVED (why it failed: PBD injects displacement into propped non-contacting parts → limit cycle at/above the 0.12 m/s gate, never 8 quiet frames in a browser — entry 47); measured: stop 1.10–1.21 s, joint angular speed 0.00e+0 rad/s from the freeze, exactly-0 span 9.06 s; golden re-captured (13 aerial crash tails), audit state-identical ×30; `_crashVLen` zero-floor phantom-creep instrument fixed |
+| P12 | Render quality pass | **slice 1 landed (iter 48): DPR rendering + adaptive fallback, MSAA by caps, SSAO 32, snow tiles 1024, aniso/trilinear everywhere; sharpen MEASURED AND WITHDRAWN (rings: ready-view black32 0.003%→2.18% at edge 0.4)** | remaining: second snow variation layer, material re-tune under the new sky, CSM/PCSS shadows (P2 overlap), real-GPU frame time; gates in `tests/drive/quality.spec.js` |
 
 ## Open questions for the reviewer
+- **Iteration 48 — two calls.**
+  (a) **Adaptive-resolution floor:** the P12 fallback never renders below CSS
+  resolution (`maxScaling = 1.0`), so on DPR-1 machines it is inert and slow
+  frames are not traded for resolution. My reading of "adaptive fallback" is
+  that only the extra device pixels should be given back — confirm, or name
+  the lower bound you want it allowed to reach.
+  (b) **Sharpen withdrawal:** the plan's 0.3–0.5 band measurably rings on this
+  scene (numbers in entry 48). Accept the withdrawal, or fund a scene-safe
+  construction (luma-only unsharp / CAS) in a later P12 slice with its own
+  baked.spec re-run?
 - **Iteration 45 — three calls.**
   (a) **Crash settle instrument + envelope:** I replaced the restAt gate with a motion-end
   gate (restAt includes the detector's own 8-sample/1 s-arm lag; today's four runs measured
@@ -275,6 +286,67 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+### 48 — P12 render quality, slice 1: devicePixelRatio rendering + adaptive fallback, sampling/texturing pass, SSAO 32 — sharpen measured and withdrawn
+
+**Order acted on:** reviewer queue NEXT after the iter-47 URGENT crash machine
+(P12 quality; schedule group 1 of 51–80, taken early as 48–50 are pre-schedule).
+
+**Landed (renderer-only; no `engine/`, no `assets/`, no ASSET_V bump):**
+- Resolution: `engine.setHardwareScalingLevel(1/min(devicePixelRatio, 2))` at
+  boot (game.js `_quality` block) plus a per-frame adaptive fallback: > 14 ms
+  for 2 s raises the level ×1.25, ≥ 5 s of headroom snaps it back to base.
+  The fallback never renders below CSS resolution (`maxScaling = 1.0`), so a
+  DPR-1 machine is inert by construction. Driven by `engine.getDeltaTime()`
+  inside `runRenderLoop`; `window._quality.step(ms)` + counters expose a
+  deterministic driver for the spec. `window._ssao`/`window._dofPipeline`
+  added next to the existing debug handles.
+- MSAA: `samples = min(8, caps.maxMSAASamples || 4)` (was fixed 4; SwiftShader
+  caps at 4, spec asserts the formula and ≥ 4).
+- SSAO2 16 → 32 samples (bilateral `expensiveBlur` was already on); bloom
+  weight 0.18 → 0.10 (P12 "≤ 0.1"); contrast stays 1.2; ACES + dithering stay.
+- Texturing: every `makeSurface` tile gets `anisotropicFilteringLevel = 16`
+  and is trilinear (the mipmapped DynamicTexture default; the `samplingMode`
+  property is getter-only in this Babylon build — assigning it throws, which
+  silently zeroed `_applySurfaces` for one test run and is why the A/B probe
+  exists). Snow-recipe tiles raised 256 → 1024 via a per-rule size column —
+  corridor `snowMat` AND the `matGround|land|table|pit` snow rule; other
+  recipes stay 256.
+- Removed dead `_makeSnowNormalMap` (58 lines, unreferenced since the
+  `_applySurfaces` consolidation).
+- New `tests/drive/quality.spec.js`: scaling formula + headless floor, MSAA
+  formula, snow tiles 1024 + the filtering contract asserted over ALL
+  `tex_snow_*`/other tiles by prefix (first-match-by-name hid a 256 landing
+  mat in the first draft), SSAO 32, synthetic raise/restore of the adapter,
+  and a 300-frame frame-time log with a pathological-regression gate.
+
+**Sharpen: measured and withdrawn.** The plan's mild sharpen (edge 0.3–0.5)
+rings hard on this frame — ready-view near-black coverage (max channel < 32):
+0.003% sharpen off → 2.18% at edge 0.4 → 1.71% at 0.3, against baked.spec's
+0.5% dead-light gate (in-page A/B: SSAO 32 and the 1024 tiles measured
+innocent; the first full-suite run failed baked.spec at 2.17% black32 and the
+A/B isolated the post process). quality.spec now pins sharpen DISABLED with
+the numbers, so it cannot creep back without a scene-safe construction
+(luma-only unsharp or CAS) and a fresh baked.spec run.
+
+**Verification:** unit 74/74; golden 30/30 byte-identical (renderer-only — no
+rebaseline). quality.spec 5/5 (frame time at 320×220 SwiftShader: mean 105.7 /
+p50 105.2 / p95 112.8 ms, vs HEAD baseline measured 94.9/94.8/102.6 → +11 ms
+for SSAO 32 + full-screen extras; gate 150 ms catches doublings only — the
+60 fps budget needs a real-GPU measurement, still open). Full drive suite:
+61 passed + the one baked.spec failure above → after the sharpen withdrawal,
+baked.spec 3/3 (black32 0.0028%). look 1/1; five canonical shots regenerated
+at 1100×850 (luminance top/mid/bottom): scene 0.464/0.718/0.786 (snow the
+brightest surface, blue sky r 0.383 < b 0.464), figure 0.481/0.509/0.731,
+figure_front 0.770/0.747/0.720, kicker 0.547/0.591/0.728, inrun 0.524/0.712/
+0.762. LOOK: surfaces 37; body/helmet/face mats on `?v=15`, albedoReady true.
+
+**Open / next:** P12 remainder — second larger-scale snow variation layer
+(tiling-repeat check within 20 m), material re-tune under the new sky (snow
+roughness, helmet clear-coat, goggle gloss, ski topsheet), cascaded/PCSS
+shadows (P2 overlap), real-GPU frame-time measurement, corridor sampling
+check. Then the queue: loose suit, P10, proportions part 2, trees, snow chop,
+pose-vs-physics, night mode.
+
 ### 47 — URGENT (author 21:45): hard crash state machine — tumble ≤ 1.0 s → frozen pose → rigid slide → stopped; the threshold rest detector is gone
 
 **Order acted on:** the author's URGENT stable-build report (21:45), recorded as iteration

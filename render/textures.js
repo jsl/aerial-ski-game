@@ -184,6 +184,12 @@ function makeSurface(BABYLON, scene, recipe, size, opts) {
         t.vScale = o.scale || 8;
         t.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+        // P12: these tiles are seen at every grazing angle on the ground —
+        // trilinear mip filtering (the DynamicTexture default when generated
+        // with mipmaps; the property is getter-only in this Babylon build)
+        // plus 16x anisotropy keeps the snow surface from turning to mush or
+        // shimmering away from the camera centre.
+        t.anisotropicFilteringLevel = 16;
     }
     return { normal: nrmTex, albedo: albTex };
 }
