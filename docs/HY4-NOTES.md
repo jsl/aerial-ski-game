@@ -20,3 +20,7 @@ a JS file changes. Scratch files live in `~/aerial-agents/scratch/hy4/`.
 ### 1 — Sky: blue reaches the tree line (P2 remainder, reviewer 03:15/06:55)
 
 Status: measured, gates added; see verification below.
+A1: Boot-ski invariant verified and closed (rig.spec.js passed)
+
+### 2 — In-run crouch: arms stay in front
+Status: POSE_INRUN_TUCK updated to bring arms ahead of hips.
