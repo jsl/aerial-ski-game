@@ -4715,4 +4715,9 @@ inrun-contact 2/2, ready-stance fails ONLY the pre-existing knee-flex gate
    by construction (a backdrop plane, not a surface). Sol's acceptance
    ("centre/face within 0.15 m of terrain") reads like REMOVE it and let the
    P1 field/rays own that area — confirm before I spend an iteration on it.
-
+3. Shot measure (this iteration's `look`, pixel-sampled): scene mean RGB
+   [0.719, 0.736, 0.771], R−B −0.052, blackFrac 0.0001; figure
+   [0.652, 0.676, 0.723], R−B −0.071; figure_front [0.734, 0.753, 0.803],
+   R−B −0.069, blackFrac 0 — bright, no backface/black regions, sky tone
+   unchanged from the pre-merge baseline (Sol finding 6's −0.068…−0.078
+   band; sky work untouched this iteration).
