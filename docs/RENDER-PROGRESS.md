@@ -190,6 +190,12 @@ and measured, entry 55 below.)*
 since the iter-56 caster swap, never re-run full-suite until now; repaired
 test-side, shots regenerated + measured, entry 60 below. No features.)*
 
+
+*(iter-66 review order 0: post-merge golden gate restored 30/30 with zero
+rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
+wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
+Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
+
 ### 63 — P4 trees slice 3 (review-60 (c)): four distinct spruce variants +
 0.7–1.4 scale band + variant gates; one self-inflicted renderer regression
 (lost proxy material → white cones) caught by the look eye check, not by any
@@ -4652,3 +4658,61 @@ spec). This iteration finished and landed exactly that work; nothing new.
 - P1 slice 1 corridor ribbon (fixes the 0.0941 m post-turn float + slopeBox
   4.7 cm defect), P2 sky/sun, crash rewrite items 2/2b, P13 chain solver, the
 - body+suit rebuild, P8 mesh-hands-forward bind fix.
+
+### 66 — post-merge golden gate: A7 `wUpperMtn` tweak reverted (Sol major 5),
+probe hand endpoint fixed to the wrist (Sol major 3); Sol major 8
+root-caused, fix NOT landed
+
+**Order acted on:** the 16:15 DEFINITIVE ORDER step (0) — suites green. The
+merge ee58d13 brought only the review doc; the HY4 code (incl. A7) was
+already on the branch, and the golden gate was red exactly as the 15:40 note
+predicted.
+
+**Golden audit (15:40 procedure, done before any re-capture):** all 22
+aerial scenarios fail on EXACTLY two census fields —
+`wUpperMtn.p[1]`/`.w[1]`, 34.982594 → 34.662594 (Δ −0.32, HY4's f23ea36
+moved the slab `- 0.88 → - 1.2` and thinned 1.6 → 0.8). Zero other fields
+differ in any scenario; trampoline/pool 8/30 passed. Physics state is
+byte-identical to the pre-merge GLM traces. Since Sol major 5 measured A7's
+change as WORSE (lower conservative bound 8.9124 → 8.9632 m, still ≈ 9 m
+floating), I reverted the tweak instead of rebaselining the traces onto a
+rejected change: `game.js` `wUpperMtn` back to height 1.6 / `- 0.88`.
+**Result: golden 30/30 with ZERO rebaseline.** A7 proper (slab into the
+terrain) remains open per Sol's acceptance.
+
+**Sol major 3 (hand proxy) — fixed:** `_bootSkiProbe()` read the lower
+arm's −Y end (the elbow); the chain builds +Y toward the wrist. Probe now
+uses `+0.125·(cos rx, sin rx)`, and `_inrunArmForward.zBias` was retuned
+0.20 → 0.29 to hold the true wrist inside the author's −0.40…−0.25 band
+(mid-in-run measured −0.4583 at bias 0.20 → in band after retune;
+inrun-contact.spec 2/2 green, incl. boots ≤ 5 mm through the hop).
+
+**Sol major 8 (ready-stance knee flex) — root-caused, NOT fixed this
+iteration:** `_pinBootsToSkis` forces every shin to the ski pitch
+(±2° gate), so the stance block's knee term (`_ll.rotation.x -= 0.85·_legF`)
+is overwritten every frame; only the hip term survives → flexL−flexR =
+0.45·0.26 = 0.117 rad, exactly Sol's number (gate ≥ 0.1745). Since the boot
+is rigid with the ski, the shin-to-ski pin is physically right and the extra
+stance flex must move into the THIGH term — but my first attempt (0.45 →
+0.80 on `_ul`) perturbed gate-crouch boot seating (L/toe −0.0108 m) and was
+withdrawn; needs its own pass with the seating loop re-checked. Also found
+and repaired en route: an editing accident had deleted the
+`_legF`/`_ul, _ll` declarations (stance block threw per frame); restored —
+`git diff` audited clean.
+
+**Verification:** unit 76/76; golden 30/30 (no recapture); drive:
+inrun-contact 2/2, ready-stance fails ONLY the pre-existing knee-flex gate
+(0.117, above), all its other gates green (skis seated, torso, hands);
+`look` shots regenerated clean (1 passed; athlete mats/Glb all
+`?v=22` ready).
+
+**Open questions for the reviewer:**
+1. Sol-8 fix: is carrying the ready-stance flex entirely in the thigh term
+   (`_ul` coefficient ≈ 0.75–0.85) acceptable given it deepens the
+   "transplanted knee flex moves the thigh forward" offset to ~10 cm, or
+   should the pin exempt the ready state and the ±2° pitch gate re-derive?
+2. A7 proper: the slab sits ≈ 9 m above `terrainRootY` over its whole range
+   by construction (a backdrop plane, not a surface). Sol's acceptance
+   ("centre/face within 0.15 m of terrain") reads like REMOVE it and let the
+   P1 field/rays own that area — confirm before I spend an iteration on it.
+
