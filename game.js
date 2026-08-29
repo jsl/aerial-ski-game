@@ -4099,6 +4099,106 @@ void main(void) {
         }
     }
 
+    // ── Venue dressing slice 4: static coach figures at the knoll ──────────
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3523/3520): two or three static
+    // figures at the knoll wearing RED jackets — accent colour against the
+    // white/blue venue. Rendered as cheap upright cards (same spirit as the
+    // tree-card pipeline): one runtime-drawn canvas texture, three planes,
+    // generic panels only (no federation marks). Seeded from the physics
+    // surface and re-seated with the flag/wands contract.
+    {
+        const COACHES = [
+            { x: 2.3, z: KICKER_END_Z - 2.2, h: 1.82 },
+            { x: 3.1, z: KICKER_END_Z - 0.9, h: 1.76 },
+            { x: 4.5, z: KICKER_END_Z - 2.6, h: 1.86 },
+        ];
+        const RAY_Y4 = 80;
+
+        const coachTex = new BABYLON.DynamicTexture('knollCoachTex',
+            { width: 256, height: 512 }, scene, true);
+        const tc = coachTex.getContext();
+        tc.fillStyle = 'rgba(0,0,0,0)';
+        tc.clearRect(0, 0, 256, 512);
+        // Legs (dark trousers) + boots.
+        tc.fillStyle = 'rgb(34,38,46)';
+        tc.fillRect(96, 300, 26, 168);
+        tc.fillRect(134, 300, 26, 168);
+        tc.fillStyle = 'rgb(20,22,26)';
+        tc.fillRect(88, 462, 40, 34);
+        tc.fillRect(128, 462, 40, 34);
+        // Red jacket torso + simple arms.
+        tc.fillStyle = 'rgb(190,26,20)';
+        tc.fillRect(78, 168, 100, 150);
+        tc.fillRect(58, 172, 24, 130);
+        tc.fillRect(174, 172, 24, 130);
+        // Zip line + collar (generic panels only).
+        tc.fillStyle = 'rgb(140,18,14)';
+        tc.fillRect(124, 168, 8, 150);
+        tc.fillRect(98, 156, 60, 16);
+        // Head: face, white helmet, dark goggle band.
+        tc.fillStyle = 'rgb(214,176,148)';
+        tc.fillRect(104, 96, 48, 56);
+        tc.fillStyle = 'rgb(238,240,244)';
+        tc.fillRect(100, 62, 56, 42);
+        tc.fillStyle = 'rgb(30,34,44)';
+        tc.fillRect(102, 100, 52, 20);
+        coachTex.update();
+        coachTex.hasAlpha = true;
+        const coachMat = makePBR('knollCoachMat', scene);
+        coachMat.albedoTexture = coachTex;
+        if (BABYLON.Material && BABYLON.Material.MATERIAL_ALPHATESTMODE !== undefined) {
+            coachMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATESTMODE;
+        }
+        coachMat.metallic = 0;
+        coachMat.roughness = 0.9;
+
+        const coachGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y4, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        const coachMeshes = COACHES.map((c, i) => {
+            const m = BABYLON.MeshBuilder.CreatePlane('knollCoach' + i,
+                { width: c.h * 0.5, height: c.h }, scene);
+            m.material = coachMat;
+            return m;
+        });
+
+        const seatCoaches = (picker) => {
+            const seated = COACHES.map((c, i) => {
+                // Base sunk 2 cm so the knoll surface never leaves feet floating.
+                const y = picker(c.x, c.z) - 0.02;
+                coachMeshes[i].position.set(c.x, y + c.h / 2, c.z);
+                return { x: c.x, z: c.z, baseY: y, h: c.h };
+            });
+            window._knollCoachesDebug = { stations: seated, seated: !!picker.seated };
+        };
+        seatCoaches((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatCoaches = () => {
+                const picker = (x, z) => coachGroundAt(x, z);
+                picker.seated = true;
+                seatCoaches(picker);
+                window._knollCoachesSeated = true;
+            };
+            scene.onAfterRenderObservable.addOnce(reseatCoaches);
+        } else {
+            window._knollCoachesSeated = false;   // headless: keep the seed seating
+        }
+    }
+
 
 
 

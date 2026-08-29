@@ -303,3 +303,74 @@ test('venue dressing: judges/start deck on dark containers beside the kicker, le
     // Beside the kicker, outside the B-net line: deck entirely at x ≥ 7.5.
     expect(r.debug.deckTopY).toBeGreaterThan(r.debug.baseY + 2.5);
 });
+
+test('venue dressing: three static coach figures in red jackets at the knoll, seated', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() =>
+        window._knollCoachesDebug && window._knollCoachesSeated === true,
+        null, { timeout: 20000 });
+    await page.waitForTimeout(300);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const d = window._knollCoachesDebug;
+        const meshes = [0, 1, 2].map((i) => scene.getMeshByName('knollCoach' + i));
+        const present = meshes.every(Boolean);
+        if (!present) return { present, d };
+
+        // Red pixels must dominate the jacket band of the shared texture.
+        const tex = scene.materials.find((m) => m.name === 'knollCoachMat').albedoTexture;
+        const ctx = tex.getContext();
+        const img = ctx.getImageData(78, 168, 100, 150).data;   // torso band
+        let red = 0, n = 0;
+        for (let p = 0; p < img.length; p += 4) {
+            if (img[p + 3] > 128) {
+                n++;
+                if (img[p] > 140 && img[p] > img[p + 1] * 3 && img[p] > img[p + 2] * 3) red++;
+            }
+        }
+
+        // Independent ground re-pick under each figure (exclude coaches).
+        const pickGround = (x, z) => {
+            const hit = scene.pickWithRay(
+                new BABYLON.Ray(new BABYLON.Vector3(x, 80, z),
+                                new BABYLON.Vector3(0, -1, 0), 150),
+                (m) => !!m.name && !/^knollCoach/.test(m.name));
+            return hit && hit.hit ? hit.pickedPoint.y : null;
+        };
+        const stations = d.stations.map((s) => {
+            const g = pickGround(s.x, s.z);
+            return { x: s.x, z: s.z, baseY: s.baseY, g };
+        });
+        const alphaTest = meshes[0].material.transparencyMode ===
+            BABYLON.Material.MATERIAL_ALPHATESTMODE;
+        const sameMat = meshes.every((m) =>
+            m.material.uniqueId === meshes[0].material.uniqueId);
+        return {
+            present, d, redFrac: n ? red / n : 0,
+            stations, alphaTest, sameMat,
+            nMeshes: meshes.length,
+        };
+    });
+
+    expect(r.present).toBe(true);
+    expect(r.nMeshes).toBe(3);
+    expect(r.sameMat).toBe(true);
+    expect(r.alphaTest).toBe(true);
+    // The jacket band is predominantly RED (the whole P3 point).
+    expect(r.redFrac, `jacket-band red fraction ${r.redFrac}`).toBeGreaterThan(0.5);
+    // Every figure seated on the knoll (≤ 2 cm re-pick error), never floating.
+    for (const s of r.stations) {
+        expect(s.g, `no ground picked under coach at ${s.x},${s.z}`).not.toBeNull();
+        expect(s.baseY, `coach base ${s.baseY} vs ground ${s.g}`)
+            .toBeLessThanOrEqual(s.g + 0.005);
+        expect(s.g - s.baseY, `coach sunk ${s.g - s.baseY} deep`).toBeLessThan(0.05);
+    }
+    // On the knoll: beside the corridor, near the crest (z ≈ KICKER_END_Z).
+    for (const s of r.stations) {
+        expect(Math.abs(s.x)).toBeGreaterThan(1.0);
+        expect(Math.abs(s.z - r.d.stations[0].z)).toBeLessThan(3.0);
+    }
+});
