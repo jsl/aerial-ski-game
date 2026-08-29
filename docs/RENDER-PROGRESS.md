@@ -6977,3 +6977,62 @@ figures in red jackets); P4 tree leftovers (8-view billboards, understory,
 near-camera cards).
 
 **Open questions for the reviewer:** none new.
+
+### 103 — NEXT.md items 1+3 landed (shadow reveal gate + stiff tumble); item 2
+(mountains second pass) NOT attempted this iteration — recorded open
+
+**NEXT item 1 — the reveal gate now covers the SHADOW** (commit `9af0916`).
+Root cause: the startup caster block added the driver solids + styled skis to
+the CSM render list synchronously, and the GLB-link block added the skinned
+body at RESOLVE time — before the reveal frame. Fix: the startup block no
+longer adds the character at all; a new `_linkAthleteShadowCasters`
+(top-level; resolves the generator via `scene.lights` because `shadowGen`
+lives in the scene-builder's closure) links every character mesh + skinned
+descendant in the SAME frame as the reveal (poll path and fallback path).
+Verification: `reveal-gate.spec.js` extended with an every-frame renderList
+watcher (pre-reveal violations tagged `:rl:`) — 4/4 green including two new
+tests: renderList absent-before/present-after, and the negative control
+(forcing a ski into a render list pre-reveal is caught). Unit allowlist entry
+added; unit 78/78.
+
+**NEXT item 3 — stiff tumble** (commit `2189384`). The ragdoll now captures
+the impact pose in the TORSO frame at init and a shape-retention pass runs
+INSIDE the PBD constraint loop (per substep, plus one tracked pass after the
+polish round): every limb segment clamped within ±35° of its captured
+direction (rebuilt in the live torso frame so it tumbles with the body), head
+axis within 40° of the torso axis (spine). Post-hoc-only placement was
+measured and rejected first (peak pre-clamp excursion 122.4°; the figure
+snapped back each frame but transients dominated). Gates in
+`crash-ragdoll.spec.js`: peakExc ≤ 38°, peakSpine ≤ 43° (measured **35.2° /
+40.3°**), plus the limp negative control (`window._crashLimp` skips the
+clamps; measured **152.0–160.8°**, fails as required). One regression found
+and fixed: the stiffer frozen pose left more propped parts, and
+settle-while-rolling at 0.3 m/s measured an elbow joint rate of
+1.79 rad/s (> π/2 gate) — halved to 0.15 m/s, measured 0.562 rad/s.
+crash-ragdoll 3/3; crash-rest gates (restAt 4.75 s, roll-to-flat, ski rest)
+unchanged-green.
+
+**Golden:** the 13 crash-tail traces were re-captured (display-only
+ragdoll pose; audit script compared EVERY non-node frame field of old vs new
+traces: byte-identical — "PHYSICS STATE IDENTICAL in all re-captured
+traces"). Golden 30/30, unit 0 fail. Shots regenerated (`look`, 10:59–11:00).
+
+**NEXT item 2 (mountains) — NOT DONE, still open in NEXT.md** (kept; not
+deleted because incomplete). Time budget went to items 1+3. Measured for the
+record: top-third of `scene.png` mean lum 0.637, 92.8% of pixels bluish
+(b > r+0.04), horizontal texture energy 0.188 — consistent with the
+reviewer's "smooth pale gradient" read; the texture exists (ridges3d gates
+pass) but reads washed out at distance. Likely suspects for the next pass:
+the per-layer fog-mix albedoColor multiplier (0.10/0.25/0.42) plus the
+elevation mapping `RIDGE_SNOWLINE_M = 70` putting near/mid crests at v ≈
+0.2–0.6 (mostly forest band, little snow/rock in view).
+
+**Open questions for the reviewer:**
+1. Mountains (NEXT item 2): is the intent to keep the atmospheric fog-mix at
+   all? If the author wants the ridges to read like the old textured peaks,
+   I would cut the mix roughly in half, drop RIDGE_SNOWLINE_M to ~45 so
+   snowfields/rock appear on mid crests, and raise normal strength — say so
+   and I will do exactly that in 104 with before/after scene.png crops.
+2. The crash-tumble gates now pin stiffness at ±35°/40°+3° tolerance. If the
+   author wants it even stiffer (more "rag-doll-ness" removal), the same two
+   constants control it.
