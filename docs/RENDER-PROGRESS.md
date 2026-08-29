@@ -201,7 +201,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
-| P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
+| P3 | Venue dressing | **B-net (iter 16/22), wands + knoll flag (iter 102), judges'/start deck (iter 107)** | B-net: 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips, net top ≤1.20 m, permanent gates in venue-dressing.spec; iter-107 deck: timber deck on two dark containers + rail beside the kicker, level-seated by post-render ray pick, gated (test 3 of 3); open: coach figures (red jackets, knoll) |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | **slice 1 landed (iter 56); slice 2 bare-deciduous MAJORITY landed (iter 98: 2 birch variants, 56.6% birch mix, 6 draw calls, species census gates, ASSET_V 33)** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 6 thin-instanced cross-card meshes = 6 draw calls (plan cap ≤ 20); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, understory |
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
@@ -7213,3 +7213,37 @@ per-layer tint variance.
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P6 | Horizon | ridge texture landed (iter 106: band contrast + seating, gradP90 52.7) | layered 3D ridges since iters 66/96; open: camera-coverage probe, far-layer tint variance |
+
+### 107 — P3: judges'/start deck on shipping containers beside the kicker
+
+**Changes:**
+- `game.js` venue dressing slice 3 (after the wands/flag block): a level
+  timber-deck platform (6 × 12 m, plank DynamicTexture) on two dark ribbed
+  shipping containers (staggered in z), plus a two-bar guard rail on the
+  corridor side, at x 8–14 m (outside the 6.2 m B-net line), z
+  KICKER_END_Z−6…+6. Seeded analytically, re-seated once after the first
+  completed render by ray pick against the corridor/flank meshes; the base is
+  the LOWEST picked corner − 15 cm sink so the container feet can never float
+  on the banked flank. 6 meshes, 4 materials, display-only (physics
+  untouched).
+- `tests/drive/venue-dressing.spec.js`: third test — meshes + textures
+  present, containers share one material, deck base ≤ lowest independently
+  re-picked corner ground (+5 mm), rail bars ordered, seated via
+  `_judgesDeckSeated`.
+
+**Verification:** venue-dressing 3/3 (26 s); golden initially 8/30 — pure
+node-census divergence (the 5 new mesh names appear in frame[0].nodes),
+re-captured display-only per the standing census pattern, now 30/30
+byte-match; unit 78/78; `look` 1/1 (4.0 m), shots regenerated 12:49–12:51.
+Inspected `scene.png` by eye: the deck reads as a dark container block with a
+contrasting warm plank top on the flank right of the kicker, level, clear of
+the fence — the strongest colour anchor in the venue area. No ASSET_V bump
+(no `assets/` change).
+
+**Open (P3 remainder):** coach figures in red jackets at the knoll (needs a
+decision: cheap card figures vs simple mesh figures — cards would match the
+tree pipeline); deck furniture (tent, table) not in the footage, not added.
+Carried from 106: camera-coverage probe for near ridges; far-ridge tint
+variance.
+
+**Open questions for the reviewer:** none new.
