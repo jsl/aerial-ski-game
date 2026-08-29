@@ -3966,6 +3966,140 @@ void main(void) {
         }
     }
 
+    // ── Venue dressing slice 3: judges'/start deck on shipping containers ──
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3523/3520/7841): a timber-deck
+    // platform on dark shipping containers beside the kicker — the judges'/
+    // start deck. Display-only scenery, 6 meshes, no instancing needed:
+    // two dark ribbed containers (level, sunk into the picked flank so they
+    // can never float), a planked timber deck on top, and a simple two-bar
+    // guard rail on the corridor side. Seeded from a ray pick like slices 1–2
+    // and re-seated once after the first completed render.
+    {
+        const DECK_X0 = 8.0;    // outside the 6.2 m B-net line
+        const DECK_X1 = 14.0;
+        const DECK_Z0 = KICKER_END_Z - 6.0;   // beside the kicker table
+        const DECK_Z1 = DECK_Z0 + 12.0;
+        const CONT_H  = 2.59;   // standard 40 ft container height
+        const DECK_T  = 0.14;   // timber deck thickness
+        const RAIL_H  = 1.05;
+        const RAY_Y3  = 80;
+
+        const cx = (DECK_X0 + DECK_X1) / 2;
+        const cz = (DECK_Z0 + DECK_Z1) / 2;
+        const w  = DECK_X1 - DECK_X0;
+        const d  = DECK_Z1 - DECK_Z0;
+
+        const deckGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y3, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        // Dark ribbed container texture: vertical corrugation stripes on a
+        // near-black box. One shared 128 px tile, cheap.
+        const contTex = new BABYLON.DynamicTexture('judgesDeckContTex',
+            { width: 128, height: 128 }, scene, true);
+        const cc = contTex.getContext();
+        cc.fillStyle = 'rgb(38,42,48)';
+        cc.fillRect(0, 0, 128, 128);
+        cc.fillStyle = 'rgb(28,31,36)';
+        for (let x = 0; x < 128; x += 16) cc.fillRect(x, 0, 7, 128);
+        contTex.update();
+        contTex.uScale = 6; contTex.vScale = 1;
+        const contMat = makePBR('judgesDeckContMat', scene);
+        contMat.albedoTexture = contTex;
+        contMat.metallic = 0;
+        contMat.roughness = 0.85;
+
+        // Timber deck: warm planks with dark seams.
+        const plankTex = new BABYLON.DynamicTexture('judgesDeckPlankTex',
+            { width: 256, height: 128 }, scene, true);
+        const pc = plankTex.getContext();
+        pc.fillStyle = 'rgb(126,96,62)';
+        pc.fillRect(0, 0, 256, 128);
+        pc.fillStyle = 'rgb(96,70,44)';
+        for (let y = 0; y < 128; y += 16) pc.fillRect(0, y, 256, 2);
+        for (let y = 8; y < 128; y += 16) {
+            for (let x = 37 + (y % 32); x < 256; x += 97) pc.fillRect(x, y, 2, 6);
+        }
+        plankTex.update();
+        plankTex.uScale = 3; plankTex.vScale = 1;
+        const plankMat = makePBR('judgesDeckPlankMat', scene);
+        plankMat.albedoTexture = plankTex;
+        plankMat.metallic = 0;
+        plankMat.roughness = 0.9;
+
+        // Two containers, staggered in z, holding the deck corners.
+        const cont1 = BABYLON.MeshBuilder.CreateBox('judgesDeckCont1',
+            { width: w * 0.55, height: CONT_H, depth: d * 0.8 }, scene);
+        cont1.material = contMat;
+        const cont2 = BABYLON.MeshBuilder.CreateBox('judgesDeckCont2',
+            { width: w * 0.4, height: CONT_H, depth: d * 0.8 }, scene);
+        cont2.material = contMat;
+
+        const deck = BABYLON.MeshBuilder.CreateBox('judgesDeckTop',
+            { width: w, height: DECK_T, depth: d }, scene);
+        deck.material = plankMat;
+
+        // Guard rail on the corridor (−x) side: top bar + mid bar.
+        const railMat = makePBR('judgesDeckRailMat', scene);
+        railMat.albedoColor = new BABYLON.Color3(0.16, 0.16, 0.18);
+        railMat.metallic = 0.2;
+        railMat.roughness = 0.6;
+        const railTop = BABYLON.MeshBuilder.CreateBox('judgesDeckRailTop',
+            { width: 0.06, height: 0.06, depth: d }, scene);
+        railTop.material = railMat;
+        const railMid = BABYLON.MeshBuilder.CreateBox('judgesDeckRailMid',
+            { width: 0.04, height: 0.04, depth: d }, scene);
+        railMid.material = railMat;
+
+        const seatDeck = (picker) => {
+            // A real deck is LEVEL: base it on the LOWEST picked corner minus
+            // a 15 cm sink so the container feet can never float on the
+            // banked flank.
+            const ys = [picker(DECK_X0, DECK_Z0), picker(DECK_X1, DECK_Z0),
+                        picker(DECK_X0, DECK_Z1), picker(DECK_X1, DECK_Z1)];
+            const baseY = Math.min(...ys) - 0.15;
+            cont1.position.set(cx - w * 0.22, baseY + CONT_H / 2, cz + d * 0.08);
+            cont2.position.set(cx + w * 0.3, baseY + CONT_H / 2, cz - d * 0.1);
+            const deckY = baseY + CONT_H + DECK_T / 2;
+            deck.position.set(cx, deckY, cz);
+            railTop.position.set(DECK_X0 + 0.03, deckY + DECK_T / 2 + RAIL_H, cz);
+            railMid.position.set(DECK_X0 + 0.03, deckY + DECK_T / 2 + RAIL_H * 0.5, cz);
+            window._judgesDeckDebug = {
+                baseY, corners: ys, sink: 0.15,
+                deckTopY: deckY + DECK_T / 2,
+                level: true,
+                seated: !!picker.seated,
+            };
+        };
+        seatDeck((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        // Re-seat after the first COMPLETED render — same contract as B-net.
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatDeck = () => {
+                const picker = (x, z) => deckGroundAt(x, z);
+                picker.seated = true;
+                seatDeck(picker);
+                window._judgesDeckSeated = true;
+            };
+            scene.onAfterRenderObservable.addOnce(reseatDeck);
+        } else {
+            window._judgesDeckSeated = false;   // headless: keep the seed seating
+        }
+    }
+
+
 
 
 

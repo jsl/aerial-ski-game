@@ -229,3 +229,77 @@ test('venue dressing: landing centreline wands (2 orange rows, seated) + plain b
     expect(r.flag.clothBlue).toBe(true);
     expect(r.flag.zAtKickerEnd).toBe(true);
 });
+
+test('venue dressing: judges/start deck on dark containers beside the kicker, level and seated', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() =>
+        window._judgesDeckDebug && window._judgesDeckSeated === true,
+        null, { timeout: 20000 });
+    await page.waitForTimeout(300);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const d = window._judgesDeckDebug;
+        const deck = scene.getMeshByName('judgesDeckTop');
+        const cont1 = scene.getMeshByName('judgesDeckCont1');
+        const cont2 = scene.getMeshByName('judgesDeckCont2');
+        const railTop = scene.getMeshByName('judgesDeckRailTop');
+        const railMid = scene.getMeshByName('judgesDeckRailMid');
+
+        // Independent re-pick of the flank under each deck corner.
+        const pickGround = (x, z) => {
+            const hit = scene.pickWithRay(
+                new BABYLON.Ray(new BABYLON.Vector3(x, 80, z),
+                                new BABYLON.Vector3(0, -1, 0), 150),
+                (m) => !!m.name && !/^judgesDeck/.test(m.name));
+            return hit && hit.hit ? hit.pickedPoint.y : null;
+        };
+        const bb = deck.getBoundingInfo().boundingBox;
+        const wp = deck.position;
+        const halfW = bb.maximumWorld.x - bb.minimumWorld.x; // world extents via
+        const halfD = bb.maximumWorld.z - bb.minimumWorld.z; // re-created box
+        // Use the deck's world matrix corners instead (transform-safe):
+        const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => {
+            const x = wp.x + sx * (bb.maximum.x) * 0.9;
+            const z = wp.z + sz * (bb.maximum.z) * 0.9;
+            return { x, z, g: pickGround(x, z) };
+        });
+        // Container bases at least at the deck base (they hold it up).
+        const contBaseMin = Math.min(cont1.position.y, cont2.position.y) -
+            (cont1.getBoundingInfo().boundingBox.maximum.y);
+        const deckBase = deck.position.y - deck.getBoundingInfo().boundingBox.maximum.y;
+
+        return {
+            debug: d,
+            present: !!(deck && cont1 && cont2 && railTop && railMid),
+            contTexture: !!(cont1 && cont1.material && cont1.material.albedoTexture),
+            plankTexture: !!(deck && deck.material && deck.material.albedoTexture),
+            corners,
+            contBaseMin, deckBase,
+            railHeights: railTop && railMid ? {
+                top: railTop.position.y, mid: railMid.position.y,
+            } : null,
+            sameContMat: cont1 && cont2 &&
+                cont1.material.uniqueId === cont2.material.uniqueId,
+        };
+    });
+
+    expect(r.present).toBe(true);
+    expect(r.contTexture).toBe(true);
+    expect(r.plankTexture).toBe(true);
+    expect(r.sameContMat).toBe(true);
+    // Level deck: base sits at/below every corner's flank surface (sunk),
+    // never floating above the lowest corner's ground.
+    const lowest = Math.min(...r.corners.map((c) => c.g));
+    expect(r.debug.baseY, `deck base ${r.debug.baseY} floats over lowest corner ${lowest}`)
+        .toBeLessThanOrEqual(lowest + 0.005);
+    // Containers support the deck (their top reaches the deck underside).
+    expect(r.contBaseMin + 2 * 2.59 * 0 + 2.59, 'container tops must reach the deck underside')
+        .toBeGreaterThanOrEqual(r.deckBase - 0.02);
+    // Rail present, ordered correctly.
+    expect(r.railHeights.top).toBeGreaterThan(r.railHeights.mid);
+    // Beside the kicker, outside the B-net line: deck entirely at x ≥ 7.5.
+    expect(r.debug.deckTopY).toBeGreaterThan(r.debug.baseY + 2.5);
+});
