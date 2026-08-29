@@ -281,7 +281,7 @@ function makeSurface(BABYLON, scene, recipe, size, opts) {
  * floor) / SNOWLINE_M, authored in game.js) and u is world distance. Bands:
  *   v < 0.42  forest — dark green with vertical tree-line strokes
  *   mid band  exposed rock — grey, ridged fracture noise
- *   v > 0.60  snowfield — near-white, gentle drift
+ *   v > 0.66  snowfield — near-white, broken by rock outcrops
  * Band edges jitter with fbm so the boundaries read as terrain, not contour
  * lines. Returns { normal, albedo } or null headless, like makeSurface.
  */
@@ -314,13 +314,13 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
             const j = fbm(u * 5, v * 5, 3, 2.2, 0.5);          // band jitter
             const treeJ = fbm(u * 22, v * 22, 2, 2.1, 0.5);
             let c, h;
-            const snowEdge = 0.60 + (j - 0.5) * 0.16;
+            const snowEdge = 0.66 + (j - 0.5) * 0.12;
             const forestEdge = 0.42 + (j - 0.5) * 0.12;
             if (v >= snowEdge) {
                 const d = fbm(u * 12, v * 12, 3, 2.3, 0.5);
                 // Stronger rock outcrops: the snowfields must read as broken
                 // alpine terrain at gameplay distance, not white felt.
-                c = mix(SNOW, ROCK, Math.max(0, d - 0.50) * 3.2);
+                c = mix(SNOW, ROCK, Math.max(0, d - 0.47) * 3.6);
                 h = 0.5 + d * 0.3;
             } else if (v >= forestEdge) {
                 // Rock band: sharp fractured facets.
@@ -335,7 +335,7 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
                 const clump = fbm(u * 16, v * 16, 3, 2.6, 0.5);
                 const stroke = Math.abs(Math.sin(u * Math.PI * 2 * 90
                     + treeJ * 6)) ** 6;
-                c = mix(FOREST, DARK, clump * 0.55 + stroke * 0.45);
+                c = mix(FOREST, DARK, Math.min(1, clump * 0.70 + stroke * 0.60));
                 h = clump * 0.7 + stroke * 0.3;
             }
             const i = y * size + x;
