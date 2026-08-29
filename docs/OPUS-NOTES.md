@@ -795,6 +795,169 @@ panel garment), 10 (stance), 6 (in-run arms), 7 (pike hip tear), 9 (face).
 Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
+
+## Session 6 (2026-08-29, 16:2x-17:0x)
+
+### Merge with `render-realism-glm` — commit `1f7f0a5` (docs only)
+
+Three commits ahead (iter 113's withdrawn cone-peak range, its ruling, and the
+reviewer's session-4 arbitrations). Clean auto-merge, `docs/` only — no code,
+so unit+golden were not re-run over the merge alone.
+
+The arbitrations landed with it and are all acted on or recorded below:
+calf-gate demotion APPROVED; **item 5's spine approach APPROVED**; new item 12
+(boots); the blue-stripe detail; the bib box-framing rule.
+
+### Item 5 — the armature gets a SPINE. Commit `96dbeaf`
+
+**What shipped.** `spine_01`/`02`/`03` between pelvis and neck. In Blender,
+`add_spine_chain` moves the `torso` group's weight onto them with a partition
+of unity along the torso axis (2 895 verts, total weight 562.1, split
+142.7 / 255.4 / 526.6 as measured in the browser). In `game.js`,
+`updateSpineChain` walks the three drivers up the torso's own axis every frame,
+coupling the end vertebrae to the thigh's and the head's **deviation from their
+rest angles**.
+
+It runs **last in the build**, after every gate and after the bake. The string
+`'torso'` is a dominance key for most of `build_body.py`, and splitting the
+group earlier would silently re-aim `settle_limb_geometry`, `relax_suit`,
+`leg_girth_pass` and roughly every gate. Nothing upstream can see the split.
+
+**Two properties it was built to have, both measured:**
+
+1. **Inert at rest.** Coupling on deviation-from-rest makes every delta zero at
+   the neutral stance. Measured skinned strain there: `p50 = p99 = p99.9 = max
+   = 1.000` exactly, over 53 944 edges.
+2. **Closes on the torso's own ends.** The chain starts at the hip anchor and
+   the residual to the neck anchor is spread along it, so head, shoulders and
+   the P13 reconciliation keep the anchors they already had. Largest leftover
+   vertebra-joint step: neutral 0.0 mm, in-run crouch 10.3, flight tuck 6.8,
+   pike 7.4 (gate 15).
+
+### THE FINDING — the tuck's tear is NOT a bone-count problem
+
+This matters more than the pass, and it is why item 5 is only half closed.
+
+`tests/drive/spine.spec.js` measures **symmetrised edge strain**,
+`max(len/rest, rest/len)`, on the buffer the GPU actually skins (same vertex
+positions, same `skeleton.getTransformMatrices(mesh)`, same four influences).
+
+| pose | p50 | p99 | **p99.9** | max | p99.9 with the spine OFF |
+|---|---|---|---|---|---|
+| neutral | 1.000 | 1.000 | **1.000** | 1.000 | 1.000 |
+| in-run crouch | 1.000 | 4.606 | **15.227** | 35.80 | 15.473 |
+| flight tuck | 1.000 | 4.383 | **11.678** | 36.52 | 12.082 |
+| pike | 1.000 | 3.190 | **9.335** | 52.13 | 9.193 |
+
+against the brief's 1.35. The spine moves those numbers by 1-3%.
+
+**Where the strain is.** `p50` is exactly rigid and `p99` is 4.6 — 99% of the
+skin is fine and a thin tail explodes. The tail is the hip and shoulder blend
+rings, and `chain.spec.js` already records the cause in its own comments:
+*"Flight tuck (POSE_TUCKED) endpoint is measured-torn (hip gap 0.33 m) and
+awaits `APPROVED: adjust POSE_TUCKED`"*. Linear blend skinning averages bone
+MATRICES; two rigid transforms whose shared joint is a third of a metre apart
+cannot average into anything but a smear, at any weighting. No amount of spine
+fixes a pose table that tears its own hip.
+
+**So the strain gate is deliberately NOT set at the tuck.** Setting it at 16
+would calibrate it to the defect; setting it at 1.35 would ship a red that no
+work in this lane can clear. It ships as a logged instrument
+(`STRAINTABLE`, spine on and off) so the next session or the reviewer's ruling
+has a baseline to move.
+
+**And it answers the reviewer's 15:35 note.** The crumpled tear over the
+shoulder blade in the NEUTRAL stance is **not** a skinning problem: strain
+there is 1.000 to six places, whole body and upper-back band alike. It is a
+bake / normal-map / geometry artefact and belongs with item 3, not item 5.
+
+### Gates and the negative control
+
+`tests/drive/spine.spec.js`, **8/8**:
+
+- spine bones present in the exported skeleton, each with a driver node and
+  real skin weight (`> 5`);
+- neutral strain `<= 1.35`, whole body and the upper-back band;
+- chain C1 step `<= 15 mm` in all four poses;
+- the strain table, logged.
+
+**NEGATIVE CONTROL**: `window._spineForce = 0.5` forces a fixed bend into the
+neutral stance. p99.9 goes 1.000 -> **2.993**, upper back 1.000 -> **9.215**,
+chain step 0 -> 43.6 mm. The gate fails, so it is reading the skin.
+(`window._spineOff` reproduces the old rigid torso and is what the on/off
+column above uses.)
+
+### Three measurement bugs found on the way — all made a wrong answer look right
+
+1. **The spine axis was taken from the torso BONE.** By the time this pass
+   runs, `pose_onto_segments` has moved every bone's head onto its segment
+   CENTRE and `normalize_bind_frame` has replaced its rest orientation, so
+   `tail_local - head_local` is **not** the torso axis: measured, it was
+   `(0, 0.55, 0)` — fore-aft — and put **2895 of 2895** torso verts in the
+   lumbar third. The axis now comes from `bl('torso')`, the same source
+   `spine_matrix` uses for the bind. Logged every build as `spine axis:`.
+2. **`skeleton.getTransformMatrices` returns the LAST RENDERED frame.** The
+   game's render loop re-applies its own pose every frame, so a probe pose set
+   inside `page.evaluate` never reaches the buffer. All four poses and the
+   negative control returned byte-identical numbers until the spec called
+   `skeleton.prepare(true)` first. Any future spec measuring skinned geometry
+   after `_poseProbe` needs this line.
+3. **Babylon's glTF loader prepends the armature node as bone 0.** So
+   `skeleton.bones` is one longer than the skin's joint array and every naive
+   index lookup is off by one. It reported `spine_03` weightless while actually
+   reading `torso` — which this pass deliberately zeroes, so the wrong answer
+   was self-consistent. `Bone.getIndex()` is the index `matricesIndices` uses.
+
+### The one judgement call — golden traces
+
+The three spine driver nodes are **excluded from `captureNodes`** in
+`tests/golden/harness.js` rather than re-captured. They hold no state: they are
+a pure function of the `torso`, `head` and `upperLeg*` transforms the traces
+already record in full, so any change reaches the trace through its cause.
+Adding derived nodes is not the deliberate behaviour change ADR-0005 reserves a
+rebaseline for, and rebaselining is forbidden here anyway. Their geometry is
+gated in `spine.spec.js` instead. **Reviewer: this is the call to check.**
+
+Also: `updateSpineChain` and `_spineRestDeltas` were added to
+`ALLOWED_FUNCTIONS` in `tests/unit/no-physics-in-game.test.js` with reasons.
+They write transform nodes from transforms the solver already produced; they
+solve nothing and add no state (ADR-0002).
+
+### Verification
+
+    build   all gates green at 2048/96 (goggle band, dome seating, leg taper,
+            bib number + aspect, stripe, suit normal variance, atlas share);
+            spine weight partition verified, worst vertex error 2.98e-08
+    unit    78/78
+    golden  30/30, no re-capture, no physics change
+    drive   rig + body + chain + athlete + ready-stance + bib-number +
+            athlete-wired + spine: 40 passed (10.8 m), 0 failed — the
+            previously blocking `bib-number` back-face gate included
+
+`ASSET_V` 38 -> 39, `index.html` `game.js?v=` 32 -> 33, preload hrefs `?v=39`.
+
+### Open at the end of session 6
+
+- **Item 5 is half closed.** The spine is in, correct, gated and inert at rest.
+  The tuck's actual tear is measured and attributed, and it needs the
+  `POSE_TUCKED` hip gap ruling — see the reviewer question below.
+- Item 2's rim lip / chin strap / vents / gloss.
+- Items 3 (suit + bib), 6 (in-run arms), 7 (pike hip), 9 (face), 10 (stance),
+  12 (boots) untouched.
+- The mirrored back bib number, still open from session 5.
+
+### For the reviewer (session 6)
+
+1. **`NEEDS-APPROVAL:` the in-run/flight tuck hip gap.** The measured 0.33 m
+   hip gap at the `POSE_TUCKED` endpoint is the dominant cause of the author's
+   "back separating", and `chain.spec.js` has been carrying it as a known,
+   approval-blocked defect. It is a pose-table change, which this lane may not
+   make. Until it is ruled on, item 5's strain gate cannot be set at any honest
+   number. This is the single highest-value ruling available for the athlete.
+2. **The golden-trace exclusion above** — the one judgement call in the commit.
+3. **The rest-pose shoulder-blade tear is not skinning** (strain 1.000). Move
+   it from item 5 to item 3.
+
 ---
 
 ## What the shots now show (by eye, `shots/face.png`, `shots/face_mask.png`)
