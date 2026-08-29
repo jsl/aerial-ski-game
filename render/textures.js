@@ -320,7 +320,7 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
                 const d = fbm(u * 12, v * 12, 3, 2.3, 0.5);
                 // Stronger rock outcrops: the snowfields must read as broken
                 // alpine terrain at gameplay distance, not white felt.
-                c = mix(SNOW, ROCK, Math.max(0, d - 0.52) * 2.2);
+                c = mix(SNOW, ROCK, Math.max(0, d - 0.50) * 3.2);
                 h = 0.5 + d * 0.3;
             } else if (v >= forestEdge) {
                 // Rock band: sharp fractured facets.

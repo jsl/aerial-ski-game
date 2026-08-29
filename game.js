@@ -3985,7 +3985,12 @@ void main(void) {
     // Two summed sines per layer — no RNG, stable golden census.
     const RIDGE_STEP = 6;                                   // m between columns
     const FOG = scene.fogColor;
-    const RIDGE_SNOWLINE_M = 45;   // elevation mapped to uv v ∈ 0..~1
+    const RIDGE_SNOWLINE_M = 80;   // elevation mapped to uv v ∈ 0..~1 — must
+    // span the tallest crest (far ≈ 75 m above the valley floor) so the
+    // tree-line/rock/snow bands land on the VISIBLE faces: near ridges (crests
+    // ≈ 29 m) sit in the forest band, mid (≈ 50 m) at the rock/snow edge, and
+    // only the far/back crests are pure snowfield. At 45 the whole visible
+    // face clamped into the snowfield band and read as flat pale felt.
     const _ridgeMat = (name, mix, tint) => {
         const m = makePBR(name, scene);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);

@@ -17,7 +17,7 @@ module.exports = defineConfig({
     testMatch: /.*\.spec\.js/,
 
     // The game is a real-time simulation; a full run takes ~15 s of wall clock.
-    timeout: 300_000,
+    timeout: 420_000,   // look.spec (12+ stills at 1100x850) measures ~5.2 min
     expect: { timeout: 15_000 },
 
     // Deterministic: no retries, so a flake reports as a flake rather than being

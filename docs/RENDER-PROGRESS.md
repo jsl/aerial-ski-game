@@ -7054,3 +7054,41 @@ this item is explicitly visual, so `docs/NEXT.md` is KEPT with only the
 eye-confirmation step (and a contrast plan inside `makeRidgeSurface` if the
 ridges still read flat). Open question 1 from the main entry is answered by
 this slice; the reviewer should still confirm by eye.
+
+### 104 — NEXT item 2: ridge flatness ROOT-CAUSED (elevation keying put all
+bands on the hidden back slope); snowline remapped + contrast raised;
+look.spec timeout fix
+
+Eye confirmation of 103's slice FAILED: `scene.png`/`inrun.png`/`kicker.png`
+still read as smooth pale-blue gradients — no rock banding, no jittered
+snowline, no tree-line band. Root cause (not contrast): the ridge texture
+bands key on elevation `v = (y − valleyFloorY) / RIDGE_SNOWLINE_M`, but crest
+heights are 29/52/77 m (near/mid/far above the valley floor), so at
+SNOWLINE 45 m every visible face sat above `snowEdge` 0.60+jitter and clamped
+into the snowfield band; the forest (v<0.42) and rock (0.42–0.60) bands only
+existed on the hidden away-from-valley back slope.
+
+Fix: `RIDGE_SNOWLINE_M` 45 → **80 m** (`game.js`) so the visible faces carry
+the bands — near crests v≈0.36 (forest/tree-line), mid ≈0.65 (rock/snow edge
+with jittered snowline), far/back pure snowfield — and snowfield rock
+outcrops strengthened in `makeRidgeSurface` ((d−0.52)·2.2 → (d−0.50)·3.2).
+`ridges3d.spec.js` 2/2 green (flat-curtain negative control still fails);
+golden 30/30 (headless stub-canvas path untouched); unit 78/78.
+
+Also fixed: `look` was failing on the harness's own 300 s test timeout
+(measured 5.1–5.2 m for 12+ stills at 1100×850 across three runs; the
+regenerated shots WERE written each time before the timeout) —
+`tests/drive/playwright.config.js` timeout 300_000 → 420_000; look now
+**passes in 4.1 m**.
+
+Post-fix measurement (`scene.png` ridge band, rows 5–30% of frame):
+meanLum 0.638, mean horizontal gradient 0.030 (normalized), gradP90 25/255 —
+texture is now present (visible facet mottling + faint grey rock patches on
+the mid ridge in `kicker.png`) but STILL WEAK by eye; the tree-line band does
+not read. `docs/NEXT.md` KEPT: next lever is blending the cross-run face
+coordinate `u` (0 = crest) into the band keying so the bands are placed on
+the visible face directly, and confirming the near ridges (x = ±68) are
+actually on-camera in these framings.
+
+Verification summary: unit 78/78, golden 30/30, ridges3d 2/2, look 1/1
+(4.1 m), shots regenerated 11:29–11:33 and inspected.
