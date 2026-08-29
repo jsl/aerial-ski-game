@@ -880,6 +880,60 @@ forest.
 
 ## Iterations
 
+
+### 76 — Canonical cameras fixed GEOMETRICALLY (entry-75 item 1): forward
+read from the root quaternion, not colour-searched; face.png landscape
+ROOT-CAUSED as Babylon's default minZ = 1.0 near-plane clipping the head at
+r = 0.6; new hard gates so the shots can never contradict the gates again
+
+**Order acted on:** entry-75 re-prioritised item 1 — "canonical cameras ONCE
+AND FOR ALL … fix the gate-vs-shot contradiction in the same pass".
+
+**Changes (spec-side + one probe; no assets, ASSET_V unchanged at 24):**
+- `game.js`: new `window._athleteFacing` probe — rotates the body-frame chest
+  direction (0,0,−1; rig.spec's "figure faces −z") by the LIVE
+  `character.root.rotationQuaternion`, plus helmet (smallest athleteBody
+  part) / suit (largest) centres and suit half-extents. Cross-checked: root
+  yaw π + readyYaw π/2 maps it to world +x in the ready state, exactly where
+  bib-number.spec's front raycast reads. Never called from the physics path.
+- `look.spec.js`: the FRONTALPHA colour-search picker (which chose −π/2 and
+  shot the BACK) is REPLACED by `alpha = atan2(fz, fx)` from the probe — the
+  camera sits on the forward ray by construction. Side view = forward + π/2.
+  Face shot targets the HELMET part centre (the old top.y·0.42 estimate was
+  ski-bbox-polluted).
+- **face.png root cause (3 iterations, entries 73–75):** the framing was
+  correct all along — Babylon's default near plane `minZ = 1.0` put the head
+  (0.35–0.6 m away) BEHIND the near plane, so the shot showed only the
+  landscape beyond it. Fix: `cam.minZ = 0.05` for the close-up (every other
+  framing is ≥ 2.4 m out; left set for the rest of the spec — no visible
+  effect at those radii).
+- **New hard gates (anti-contradiction):** FRONTGATE — camera-vs-forward
+  alignment < 5° (measured 0.00°) AND navy digit ink in a plate box at the
+  projected chest-surface hit, navyFrac > 0.02 (measured 0.0229). FACEGATE —
+  helmet bbox projected to screen: height fraction > 40% of frame (measured
+  0.4121; reviewer 19:40 criterion) and centred (cx/cy = 0.5/0.5), PLUS a
+  pixel gate on the actual PNG (the projection class cannot see near-plane
+  clipping): central region dark-helmet fraction > 5% (0.1556) and skin
+  fraction > 1% (0.0524).
+
+**Verification:** unit fail 0; golden 30/30 (no recapture — probe is
+physics-path-untouched); look 1/1 (2.2 min) with FRONTGATE/face numbers above;
+bib-number 1/1. Shots inspected by eye: **face.png finally frames the head**
+(helmet dome, goggle band, face below — features still faint: face pass 2
+open); **figure_front.png shows the FRONT** — bib "30" readable on the chest,
+resolving the entry-75 gate-vs-shot contradiction (the gate was right, the
+shot's camera was wrong); figure.png / figure_side.png unchanged in character.
+
+**Open / not done:** suit still reads near-white (entry-75 item 2 — next);
+P3 red marks; P6 ridgelines; bib-number.spec still hardcodes alphas 0/π —
+works because the ready-state forward is +x, but should consume the probe
+when the pose work moves the athlete; crash re-verification, start gating,
+face pass 2 remain in the reviewer queue.
+
+**Open questions for the reviewer:** entry-75 question 1 is now moot (both
+the shot and the gate derive from the same geometric forward); the near-white
+suit question (entry-75 q3) carries over.
+
 ### 75 — Review-only: full run-all green; five canonical shots inspected by eye;
 two canonical-camera regressions confirmed (face.png frames the landscape,
 figure_front.png shows the BACK); suit reads near-white from every figure camera

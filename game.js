@@ -2469,6 +2469,39 @@ void main(void) {
         return r;
     };
 
+    // Canonical-camera probe (entry 75/76): the athlete's real facing, from the
+    // SAME root quaternion the renderer uses — not a colour search. The body
+    // frame's chest direction is (0, 0, -1) (rig.spec: "the figure faces -z";
+    // cross-checked against the bib raycast gate: root yaw pi + readyYaw pi/2
+    // maps it to world +x in the ready state, where the front plate reads).
+    // Returns the world forward, plus helmet (smallest athleteBody part) and
+    // suit (largest) centres for camera targeting. Plain arithmetic + bounding
+    // boxes only; called from drive specs, never from the physics path.
+    window._athleteFacing = function () {
+        if (!character.root || !character.root.rotationQuaternion) return null;
+        const fwd = _quatRotateVec(character.root.rotationQuaternion,
+            new BABYLON.Vector3(0, 0, -1));
+        let helmet = null, suit = null, suitHalf = null, hVol = Infinity, sVol = -Infinity;
+        for (const m of scene.meshes) {
+            if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
+            m.computeWorldMatrix(true);
+            const b = m.getBoundingInfo().boundingBox;
+            const e = b.maximumWorld.subtract(b.minimumWorld);
+            const vol = e.x * e.y * e.z;
+            if (vol < hVol) { hVol = vol; helmet = b.centerWorld.clone(); }
+            if (vol > sVol) {
+                sVol = vol; suit = b.centerWorld.clone();
+                suitHalf = e.scale(0.5);
+            }
+        }
+        return {
+            forward: [fwd.x, fwd.y, fwd.z],
+            helmet: helmet ? [helmet.x, helmet.y, helmet.z] : null,
+            chest: suit ? [suit.x, suit.y, suit.z] : null,
+            chestHalf: suitHalf ? [suitHalf.x, suitHalf.y, suitHalf.z] : null,
+        };
+    };
+
     // Hop-turn phase schedule for the drive spec (fractions of READY_TURN_DUR;
     // see the HOP_TURN note at READY_TURN_DUR for why the author's 0.95 s
     // schedule is scaled into the physics-locked 0.7 s turn).

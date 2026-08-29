@@ -1,7 +1,7 @@
 'use strict';
 // Reusable visual-inspection harness. Frames the athlete and the terrain so each
 // render iteration can be judged by eye, not just by assertions.
-const { test } = require('@playwright/test');
+const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const OUT = path.resolve(__dirname, '..', '..', 'shots');
 
@@ -77,72 +77,202 @@ test('look', async ({ page }) => {
 
     // A second angle from the FRONT. The bib and the number patch are
     // front-only, so the frontal framing is what shows the suit design.
-    // Review 70: figure_front.png showed the athlete's BACK — the ready-turn
-    // yaw moved again and a hard-coded alpha cannot track it. Pick the facing
-    // empirically: render all four quadrant alphas and keep the one whose
-    // frame carries the most skin-tone pixels (face/hands read only from the
-    // front; the back is white suit + dark helmet).
-    const front = await page.evaluate(async () => {
-        const scene = BABYLON.EngineStore.LastCreatedScene;
-        const cam = scene.activeCamera, eng = scene.getEngine();
-        const w = eng.getRenderWidth(), h = eng.getRenderHeight();
-        let best = null;
-        for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-            cam.alpha = a;
-            scene.render();
-            const px = await eng.readPixels(0, 0, w, h);
-            let skin = 0, bib = 0, n = 0;
-            for (let i = 0; i + 3 < px.length; i += 4 * 7) {
-                const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
-                n++;
-                if (r > 0.30 && r > g * 1.12 && g > b * 1.02 && r < 0.95) skin++;
-                if (b > 0.55 && b > r * 1.1 && g > r && g < b) bib++;
-            }
-            // The bib panel wraps the chest front (front wrap to |lat| 0.14
-            // vs a narrow rear patch), so bib-blue discriminates front from
-            // back 2:1 (probe 2026-08-28: 0.319 front vs 0.150 rear at the
-            // figure camera radius). Skin alone picked the BACK — the face is
-            // too few pixels at r=2.4. bib dominates, skin breaks ties.
-            const s = 2 * bib / Math.max(1, n) + skin / Math.max(1, n);
-            if (!best || s > best.s) best = { a, s };
-        }
-        cam.alpha = best.a;
-        return best;
+    // Entry 75: the old empiricial alpha picker (most skin/bib pixels across
+    // four quadrants) chose the BACK three-quarter — the frame then
+    // contradicted the bib gate. The facing is now GEOMETRIC: read the root
+    // quaternion via window._athleteFacing (body chest = local -z) and orbit
+    // to alpha = atan2(fz, fx) so the camera sits on the forward ray.
+    const front = await page.evaluate(() => {
+        const f = window._athleteFacing();
+        if (!f || !f.forward) throw new Error('_athleteFacing unavailable');
+        const a = Math.atan2(f.forward[2], f.forward[0]);
+        const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
+        cam.alpha = a;
+        return { a, forward: f.forward, chest: f.chest, helmet: f.helmet };
     });
     console.log('FRONTALPHA', JSON.stringify(front));
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'figure_front.png') });
 
-    // Canonical side view (review 70): a quarter turn from the front.
-    await page.evaluate(() => {
-        BABYLON.EngineStore.LastCreatedScene.activeCamera.alpha += Math.PI / 2;
-    });
+    // HARD gate (entry 75): the shot must actually BE the front. Project the
+    // plate-surface hit (raycast inward along -forward from in front of the
+    // chest) and require navy digits inside a plate box at the frame centre,
+    // plus camera alignment with the forward ray.
+    {
+        const plate = await page.evaluate((fwd) => {
+            const scene = BABYLON.EngineStore.LastCreatedScene;
+            const cam = scene.activeCamera, eng = scene.getEngine();
+            const F = new BABYLON.Vector3(fwd[0], fwd[1], fwd[2]);
+            const f = window._athleteFacing();
+            const c = new BABYLON.Vector3(f.chest[0], f.chest[1], f.chest[2]);
+            const reach = f.chestHalf[0] + 0.2;
+            // Same geometry as the bib-number gate's proven raycast: start
+            // reach metres out along the forward ray, at 0.18 of the suit
+            // half-height above the suit centre (the plate band), cast inward.
+            const outside = c.add(F.scale(reach))
+                .add(new BABYLON.Vector3(0, f.chestHalf[1] * 0.18, 0));
+            const hit = scene.pickWithRay(
+                new BABYLON.Ray(outside, F.scale(-1), reach * 2),
+                m => m.name && m.name.startsWith('athleteBody'));
+            if (!hit || !hit.hit) throw new Error('no chest hit on the front ray');
+            const p = BABYLON.Vector3.Project(hit.pickedPoint,
+                BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+                cam.viewport.toGlobal(eng.getRenderWidth(), eng.getRenderHeight()));
+            // Orbit alignment: camera offset direction vs forward (deg).
+            const off = cam.position.subtract(cam.target);
+            const dot = (off.x * F.x + off.z * F.z) /
+                (Math.hypot(off.x, off.z) * Math.hypot(F.x, F.z));
+            return {
+                sx: p.x / eng.getRenderWidth(), sy: p.y / eng.getRenderHeight(),
+                alignDeg: +(Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(2),
+            };
+        }, front.forward);
+        const shot = await page.screenshot();
+        const m = await page.evaluate(async (b64) => {
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + b64;
+            await new Promise(r => { img.onload = r; });
+            const cv = document.createElement('canvas');
+            cv.width = img.width; cv.height = img.height;
+            const cx = cv.getContext('2d');
+            cx.drawImage(img, 0, 0);
+            const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+            return { d, W: cv.width, H: cv.height };
+        }, shot.toString('base64'));
+        // measure navy around the projected plate point
+        const PX_PER_M = m.H / (2 * 2.4 * Math.tan(0.4));
+        const bw = Math.round(0.16 * PX_PER_M), bh = Math.round(0.24 * PX_PER_M);
+        const X0 = Math.round(plate.sx * m.W - bw / 2), Y0 = Math.round(plate.sy * m.H - bh / 2);
+        let n = 0, navy = 0;
+        for (let y = Math.max(0, Y0); y < Math.min(m.H, Y0 + bh); y++) {
+            for (let x = Math.max(0, X0); x < Math.min(m.W, X0 + bw); x++) {
+                const i = (y * m.W + x) * 4;
+                const r = m.d[i] / 255, g = m.d[i + 1] / 255, b = m.d[i + 2] / 255;
+                const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                n++;
+                if (lum < 0.38 && b >= g - 0.02 && g >= r - 0.04) navy++;
+            }
+        }
+        const navyFrac = navy / n;
+        console.log('FRONTGATE', JSON.stringify({ alignDeg: plate.alignDeg, navyFrac: +navyFrac.toFixed(4) }));
+        expect(plate.alignDeg, 'frontal camera not on the forward ray').toBeLessThan(5);
+        expect(navyFrac, 'figure_front.png shows no bib digits at the chest — '
+            + 'the framing is not the front (navyFrac ' + navyFrac.toFixed(4) + ')')
+            .toBeGreaterThan(0.02);
+    }
+
+    // Canonical side view (review 70): perpendicular to the geometric
+    // forward — not a fixed quarter turn from whatever the front picker chose.
+    await page.evaluate((a) => {
+        BABYLON.EngineStore.LastCreatedScene.activeCamera.alpha = a + Math.PI / 2;
+    }, front.a);
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'figure_side.png') });
 
     // Canonical face close-up (author 2b pass 1): ~0.6 m in front of the head.
-    // Pause the sim first — its per-frame callback rewrites camera.target.
+    // Entry 75: this framing twice returned a landscape — the head target was
+    // estimated from the SKI-POLLUTED whole-figure bbox (top.y*0.42 lands at
+    // chest/ski level). Target the HELMET part's centre from _athleteFacing
+    // (smallest athleteBody part) instead. Pause the sim first — its
+    // per-frame callback rewrites camera.target.
     await page.keyboard.press('p');
     await page.waitForTimeout(300);
-    await page.evaluate((frontAlpha) => {
+    await page.evaluate((a) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
-        let lo = null, hi = null;
-        for (const p of parts) {
-            p.computeWorldMatrix(true);
-            const b = p.getBoundingInfo().boundingBox;
-            lo = lo ? BABYLON.Vector3.Minimize(lo, b.minimumWorld) : b.minimumWorld.clone();
-            hi = hi ? BABYLON.Vector3.Maximize(hi, b.maximumWorld) : b.maximumWorld.clone();
-        }
-        const top = hi.subtract(lo);
-        const head = lo.add(top.scale(0.5)).add(new BABYLON.Vector3(0, top.y * 0.42, 0));
+        const f = window._athleteFacing();
+        if (!f || !f.helmet) throw new Error('_athleteFacing helmet unavailable');
         const cam = scene.activeCamera;
-        cam.setTarget(head);
-        cam.alpha = frontAlpha; cam.beta = Math.PI / 2;
-        cam.radius = 0.6; cam.fov = 0.9;
+        // ROOT CAUSE of three iterations of landscape face.png (entries
+        // 73-75): Babylon's default near plane is minZ = 1.0, so at r = 0.6
+        // the HEAD ITSELF is closer than the near plane and is clipped away —
+        // the shot showed only what is BEHIND the head. minZ = 0.05 stays for
+        // the rest of the spec: every other framing is >= 2.4 m out, where a
+        // near-plane change has no visible effect.
+        cam.minZ = 0.05;
     }, front.a);
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'face.png') });
+
+    // HARD gate (entry 75 / reviewer 19:40): "the head must fill >= 40% of
+    // the frame height" and face.png must CONTAIN the head. Project the
+    // helmet part's bounding box to screen and gate the vertical extent
+    // (r = 0.6, fov 0.9 → frame height 0.605 m; the 0.24 m helmet measures
+    // ≈ 0.40 of height) plus on-centreness. Band = measured with slack.
+    {
+        const head = await page.evaluate(() => {
+            const scene = BABYLON.EngineStore.LastCreatedScene;
+            const cam = scene.activeCamera, eng = scene.getEngine();
+            const W = eng.getRenderWidth(), H = eng.getRenderHeight();
+            // helmet = smallest athleteBody part
+            let hp = null, vol = Infinity;
+            for (const m of scene.meshes) {
+                if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
+                m.computeWorldMatrix(true);
+                const b = m.getBoundingInfo().boundingBox;
+                const e = b.maximumWorld.subtract(b.minimumWorld);
+                const v = e.x * e.y * e.z;
+                if (v < vol) { vol = v; hp = m; }
+            }
+            if (!hp) throw new Error('no helmet part');
+            hp.computeWorldMatrix(true);
+            const bb = hp.getBoundingInfo().boundingBox;
+            let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+            for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+                const c = bb.centerWorld.add(bb.extendSize.multiply(new BABYLON.Vector3(sx, sy, sz)));
+                const p = BABYLON.Vector3.Project(c, BABYLON.Matrix.Identity(),
+                    scene.getTransformMatrix(), cam.viewport.toGlobal(W, H));
+                x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+                x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+            }
+            const hFrac = (y1 - y0) / H, wFrac = (x1 - x0) / W;
+            const cx = (x0 + x1) / 2 / W, cy = (y0 + y1) / 2 / H;
+            return { hFrac: +hFrac.toFixed(4), wFrac: +wFrac.toFixed(4),
+                     cx: +cx.toFixed(3), cy: +cy.toFixed(3) };
+        });
+        console.log('FACEGATE', JSON.stringify(head));
+        expect(head.hFrac, 'face.png does not frame the head — helmet fills '
+            + (head.hFrac * 100).toFixed(1) + '% of the frame height (gate 40%, '
+            + 'reviewer 19:40)').toBeGreaterThan(0.40);
+        expect(Math.abs(head.cx - 0.5) + Math.abs(head.cy - 0.5), 'face.png head off centre')
+            .toBeLessThan(0.25);
+        // The projection above cannot see NEAR-PLANE CLIPPING (the entry-75
+        // failure mode: geometry projects beautifully, the shot is pure
+        // landscape). Read the actual shot: the dark helmet must occupy a real
+        // share of the central region, and skin-tone pixels must exist (the
+        // face below the goggles).
+        const shot = await page.screenshot();
+        const px = await page.evaluate(async (b64) => {
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + b64;
+            await new Promise(r => { img.onload = r; });
+            const cv = document.createElement('canvas');
+            cv.width = img.width; cv.height = img.height;
+            const cx2 = cv.getContext('2d');
+            cx2.drawImage(img, 0, 0);
+            const d = cx2.getImageData(0, 0, cv.width, cv.height).data;
+            const W = cv.width, H = cv.height;
+            const X0 = Math.round(W * 0.25), X1 = Math.round(W * 0.75);
+            const Y0 = Math.round(H * 0.15), Y1 = Math.round(H * 0.85);
+            let n = 0, dark = 0, skin = 0;
+            for (let y = Y0; y < Y1; y += 2) {
+                for (let x = X0; x < X1; x += 2) {
+                    const i = (y * W + x) * 4;
+                    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+                    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    n++;
+                    if (lum < 0.30) dark++;
+                    if (r > 0.30 && r > g * 1.12 && g > b * 1.02 && r < 0.95) skin++;
+                }
+            }
+            return { dark: +(dark / n).toFixed(4), skin: +(skin / n).toFixed(4) };
+        }, shot.toString('base64'));
+        console.log('FACEPIX', JSON.stringify(px));
+        expect(px.dark, 'face.png central region has no dark helmet pixels — '
+            + 'the head is clipped or out of frame (dark ' + px.dark + ')')
+            .toBeGreaterThan(0.05);
+        expect(px.skin, 'face.png central region has no skin pixels — no face '
+            + 'visible (skin ' + px.skin + ')').toBeGreaterThan(0.01);
+    }
     await page.keyboard.press('p');
 
     // Pull back for the whole scene.
