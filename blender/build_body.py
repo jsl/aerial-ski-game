@@ -1134,6 +1134,7 @@ def straighten_chest(body):
         t = (z - top['z']) / max(1e-6, bot['z'] - top['z'])
         return top['front'] + (bot['front'] - top['front']) * t
     moved = 0
+    moved_idx = set()
     for v in body.data.vertices:
         if own[v.index] != 'torso':
             continue
@@ -1151,6 +1152,40 @@ def straighten_chest(body):
         if v.co.y > limit:
             v.co.y = limit
             moved += 1
+            moved_idx.add(v.index)
+    # The snap above is C0 but not C1: along the boundary between moved and
+    # unmoved verts the surface folds, and the UV unwrap downstream
+    # (smart_project, angle_limit 66°) cuts seams at exactly such creases —
+    # which fragmented the front bib island and dropped its plate samples
+    # 660 → 360 (entry 72's "atlas share" collapse). Relax the fold with a
+    # couple of local Laplacian iterations over the moved verts and two
+    # vertex rings around them; then the re-measure below still enforces the
+    # straightness gate on the relaxed surface.
+    adj = {}
+    for poly in body.data.polygons:
+        for vi in poly.vertices:
+            adj.setdefault(vi, set()).update(poly.vertices)
+    band = set(moved_idx)
+    for _ in range(2):
+        ring = set()
+        for vi in band:
+            ring.update(adj.get(vi, ()))
+        smooth = band | ring
+        new = {}
+        for vi in smooth:
+            ns = adj.get(vi)
+            if not ns:
+                continue
+            p = body.data.vertices[vi].co
+            avg = Vector((0.0, 0.0, 0.0))
+            for ni in ns:
+                avg += body.data.vertices[ni].co
+            avg /= len(ns)
+            w = 0.45 if vi in moved_idx else 0.30
+            new[vi] = p.lerp(avg, w)
+        for vi, co in new.items():
+            body.data.vertices[vi].co = co
+        band = smooth
     # Re-measure and gate.
     worst_dev = 0.0
     worst_ratio = 0.0
@@ -4523,14 +4558,18 @@ def main():
                 f'notched the leg')
     else:
         log('relax_suit OFF (--relax-suit off): pre-relax geometry')
-    # DISABLED pending re-derivation (entry 72): the front-line clamp moves
-    # chest-front verts inward and the bib panel/digits lose texels — body.spec
-    # front blue 0.039 (gate needs a 0.03 front-back delta) and the bib ink
-    # gate both went red with the clamp on, in EVERY variant tried (full-band,
-    # band-restricted). The straight-chest clamp must run together with a
-    # bib_mask re-anchor (probably against the clamped geometry, or keyed on
-    # the segment frame rather than the moved surface). Keep the function and
-    # its slice report; re-enable with the bib work.
+    # DISABLED (entry 73): the clamp itself is FIXED — the entry-72 "atlas
+    # share" collapse was a UV-seam fold, and the local Laplacian relaxation
+    # below now keeps the front bib island intact (front plate samples
+    # 360 → 700, ink 0.280; body.spec front-back blue delta 0.040, gate 0.03;
+    # front-line deviation 0.0 mm, 242 verts clamped). What still fails is the
+    # RENDER gate: bib-number.spec front navyFrac 0.0000 (was 0.0362 at 72,
+    # 0.0108 clamp-on pre-relaxation) — the chest recession tips the front
+    # "30" out of the canonical plate camera's box entirely (back unchanged
+    # 0.1766; entry-72's marginal front pass measured a sliver, and an
+    # alpha-sweep probe shows the digits do not read from ANY quadrant of the
+    # rest pose). Re-enable only together with a real front-plate framing
+    # fix — see progress entry 73, open questions.
     # straighten_chest(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)

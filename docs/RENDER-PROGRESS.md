@@ -4969,6 +4969,65 @@ unsuffixed probe material? (2) entry 66 question 2 (A7 slab: remove vs seat)
 still blocks that item; (3) entries 67/68 questions (tear-detector hard gate;
 engine stub removal) still unanswered.
 
+### 73 — Chest straightening: root cause of the bib collapse found and fixed (UV-seam fold → Laplacian relaxation); clamp still held out by the front-digit render gate
+
+**Order acted on:** author priority 1 (straight chest) left open by entry 72 —
+"re-enable together with the bib_mask re-anchor".
+
+**Diagnosis (build logs, `scratch/iter-73/build*.log`).** Entry 72's "atlas
+share" collapse was NOT a mask problem (`bib_mask` already keys on the
+segment frame; the clamp moved only 242 verts, front sign never flips). It is
+a UV-seam fold: the snap clamp is C0 but not C1, so the surface creases along
+the moved/unmoved boundary, `smart_project` (angle_limit 66°) cuts seams
+there, and the seam-spanning-triangle skip in the plate sampler drops the
+front bib island's samples **660 → 360** (bins 15 vs the back's 37).
+
+**Fix (kept, `blender/build_body.py`, call still DISABLED):** a local
+Laplacian relaxation after the clamp — 2 iterations over the moved verts +
+vertex rings (w 0.45/0.30) — smooths the fold so the unwrap stays intact.
+Full enablement measured green on every BUILD and BODY gate:
+
+- chest gates: 242 verts clamped, front-line deviation **0.0 mm** (limit 20);
+- front bib plate samples **360 → 700** (back 640), ink fraction **0.280**
+  front / 0.178 back, bins 35 vs 37 — island fragmentation gone;
+- `body.spec` front-back blue delta **0.040** (gate 0.03; was 0.010 with the
+  clamp on in entry 72); unit 76/76, golden 30/30 (physics untouched).
+
+A first relaxation variant smoothed the whole torso and tripped the suit
+NM-variance gate (6.14 < 6.30); scoping it to the fold neighbourhoods fixed
+that without losing the unwrap.
+
+**Why the clamp is still not enabled:** with the clamp on, the RENDER gate
+`bib-number.spec` front navyFrac goes to **0.0000** (back unchanged 0.1766;
+entry 72 shipped a marginal 0.0362). Probes (`scratch/iter-73/probe_bib.js`,
+12-step alpha sweep, and an auto-faced variant of the spec) show the front
+"30" does not read from ANY quadrant of the rest pose — entry 72's front pass
+was measuring a sliver at a stale hard-coded alpha 0 that no longer faces the
+chest. `shots/figure_front.png` (and figure/figure_side) contain zero navy
+pixels this build. So the front-digit readability defect PRE-DATES the clamp;
+the clamp only removes the marginal sliver that used to pass.
+
+**Verification:** assets/bumps REVERTED to HEAD (build not shipped);
+unit 76/76, golden 30/30, body 4/4 + bib-number + rig 15 passed on the
+reverted tree. Scratch in `/home/justin/aerial-agents/scratch/iter-73/`
+(build logs, probes).
+
+**Open / next:** (1) real front-plate framing: make `bib-number.spec`
+auto-face like `figure_front` (implemented and demonstrated this iteration,
+reverted with the experiment — it correctly measures 0.0049 at the true
+chest) AND make `look.spec`'s figure_front framing robust (an ASCII render of
+the current `figure_front.png` shows a wide shot, not the 2.4 m closeup —
+the quadrant bib-blue score is dominated by sky at that radius); then
+(2) flip the `straighten_chest(body)` call, ASSET_V bump, one rebuild — the
+geometry side is ready and gated.
+
+**Open questions for the reviewer:** (1) the front "30" currently does not
+read at the canonical cameras at all (pre-existing; entry 72's pass was a
+sliver at a stale alpha) — approve fixing the bib/figure_front framing as its
+own iteration, with the clamp enabled in the same rebuild? (2) d/b breadth
+convention question from entry 72 still open (SOFT gate logs 1.20 bare-trunk
+vs the 0.55 dressed reference).
+
 ### 72 — Author rebuild slice 1: helmet dome re-centred on the cranium
 (beanie was a 97 mm segment-centre offset), hood rim cut at the occiput,
 face paint pass 1 (brows + lips); figure_front camera now auto-picked by
