@@ -3214,10 +3214,10 @@ void main(void) {
 
     // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge
     const cornerMat = makePBR('cornerMat', scene);
-    // Footage (IMG_3765/3768, "red marks" reviewer order): the kicker carries a
-    // thin DARK edge line at the wall/face junction — the loud red paint is gone.
-    cornerMat.diffuseColor  = new BABYLON.Color3(0.09, 0.09, 0.11);
-    cornerMat.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.03);
+    // Author ruling 2026-08-29: the kicker edge paint is RED as in the footage; it
+    // must never be darkened or recoloured again (iteration 9x wrongly made it near-black).
+    cornerMat.diffuseColor  = new BABYLON.Color3(0.85, 0.07, 0.05);
+    cornerMat.emissiveColor = new BABYLON.Color3(0.30, 0.02, 0.01);
     {
         const arcHalfW = kickerWidth / 2;
 
