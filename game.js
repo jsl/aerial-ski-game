@@ -2279,6 +2279,15 @@ void main(void) {
     // Terrain landmarks for the crash spec's rest-position gate (NEXT
     // 2026-08-29): the roll-out (landing slope → flat) z.
     window._crashRollOutZ = OUTRUN_Z;
+    // Deterministic crash trigger for the drive specs (reviewer entry-109
+    // ruling): the spec calls this once the run is airborne; the next
+    // touchdown takes the crash branch instead of depending on charge/flip
+    // timing under SwiftShader load. Display-side only; reset on run restart.
+    window._debugTriggerCrash = function () { debugForceCrash = true; };
+    // Crash-impact instrument (entry 109 claimed this; actually landed in
+    // 112): the horizontal root speed captured at the crash trigger — the
+    // ragdoll roll's momentum seed.
+    window._crashImpactSpeed = function () { return crashImpactSpeed; };
     // Run-profile landmarks for the shot harness (iter 93; kept OUT of
     // _getGameState, whose key set the golden traces serialise).
     window._runAnchors = function () {
@@ -4999,6 +5008,7 @@ void main(void) {
     let crashActive        = false; // true while ragdoll animation is running
     let crashTimer         = 0;
     let crashImpactSpeed   = 0;   // athlete's actual root speed at the crash trigger (reviewer 89a momentum seed)
+    let debugForceCrash    = false; // deterministic crash trigger (reviewer entry-109 ruling): when true, the next touchdown takes the crash branch regardless of landing quality
     let crashFallDir       = 1;
     let crashPieces        = [];   // detached body-part physics pieces (legacy path, retired by the P11 ragdoll)
     let ragdoll            = null; // coherent crash ragdoll state (P11)
@@ -5633,6 +5643,7 @@ void main(void) {
                 R.slideV.x = 0;
                 R.slideV.z = _seed;
             }
+            R.phase = 'roll';
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -6177,7 +6188,7 @@ void main(void) {
             state.armSnapTarget = 0;
             state.offAxis     = 0.0; offAxisTarget = 0.0;
             state.airTime     = 0.0;
-            poolEntered   = false;
+            debugForceCrash = false;
             if (crashActive) {
                 crashActive = false;
                 crashImpactSpeed = 0;
@@ -7188,9 +7199,8 @@ void main(void) {
                 const snapSpin   = Math.round(capturedSpin / Math.PI) * Math.PI;
                 state.spinAngle  = snapSpin;
                 state.spinTarget = snapSpin;
-                // Odd number of half-turns means facing backward — that's a crash
                 const facingBackwards = Math.abs(Math.round(snapSpin / Math.PI)) % 2 === 1;
-                const goodLanding = feetDown && !facingBackwards;
+                const goodLanding = feetDown && !facingBackwards && !debugForceCrash;
                 // Landing snow burst — speed-scaled, heavier on crash
                 {
                     const impactSpeed = Math.abs(state.vz);

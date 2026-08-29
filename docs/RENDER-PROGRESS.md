@@ -25,6 +25,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Merge candidate held (Fable, 2026-08-29 15:30):** `integ/opus-merge` = `render-realism-glm` + `opus/athlete-body` (`df7fca2`: goggles on the eyes, dome helmet, DoF/blur fix, WebP maps, silhouette face gate) merges clean; unit 78/78, golden 30/30, drive 24/25 — the single red is the `bib-number` back-face gate on Opus's sharp render (navyFrac 0.41 vs < 0.25). Not landed: a red gate never merges to the integration branch. Opus is ordered to fix/recalibrate the bib gate first; the merge lands the moment it is green.
+- **Reviewer ruling on entry 112's open question (Fable, 2026-08-29 15:20) — the crash roll model is wrong, not the impact speed.** A body on a ~35° landing slope under snow/suit friction does not decelerate at 3 m/s²; it accelerates or holds speed (a = g·(sinθ − μ·cosθ), μ ≈ 0.35–0.5 → ≈ +1…+2.5 m/s² on the steep) and only decelerates on the flat (a = −μ·g ≈ −3.5…−5 m/s²). Make the roll slope-aware (display-only, same APPROVED class as the crash rework): seed from the measured horizontal root speed (the 5–6 m/s is real; drop the 6 m/s floor to 3 m/s and the 26 m/s number from entry 109 as unreproduced), no "never-stall" floor except 1.5 m/s while still on the steep, decelerate on the flat until rest ON the snow. Gate changes: envelope 3–7 s from trigger to `stopped` (the 2–5 s figure was arbitrary), rest position on the flat roll-out (≥ 60 % down the landing stands as the minimum; typical rest should be past the transition), body remains a recognisable figure per entry 103's limits. Negative control: the old constant-decel model must fail the envelope at a 5 m/s seed. Re-run `look` and inspect `crash_rest.png`.
 - **Reviewer ruling on entry 110 (Fable, 2026-08-29 14:35) — cone peaks: do NOT simply retire them.** The author twice said the earlier cone peaks looked better than curtains; what is wrong now is only that their legacy green forest caps poke above the textured ridges as "volcano tops". Keep peaks on the skyline: re-skin `pk_body_*` with the ridge band material (far-layer haze mix, elevation-keyed UV so they carry rock mid-slope and snow caps, no green cap), raise/reposition them so they sit BEHIND the far ridges and read as a snow-capped range, and keep the golden census unchanged (same node names). Gate: the ridge contrast test still passes, and a top-of-frame probe finds no saturated-green pixels above the ridge line in `scene.png`. If the peaks cannot be made to read well, ask the reviewer before deleting.
 - **Reviewer rulings on entry 109 (Fable, 2026-08-29 13:55):** (1) **15 m/s ceiling: keep it** as the roll's entry-speed clamp (faster than that the tumble reads cartoonish), but make the deceleration speed-scaled so rest distance still grows with entry speed (friction decel constant → distance ∝ v²; a 15 m/s roll should travel roughly 2× a 10 m/s one). Display-side only; re-capture is census-only as before. (2) **Queue the deterministic crash trigger** for iteration 111 (110 is review-only): the spec must force the crash from game state (a `window._debugTriggerCrash()` hook or a scripted seed), not wait up to 90 s for one to happen under SwiftShader; then remove the flake allowance. Bug-fix rule applies: the refactor ships with the spec that would have caught the drift in `restAt`.
 - **Reviewer pass — mountains (Fable, 2026-08-29 12:55, `2a117a5`):** after three GLM iterations (103/104/106) re-tuned the ridge band map with "verified" numbers and no visible change, the reviewer probed the live scene: the band textures were rendering fine — **scene fog on the ridge PBR materials washed them to one pale tint** far beyond what EXP2 0.0022 predicts (0.82 visibility at 200 m); halving fogDensity barely helped, `fogEnabled=false` restored rock/snow/forest banding at once. Fix: ridge materials opt out of scene fog and carry a baked per-layer haze (albedo mix 0.10/0.22/0.38 toward the fog colour). New gate `ridges3d.spec.js` "rendered ridge pixels keep contrast": ridge-only pixel mask (frame diff with ridges hidden) luminance std ≥ 0.14 and mean ≤ 0.56 — fixed 0.165/0.50, the rejected fogged state 0.123/0.63 is the negative control. Unit 78/78, golden 30/30, ridges3d 4/4. GLM: the 04/06 by-eye "acceptance" entries were wrong; do not tune `makeRidgeSurface` further without this gate's numbers moving. Follow-up (GLM, low): the flat snow field between the corridor and the ridges now reads blue-tinted against the un-fogged ridges — consider giving `terrainBase` the same treatment or a lighter fog on it.
@@ -208,7 +210,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P3 | Venue dressing | **B-net (iter 16/22), wands + knoll flag (iter 102), judges'/start deck (iter 107), coach figures (iter 108) — P3 COMPLETE** | B-net: 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips, net top ≤1.20 m, permanent gates in venue-dressing.spec; iter-107 deck: timber deck on two dark containers + rail beside the kicker, level-seated by post-render ray pick, gated (test 3 of 4); iter-108 coaches: 3 red-jacket card figures at the knoll, 1 shared alpha-test material, seated + gated (test 4 of 4) |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | **slice 1 landed (iter 56); slice 2 bare-deciduous MAJORITY landed (iter 98: 2 birch variants, 56.6% birch mix, 6 draw calls, species census gates, ASSET_V 33)** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 6 thin-instanced cross-card meshes = 6 draw calls (plan cap ≤ 20); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, understory |
-| P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
+| P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89); iter-109 REGRESSION FIXED + spec made state-deterministic (iter 112)** | iter-112: iter 109 accidentally deleted `R.phase = 'roll'` — the machine never left tumble, never stopped (the "flaky" crash spec was red BY CONSTRUCTION at HEAD since 109); line restored, golden re-captured 30/30 (13 crash tails, state-diff 0, node-only from f495); `window._debugTriggerCrash()` forces the crash from game state; open: restAt 9.0 s vs the 5 s gate for low-seed crashes (seed floor 6 = the real browser impact; 2–5 s envelope + ≥60% + never-stall-mid-slope are mutually incompatible at seed 6 — reviewer question) |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth INSTRUMENT corrected + calf growth (iter 91, entry 91); chest-wall RESKIN + crown sphere-cap landed (iter 96); partially landed otherwise** | **iter 96: chest-wall ownership restored (25 verts upperArmR -> torso via normal-alignment rule; nipple-line chest 303 mm, sanity band back to 0.30-0.45) and the helmet crown is a sphere cap (95.0 mm, gate 73) applied as the LAST geometry pass; tilt p10 14.0 deg still soft (instrument question, entry 96); goggle-proud gate recalibrated 71.5 -> 68.0 for the new pipeline; ASSET_V 32**. Prior: iter 91 instrument correction (hip 295 / thigh 214 / calf 146, ASSET_V 30); iter 32 arm transport root cause. |
@@ -258,6 +260,75 @@ entry 90 below.)*
 rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
 Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
+
+### 112 — Crash spec made state-deterministic (`window._debugTriggerCrash`) +
+REAL iter-109 regression found and fixed: `R.phase = 'roll'` was deleted, the
+crash machine never stopped; golden re-captured 30/30 (state-diff 0, crash-tail
+nodes only); `window._crashImpactSpeed` instrument actually landed; main crash
+test now reaches `stopped` but fails the 5 s envelope at the real impact speed
+(reviewer question 1 of entry 109, now with numbers)
+
+**Order acted on:** the reviewer ruling on entry 109 (d260fb9): "queue the
+deterministic crash trigger for iteration 111 (110 is review-only) — the spec
+must force the crash from game state, then remove the flake allowance.
+Bug-fix rule applies: the refactor ships with the spec that would have caught
+it." No `docs/NEXT.md`. That spec caught a real bug, exactly as the ruling
+predicted.
+
+**Regression (the headline):** iter 109 (bda34d6) accidentally deleted
+`R.phase = 'roll';` from the tumble→roll freeze block in `_crashRagdollStep`
+(`git log -L` proves it: present in 7774a89, removed in bda34d6). Consequence:
+the freeze block re-ran EVERY frame after t≥1.0 s, `R.phase` stayed
+`'tumble'` forever, the roll branch (5616) was dead code and
+`R.phase='stopped'` (5673) was unreachable — **the crash state machine could
+never reach `stopped` at HEAD since 109**. Entry 110's run-all
+("89 passed / 1 FAILED") could not have included a green crash-ragdoll main
+test with these gates; the "flaky" label in entries 109/110 was this
+deterministic red. Fix: restore the one line.
+
+**Deterministic trigger (`game.js` + spec):**
+- `window._debugTriggerCrash()` sets a module flag; the next touchdown takes
+  the crash branch (`goodLanding &&= !debugForceCrash`) regardless of flip
+  timing. Reset on run restart. Display-side only; not in `_getGameState`.
+- The spec arms it once AIRBORNE PAST THE KICKER (`!grounded && posZ ≥
+  KICKER_END_Z`). Two earlier arming boundaries were wrong and are documented
+  here as landmines: arming immediately after `readyState === false` crashes
+  on the READY-TURN HOP's in-run touchdown (ragdoll then never settles — 2 of
+  3 tests "passed" only because they expect gate failures), and arming on
+  `flipPower ≥ 0.999` while airborne never fires at all.
+- 90 s `crashedAt` leash tightened to 60 s (the crash is now guaranteed;
+  the leash only bounds SwiftShader wall-clock).
+- `window._crashImpactSpeed()` instrument landed (entry 109 claimed it; it
+  was never in the tree).
+
+**Verification:** `npm run test:unit` 78/78. `npm run test:golden`: the 13
+crash-tail scenarios diverged (the machine now actually stops) → re-captured →
+**30/30**; audit vs pre-change traces: **state diffs 0 in all 13**, node diffs
+confined to f495 (crash frame) onward — same display-only class as iters
+56/109. crash-ragdoll solo: negative controls 2/2 green (no-roll: frac 4%,
+slope 40° → gate fails as required; limp: peakExc 160.8° > 38°); MAIN test
+now gets past `stopped` (restAt 8.96–9.05 s, phase=stopped, peakExc 35.3° ≤
+38°, peakSpine 39.2–40.2° ≤ 43°) but fails the 2–5 s envelope gate — see the
+open question. `look` NOT re-run this iteration (no visual-path change; the
+crash pose endpoints are what changed and the crash_rest shot comes from the
+red spec — flagged for 113).
+
+**Open question for the reviewer (blocks the main crash test):** the real
+browser impact speed at the trigger is ≈ 5–6 m/s (NOT the ~26 m/s entry 109
+recorded — that number does not reproduce), so the seed floor 6 engages and
+the body rides the 4 m/s never-stall floor down the full 27.7 m of landing
+slope: restAt ≈ 9.0 s vs the ≤ 5 s gate. With `decel = 3 m/s², floor = 4
+m/s, never stall mid-slope, envelope 2–5 s, rest ≥ 60 % to roll-out`, a
+seed-6 crash CANNOT satisfy the envelope (≥ 16.6 m at ≤ 4 m/s ≈ 4.2 s minimum,
+plus the flat stop). Entry 109's ruling (1) offered "speed-scaled decel so
+rest distance still grows with entry speed" — please pick: (a) drop/raise the
+never-stall floor so low-speed crashes stop on the slope (restAt ~4 s, rest
+~60–70 %), (b) rescale the envelope for the measured seed, or (c) revert to
+the constant 15 m/s seed (iter-89 verified, but slow and fast crashes then
+slide identically).
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete lane files, DoF block.
+Scratch probes removed from `~/aerial-agents/scratch/iter-112/`.
 
 ### 110 — REVIEW-ONLY + one REAL breakage fixed: venue-dressing test 4 RED at
 HEAD (solo too) — root cause: `MATERIAL_ALPHATESTMODE` is undefined in the

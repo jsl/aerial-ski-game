@@ -67,20 +67,23 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
     await page.waitForTimeout(800);
 
-    // ── Deterministic crash trigger (state-driven, not wall-clock) ──────────
-    // The old script pressed keys on wall-clock timers; under SwiftShader the
-    // render loop runs at a few fps with clamped dt, so physics time lags wall
-    // time and the charge/tuck schedule landed differently every run (iter 40:
-    // one run never crashed in 30 s). The golden aerial-crash-ragdoll
-    // scenario's schedule is STATE-determined — hold ↓ until the flip-power
-    // bar is full, then hold tuck from takeoff — so the pump below dispatches
-    // each key exactly when the state crosses that boundary, making the
-    // trigger fps-independent (the page's key handler binds on event.code).
+    // ── Deterministic crash trigger (reviewer entry-109 ruling) ─────────────
+    // window._debugTriggerCrash() forces the NEXT touchdown to take the
+    // crash branch from game state, so the crash no longer depends on
+    // charge/flip timing under SwiftShader load (the old failure mode: the
+    // state-driven pump produced a GOOD landing and the spec waited 90 s
+    // for a crash that never came). The pump below still charges fully and
+    // tucks from takeoff so the flight reaches the landing slope; only the
+    // landing OUTCOME is forced. The 90 s leashes below are wall-clock
+    // bounds for the state boundaries only, not flake allowances.
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window._getGameState().readyState === false,
         null, { timeout: 90_000 });
+    // Arm past the kicker lip (airborne beyond KICKER_END_Z), NOT on the
+    // ready-turn hop: the hop's touchdown is on the in-run, where a forced
+    // crash never settles in the 2–5 s envelope. The pump owns the arming.
     await page.evaluate(() => {
-        window._pump = { down: false, tuck: false, stop: false };
+        window._pump = { down: false, tuck: false, armed: false, stop: false };
         const send = (type, code) => window.dispatchEvent(
             new KeyboardEvent(type, { code, bubbles: true }));
         const tick = () => {
@@ -91,6 +94,13 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                 if (window._pump.tuck) send('keyup', 'Space');
                 window._pump.stop = true;
                 return;
+            }
+            // Arm past the kicker lip (airborne beyond KICKER_END_Z), NOT on
+            // the ready-turn hop: the hop's touchdown is on the in-run,
+            // where a forced crash never settles in the 2–5 s envelope.
+            if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._pump.armed) {
+                window._pump.armed = true;
+                window._debugTriggerCrash();
             }
             // Charge: hold ↓ while grounded until the bar is full.
             if (g.grounded && !window._pump.down && g.flipPower < 0.999) {
@@ -204,7 +214,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     // rest lands past crashedAt+7 s wall and the 3 s zero-span gate saw
     // 2 s; solo runs were always green).
     await page.waitForFunction(() => window._cr && window._cr.crashedAt !== null,
-        null, { timeout: 90_000 });
+        null, { timeout: 60_000 });
     await page.waitForFunction(() => window._cr && window._cr.stop,
         null, { timeout: 90_000 });
     await page.keyboard.up('Space');
@@ -435,6 +445,12 @@ test('crash negative control: without the roll phase the rest-position gate fail
                     if (!g.grounded && !window._nc.tuck) {
                         window._nc.tuck = true; send('keydown', 'Space');
                     }
+                    // Arm past the kicker lip (airborne beyond KICKER_END_Z), not
+                    // on the ready-turn hop (in-run touchdown, no settle).
+                    if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._nc.armed) {
+                        window._nc.armed = true;
+                        window._debugTriggerCrash();
+                    }
                 }
                 if (window._nc.crashedAt !== null) {
                     const tp = BABYLON.EngineStore.LastCreatedScene.getMeshByName('torso');
@@ -483,7 +499,7 @@ test('crash negative control: a fully limp ragdoll exceeds the tumble-excursion 
     await page.waitForFunction(() => window._getGameState().readyState === false,
         null, { timeout: 90_000 });
     await page.evaluate(() => {
-        window._limp = { peak: 0, stop: false, t0: performance.now(), crashedAt: null };
+        window._limp = { peak: 0, stop: false, armed: false, t0: performance.now(), crashedAt: null };
         const send = (type, code) => window.dispatchEvent(
             new KeyboardEvent(type, { code, bubbles: true }));
         const tick = () => {
@@ -506,6 +522,12 @@ test('crash negative control: a fully limp ragdoll exceeds the tumble-excursion 
                     }
                     if (!g.grounded && !window._limp.tuck) {
                         window._limp.tuck = true; send('keydown', 'Space');
+                    }
+                    // Arm past the kicker lip (airborne beyond KICKER_END_Z), not
+                    // on the ready-turn hop (in-run touchdown, no settle).
+                    if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._limp.armed) {
+                        window._limp.armed = true;
+                        window._debugTriggerCrash();
                     }
                 }
             } catch (e) { window._limp.stop = true; }
