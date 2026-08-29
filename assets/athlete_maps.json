@@ -47,10 +47,10 @@
   "athlete_albedo": {
    "mean_abs": 0.0035,
    "p99_abs": 0.0275,
-   "png": 1039372,
+   "png": 1039368,
    "ratio": 3.47,
    "res": 2048,
-   "web": 299232
+   "web": 299238
   },
   "athlete_ao": {
    "mean_abs": 0.0112,
@@ -61,14 +61,14 @@
    "web": 131452
   },
   "athlete_normal": {
-   "mean_deg": 1.282,
-   "p95_deg": 3.479,
-   "png": 4788156,
+   "mean_deg": 1.283,
+   "p95_deg": 3.477,
+   "png": 4788145,
    "ratio": 8.77,
    "res": 2048,
-   "web": 546006
+   "web": 546026
   },
-  "total_web": 976690
+  "total_web": 976716
  },
  "faceForward": [
   -0.0054,
