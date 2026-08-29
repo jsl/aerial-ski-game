@@ -79,7 +79,7 @@ Makefile targets; the build has its own gates that must keep passing).
 9. **Face**: nose, mouth and chin must be discernible at the canonical face distance (compare with a zoomed
    footage crop); skin tone natural; the red line at the neck in `face.png` is the collar seam — make it
    the suit collar (item 3), not a red stripe.
-10. Neutral stance stays perpendicular to the skis (≤ 10° flex); boot–ski invariant, binding-touches-boot,
+10. **Neutral stance: standing straight up, perpendicular to the skis.** Author (HUMAN TESTING #5, 09:45): "skier's hips still a little more forward. should be perpendicular (standing up straight) from skis." In `figure_side.png` the pelvis leads the ankles. Gate (ready state, side view along the ski axis): hip centre within 3 cm of the ankle centre along the ski direction; ankle–hip–shoulder line within 5° of the ski-surface normal; knees ≤ 10° flex; negative control: pushing the pelvis 6 cm forward must fail. boot–ski invariant, binding-touches-boot,
     skis eject only on crash — none of these may regress (their gates are in `rig.spec.js`/`drive` specs).
 
 ## Ground rules

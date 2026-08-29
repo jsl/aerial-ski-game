@@ -15,11 +15,11 @@ scene items, in order, each committed separately:
    curtain fails. Regenerate `scene.png`, `inrun.png`, `kicker.png` and describe them honestly in your
    entry (a flat band with a vertical edge, as in the current `pose_tuck_side.png` background, is a fail).
 2. **Skis still render before the skier** (item 4): audit every mesh created at startup — styled skis,
-   driver skis, boots, bindings, poles, fence, markers — nothing of the athlete OR skis may be visible until
+   driver skis, boots, bindings, poles, fence, markers — nothing of the athlete OR skis may be visible **or cast a shadow** (author, HUMAN TESTING #5: "the skis and the skier's shadow appear before the skier") until
    the body GLB and its maps report ready and one frame has rendered; show a loading overlay
    (spinner + "Loading athlete…") until then and reveal everything in the same frame. Add
    `<link rel="preload">` for `assets/athlete_body.glb` and the three athlete maps in `index.html`. Gate in
-   a drive spec: no ski/athlete mesh has `isVisible && isEnabled()` in any frame before `_bodyLinked > 0`;
+   a drive spec: no ski/athlete mesh has `isVisible && isEnabled()` or is in any shadow generator's render list in any frame before `_bodyLinked > 0`;
    the overlay is gone in the frame the body appears; negative control: forcing a ski visible early fails.
 
 Everything else (free-look + camera clamp, dressing remainder, night snowfall, polish) resumes next
