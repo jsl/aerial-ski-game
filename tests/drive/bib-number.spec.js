@@ -53,7 +53,18 @@ async function frameFigure(page) {
         cam.setTarget(lo.add(hi).scale(0.5));
         cam.radius = 2.4; cam.fov = 0.8;
         cam.beta = Math.PI / 2.35;
-        window._bibBody = { c: lo.add(hi).scale(0.5), half: hi.subtract(lo).scale(0.5) };
+        // The SUIT part: the athleteBody part with the largest bounding box
+        // (the skinned suit, not the small helmet primitive). Its bbox is the
+        // plate-frame source — see the note in plateView.
+        let suit = null, suitVol = -1;
+        for (const p of parts) {
+            p.computeWorldMatrix(true);
+            const b = p.getBoundingInfo().boundingBox;
+            const e = b.maximumWorld.subtract(b.minimumWorld);
+            const vol = e.x * e.y * e.z;
+            if (vol > suitVol) { suitVol = vol; suit = { c: b.centerWorld, half: e.scale(0.5) }; }
+        }
+        window._bibBody = { c: lo.add(hi).scale(0.5), half: hi.subtract(lo).scale(0.5), suit };
     });
 }
 
@@ -76,9 +87,19 @@ async function plateView(page, name, alpha, sideSign) {
         // for a framing drift, but say so in the error.
         const got = ((cam.alpha - cmd) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
         if (Math.abs(got) > 0.05) return { err: 'camera alpha drifted to ' + cam.alpha };
-        const { c, half } = window._bibBody;
-        const v = new BABYLON.Vector3(c.x + sgn * half.x * 0.98, c.y + half.y * 0.12, c.z);
-        const p = BABYLON.Vector3.Project(v, BABYLON.Matrix.Identity(),
+        // Iter 74: the whole-figure bbox is polluted by the 1.55 m skis, and a
+        // fixed lateral fraction (the old 0.98/0.85 * half.x) drifts off the
+        // surface when the chest moves — the straightened build receded and the
+        // box measured sky + blue B-net behind the athlete (front navyFrac
+        // 0.0075, all-bright box). Raycast inward from an outside point onto
+        // the SUIT SURFACE instead.
+        const { suit, c } = window._bibBody;
+        const sc = suit.c;
+        const outside = new BABYLON.Vector3(sc.x + sgn * (suit.half.x + 0.2), c.y + suit.half.y * 0.18, sc.z);
+        const inward = new BABYLON.Vector3(-sgn, 0, 0);
+        const hit = scene.pickWithRay(new BABYLON.Ray(outside, inward, 2), m => m.name && m.name.startsWith('athleteBody'));
+        if (!hit || !hit.hit) return { err: 'no athleteBody hit on the plate ray' };
+        const p = BABYLON.Vector3.Project(hit.pickedPoint, BABYLON.Matrix.Identity(),
             scene.getTransformMatrix(),
             cam.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()));
         return { sx: p.x / engine.getRenderWidth(), sy: p.y / engine.getRenderHeight() };
@@ -111,12 +132,6 @@ test('bib number 30 reads on both faces at the look camera', async ({ page }) =>
 
     const front = await plateView(page, 'front', 0, 1);
     const back = await plateView(page, 'back', Math.PI, -1);
-
-    // Ink band: a bare plate reads 0; a fully-inked slab reads ~1. Glyph
-    // coverage is ~25% of the plate by construction and the rendered box is
-    // only slightly larger than the plate, so the rendered fractions sit in
-    // a wide middle band (rebuild measured: front 0.063, back 0.156 — the
-    // rear plate fills more of its box because the near-face anchor hugs it).
     for (const [nm, s] of [['front', front], ['back', back]]) {
         expect(s.navyFrac, `bib number ink missing on the ${nm} face ` +
             `(navyFrac ${s.navyFrac.toFixed(4)})`).toBeGreaterThan(0.02);

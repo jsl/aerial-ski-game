@@ -4558,19 +4558,16 @@ def main():
                 f'notched the leg')
     else:
         log('relax_suit OFF (--relax-suit off): pre-relax geometry')
-    # DISABLED (entry 73): the clamp itself is FIXED — the entry-72 "atlas
-    # share" collapse was a UV-seam fold, and the local Laplacian relaxation
-    # below now keeps the front bib island intact (front plate samples
-    # 360 → 700, ink 0.280; body.spec front-back blue delta 0.040, gate 0.03;
-    # front-line deviation 0.0 mm, 242 verts clamped). What still fails is the
-    # RENDER gate: bib-number.spec front navyFrac 0.0000 (was 0.0362 at 72,
-    # 0.0108 clamp-on pre-relaxation) — the chest recession tips the front
-    # "30" out of the canonical plate camera's box entirely (back unchanged
-    # 0.1766; entry-72's marginal front pass measured a sliver, and an
-    # alpha-sweep probe shows the digits do not read from ANY quadrant of the
-    # rest pose). Re-enable only together with a real front-plate framing
-    # fix — see progress entry 73, open questions.
-    # straighten_chest(body)
+    # Chest straightener ENABLED (iter 74). The entry-72 "atlas share" collapse
+    # was a UV-seam fold; entry-73's local Laplacian relaxation fixed it (front
+    # plate samples 360 → 700, ink 0.280; body.spec front-back blue delta 0.040,
+    # gate 0.03; front-line deviation 0.0 mm, 242 verts clamped). The remaining
+    # bib-number render-gate failure (front navyFrac 0.0000) was a SPEC framing
+    # bug, not geometry: the plate box was projected from the whole-figure bbox
+    # whose half.x includes the 1.55 m ski tips, so the box measured sky in front
+    # of the chest. The spec now frames the plate from the suit part's own bbox
+    # (front navyFrac 0.0498 on the un-straightened build).
+    straighten_chest(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     high = make_highpoly(low, lm)

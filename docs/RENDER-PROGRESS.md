@@ -878,6 +878,49 @@ forest.
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 74 — Chest straightener ENABLED (author ruling e370ba5) + the bib render gate's
+0.0000 root-caused as a SPEC framing bug (ski-polluted bbox → box measured sky);
+raycast plate framing shipped; digits proven rendering front AND back
+
+**Order acted on:** the reviewer's 20:12 ruling — "enable the chest straightener
+now; fix the bib digits on the straightened island in the same iteration" (also
+entry 73's open/next). One iteration, both halves, as ordered.
+
+**Diagnosis (the entry-73 mystery):** the front "30" ALWAYS rendered. Entry 73's
+"reads from no quadrant" was measured by a box projected from the WHOLE-FIGURE
+bbox at `c.x + 0.98*half.x` — but half.x includes the 1.55 m ski tips, so the box
+floated in the air in front of the chest and measured sky (all-bright box, median
+lum 0.62) plus blue B-net behind the athlete (which is why blueFrac still read
+0.13). Proof: scratch screenshots `chest_a0.png`/`chest_a314.png` show both "30"s
+legible on the UN-straightened build from any quadrant.
+
+**Spec fix (`tests/drive/bib-number.spec.js`):** the plate box is now placed by
+RAYCASTING inward from a point 0.2 m outside the SUIT part's own bbox (largest
+athleteBody part) onto the athleteBody surface, and centring the 0.13 × 0.20 m
+box on the picked point. Robust to any chest recession — the fixed-fraction
+variant measured 0.0498 on the old build but 0.0075 on the straightened one.
+
+**Build (`blender/build_body.py`, ASSET_V 23→24):** `straighten_chest(body)`
+call ENABLED. Rebuild gates (scratch/iter-74/build.log): 242 verts clamped,
+front-line deviation 0.0 mm (limit 20); bib bake front 700 samples / ink 0.280,
+back 640 / 0.178; chest d/b SOFT gate 1.20 (convention question open since 72).
+
+**Verification:** bib-number 1/1 with the raycast framing on the straightened
+build — front navyFrac **0.0571** / blue 0.2694, back navy **0.2046** / blue
+0.0783 (both in band; gates >0.02 / <0.25). rig 15/15, body 4/4 green; unit
+76/76; golden 30/30 (physics untouched — engine untouched, no rebaseline);
+look 1/1, shots regenerated with ASSET_V ?v=24 (LOOK: verts 13511, all three
+maps albedoReady). A transient rig 3-failure batch was reproduced as a
+port-collision artifact of concurrent playwright runs — clean reruns pass.
+
+**Open / not done:** look.spec's figure_front auto-pick chose −π/2 but the shot
+still reads as a three-quarter at a wide radius, and face.png framed the kicker
+landscape again — the canonical shot framing (entry 73 open item 1, second
+half) is still not landed; the bib spec is now the authoritative digit gate.
+
+**Open questions for the reviewer:** none new; the entry-72 d/b breadth
+convention question carries over.
 ### 55 — Review-only: suite ALL GREEN + five-shot inspection with measurements; sky gate re-measured (reviewer 02:50); game.js cache-bust repaired — two slices shipped without a bump
 
 **Order acted on:** review-only per the iteration cap. Reviewer items executed:
