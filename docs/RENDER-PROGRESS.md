@@ -879,6 +879,79 @@ forest.
 
 ## Iterations
 
+### 75 — Review-only: full run-all green; five canonical shots inspected by eye;
+two canonical-camera regressions confirmed (face.png frames the landscape,
+figure_front.png shows the BACK); suit reads near-white from every figure camera
+
+**Scope:** review-only per the iteration cap (no features; no asset rebuild;
+ASSET_V unchanged at 24; engine untouched). Full `./tests/run-all.sh` +
+fresh `look` shots, then a critical pass over the render against the plan and
+the reference footage.
+
+**Suite:** run-all ALL GREEN — unit 76/76, golden 30/30 (no recapture),
+mutation + coverage PASS, drive 72 passed / 2 skipped (18.6 min).
+`look` 1/1 (1.8 min); LOOK reports verts 13511, all three body maps
+albedoReady at `?v=24`; frontal auto-pick chose α = −π/2 (score 0.656).
+
+**What reads wrong (eye inspection of shots/*.png, 21:00):**
+1. `face.png` frames the KICKER LANDSCAPE — no head, no face pixels at all.
+   Third iteration in a row (entries 73/74 open item). The head-centred
+   framing from the reviewer's 19:40 correction is still not landed.
+2. `figure_front.png` still shows the athlete's BACK three-quarter: occiput
+   and spine visible, no bib, no face. The bib-blue frontal picker chose
+   −π/2 but the shot disagrees — the picker's forward convention is wrong
+   (rig.spec's "figure faces −z" vs the skierRoot transform is the suspect).
+   The raycast bib gate passes numerically (front navyFrac 0.0571) yet the
+   canonical shot the reviewer looks at does not show the front. The gate and
+   the shot now contradict each other — one of them is measuring the wrong
+   side, and that must be settled before any more paint work.
+3. The suit reads near-WHITE from every figure camera: in figure.png /
+   figure_side.png / figure_front.png the suit is a low-contrast white mass
+   on white snow; blue appears only as thin slivers at hip/shin. The plan's
+   "blue a broad panel, bib/waist enlarged so the suit reads at distance"
+   (P7) is not met at these framings — the athlete is the least legible
+   object in every figure shot. The back "30" in figure_side.png IS legible.
+4. Red junction marks on the kicker (kicker.png + scene.png): thick red
+   strokes on the block base and take-off face edges — plan item "red marks →
+   thin dark edge line + generic panels" (P3) still open; they read as
+   cartoon flags, not the footage's dark junction line.
+5. Horizon: scene.png still shows the fat pale haze band (~5–8° tall) meeting
+   flat grey CONE peaks behind the treeline (P6 ridgelines not started), and
+   the ready camera's horizon reads milky where sky meets snowfield. Sky
+   above is properly blue with cumulus (entry 71's gate holds).
+6. Torso reads straight in figure_side.png (chest profile flat, no bulge) —
+   the straightened build verified. Helmet sits as a dome with nape visible —
+   the hood complaint is resolved. Trees/forest read well. No underside/
+   backface artifacts, no floating geometry visible in these framings.
+
+**Gaps vs plan priority order:** canonical cameras (blocking all figure
+review), P3 red marks, P7 suit-blue legibility, P6 ridgelines remain the
+top visual deltas. No new regressions found vs entry 74's shots.
+
+**Re-prioritised for next iterations:**
+1. Canonical cameras ONCE AND FOR ALL: define forward from the skinned body
+   (head/nose axis or a tiny marker mesh baked at the bib centre), place
+   front/side/face geometrically from it; make look.spec assert the FRONT
+   bib plate occupies the frame centre of figure_front.png and that face.png
+   contains head pixels (skinned-mesh screen coverage ≥ 30%). Fix the
+   gate-vs-shot contradiction (item 2 above) in the same pass.
+2. Suit legibility: broaden the blue panel coverage / darken the albedo so
+   the suit separates from snow at 3 m; gate on suit-vs-snow luminance delta
+   in figure.png.
+3. P3 red marks → thin dark edge line + generic panels (kicker.png gate:
+   red pixel fraction at the block ≈ 0).
+4. P6 ridgelines (kill the cone peaks behind the treeline).
+5. Then resume the reviewer queue: crash re-verification (priority 3),
+   start gating (priority 4), face pass 2.
+
+**Open questions for the reviewer:** (1) the bib gate measures front
+navyFrac 0.0571 while figure_front.png shows the back — should the gate
+also assert the shot's facing (screen-space), so the two can never disagree
+again? (2) entry-72/74 chest d/b breadth-convention question carries over;
+(3) is the near-white suit an accepted race-suit look (footage suits are
+bright) or should blue coverage grow — the plan says broad panel, the
+author has not overruled it.
+
 ### 74 — Chest straightener ENABLED (author ruling e370ba5) + the bib render gate's
 0.0000 root-caused as a SPEC framing bug (ski-polluted bbox → box measured sky);
 raycast plate framing shipped; digits proven rendering front AND back
