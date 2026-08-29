@@ -4367,6 +4367,66 @@ void main(void) {
     _ridgeMesh('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
     _ridgeMesh('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
 
+    // ── Snow-capped cone peaks BEHIND the far ridges (reviewer ruling on
+    // entry 110, 2026-08-29 14:35; re-land iter 116): the author twice
+    // preferred the old cone peaks to the bare curtains; what was wrong was
+    // only the legacy green forest caps poking above the ridges as "volcano
+    // tops". The peaks are back on the SAME `pk_body_*` node names (iter-94
+    // census predecessor), re-skinned with a ridge-band material — no
+    // separate green cap mesh: elevation-keyed UV (same RIDGE_SNOWLINE_M
+    // mapping as the ridges) gives forest low (hidden behind the ridge
+    // band), rock mid-slope, snow caps. Scene fog (the peaks sit 200+ m out)
+    // makes them read as a distant range.
+    const peakMat = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
+    peakMat.fogEnabled = true;
+    const PEAKS = [
+        // Back range, behind ridge_back (z < SLOPE_START_Z - 200)
+        { x: -60, z: SLOPE_START_Z - 260, h:  96, rb:  80 },
+        { x:  20, z: SLOPE_START_Z - 300, h: 118, rb:  95 },
+        { x: 110, z: SLOPE_START_Z - 240, h:  88, rb:  75 },
+        // Left range behind ridge_far_L
+        { x: -210, z: KICKER_END_Z - 60,  h: 104, rb:  85 },
+        { x: -235, z: OUTRUN_Z + 40,      h:  90, rb:  78 },
+        // Right range behind ridge_far_R
+        { x:  205, z: SLOPE_START_Z - 40, h:  98, rb:  82 },
+        { x:  230, z: OUTRUN_Z - 80,      h: 112, rb:  90 },
+        { x:  200, z: OUTRUN_Z + 120,     h:  86, rb:  72 },
+        // Ahead, behind ridge_ahead (z > OUTRUN_Z + 300)
+        { x: -40, z: OUTRUN_Z + 330,      h: 108, rb:  88 },
+        { x:  60, z: OUTRUN_Z + 380,      h:  94, rb:  80 },
+        { x: 150, z: OUTRUN_Z + 300,      h:  84, rb:  70 },
+    ];
+    PEAKS.forEach(function (m, i) {
+        const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
+            height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
+            tessellation: 10
+        }, scene);
+        // Cylinder is centred on its own origin: seat the base 4 m below
+        // the valley floor and stand it at (m.x, m.z). (The iter-113/114
+        // attempts never set this — all 11 cones sat unpositioned at the
+        // world origin, occluding the ridges and producing the mask
+        // collapse and the face-back dark wall.)
+        body.position.set(m.x, valleyFloorY - 4 + m.h / 2, m.z);
+        // Elevation-keyed band UV: v = height above the valley floor over a
+        // COMPRESSED 30 m snowline (the ridges use 80 m) — the peaks are
+        // higher, so they must read SNOWIER than the ridges in front of
+        // which they sit; with the ridges' own 80 m mapping the two
+        // backdrops were near-pixel-identical at the crest and the ridges3d
+        // contrast mask collapsed to 0 (entry-114 blocker; iter-116 root
+        // cause). v CLAMPS at 1 — UV wrap would loop the crown back into
+        // the dark forest band. u arcs around the cone.
+        const p = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+        const uv = [];
+        for (let k = 0; k < p.length; k += 3) {
+            uv.push(Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5,
+                    Math.min(1, Math.max(0, (p[k + 1] + body.position.y
+                                - valleyFloorY) / 30)));
+        }
+        body.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
+        body.material = peakMat;
+        body.isPickable = false;
+    });
+
     } // end mountain environment
 
     } // end !_trampolineMode terrain
