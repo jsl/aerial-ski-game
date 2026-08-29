@@ -169,7 +169,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
 ## Status board
-
+| — | Iteration 85 (review) | **review pass complete; suite recovered** | one real regression fixed (unit allowlist vs iter-84's five start-gating functions — unit was RED at HEAD); shots regenerated and inspected: `figure_side.png` STILL has no athlete and `face.png` STILL shows the nape — NEXT.md (face/helmet rebuild + `faceForward` cameras + silhouette gate) confirmed as the top priority; red kicker junction marks and milky scene sky re-flagged. See entry 85. |
 | Priority | Item | State | Notes |
 |---|---|---|---|
 | P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1); Sol-8 knee-flex fixed (iter 69); HARD endpoint tear gate + chain-consistent in-run tuck (iter 83)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); iter 69: ready-stance knee flex re-applied after the boot–ski pin in the thigh term, ready-stance fully green; physics state byte-identical ×30, traces re-captured display-only; iter 83: `POSE_INRUN_TUCK` rebuilt chain-consistent under the standing APPROVED (endpoint gaps ≤ 12 mm, was 0.140 m) + hard endpoint tear gates (in-run tuck, pike; limit 3× rest edge = 3 cm) + negative control; open: `POSE_TUCKED` endpoint (hip gap 0.33 m) awaits `APPROVED: adjust POSE_TUCKED`, skinned-buffer edge-ratio probe, stub removal (engine edit needs APPROVED) |
@@ -1078,6 +1078,114 @@ still stands from entry 83.
 
 ## Iterations
 
+
+### 85 — REVIEW-ONLY: suite recovered (one real regression fixed), shots
+regenerated and inspected by eye; the head still has no front and
+`figure_side.png` still has no athlete — both confirmed with fresh numbers;
+`docs/NEXT.md` (face/helmet rebuild) is untouched and remains the next
+work iteration
+
+**Scope:** per the iteration-85 order this was a review pass: run-all,
+shot regeneration, by-eye inspection, critical write-up. Only outright
+breakage was fixed. `docs/NEXT.md` was NOT started (review iteration
+overrides it per the iteration rule); it still governs the next work
+iteration.
+
+**Outright breakage found and fixed (1):** `npm run test:unit` was RED at
+HEAD — `tests/unit/no-physics-in-game.test.js` flagged the five iter-84
+start-gating functions (`_athleteVisualMeshes`, `_alpineWorld`,
+`_showAthleteFallback`, `_hideAthleteVisuals`, `_revealSkiEquipment`) as
+un-allowlisted top-level functions, i.e. `SUITE RED — do not merge` from
+`run-all.sh` (drive 77 passed / 2 skipped, coverage PASS — unit was the
+only red leg). Entry 84's "unit 78/78" claim does not reproduce at HEAD.
+Fix: the five were added to `ALLOWED_FUNCTIONS` with renderer reasons
+(they build/hide/reveal Babylon meshes; no simulation). Unit 78/78 after;
+golden 30/30 unchanged (no physics touched).
+
+**Shots regenerated** (`npx playwright test … look`, 1/1 passed,
+`ASSET_V` unchanged — no assets touched) and inspected by eye:
+
+- `scene.png` — venue reads well overall: seated trees with snow load,
+  continuous ribbon, blue B-net, athlete visible mid-slope with shadow.
+  Two long-standing plan gaps visible: (1) the **red junction marks** at
+  the kicker base are still bright red diagonal strokes (review-50 item 7,
+  "thin dark edge line + generic panels", still open); (2) the sky in this
+  framing is still milky above the ridgeline — the deep-blue dome from
+  entry 71 does not reach this camera's frame (the gate lives on the
+  spec's all-sky band, not on scene pixels; see open questions).
+- `figure.png` — rear three-quarter of the athlete. Reads washed-out
+  (suit nearly white-on-white against snow; only the bib plate hint, glove
+  and skis give contrast), helmet still reads beret-like from this angle.
+- `figure_front.png` — **shows the athlete's BACK again**: nape, back of
+  the helmet, and the "30" plate on the back side. The entry-70
+  bib-blue/skin auto-facing pick is not robust across rebuilds (it picked
+  −π/2 at iter 70; the framing has since drifted back to rear). This is
+  exactly why NEXT.md item 4 bakes a `faceForward` vector into
+  `assets/athlete_maps.json` and points the cameras from it — confirmed
+  needed.
+- `figure_side.png` — **NO ATHLETE: fence and trees only.** The reviewer's
+  00:40 regression is still present at HEAD. Numbers from a fresh decode:
+  centre-band dark fraction 0.427 dominated by fence/trees; no skin/helmet
+  luma cluster in the frame centre (by eye the athlete is entirely
+  absent). The "silhouette ≥ 15% of frame height in every canonical figure
+  shot" gate ordered at 00:40 was never landed — `look` passes while the
+  canonical side shot contains no subject. This gate must ship with the
+  NEXT.md camera work.
+- `face.png` — 0.6 m close-up of the **NAPE**: helmet dome, a pale
+  band (goggle strap region) and neck skin below; no face, no lens.
+  `look`'s own telemetry convicts itself: `FACECAM` computed
+  `fwd=[1,0,0]`, camera at +x of the head, while the image shows the
+  back of the head → the head's forward is −x or the head still has no
+  front. The paired discriminator is inconclusive by design:
+  `FACEDISC front darkU/M/L 0.0605/0.1015/0.018, skinL 0` vs
+  `back darkM 0.1431` — the "front" is not darker in the upper band than
+  the back, and neither side shows a lens signature. `FACEGATE`
+  passes (dark 0.2204, skin 0.0365) because it measures the hemisphere
+  the camera happened to land on, not the face. The entry-81 finding
+  stands, reconfirmed on the current asset: **the head has no discernible
+  front; the gates do not test facing.**
+
+**Gaps against the plan / reference footage (re-prioritised for the next
+iterations):**
+1. `docs/NEXT.md` unchanged: face geometry (crown-only smoothing, nose ≥
+   2 cm), cranium-fitted helmet dome with hard four-number gates, goggles
+   as front-hemisphere GEOMETRY, baked `faceForward` + geometric cameras,
+   gates with negative controls. Everything in this review's face/side
+   findings is evidence for doing exactly this file.
+2. Canonical-figure silhouette gate (≥ 15% frame height in EVERY figure
+   shot, measured on the exact PNGs the run writes) — must land WITH
+   NEXT.md's camera work so `look` can never pass with a subjectless shot
+   again.
+3. `figure_front` facing: replace the bib-blue auto-pick with the baked
+   `faceForward` (NEXT item 4); the current picker produced a rear framing
+   this iteration.
+4. Red junction marks → thin dark edge line + generic panels
+   (review-50 item 7; visible in `scene.png` every review since).
+5. Scene-camera sky: the all-sky-band r−b gate is green while the scene
+   framing's sky still reads milky — re-home or add the reviewer's
+   scene/kicker/inrun per-camera checks (entry-71 open question 1, still
+   unanswered).
+6. Then the reviewer's queue after NEXT: pose shots (finding 10),
+   rendered-head hook (9), crash re-check, start-gating re-check, and the
+   51–105 schedule (A7 done, red marks = item 4 above, corridor
+   brightness, B-net weight, ridgelines, trees, snow, free-look).
+
+**Verification:** unit 78/78 (after the allowlist fix); golden 30/30 (no
+recapture — physics untouched); run-all re-run green (drive 77 passed /
+2 skipped, coverage PASS); `look` 1/1 with all eight canonical shots
+regenerated (01:37–01:39); no `engine/` edits, no `assets/` change → no
+`ASSET_V` bump.
+
+**Open questions for the reviewer:** (1) entry-71's sky-gate placement
+question is still open — the scene camera's sky reads milky while the
+all-sky-band gate is green; want the gate moved/duplicated onto
+scene/kicker/inrun pixels? (2) the `figure_front` auto-facing pick
+failed again — confirm that baking `faceForward` (NEXT item 4) is the
+approved replacement and the picker can be deleted. (3) entry-70's
+standing questions carry over (pbr-scene probe naming; tear-detector hard
+gate + engine stub removal — note `APPROVED: remove the unused engine
+kinematics stub` from 18:50 was never actioned; still wanted?). (4)
+`APPROVED: adjust POSE_TUCKED` request from entry 83 still stands.
 
 ### 81 — Front-axis investigation: entry-80's "forward convention" theory is
 WRONG — the axis was never the bug; `_athleteFacing` unchanged (documentation

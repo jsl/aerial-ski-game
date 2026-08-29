@@ -34,6 +34,11 @@ const ALLOWED_FUNCTIONS = {
     _buildStyledSki:     'styled ski geometry/texture factory, parents children to the physics drivers — renderer',
     _inrunArmForward:    'in-run crouch arm-hold blend on the mesh drivers — renderer (ADR-0002)',
     _pinBootsToSkis:     'boot–ski seating fix-up on the mesh drivers after applyPose — renderer (ADR-0002)',
+    _athleteVisualMeshes: 'athlete visibility registry for start gating — renderer',
+    _alpineWorld:         'athlete/ski build + reveal orchestration on body link — renderer',
+    _showAthleteFallback: 'legacy-solid fallback reveal on load failure — renderer',
+    _hideAthleteVisuals:  'hide athlete visuals until body link — renderer',
+    _revealSkiEquipment:  'same-frame reveal of skis/equipment on body link — renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
