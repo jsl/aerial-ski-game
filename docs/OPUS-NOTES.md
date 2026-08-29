@@ -796,6 +796,213 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 8 (2026-08-29, 18:0x-18:5x)
+
+### Merge with `render-realism-glm` — commit `ad21306` (docs only)
+
+Four commits, `docs/` only (iter 115's review-only pass, the 116-120 order, the
+hip-gap approval, the session-7 acceptances). One conflict, in
+`docs/OPUS-BODY-BRIEF.md`: the reviewer had written the "Session 7 calls
+ACCEPTED" line into the worktree AND committed it on the integration branch.
+The working-tree copy was byte-identical to the incoming one (diffed before
+discarding), so the resolution took theirs. No code, so no gate re-run.
+
+### Item 5 — the tuck's chain CLOSES. Commit `ed44721`
+
+**What the endpoint actually was.** `POSE_TUCKED` was free-standing. At tuck=1,
+where the P13 reconciler is inert by design, every joint was dislocated:
+
+| joint | gap before | gap after |
+|---|---|---|
+| shoulder | **0.536 m** | 0.0002 m |
+| hip | **0.329 m** | 0.0005 m |
+| neck | **0.211 m** | 0.0006 m |
+| knee | **0.207 m** | 0.0009 m |
+| ankle | 0.014 m | 0.0002 m |
+
+(Analytic, on the shipped 3-decimal literals, using the exact `_poseProbe`
+formulas including the `cos(rz)` foreshortening on the arm anchors.)
+
+**And it was anatomically backwards.** `upperLegL.rx = -1.20` put the thigh's
+KNEE end 0.34 m BEHIND the hip, and the table then translated the whole leg
+forward to hide it. A tuck needs the knee in FRONT of the hip, which is
+`rx > pi/2` — the range `POSE_PIKED` already uses. Nothing in the old table
+could have been rescued by re-anchoring it; the angles had to be re-derived.
+
+**Angles, from the footage.** `reference/pose/IMG_3520` frames 193-205 are the
+only real airborne tuck in the reference set. `IMG_3768`, which entry 83
+proposed, tracks a bystander whose hip and knee never leave 170-180 deg — I
+checked all 179 frames before discarding it. Shipped:
+
+- trunk-thigh interior **50 deg** — measured 54-64 deg at frames 193-196
+  (scores 0.41-0.47, the deepest frames; the reliable band 200-205 reads
+  80-117 deg and is the athlete already opening out for the landing)
+- thigh-shin interior **30 deg** (150 deg knee flexion, the anatomical limit).
+  2D measurement bottoms out at 89 deg there because the shin runs along the
+  camera axis; this one is a deliberate tightening and is flagged as such in
+  the table comment.
+- trunk **25 deg** forward, head **20 deg** further (chin toward chest), hands
+  IK'd onto the upper shin at 30% knee-to-ankle.
+
+Skinned body height at the tuck: **0.870 m against 1.498 m open, ratio 0.581**.
+
+### The physics is unchanged BY CONSTRUCTION, not by measurement
+
+`computeI` reads only `y` and `dz`, so rebuilding the table would have moved
+`I_tuck` — and iteration 33 measured a **4.1%** `I_tuck` shift flipping three
+knife-edge landings. So the mass distribution is pinned in a new
+`POSE_TUCKED_INERTIA` carrying the old literals byte for byte, and `computeI`
+reads that instead. `tests/unit/tuck-inertia-frozen.test.js` pins `I(tuck)` at
+five blend values to float64 literals captured from `1e8d0cb`, asserts the
+frozen table still carries the pre-rebuild `y`/`dz`, and carries a **negative
+control**: perturbing the DISPLAY table must not move `computeI`, and
+perturbing the FROZEN table must — otherwise the first assertion would pass on
+a `computeI` that ignores its model argument entirely.
+
+Measured divergence of the drawn tuck from the simulated one:
+
+| tuck | I frozen (physics) | I drawn | delta |
+|---|---|---|---|
+| 0 | 17.634921 | 17.634921 | 0.000% |
+| 0.5 | 8.763864 | 9.5595 | **+9.08%** |
+| 1 | 5.225046 | 5.2126 | **-0.24%** |
+
+The endpoint figure is small because the tuck angles were picked from an
+anatomically valid set that minimises it — a 24-config sweep over trunk lean,
+hip and knee interior angles, scored on `computeI`. The mid-blend figure is
+**not new**: the P13 reconciler has always re-anchored every joint at
+mid-blend and `computeI` has never seen that either.
+
+### Golden traces — re-captured display-only, with the audit
+
+New `tests/golden/audit-physics-state.js` (kept, not scratch — it is reusable
+and sits with `audit-ready-stance.js`). It replays all 30 scenarios and
+compares ONLY the `state` object, frame by frame, with `Object.is` and no
+epsilon:
+
+    30 scenarios, 5408 frames compared
+    scenarios with ANY physics-state difference:  0
+    scenarios with display-node differences:      9
+
+`verify.js` prints the first few diffs per scenario and stops, so it cannot
+distinguish "the athlete is drawn differently" from "the simulation changed".
+This can, and it is exactly the evidence the standing re-capture condition
+asks for. Traces re-captured after it, then `verify.js` 30/30.
+
+### THE FINDING — the skinned tear is NOT the driver-joint gaps
+
+This supersedes session 6's attribution and it is the part that matters most.
+
+| pose | p99 before | p99 after | max before | max after |
+|---|---|---|---|---|
+| flight tuck | 4.383 | **4.281** | 36.52 | 27.70 |
+
+Closing a 0.536 m shoulder gap and a 0.329 m hip gap moved p99 by **2%**.
+
+The decisive number is the one next to it: the **in-run crouch**, which has
+been chain-consistent since iteration 83 (gaps <= 12 mm), sits at
+**p99 4.696 / max 38.571** — worse than the tuck. A fully closed driver chain
+still tears the skin. So the driver-joint gaps were never the dominant cause,
+session 6's "no amount of spine fixes a pose table that tears its own hip" was
+right about the mechanism and wrong about the magnitude, and **item 5's 1.35
+strain gate stays unset for a measured reason rather than a guess**.
+
+Where it actually is: the worst edges sit at `(y 0.145, z -0.091)` for crouch
+and pike and `(y 0.109, z 0.099)` for the tuck — armpit height, both sides.
+`p50` is exactly 1.000 in every pose, so 99% of the skin is rigid and a thin
+tail explodes. That is the signature of the BIND WEIGHTS on the shoulder and
+hip blend rings, not of the pose. Next session starts there: the weights
+`add_spine_chain` inherited from the single-`torso` group were never re-spread
+across the arm and leg roots.
+
+### Gates added
+
+- `chain.spec.js`: **flight tuck endpoint** (tuck 1, airborne) — every joint
+  <= 3 cm, hips <= the approval's 2 cm. The old "awaits `APPROVED: adjust
+  POSE_TUCKED`" carve-out is gone.
+- **NEGATIVE CONTROL** in the same file: the PRE-REBUILD table run through the
+  same probe maths *in the page*, asserting it FAILS — hip > 0.30 m, shoulder
+  > 0.50 m, worst > the tear limit. A gate that quietly stopped measuring the
+  joints could not pass it.
+- `tests/drive/pose-shots.spec.js` — **the `shots/pose_*.png` generator**,
+  which did not exist. The six pose shots were committed PNGs refreshable only
+  by hand. It also gates that the tuck compacts the body (ratio < 0.80).
+
+Two real defects it caught on itself, both now commented in place:
+
+1. **A skinned mesh's bounding box is the REST box** until
+   `refreshBoundingInfo({ applySkeleton: true })` is called. The tuck and the
+   ready stance reported identical extents — ratio exactly **1.000** — so every
+   camera framing aimed at the wrong volume.
+2. **The pose must be applied inside `onBeforeRenderObservable.addOnce`.** The
+   game re-poses the athlete from its own state every frame, so a probe set
+   before `scene.render()` is overwritten before anything is drawn: the
+   skeleton reported the tuck while the picture showed the athlete standing.
+   This is the render-side twin of session 6's `skeleton.prepare(true)` finding
+   and any future shot spec needs it.
+
+A third, smaller: the follow rig clamps `radius`, so `cam.radius = 2.6` was
+silently clamped to the follow distance and the first shot framed the
+mountains. `look.spec.js` lifts `lowerRadiusLimit`/`upperRadiusLimit` first;
+this spec now does too.
+
+### What the shot shows
+
+`shots/pose_tuck_side.png` (regenerated): a compact ball — knees up and
+forward, heels folded under, skis tracking the boots, head down. Previously
+this shot showed a figure whose limbs floated free of the trunk.
+
+### Verification
+
+    unit    81/81  (78 + 3 new in tuck-inertia-frozen)
+    golden  30/30 after a display-only re-capture; audit 0/5408 physics diffs
+    browser 36/36
+    mutation  all caught      coverage  green
+    drive   chain + spine 18/18; rig + body + athlete + ready-stance +
+            bib-number 24/24; pose-shots 1/1
+    index.html body-model.js v23->24, inertia.js v22->23 (no asset change,
+            so ASSET_V stays at 40)
+
+One process note, again: port 8399 was held by an orphaned `http.server` left
+by the run-all.sh that the harness killed at its timeout. `ss -ltnp` plus
+`/proc/<pid>/cmdline` identifies the `--directory`; safe to kill when it is
+this worktree. Also: **`./tests/run-all.sh` runs the whole drive suite and does
+not finish inside a 600 s tool timeout** — run the layers separately
+(`node --test tests/unit/*.test.js`, `node tests/golden/verify.js`,
+`node tests/browser-suite.js`, then playwright by spec name).
+
+### Open at the end of session 8
+
+- **Item 5's remaining half is now correctly aimed**: the skinned strain is a
+  BIND-WEIGHT problem at the shoulder and hip rings, measured, with the in-run
+  crouch as the control that rules the pose tables out. The 1.35 gate goes in
+  when that is fixed.
+- The crotch/armpit shards (50 faces) from session 7 — same rings, possibly the
+  same root cause; worth attacking together.
+- Item 2's rim lip / chin strap / vents / gloss; the profile bare-crown finding
+  from GLM review 115.
+- Items 3 (suit panels + separate bib), 6 (in-run arms), 7 (pike hip), 9
+  (face + throat red streak), 10 (stance), 12 (boots) untouched.
+
+### For the reviewer (session 8)
+
+1. **`NEEDS-APPROVAL:` reconcile the tuck's mass distribution with the drawn
+   tuck.** `POSE_TUCKED_INERTIA` currently freezes the mass layout of the OLD,
+   dislocated table. The drawn tuck differs from it by -0.24% at the endpoint
+   and +9.1% at mid-blend. Adopting the drawn layout is a physics change with
+   an outcome contract (iteration 33's three knife-edge landings are the ones
+   at risk) and a trace rebaseline; this lane cannot make it. Until then the
+   game simulates a tuck 0.24% less compact than the one it draws.
+2. **The 1.35 strain gate is deliberately still unset**, and session 8 has the
+   measurement that says why: the chain-consistent in-run crouch is at
+   p99 4.696. Setting the gate now would either calibrate it to the defect or
+   ship a red no pose work can clear.
+3. **`tests/golden/audit-physics-state.js` is a new file in `tests/golden/`**
+   rather than scratch, on the grounds that it is the reusable form of an audit
+   this project has now done three times by hand.
+
+---
+
 ## Session 7 (2026-08-29, 17:0x-17:5x)
 
 ### Merge with `render-realism-glm` — commit `b7c52c5` (docs only)
