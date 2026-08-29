@@ -188,6 +188,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
 ## Status board
+| — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
 | — | Iteration 100 (review) | **suite recovered from ONE load-sensitive crash gate; review recorded** | `crash-ragdoll.spec` sampler leash crashedAt+10 s→+30 s wall (spec-only; the ≥3 s zero-span gate measures WALL ms and under full-suite load the rest landed past +7 s wall → 2 s span; solo always 2/2 green; gate and game code untouched, re-run 2/2). Shots inspected: figure_front correctly FRONTAL (review-95 finding closed); crown dome holds; BUT pose_inrun_side arms read fused (gates pass — visual gate proposed), face featureless at 0.6 m, crash_rest body a speck, suit white-on-white at scene distance (corridor 0.8289 vs flankNear 0.8509). NEXT.md (crouch arms, pike gate, face mask) untouched — top priority. See entry 100. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
@@ -255,6 +256,63 @@ entry 90 below.)*
 rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
 Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
+
+### 109 — Crash roll momentum seeded from the athlete's measured root speed at the
+trigger (reviewer entry-89 refinement (a)); golden re-captured 30/30, audit
+state-identical ×30; crash-ragdoll.spec is FLAKY IN THE BROWSER at HEAD too (recorded)
+
+**Order acted on:** the author's 2026-08-29 10:40 schedule (106–120: dressing
+remainder → polish). P3 closed in 108, so this is the first polish item: the
+crash ragdoll's rigid roll was seeded with a constant 15 m/s (iter 89); the
+reviewer asked for the athlete's ACTUAL root velocity at the crash trigger so
+slow and fast crashes differ.
+
+**Mechanism (`game.js`, renderer-side only):** `crashImpactSpeed` is captured
+at the crash trigger (line where `state.crashed = true` fires) as
+`Math.abs(state.vz)` — the HORIZONTAL speed, because the vertical fall speed
+is absorbed by the snow and must not be carried into the slide (the first
+attempt seeded `Math.hypot(vy, vz)`; measured restAt blew out to 8.85 s). At
+the tumble→roll freeze the seed is now
+`min(max(R.impactSpeed, 6), 15)` — 6 m/s floor keeps even soft crashes
+rolling to the flat, 15 m/s ceiling preserves the verified iter-89 behaviour.
+**Measured reason for the ceiling:** a full-charge browser crash measures
+|vz| ≈ 26 m/s at the trigger (restAt ≈ 8.9 s from an uncapped seed — the
+2–5 s motion envelope and the roll-to-flat gates were tuned at 15), while the
+headless golden scenario's trigger fires at |vz| ≈ 4.87 m/s (floor 6
+engages). Slow crashes now slide proportionally less; fast ones are unchanged.
+`window._crashImpactSpeed` is exposed as a permanent instrument;
+`R.impactSpeed` rides on the ragdoll state.
+
+**Verification:** `npm run test:unit` 78/78. `npm run test:golden`: the 13
+crash-tail scenarios diverge at the crash frame (node transforms only — the
+slide now carries the real speed) → re-captured → 30/30; audit
+(`tests/golden/audit-ready-stance.js` vs HEAD pre-change traces in
+`~/aerial-agents/scratch/iter-109/pre-traces`): **physics state byte-identical
+in all 30 scenarios** (node-census-only class, 6th use), athlete-hierarchy
+node diffs confined to the crash tails through f≈895–980. `look` green
+(3.3 m); scene.png / figure_front.png inspected — bib 30, B-net both edges,
+red kicker marks, judges' deck, 3 red-jacket coaches, mixed spruce/birch
+forest, no regression (the crash path is not framed by the look cameras).
+Physics tables, `engine/`, `assets/`, ASSET_V untouched.
+
+**Honest finding — `crash-ragdoll.spec.js` is flaky and was flaky before this
+change:** solo runs of the main test at HEAD (stashed tree) and with this
+change both failed intermittently — once with `restAt=8.9 s` (that run
+motivated the 15 m/s ceiling), once with the crash never triggering in 90 s
+(`crashedAt` null; two negative controls timed out the same way in-suite).
+The crash trigger depends on charge timing under SwiftShader load; the spec
+header already documents wall-clock fragility. NOT fixed this iteration
+(out of scope and over budget); the change itself is fully verified by unit +
+golden + audit, which run the identical deterministic machine.
+
+**Open questions for the reviewer:**
+1. The 15 m/s ceiling: your 89.1 answer said "the decel constants may stay",
+   but with the real ~26 m/s impact the slide doubles and breaches the 2–5 s
+   envelope — I clamped the seed to the old ceiling instead of retuning μ.
+   Confirm, or approve a speed-scaled decel so fast crashes roll farther
+   again.
+2. The crash-spec flakiness (above) needs a state-deterministic trigger
+   refactor of the negative-control tests — queue it with the polish group?
 
 ### 63 — P4 trees slice 3 (review-60 (c)): four distinct spruce variants +
 0.7–1.4 scale band + variant gates; one self-inflicted renderer regression
