@@ -170,7 +170,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 | Priority | Item | State | Notes |
 |---|---|---|---|
-| P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1); Sol-8 knee-flex fixed (iter 69)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); iter 69: ready-stance knee flex re-applied after the boot–ski pin in the thigh term, ready-stance fully green; physics state byte-identical ×30, traces re-captured display-only; open: tear-detector hard gate, stub removal (engine edit needs APPROVED) |
+| P13 | Kinematic chain solver | **real reconciliation landed (iters 67–68, Sol blocker 1); Sol-8 knee-flex fixed (iter 69); HARD endpoint tear gate + chain-consistent in-run tuck (iter 83)** | the HY4 stub ran before the pose write (no-op) and had a wrong ski link; game-side always-on blend-scaled pass — iter 67: hip/neck/knee/ankle/ski, iter 68: both arm chains rigidly re-anchored at the torso's shoulder pivot (shoulder gap 0.4251 → 0 mid-blend), zero at authored endpoints; hard gates in `chain.spec.js` (shoulder/neck/hip ≤ 1 cm engaged, knee/ankle ≤ bend chord + 1 cm); iter 69: ready-stance knee flex re-applied after the boot–ski pin in the thigh term, ready-stance fully green; physics state byte-identical ×30, traces re-captured display-only; iter 83: `POSE_INRUN_TUCK` rebuilt chain-consistent under the standing APPROVED (endpoint gaps ≤ 12 mm, was 0.140 m) + hard endpoint tear gates (in-run tuck, pike; limit 3× rest edge = 3 cm) + negative control; open: `POSE_TUCKED` endpoint (hip gap 0.33 m) awaits `APPROVED: adjust POSE_TUCKED`, skinned-buffer edge-ratio probe, stub removal (engine edit needs APPROVED) |
 | P0 | Rig frame fix | **landed (iter 1)** | build-side; bind≡driver verified per bone in `rig.spec.js` |
 | P1 | Continuous terrain | **slice 1 landed (iter 11); C1 tangent fillets (iter 13); slice 2 flank field landed (iter 18)** | corridor ribbon from exact physics profile + C1/clearance gates; iter-13: knuckle R=1 m + roll-out R=14 m fillets under APPROVED C1 — worst slope 40.00° (= limit, was 49.8°), monotone, zero table hump (was 53.7 cm); airtime byte-identical in all 30 scenarios; iter-18: ONE continuous ground mesh ±55 m — shared rings/normals across x=±5, ±11 cm windlip outside the fence line, perimeter skirt + base plane + double-sided snowMat; wInrun/wTable/wLanding/wOutrun/wStartPlat + corner_* retired (wUpperMtn stays); gate: worst corridor-edge dihedral **1.90°** (limit 5°), zero footprint misses ×9 columns; unit 74/74, golden 30/30 (census-only rebaseline), full drive green; OPEN: stale-lightmap rebake (entry-12 split-fixup plan) + `main` clearance tables already landed in entry 14 |
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
@@ -944,7 +944,71 @@ height), or the perceived thinness is a paint/shading effect (the white
 suit + blue stripe may be eating the leg silhouette in the shots). A
 by-eye pointing at `figure.png` would settle it.
 
+### 83 — APPROVED in-run tuck rebuild + HARD endpoint tear gates
+(FABLE-80 findings 5–6): the tuck table now chains, and the gate that
+would have caught the tear ships with a negative control
+
+**Order acted on:** FABLE-REVIEW-80 iteration 83 ("in-run tuck pose
+(APPROVED) + hard tear gate incl. pike"). Entry 82's deferred items 10
+(pose shots) and 9 (rendered-head hook) remain open — the 60-minute
+budget went to the tuck + gates; they stay at the head of 84, ahead of
+the crash re-verification.
+
+**What changed.**
+
+1. `POSE_INRUN_TUCK` rebuilt (`engine/core/body-model.js`, own commit
+   `2d1d4b0` under the standing `APPROVED: adjust POSE_INRUN_TUCK`;
+   `?v=23` cache bust). The old table tore at the tuck=1 endpoint because
+   the torso pitched about its own centre: torso-hip gap **0.140 m**,
+   knee gap 0.049 m (measured with the shipped joint conventions). The
+   new table is constructed along the chain ski→ankle→knee→hip→shoulder
+   and hits every footage target from the 22:25 line: knee flexion
+   **109°** (target 90–110), torso **63°** from vertical (55–75), shins
+   **25.2°** forward, hip joint **10.9 cm** behind the ankle along the
+   ski (±10 target), hands forward at knee height below the shoulders;
+   endpoint joint gaps ≤ **12 mm** (BASE_Z lateral offsets included).
+
+2. **ADR-0005 audit:** physics `state` byte-identical in all 30
+   scenarios (zero `state.*` diffs; only `nodes.head` display
+   positions moved in `pool-dive-tuck`/`pool-dive-keyf`). Traces
+   re-captured per the display-only route.
+
+3. **HARD endpoint tear gate** (`tests/drive/chain.spec.js`): every
+   joint gap ≤ 3× rest edge (rest edge = the spec's 1 cm anchor
+   tolerance; limit 3 cm) at the in-run tuck endpoint AND the pike
+   endpoint (the pike already ran the full-strength reconciler at its
+   endpoint). New pose-target gates assert the footage numbers above in
+   the live game. **Negative control** (`tests/unit/tuck-tear-negative.test.js`):
+   the pre-83 table run through the same maths FAILS (hip 0.140 m);
+   the shipped table passes ≤ 15 mm.
+
+**Measured blocker found, not fixed:** the FLIGHT tuck (`POSE_TUCKED`)
+endpoint is torn at the hip by **0.33 m** (raw table, reconciler inert
+at endpoints) — fixing it is a numeric change to a table with no
+APPROVED line, so it is gated off and requested below.
+
+**Verification:** unit **78/78** (76 + 2 negative-control), golden
+**30/30**, chain **8/8**, rig+body+athlete **21/21**, look GREEN.
+Shots inspected by eye: `figure.png` / `scene.png` unchanged from entry
+82 (ready stance, bib reads, scene as before — the tuck is not visible
+in the canonical ready-stance shots, which is exactly FABLE item 10).
+
+**Open:** FABLE items 10 + 9; `POSE_TUCKED` approval; skinned-buffer
+edge-ratio probe (finding 5's real metric — the driver-gap gate is the
+surrogate shipped this iteration).
+
+**Open questions for the reviewer:**
+- Request `APPROVED: adjust POSE_TUCKED` — same construction as the
+  in-run tuck (chain-consistent endpoint, flight-tuck targets from
+  `IMG_3768` flight frames), own commit + ADR-0005 audit. Measured hip
+  tear 0.33 m at the flight-tuck endpoint.
+- The tear gate thresholds: I used 3× the 1 cm anchor tolerance (=3 cm)
+  on DRIVER joint gaps as the surrogate for finding 5's skinned-buffer
+  3× rest-edge ratio. If you want the skinned-buffer metric instead,
+  the hook work (item 9) should land first so the probe has a stable
+  rendered mesh to measure.
 ## Iterations
+
 
 ### 81 — Front-axis investigation: entry-80's "forward convention" theory is
 WRONG — the axis was never the bug; `_athleteFacing` unchanged (documentation

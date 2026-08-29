@@ -83,3 +83,68 @@ test.describe('P13 chain joint anchors', () => {
         }
     });
 });
+
+// ── HARD endpoint tear gate (FABLE-80 finding 5, iteration 83) ─────────────
+// At the authored pose endpoints the blend-scaled reconciliation is inert
+// (sBlend = 0), so the tables themselves must chain. Rest edge = the 1 cm
+// anchor tolerance above; a joint is TORN when its gap exceeds 3× that.
+// Covered here: in-run tuck (tuck 1, grounded) and pike (pike 1, whose
+// endpoint runs the full-strength reconciler). Flight tuck (POSE_TUCKED)
+// endpoint is measured-torn (hip gap 0.33 m) and awaits
+// `APPROVED: adjust POSE_TUCKED` — see the progress file.
+
+const REST_EDGE = 0.010;   // the 1 cm anchor tolerance used above
+const TEAR_LIMIT = 3 * REST_EDGE;
+test.describe('HARD endpoint tear gate (FABLE-80 finding 5)', () => {
+    test.beforeEach(async ({ page }) => { await boot(page); });
+
+    test('in-run tuck endpoint (tuck 1, grounded): no torn joint', async ({ page }) => {
+        const g = await probe(page, 1, true, 0);
+        for (const [k, v] of Object.entries(g)) {
+            expect(v, `in-run tuck ${k}`).toBeLessThanOrEqual(TEAR_LIMIT);
+        }
+    });
+
+    test('pike endpoint (pike 1): no torn joint', async ({ page }) => {
+        const g = await probe(page, 0, false, 1);
+        for (const [k, v] of Object.entries(g)) {
+            expect(v, `pike ${k}`).toBeLessThanOrEqual(TEAR_LIMIT);
+        }
+    });
+});
+
+test.describe('in-run tuck pose targets (APPROVED table, footage targets)', () => {
+    test.beforeEach(async ({ page }) => { await boot(page); });
+
+    test('hips over heels, knee flexion 90-110 deg, shins forward, back near-horizontal', async ({ page }) => {
+        const m = await page.evaluate(() => {
+            window._poseProbe(1, true, 0);
+            const M = window._characterMeshes;
+            const urx = M.upperLegL.rotation.x, lrx = M.lowerLegL.rotation.x;
+            const hipZ = M.torso.position.z - 0.275 * Math.sin(M.torso.rotation.x);
+            const ankleZ = M.lowerLegL.position.z - 0.18 * Math.sin(lrx);
+            const shoulderY = M.torso.position.y + 0.275 * Math.cos(M.torso.rotation.x);
+            const handY = M.lowerArmL.position.y - 0.125 * Math.cos(M.lowerArmL.rotation.x);
+            const handZ = M.lowerArmL.position.z - 0.125 * Math.sin(M.lowerArmL.rotation.x);
+            const deg = r => Math.abs(r) * 180 / Math.PI;
+            return {
+                torsoDeg: deg(M.torso.rotation.x),
+                kneeFlexDeg: 180 - deg(Math.abs(urx - lrx)),
+                shinDeg: deg(lrx),
+                hipBehindAnkle: hipZ - ankleZ,
+                handBelowShoulder: handY <= shoulderY,
+                handAheadOfHip: handZ < hipZ - 0.20,
+            };
+        });
+        expect(m.torsoDeg, 'torso from vertical').toBeGreaterThanOrEqual(55);
+        expect(m.torsoDeg, 'torso from vertical').toBeLessThanOrEqual(75);
+        expect(m.kneeFlexDeg, 'knee flexion').toBeGreaterThanOrEqual(90);
+        expect(m.kneeFlexDeg, 'knee flexion').toBeLessThanOrEqual(110);
+        expect(m.shinDeg, 'shins forward').toBeGreaterThanOrEqual(15);
+        expect(m.shinDeg, 'shins forward').toBeLessThanOrEqual(35);
+        expect(m.hipBehindAnkle, 'hip joint behind ankle').toBeLessThanOrEqual(0.12);
+        expect(m.hipBehindAnkle, 'hip joint not ahead of ankle').toBeGreaterThanOrEqual(-0.02);
+        expect(m.handBelowShoulder, 'hands below shoulders').toBe(true);
+        expect(m.handAheadOfHip, 'hands ahead of hips').toBe(true);
+    });
+});
