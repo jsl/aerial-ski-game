@@ -171,6 +171,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
 ## Status board
+| — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 86 (NEXT.md) | **face/helmet rebuild LANDED** | rim raised to the pinned numbers (front 0.58h = 17.6 mm above the eye line; sides/back 0.55h); HARD build gates nose/chin/rims/dome all green on the final mesh; `faceForward` baked into `athlete_maps.json` and read by `_athleteFacing` (reviewer 01:50 confirmed as the source of truth); look.spec hard front/back darkU gates + structural distance + silhouette span+skin gates; figure_side drift root-caused (pair block left r=0.6/head target + follow-callback clobber) and fixed — side shot is now a true profile; negative control (BODY_SABOTAGE_FACE=1, lens wrapped + facing flipped) FAILS the gates; ASSET_V 28; unit 0 fail, golden 30/30, look green, start-gating+rig 13/13. See entry 86. |
 | — | Iteration 85 (review) | **review pass complete; suite recovered** | one real regression fixed (unit allowlist vs iter-84's five start-gating functions — unit was RED at HEAD); shots regenerated and inspected: `figure_side.png` STILL has no athlete and `face.png` STILL shows the nape — NEXT.md (face/helmet rebuild + `faceForward` cameras + silhouette gate) confirmed as the top priority; red kicker junction marks and milky scene sky re-flagged. See entry 85. |
 | Priority | Item | State | Notes |
@@ -1082,6 +1083,52 @@ still stands from entry 83.
 
 ## Iterations
 
+
+### 87 — Goggles as GEOMETRY (FABLE-80 finding 2, face pass 2): lens +
+frame proud of the face, strap over the shell, hard build gate with its own
+negative control
+
+**Scope:** face pass 2's missing half — iter 86 shipped the lens/frame as
+vertex PAINT on the smooth skull; the reviewer's finding 2 requires goggles
+as geometry (lens proud of the face, light frame, strap over the shell).
+One rebuild, `ASSET_V` 28→29. No `engine/` or `body-model.json` changes.
+
+**Build (`blender/build_body.py`):**
+- New `goggle_geometry(low, lm)`, applied on the FINAL low-poly mesh before
+  the gate/highpoly/bake/export (so glb, normal bake and gate see the same
+  relief): head verts classified 'lens' pushed radially (head-centre XY
+  direction) +7.0 mm, lens-band top/bottom frame edges +4.5 mm, 'strap'
+  verts at eye level +2.5 mm over the shell. Measured: 714 verts displaced
+  (lens 630, strap 84).
+- New hard gate (6) in `face_helmet_gate`: per 0.02h slab in the lens band,
+  mean radial distance of lens verts minus same-slab undisplaced skin —
+  the head's aspect/taper cancels. Healthy **75.1 mm**; negative control
+  `BODY_SABOTAGE_GOGGLES=1` (displacement skipped) **68.4 mm**; gate ≥
+  71.5 mm, calibrated between the two runs (documented in the log line).
+  TWO earlier instruments were tried and REJECTED because they passed the
+  sabotaged build: max frontal reach vs the lower face (7.2 mm on the FLAT
+  skull — the head tapers) and the raw lens-boundary step (2.6 mm healthy
+  vs 48 mm baseline from mouth-region recession). The shipped instrument
+  separates by 6.7 mm and is stable across both runs.
+- All previous face/helmet gates re-green on the new mesh: nose 21.2 mm,
+  chin relief 34.2 mm, rim front 17.6 mm, side 0.55h, back 0.56h, dome
+  4.0 mm, faceForward turn −0.2° (re-baked into `athlete_maps.json`,
+  unchanged values).
+
+**Verification:** unit 0 fail; golden 30/30 (no recapture — display-only);
+`look` GREEN with all gates: FIGSIL span 0.904 skin 0.0040, SIDESIL 0.769 /
+0.0035, FRONTGATE align 0.00 navy 0.0481, FACEDISC front darkU 0.0605 /
+lensU 0.0564 vs back 0.0120 / 0.0062, FACEDIST 0.1831, FACEGATE dark
+0.1977 skin 0.0424 cov 0.9647; body + rig + start-gating + bib-number
+drive specs 18/18. No PNG viewer available this iteration; the numbers
+above are the look.spec's own pixel measurements on the regenerated shots.
+
+**Open:** face FEATURES still soft at the close-up (brow/lash/lip contrast
+— FABLE-80 finding 2's paint half; the vertex bands exist: lip 75, nostril
+6 verts — likely needs a higher-face-texel budget or normal-map carve);
+the calibrated 71.5 mm gate threshold is aspect-ratio-dependent — if the
+head mesh changes, re-run both calibration points; findings 9/10
+(rendered-head hook, canonical pose shots) still queued.
 
 ### 86 — Face + helmet rebuild per NEXT.md: rim raised to the pinned
 numbers, hard build gates (nose/chin/rims/dome) + `faceForward` baked and

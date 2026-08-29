@@ -114,6 +114,7 @@ POSE = MODEL['POSE_UNTUCKED']
 BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 
 SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
+SABOTAGE_GOGGLES = os.environ.get('BODY_SABOTAGE_GOGGLES') == '1'  # negative control for the goggle-geometry gate
 
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
@@ -1547,6 +1548,58 @@ def _sector(co, c):
     theta = math.atan2(lx, ly) if (lx or ly) else 0.0
     return (ly > 0 and abs(theta) < 1.15), theta
 
+def goggle_geometry(low, lm):
+    """
+    FABLE-REVIEW-80 finding 2: goggles as GEOMETRY, not paint.
+
+    Iter-86's lens band was vertex colour on the smooth skull, so at the
+    0.6 m close-up the eye zone read as one flat dark patch. This pass pushes
+    the head verts of each goggle region radially out of the skull (in the
+    head's XY plane, so the push follows the local surface direction):
+
+      lens   0.34h..0.50h frontal  +7.0 mm   (the lens sits proud of the face)
+      rim    lens band top/bottom 1.5%h edges  +4.5 mm (the frame, between the
+             dark lens and the shell/skin it separates)
+      strap  eye level behind      +2.5 mm   (over the shell, not painted on it)
+
+    Applied on the FINAL low-poly mesh, so the glb the browser loads, the
+    high-poly bake source (subdivided from low) and the build gate below all
+    see the same relief. BODY_SABOTAGE_GOGGLES=1 skips the push: the gate in
+    face_helmet_gate must then fail, and a sabotaged build must never ship.
+    """
+    own = dominant_segments(low)
+    c = bl('head')
+    moved = {}
+    for v in low.data.vertices:
+        if own[v.index] != 'head':
+            continue
+        p = v.co
+        reg = head_region(p, lm)
+        push = 0.0
+        if reg == 'lens':
+            hzl = (p.z - lm['chin']) / lm['h']
+            edge = (0.50 - hzl) < 0.015 or (hzl - 0.34) < 0.015
+            push = 0.0045 if edge else 0.0070
+        elif reg == 'strap':
+            push = 0.0025
+        if not push:
+            continue
+        d = Vector((p.x - c.x, p.y - c.y, 0.0))
+        n = d.length
+        if n < 1e-6:
+            continue
+        if SABOTAGE_GOGGLES:
+            continue
+        v.co = p + d * (push / n)
+        moved[reg] = moved.get(reg, 0) + 1
+    total = sum(moved.values())
+    log(f'goggle geometry: {total} verts displaced '
+        + ' '.join(f'{k}={v}' for k, v in sorted(moved.items()))
+        + (' (SABOTAGED: skipped)' if SABOTAGE_GOGGLES else ''))
+    if not SABOTAGE_GOGGLES and total < 50:
+        raise SystemExit('[body] goggle geometry: too few verts displaced — '
+                         'head region classification moved?')
+
 
 def face_helmet_gate(low, lm):
     """
@@ -1629,7 +1682,37 @@ def face_helmet_gate(low, lm):
     fy = sum(p.y - c.y for p in face) / len(face)
     turn = math.degrees(math.atan2(fx, fy))
     log(f'face gate: faceForward turn {turn:+.1f} deg from +y (gate 10)')
-
+    # (6) GOGGLES PROUD (FABLE-80 finding 2). Instrument: per height-slab in
+    # the lens band, mean radial distance from the head centre of the LENS
+    # verts minus that of the SKIN verts in the SAME slab (the undisplaced
+    # side/back skin is the skull's own reference at that height, so the
+    # head's aspect ratio and fore-aft taper cancel). BODY_SABOTAGE_
+    # GOGGLES=1 skips the displacement; the gate threshold sits between the
+    # two measured runs (calibrated against the negative control, as in
+    # iter-86's structural distance).
+    import collections
+    slabs = collections.defaultdict(lambda: [0.0, 0, 0.0, 0])
+    for p in hv:
+        zi = int((p.z - chin) / h / 0.02)
+        if not 17 <= zi <= 24:      # 0.34h..0.50h: the lens band
+            continue
+        rad = math.hypot(p.x - c.x, p.y - c.y)
+        reg = head_region(p, lm)
+        s = slabs[zi]
+        if reg == 'lens':
+            s[0] += rad
+            s[1] += 1
+        elif reg == 'face':
+            s[2] += rad
+            s[3] += 1
+    diffs = [s[0] / s[1] - s[2] / s[3]
+             for s in slabs.values() if s[1] >= 5 and s[3] >= 5]
+    proud = sum(diffs) / len(diffs) if diffs else -1.0
+    nlens = sum(1 for p in hv
+                if head_region(p, lm) == 'lens' and _sector(p, c)[0])
+    log(f'face gate: goggle lens radial step vs same-slab skin '
+        f'{proud * 1000:.1f} mm (gate 71.5, calibrated: sabotaged flat-skull run measures 68.4) over {len(diffs)} slabs, '
+        f'{nlens} lens verts')
     bad = []
     if nose_out < 0.020:
         bad.append(f'nose {nose_out * 1000:.1f} mm < 20')
@@ -1645,6 +1728,8 @@ def face_helmet_gate(low, lm):
         bad.append(f'dome off {dome_off * 1000:.1f} mm > 10')
     if abs(turn) > 10.0:
         bad.append(f'faceForward turn {turn:+.1f} deg > 10')
+    if proud < 0.0715:
+        bad.append(f'goggle lens radial step {proud * 1000:.1f} mm < 71.5')
     if bad:
         raise SystemExit('[body] FACE/HELMET GATES FAILED: ' + '; '.join(bad))
     # Driver frame (glTF Y-up, forward on -z): Babylon = (Bx, Bz, -By).
@@ -1656,8 +1741,8 @@ def face_helmet_gate(low, lm):
     return {'nose_out': nose_out, 'chin_relief': chin_relief,
             'rim_front': rim_front_up, 'rim_side_h': (rim_side - chin) / h,
             'rim_back_h': (rim_back - chin) / h, 'dome_off': dome_off,
-            'turn_deg': turn, 'faceForward': [round(fwd[0], 4), 0.0,
-                                              round(fwd[2], 4)]}
+            'turn_deg': turn, 'goggle_proud': proud,
+            'faceForward': [round(fwd[0], 4), 0.0, round(fwd[2], 4)]}
 
 
 def seat_soles(body):
@@ -4836,6 +4921,8 @@ def main():
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
+    # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
+    goggle_geometry(low, head_landmarks(low))
     # final low-poly mesh (FABLE-REVIEW-80 findings 1-2).
     face = face_helmet_gate(low, head_landmarks(low))
     high = make_highpoly(low, lm)
