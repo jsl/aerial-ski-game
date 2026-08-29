@@ -372,6 +372,74 @@ function _buildStyledSki(scene, driver, seg, assets) {
     return vis;
 }
 
+// ── Start gating (author, 2026-08-26 / FABLE-80 finding 7) ────────────────
+// The legacy primitive athlete used to be visible from the first frame and
+// was only swapped for the skinned body when athlete_body.glb arrived, so on
+// a reload the OLD box character appeared first as the skier. Now NOTHING of
+// the athlete (drivers, detail meshes, styled skis) is shown at creation;
+// everything appears in the same frame the skinned body is ready, and only an
+// explicit load FAILURE falls back to the primitives — with an on-screen
+// message, so the fallback is never mistaken for the real figure.
+
+function _athleteVisualMeshes(scene, meshes) {
+    // Driver meshes plus every descendant (detail spheres, boots, styled ski
+    // equipment — visibility is per-mesh in Babylon, children are NOT hidden
+    // with their parent).
+    const out = [];
+    const seen = new Set();
+    const add = m => { if (m && !seen.has(m)) { seen.add(m); out.push(m); } };
+    for (const key of Object.keys(meshes)) {
+        const e = meshes[key];
+        const m = (e && e.mesh) ? e.mesh : e;
+        add(m);
+        if (m && m.getChildMeshes) for (const k of m.getChildMeshes()) add(k);
+    }
+    return out;
+}
+
+function _alpineWorld() {
+    return !_trampolineMode && !_trampolineMatMode && !_poolDiveMode;
+}
+
+function _showAthleteFallback(scene, meshes) {
+    window._bodyFallback = (window._bodyFallback || 0) + 1;
+    for (const m of _athleteVisualMeshes(scene, meshes)) m.isVisible = true;
+    // Ski equipment: the shipped world rules decide, not the fallback — the
+    // primitive ski boxes stay hidden in the alpine world (the styled skis
+    // replace them) and everything ski stays hidden in pool worlds.
+    for (const nm of ['skiL', 'skiR']) {
+        const e = meshes[nm];
+        const m = (e && e.mesh) ? e.mesh : e;
+        if (!m || !m.getChildMeshes) continue;
+        for (const k of m.getChildMeshes()) k.isVisible = _alpineWorld();
+    }
+    try {
+        if (!document.getElementById('athleteFallbackMsg')) {
+            const d = document.createElement('div');
+            d.id = 'athleteFallbackMsg';
+            d.textContent = '3D athlete failed to load — showing basic figure';
+            d.style.cssText = 'position:fixed;left:12px;bottom:12px;' +
+                'background:rgba(150,30,30,.85);color:#fff;' +
+                'font:14px sans-serif;padding:8px 12px;border-radius:6px;z-index:99';
+            document.body.appendChild(d);
+        }
+    } catch (e) { /* no DOM in a harness */ }
+}
+
+function _hideAthleteVisuals(scene, meshes) {
+    for (const m of _athleteVisualMeshes(scene, meshes)) m.isVisible = false;
+}
+
+function _revealSkiEquipment(scene, meshes) {
+    if (!_alpineWorld()) return;   // pool/trampoline worlds keep skis hidden
+    for (const nm of ['skiL', 'skiR']) {
+        const e = meshes[nm];
+        const m = (e && e.mesh) ? e.mesh : e;
+        if (!m || !m.getChildMeshes) continue;
+        for (const k of m.getChildMeshes()) k.isVisible = true;
+    }
+}
+
 function buildCharacter(scene) {
     // Root TransformNode sits at the whole-body center of mass.
     // The flip rotation is applied to root; all segments move with it.
@@ -643,6 +711,12 @@ function buildCharacter(scene) {
             buckle.material = buMat;
         }
     }
+
+    // Start gating: the primitives are the FALLBACK, never the first look.
+    // Hidden here at creation; revealed together by the body-link success
+    // path (skinned body + skis in the same frame) or by the explicit
+    // load-failure fallback in loadContinuousBody.
+    _hideAthleteVisuals(scene, meshes);
 
     return { root, meshes };
 }
@@ -1780,7 +1854,9 @@ void main(void) {
     // just no longer the thing you see.
     (function loadContinuousBody() {
         try {
-            if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) return;
+            if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) {
+                return _showAthleteFallback(scene, character.meshes);
+            }
             BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb' + ASSET_V, scene)
                 .then(function (res) {
                     const skel = res.skeletons && res.skeletons[0];
@@ -1793,8 +1869,10 @@ void main(void) {
                         m.name && m.name.startsWith('athleteBody') &&
                         m.getTotalVertices && m.getTotalVertices() > 0);
                     const bodyMesh = bodyParts[0];
-                    if (!skel || !bodyMesh) { window._bodyLinked = 0; return; }
-
+                    if (!skel || !bodyMesh) {
+                        window._bodyLinked = 0;
+                        return _showAthleteFallback(scene, character.meshes);
+                    }
                     let linked = 0;
                     for (const bone of skel.bones) {
                         const driver = character.meshes[bone.name];
@@ -1941,10 +2019,28 @@ void main(void) {
                             try { m.dispose(); } catch (e) {}
                         }
                     }
+                    // Start gating reveal: the skinned body, its materials and
+                    // the ski equipment become visible in THIS frame — the
+                    // athlete never exists half-dressed.
+                    for (const part of bodyParts) part.isVisible = true;
+                    _revealSkiEquipment(scene, character.meshes);
+
                     window._bodyLinked = linked;
+                    // Goggles adopted by upgradeAthleteGeometry before this
+                    // loader resolved are hidden too — bring them into the
+                    // same reveal frame.
+                    for (const m of scene.meshes) {
+                        if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
+                    }
                 })
-                .catch(function () { window._bodyLinked = 0; });
-        } catch (e) { window._bodyLinked = 0; }
+                .catch(function () {
+                    window._bodyLinked = 0;
+                    _showAthleteFallback(scene, character.meshes);
+                });
+        } catch (e) {
+            window._bodyLinked = 0;
+            _showAthleteFallback(scene, character.meshes);
+        }
     })();
 
     // ── Blender-authored geometry ───────────────────────────────────────────
@@ -1990,6 +2086,11 @@ void main(void) {
                         if (!headMesh) continue;
                         src.parent = headMesh;
                         src.isPickable = false;
+                        // Start gating: the goggles ride an INVISIBLE driver
+                        // head until the skinned body is ready — a visible
+                        // goggle pair floating where the head will be is the
+                        // same first-frame symptom the gating removes.
+                        src.isVisible = window._bodyLinked > 0;
 
                         const gm = makePBR(src.name + '_mat', scene);
                         if (src.name === 'gogglesLens') {

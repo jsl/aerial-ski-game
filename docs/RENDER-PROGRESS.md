@@ -186,6 +186,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates; iter-63: FOUR distinct spruce variants (review-60 (c)) + 0.7–1.4 scale band + variant gates** | `blender/bake_trees.py` bakes card_0..3 + atlas_0..3 in the shared 7.3×14.6 frame (per-variant seed/height 11.9–14.3/radial envelope/droop/needle tint, all inside the review-60 band; spike-zone filler whorls keep every silhouette continuous); 152 thin instances over 4 meshes = 4 draw calls (cap ≤ 20), one full-forest proxy cone buffer; widthL1min 0.339, lum 0.520–0.558; gates in `trees.spec.js` (mix counts ≥ 15/variant, scale 0.695–1.405 spread ≥ 1.5, per-variant census, pairwise L1 ≥ 0.02); ASSET_V 19; open: deciduous majority, near-tree cards, 8-view billboards |
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45)** | iter-43: rest detector freezes the pose (8 frames < 0.12 m/s + skis still), write-back keeps running after the freeze (root slides under the frozen pose; naive freeze glided at 10.1 m/s), trigger state-driven; **iter-45: ploughing friction 2.5→3.5, static stop 0.35→0.5 (entry-43's queued median pull), settle gate now measures motion end ≤ 3.8 s (last sample > 0.1 m/s) instead of restAt (detector confirmation, lag-inflated); state ×30 identical (audit), 13 crash traces re-captured; 2–3 s median validation on the golden harness still open** |
+| — | Start gating (FABLE-80 f7 / author 22:25 a) | **landed (iter 84)** | athlete visuals created hidden; body + skis + goggles reveal in one frame on body link; explicit load failure = primitives + HUD message + `_bodyFallback`; per-frame watcher gate + negative control in `tests/drive/start-gating.spec.js` (0 violations ×30+ frames; forced-solid control caught) |
 | — | Reviewer order 1: footage analysis | **done (iter 2)** | `docs/REFERENCE-FOOTAGE.md` + deltas appended to the plan |
 | — | Reviewer order 2: athlete rebuild | **landed (iter 4, recovered)** | ONE Blender rebuild: arm centroid-on-bone (163 mm→0.02 mm), legs on the skis (133 mm→0.02 mm), real face + goggles under a cranium-only helmet (3 material slots), leg-notch girth blending + step gate (23.5 mm, limit 30); stripe re-landed on the shins via slice-centroid azimuth + new bake gate |
 | — | Reviewer order 3: grey ramp | **landed (iters 6–7); re-verified iter 13 with the bake off** | iter 6: snowMat recipe + junction fillers; iter 7: root cause measured — snowMat subsurface translucency (+ clear coat); iter 13: the spec's corridor box had drifted onto the wInrun/wStartPlat fills after the ribbon replaced the slabs (pick-proven) — box now projects a real corridor point; corridor 0.7949 vs flanks 0.7918/0.8058 with the lightmap disabled; snowMat albedo stepped 0.955/0.97→0.975/0.99 to keep the run the brightest surface |
@@ -1008,6 +1009,72 @@ surrogate shipped this iteration).
   3× rest-edge ratio. If you want the skinned-buffer metric instead,
   the hook work (item 9) should land first so the probe has a stable
   rendered mesh to measure.
+### 84 — Crash re-verified against the pinned timeline + start gating landed
+(FABLE-80 findings 8 and 7): the legacy primitive athlete is now never seen
+on load, and the crash gates re-run green with numbers
+
+**Order acted on:** FABLE-REVIEW-80 iteration 84 = "crash re-verification
+(8) + start gating (7)". No reviewer `APPROVED:` items were pending.
+
+**Crash re-verification (finding 8).** `tests/drive/crash-ragdoll.spec.js`
+green, real browser: rest detected at **1.19 s**, rendered body motion end
+(last sample > 0.1 m/s) at **1.00 s** (gate ≤ 3.8 s), exactly-zero-span
+**8.96 s**, worst joint angular speed after the freeze **0.00e+0 rad/s**
+(gate ≤ 1e-4), joint gaps and penetration gates inside their pinned limits
+(worstGap ≤ 2 cm, hard-zone penetration ≤ 0 with the 5 mm tolerance, landing
+≤ 0.10 m — the spec asserts all of these), no legacy solid visible in any
+sampler frame, skis at rest ON the surface. The P11 timeline (tumble →
+frozen pose → rigid slide → stopped) is what ships; nothing regressed since
+iter 45/47.
+
+**Start gating (finding 7 / author 22:25 (a)).** `game.js` only:
+- `buildCharacter` now ends with `_hideAthleteVisuals` — every driver solid,
+  detail mesh and styled-ski mesh is created INVISIBLE (helpers
+  `_athleteVisualMeshes` / `_hideAthleteVisuals` / `_revealSkiEquipment` /
+  `_showAthleteFallback` above `buildCharacter`; visibility is per-mesh in
+  Babylon so children are enumerated explicitly).
+- `loadContinuousBody` success path reveals the skinned body parts, the ski
+  equipment and any already-adopted goggles in ONE frame, then sets
+  `_bodyLinked`; all failure exits (no SceneLoader, bad glb, `!skel`,
+  promise rejection, sync throw) call `_showAthleteFallback`: primitives +
+  skis come back (ski equipment alpine-only, pool/trampoline rules
+  unchanged), `window._bodyFallback` counts the fire, and a fixed HUD div
+  (`#athleteFallbackMsg`, "3D athlete failed to load — showing basic
+  figure") appears, so the fallback can never be mistaken for the real
+  figure. The goggles adoption in `upgradeAthleteGeometry` is gated on
+  `_bodyLinked > 0` so no goggle pair floats over an invisible head.
+- The post-crash reset (`isVisible = !window._bodyLinked`) needed no change:
+  with the fallback flag it already matches the new semantics.
+
+**New gate with a negative control** (`tests/drive/start-gating.spec.js`,
+finding 11): a pre-page init script wraps `requestAnimationFrame` and samples
+EVERY animation frame for a visible legacy driver while
+`!_bodyLinked && !_bodyFallback`. Test 1 (fresh load): watcher sampled >30
+frames, **0 violations**, drivers all hidden after the link, skinned body
+parts visible, styled ski children visible, `_bodyFallback` 0; then the
+deliberate-break control — a torso forced visible with the link flag cleared
+must be caught on the next frame (it is). Test 2 (negative-control input):
+`athlete_body.glb` route-aborted → `_bodyFallback` fires, primitive head
+visible, ski equipment visible, HUD message present, `_bodyLinked` 0, still
+0 undeclared violations, no page errors.
+
+**Golden:** census-style re-capture (30/30). Every diff line in every
+scenario was a `nodes.<driver>.hidden: absent → present` flag — the intended
+display-only change, zero physics fields; same route as iters 56/59.
+
+**Verification:** unit 78/78; golden 30/30; drive: start-gating 2/2,
+crash-ragdoll green (numbers above), rig 12/12, ready-stance, chain 8/8
+(incl. the APPROVED in-run-tuck pose targets), look green; full drive suite
+run recorded in the commit message. Shots regenerated and inspected by eye:
+`figure_front.png` shows the athlete back-on, bib "30" legible, no
+primitives anywhere; `scene.png` shows the skinned skier mid-run with B-net,
+trees and the far ridge — nothing half-dressed, no floating equipment.
+No `assets/` change → no `ASSET_V` bump.
+
+**Open / not done:** nothing new; finding 9 (rendered-head hook) and 10
+(canonical pose shots) remain queued, `APPROVED: adjust POSE_TUCKED` request
+still stands from entry 83.
+
 ## Iterations
 
 
