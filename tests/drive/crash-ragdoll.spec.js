@@ -244,6 +244,20 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     expect(frozen.length, 'crash state machine reached stopped (pose frozen)').toBeGreaterThan(0);
     console.log('CRASHREST restAt=' + frozen[0].probe.restAt.toFixed(2) +
         's (stopped) phase=' + frozen[0].probe.phase);
+    // ── Stiff tumble (NEXT item 3, 2026-08-29; author HUMAN TESTING #6:
+    // "the skier crumples a little too much"). The ragdoll tracks the peak
+    // pose excursion (each limb segment vs its impact-pose direction, in the
+    // live torso frame) and the peak spine bend (head axis vs torso axis)
+    // over the whole tumble. Gates: ≤ 38° / ≤ 43° (35°/40° + 3° tolerance for
+    // intra-frame PBD overshoot before the shape pass clamps).
+    const probes = traceR.filter(r => r.probe && typeof r.probe.peakExcDeg === 'number');
+    expect(probes.length, 'ragdoll probe samples recorded').toBeGreaterThan(0);
+    const peakExc = Math.max(...probes.map(r => r.probe.peakExcDeg));
+    const peakSpine = Math.max(...probes.map(r => r.probe.peakSpineDeg));
+    console.log('CRASHTUMBLE peakExc=' + peakExc.toFixed(1) + '° peakSpine=' + peakSpine.toFixed(1) + '°');
+    expect(peakExc, `tumble pose excursion ${peakExc.toFixed(1)}° ≤ 38° (limp=${probes[0].probe.limp})`)
+        .toBeLessThanOrEqual(38);
+    expect(peakSpine, `spine bend ${peakSpine.toFixed(1)}° ≤ 43°`).toBeLessThanOrEqual(43);
     // (2) Joint angular speed from the first roll-phase sample onward.
     const firstRoll = traceR.findIndex(r => r.probe && r.probe.phase === 'roll');
     expect(firstRoll, 'state machine entered the roll phase (freeze fired)').toBeGreaterThanOrEqual(0);
@@ -451,4 +465,60 @@ test('crash negative control: without the roll phase the rest-position gate fail
     const gatePasses = frac >= 0.6 && restSlopeDeg < 10;
     expect(gatePasses, `negative control: without the roll the rest-position gate must FAIL ` +
         `(frac=${(frac * 100).toFixed(0)}%, slope=${restSlopeDeg.toFixed(1)}°)`).toBe(false);
+});
+
+// ── NEGATIVE CONTROL (NEXT item 3, 2026-08-29) ──────────────────────────────
+// With window._crashLimp set before the crash, the shape-retention pass is
+// skipped (a fully limp ragdoll). The peak tumble excursion must then EXCEED
+// the 38° gate — proving the gate really measures the stiffness pass.
+test('crash negative control: a fully limp ragdoll exceeds the tumble-excursion gate', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.evaluate(() => { window._crashLimp = true; });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._limp = { peak: 0, stop: false, t0: performance.now(), crashedAt: null };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            if (window._limp.stop) return;
+            try {
+                const g = window._getGameState();
+                if (g.crashed && window._limp.crashedAt === null) window._limp.crashedAt = performance.now() - window._limp.t0;
+                if (g.crashed) {
+                    if (window._limp.down) { send('keyup', 'ArrowDown'); window._limp.down = false; }
+                    if (window._limp.tuck) { send('keyup', 'Space'); window._limp.tuck = false; }
+                    const p = window._ragdollProbe ? window._ragdollProbe() : null;
+                    if (p && typeof p.peakExcDeg === 'number') window._limp.peak = Math.max(window._limp.peak, p.peakExcDeg);
+                    if (p && p.resting) window._limp.stop = true;
+                    if (window._limp.crashedAt !== null && performance.now() - window._limp.t0 - window._limp.crashedAt > 8000) window._limp.stop = true;
+                } else {
+                    if (g.grounded && !window._limp.down && g.flipPower < 0.999) {
+                        window._limp.down = true; send('keydown', 'ArrowDown');
+                    } else if (window._limp.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                        window._limp.down = false; send('keyup', 'ArrowDown');
+                    }
+                    if (!g.grounded && !window._limp.tuck) {
+                        window._limp.tuck = true; send('keydown', 'Space');
+                    }
+                }
+            } catch (e) { window._limp.stop = true; }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window._limp && window._limp.crashedAt !== null,
+        null, { timeout: 90_000 });
+    await page.waitForFunction(() => window._limp && window._limp.stop,
+        null, { timeout: 90_000 });
+    const limp = await page.evaluate(() => window._limp);
+    console.log('LIMPCONTROL peakExc=' + limp.peak.toFixed(1) + '°');
+    expect(limp.peak, `limp ragdoll peak excursion ${limp.peak.toFixed(1)}° must EXCEED the 38° gate`)
+        .toBeGreaterThan(38);
 });

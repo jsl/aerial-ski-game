@@ -2273,6 +2273,11 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
+                 // and peak spine bend (deg) for the crash-spec gates.
+                 peakExcDeg: (ragdoll.peakExc || 0) * 180 / Math.PI,
+                 peakSpineDeg: (ragdoll.peakSpine || 0) * 180 / Math.PI,
+                 limp: !!ragdoll.limp,
                  ang: {
                      neck: ang(B.neck, B.torsoBottom, B.headTop),
                      kneeL: ang(B.kneeL, B.hipL, B.ankleL),
@@ -4890,6 +4895,36 @@ void main(void) {
         for (const pt of parts) pt.r = RADIUS[pt.name] || 0.07;
 
         const dist = function (a, b) { return _crashVLen(_crashVSub(a, b)); };
+        // NEXT item 3 (2026-08-29): capture the impact pose in the TORSO
+        // frame. During the ≤1 s tumble a stiff "shape retention" pass clamps
+        // every limb segment within ±35° of this captured pose (and the head
+        // axis within 40° of the torso axis — the spine gate), so the body
+        // stays a recognisable figure instead of crumpling (author, HUMAN
+        // TESTING #6: "the skier crumples a little too much"). The crash is
+        // display (ADR-0002), so this constrains the renderer's particles only.
+        const _crNrm = function (v) {
+            const l = Math.hypot(v.x, v.y, v.z) || 1e-9;
+            return _crashV(v.x / l, v.y / l, v.z / l);
+        };
+        const _crDot = function (a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+        const _crCross = function (a, b) {
+            return _crashV(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+        };
+        const _tu0 = _crNrm(_crashVSub(P.torsoTop, P.torsoBottom));
+        const _a0 = Math.abs(_tu0.z) < 0.9 ? _crashV(0, 0, 1) : _crashV(1, 0, 0);
+        const _tv0 = _crNrm(_crCross(_tu0, _a0));
+        const _tw0 = _crCross(_tu0, _tv0);
+        const shape = [
+            ['shL', 'elbowL'], ['elbowL', 'wristL'],
+            ['shR', 'elbowR'], ['elbowR', 'wristR'],
+            ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+            ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+            ['neck', 'headTop'],
+        ].map(function (jd) {
+            const dir = _crNrm(_crashVSub(P[jd[1]], P[jd[0]]));
+            return { j: jd[0], d: jd[1], len: dist(P[jd[0]], P[jd[1]]),
+                     x: _crDot(dir, _tv0), y: _crDot(dir, _tw0), z: _crDot(dir, _tu0) };
+        });
         const STICKS = [
             ['torsoTop', 'torsoBottom'], ['neck', 'headTop'],
             // Neck-to-torso brace: without it the neck particle is held only by
@@ -4961,14 +4996,18 @@ void main(void) {
         const torso = P.torsoTop;
         return {
             parts, byName, sticks: STICKS, ang: ANG, skis, neckOff: NECK_OFF,
-            hard: HARD, headRest: dist(P.neck, P.headTop),
+            hard: HARD, headRest: dist(P.neck, P.headTop), shape,
+            peakExc: 0, peakSpine: 0,
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
             maxSpeed: 99, sprayT: 0, t: 0, phase: 'tumble', slideV: null,
             // Negative control (NEXT 2026-08-29): window._crashRollDisabled
             // (set by the spec before the crash) restores the old iter-47
-            // exponential stop — the roll phase is bypassed.
+            // exponential stop — the roll phase is bypassed. window._crashLimp
+            // (item 3 negative control) disables the shape-retention pass: a
+            // fully limp ragdoll must FAIL the tumble-excursion gate.
             noRoll: typeof window !== 'undefined' && window._crashRollDisabled === true,
+            limp: typeof window !== 'undefined' && window._crashLimp === true,
         };
     }
 
@@ -5063,6 +5102,66 @@ void main(void) {
                     }
                 }
             };
+            const _xCross = function (a, b) {
+                return _crashV(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+            };
+            // ── Stiff tumble: shape retention (NEXT item 3, 2026-08-29) ──
+            // Clamp every limb segment within ±35° of the pose captured at
+            // impact (expressed in the live torso frame, so it tumbles WITH
+            // the body), and the head axis within 40° of the torso axis
+            // (spine bend). Runs INSIDE the constraint loop (a post-hoc pass
+            // still recorded 122° intra-frame excursions); peaks are tracked
+            // only on the FINAL (track=true) call, post-clamp. The limp
+            // negative control skips the clamps and must exceed the gates.
+            const shapePass = function (track) {
+            if (R.shape && R.shape.length) {
+                const _sb = R.byName.torsoBottom.p, _st = R.byName.torsoTop.p;
+                let _tu = _crashVSub(_st, _sb);
+                const _tul = _crashVLen(_tu);
+                if (_tul > 1e-6) {
+                    _tu = _crashV(_tu.x / _tul, _tu.y / _tul, _tu.z / _tul);
+                    const _ax = Math.abs(_tu.z) < 0.9 ? _crashV(0, 0, 1) : _crashV(1, 0, 0);
+                    let _tv = _xCross(_tu, _ax); const _tvl = _crashVLen(_tv);
+                    if (_tvl < 1e-6) { _tv = _crashV(0, 1, 0); } else { _tv = _crashV(_tv.x / _tvl, _tv.y / _tvl, _tv.z / _tvl); }
+                    const _tw = _xCross(_tu, _tv);
+                    const MAXEX = 35 * Math.PI / 180, MAXSPINE = 40 * Math.PI / 180;
+                    for (const c of R.shape) {
+                        const jp = R.byName[c.j].p, dp = R.byName[c.d].p;
+                        let vx = dp.x - jp.x, vy = dp.y - jp.y, vz = dp.z - jp.z;
+                        const vl = Math.hypot(vx, vy, vz) || 1e-9;
+                        vx /= vl; vy /= vl; vz /= vl;
+                        // Captured direction rebuilt in the live torso frame.
+                        const gx = _tv.x * c.x + _tw.x * c.y + _tu.x * c.z;
+                        const gy = _tv.y * c.x + _tw.y * c.y + _tu.y * c.z;
+                        const gz = _tv.z * c.x + _tw.z * c.y + _tu.z * c.z;
+                        const cG = Math.max(-1, Math.min(1, vx * gx + vy * gy + vz * gz));
+                        const exc = Math.acos(cG);
+                        if (track && exc > R.peakExc) R.peakExc = exc;
+                        let clampAng = exc > MAXEX ? exc - MAXEX : 0;
+                        let tx = gx, ty = gy, tz = gz;
+                        if (c.j === 'neck') {
+                            // Spine bend: head axis vs the TORSO axis.
+                            const cT = Math.max(-1, Math.min(1, vx * _tu.x + vy * _tu.y + vz * _tu.z));
+                            const bend = Math.acos(cT);
+                            if (track && bend > R.peakSpine) R.peakSpine = bend;
+                            if (bend > MAXSPINE && bend - MAXSPINE > clampAng) {
+                                clampAng = bend - MAXSPINE; tx = _tu.x; ty = _tu.y; tz = _tu.z;
+                            }
+                        }
+                        if (R.limp || clampAng <= 0) continue;
+                        // Rotate the distal point toward the target direction
+                        // about (v × t), exactly like the angClamp limits.
+                        const cx = vy * tz - vz * ty, cy = vz * tx - vx * tz, cz = vx * ty - vy * tx;
+                        const cl = Math.hypot(cx, cy, cz);
+                        if (cl < 1e-8) continue;
+                        const q = _crashQAxis(cx / cl, cy / cl, cz / cl, clampAng);
+                        const nv = _crashQRotV(q, _crashV(vx, vy, vz));
+                        const L = c.len || vl;
+                        dp.x = jp.x + nv.x * L; dp.y = jp.y + nv.y * L; dp.z = jp.z + nv.z * L;
+                    }
+                }
+                }
+            };
             for (let it = 0; it < 6; it++) {
                 for (const st of R.sticks) {
                     const d = _crashVSub(st.b.p, st.a.p);
@@ -5101,6 +5200,7 @@ void main(void) {
                 angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
                 hardPass();
                 contactPass();
+                shapePass(false);
             }
             // Polish passes: the FINAL contact of the main loop can leave a
             // small length residual (contact lifts one end of a segment after
@@ -5110,6 +5210,8 @@ void main(void) {
             // worst elbow 0.022 m -> both gate-passing on the violent
             // mid-flight-flip crash variant).
             for (let it = 0; it < 4; it++) { hardPass(); contactPass(); }
+            shapePass(true);
+            if (!R.limp) hardPass();
             // Kinematic neck: pinned 1 cm below the torso top along the torso
             // axis, so the head is attached EXACTLY every frame. (A simulated
             // neck fought the contact radii and the brace — measured joint-gap
@@ -5319,9 +5421,13 @@ void main(void) {
                 // under the 90°/s gate) so the resting pose lies ON the snow
                 // instead of propped up in the frozen crumple, then re-run
                 // the hard stick projection so joints stay within 2 cm.
+                // NEXT item 3: the stiff frozen pose (limbs clamped within
+                // ±35° of layout) leaves MORE propped parts to lower, and the
+                // 0.3 m/s rate measured an elbow joint rate of 1.79 rad/s
+                // (> π/2) — halve the rate so the joint gate holds.
                 for (const pt of R.parts) {
                     const _tY = _crashFloorY(pt.p.z) + pt.r;
-                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
                 }
                 for (const hp of R.hard) {
                     const a = hp.a.p, b = hp.b.p;
