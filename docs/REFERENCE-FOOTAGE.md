@@ -224,3 +224,18 @@ in-run (IMG_3768), coach position at the knoll (IMG_3520/3396).
 roundel flags) — generic panels/colours per ground rule 3; the spring venue's dry hills
 and start building stay out of the winter world (used for geometry/technique reference
 only).
+
+## IMG_3770.MOV (added 2026-08-29) and `reference/images/aerial_suit.png` — the suit references
+- 3.3 s, 30 fps, portrait (ffmpeg auto-rotated), **all 99 frames** in `reference/frames/IMG_3770/f_001..f_099.jpg`.
+- f_001–f_020: athlete standing on the flat, arms straight overhead, hands together — the best full-body view of
+  the **suit**: light-grey/off-white relaxed one-piece, a single royal-blue stripe down the outside of each arm and
+  leg, soft folds at the knees, bunching at the ankles over dark boots; separate loose bib (light-blue yoke, white
+  number panel, magenta waist band); multicoloured neck gaiter; dark dome helmet; mirrored blue goggles right under
+  the rim. `aerial_suit.png` (1206×2622) is a zoomed still of the same athlete — use it for panel edges, seam
+  lines, fabric sheen and how the bib hangs.
+- f_020–f_035: side view of the in-run and kicker: the **kicker is a white block with RED edge paint**
+  (confirms the author's ruling), athlete's arm sweep to overhead through the transition.
+- f_035–f_070: lay-out single flip against blue sky — skis parallel and together overhead, arms wide, then the
+  body straightens for landing; the camera then pans off the athlete (hills: brown scrub with patchy snow — a
+  different climate than our scene; do not copy the terrain).
+- Uses: Opus lane brief item 3 (suit design), goggles/helmet placement (crop the head in f_001–f_015), kicker paint.

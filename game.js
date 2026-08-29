@@ -372,6 +372,42 @@ function _buildStyledSki(scene, driver, seg, assets) {
     return vis;
 }
 
+// ── Loading overlay + one-frame reveal (NEXT.md item 2, 2026-08-29) ────────
+// The author still saw skis before the skier: the skinned body and the ski
+// equipment were revealed the moment the GLB RESOLVED, but the ~7 MB of
+// athlete PNG maps were still in flight, so the body rendered as an
+// unshaded/white shape against the snow while the (already-textured) skis
+// popped first. Now a visible overlay covers the gap: nothing of the athlete
+// OR the skis shows until the body GLB is linked AND all three maps report
+// ready AND one frame has rendered in that state — then everything appears in
+// the SAME frame and the overlay is removed in that frame.
+function _ensureAthleteOverlay() {
+    try {
+        if (document.getElementById('athleteLoading')) return;
+        const d = document.createElement('div');
+        d.id = 'athleteLoading';
+        d.innerHTML = '<div class="athleteLoadingSpinner"></div>' +
+            '<span>Loading athlete&hellip;</span>';
+        d.style.cssText = 'position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);' +
+            'background:rgba(20,30,45,.78);color:#fff;font:15px sans-serif;' +
+            'padding:14px 22px;border-radius:10px;z-index:98;display:flex;' +
+            'align-items:center;gap:12px;pointer-events:none';
+        const st = document.createElement('style');
+        st.textContent = '.athleteLoadingSpinner{width:18px;height:18px;' +
+            'border:3px solid rgba(255,255,255,.3);border-top-color:#fff;' +
+            'border-radius:50%;animation:athleteSpin 0.9s linear infinite}' +
+            '@keyframes athleteSpin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(st);
+        document.body.appendChild(d);
+    } catch (e) { /* no DOM in a harness */ }
+}
+function _removeAthleteOverlay() {
+    try {
+        const d = document.getElementById('athleteLoading');
+        if (d) d.remove();
+    } catch (e) { /* no DOM in a harness */ }
+}
+
 // ── Start gating (author, 2026-08-26 / FABLE-80 finding 7) ────────────────
 // The legacy primitive athlete used to be visible from the first frame and
 // was only swapped for the skinned body when athlete_body.glb arrived, so on
@@ -403,6 +439,9 @@ function _alpineWorld() {
 
 function _showAthleteFallback(scene, meshes) {
     window._bodyFallback = (window._bodyFallback || 0) + 1;
+    // The fallback IS the reveal: clear the loading overlay in the same frame.
+    window._athleteRevealed = 1;
+    _removeAthleteOverlay();
     for (const m of _athleteVisualMeshes(scene, meshes)) m.isVisible = true;
     // Ski equipment: the shipped world rules decide, not the fallback — the
     // primitive ski boxes stay hidden in the alpine world (the styled skis
@@ -424,6 +463,8 @@ function _showAthleteFallback(scene, meshes) {
             document.body.appendChild(d);
         }
     } catch (e) { /* no DOM in a harness */ }
+    _linkAthleteShadowCasters(scene, meshes,
+        scene.getNodeByName ? scene.getNodeByName('skierRoot') : null);
 }
 
 function _hideAthleteVisuals(scene, meshes) {
@@ -438,6 +479,34 @@ function _revealSkiEquipment(scene, meshes) {
         if (!m || !m.getChildMeshes) continue;
         for (const k of m.getChildMeshes()) k.isVisible = true;
     }
+}
+
+// NEXT.md item 1 (2026-08-29): the reveal gate must cover the SHADOW. No
+// athlete/ski/boot/binding mesh may be in any shadow generator's render list
+// before the reveal frame — the author saw "the skis and the skier's shadow
+// appear before the skier". The startup caster block therefore no longer adds
+// the character at all; this helper is the ONLY path that links them, and it
+// runs in the same frame the meshes become visible (reveal poll or fallback).
+function _linkAthleteShadowCasters(scene, meshes, root) {
+    if (!scene || !scene.lights) return;
+    // shadowGen lives in the scene-builder's closure; resolve it from the
+    // scene's lights so this top-level helper can reach it.
+    const gen = scene.lights.map(l => l && l.getShadowGenerator
+        && l.getShadowGenerator()).find(Boolean);
+    if (!gen) return;
+    const sm = gen.getShadowMap && gen.getShadowMap();
+    const rl = sm && sm.renderList;
+    const add = (m) => {
+        if (!m || !m.getTotalVertices || m.getTotalVertices() === 0) return;
+        if (rl && rl.indexOf(m) !== -1) return;
+        gen.addShadowCaster(m);
+    };
+    for (const key of Object.keys(meshes)) {
+        const e = meshes[key];
+        add((e && e.mesh) ? e.mesh : e);
+    }
+    // The skinned body parts are adopted descendants of the root.
+    if (root && root.getChildMeshes) root.getChildMeshes().forEach(add);
 }
 
 function buildCharacter(scene) {
@@ -1847,9 +1916,50 @@ void main(void) {
     // skinned body follows. computePose, the pose tables, the ragdoll and the
     // first-person camera are all untouched.
     //
-    // The drivers themselves become invisible — they are still the articulation,
-    // just no longer the thing you see.
     (function loadContinuousBody() {
+        // NEXT.md item 2 (2026-08-29): overlay up immediately; nothing of the
+        // athlete OR the skis shows until the body GLB is linked, all three
+        // athlete maps are ready AND one frame has rendered in that state.
+        _ensureAthleteOverlay();
+        const _revealT0 = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : 0;
+        let _pendingBodyParts = null, _revealReadyFrames = 0;
+        function _maybeRevealAthlete() {
+            if (window._athleteRevealed || window._bodyFallback) return true;
+            if (!window._bodyLinked || !_pendingBodyParts) return false;
+            const maps = window._athleteMaps || [];
+            const ready = maps.length === 3 && maps.every(
+                t => (t.isReady && t.isReady()) || t._loadError);
+            const timedOut = _revealT0 && performance.now() - _revealT0 > 15000;
+            if (!ready && !timedOut) return false;
+            // One frame renders in the ready state BEFORE the reveal frame.
+            if (typeof requestAnimationFrame === 'function') {
+                if (_revealReadyFrames < 2) { _revealReadyFrames++; return false; }
+            }
+            window._athleteRevealed = 1;
+            // Instrument for the athlete's load budget (Opus brief item 4):
+            // ms from navigation start to the frame in which the skinned body
+            // first becomes VISIBLE. Stamped here, not at link time — with the
+            // reveal deferred until the maps are ready, a link-time stamp
+            // under-reports by the whole texture wait. Reported in
+            // docs/OPUS-NOTES.md and asserted in rig.spec.js.
+            window._bodyVisibleAt = (typeof performance !== 'undefined'
+                && performance.now) ? performance.now() : 0;
+            for (const part of _pendingBodyParts) part.isVisible = true;
+            _revealSkiEquipment(scene, character.meshes);
+            _linkAthleteShadowCasters(scene, character.meshes, character.root);
+            for (const m of scene.meshes) {
+                if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
+            }
+            _removeAthleteOverlay();
+            return true;
+        }
+        (function pollReveal() {
+            if (_maybeRevealAthlete()) return;
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(pollReveal);
+            }
+        })();
         try {
             if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) {
                 return _showAthleteFallback(scene, character.meshes);
@@ -1900,25 +2010,6 @@ void main(void) {
                         part.parent = character.root;
                         part.skeleton = skel;
                         part.alwaysSelectAsActiveMesh = true;
-                    }
-
-                    // Register the body as a shadow caster HERE, not in the
-                    // caster block at the end of startup.
-                    //
-                    // That block runs synchronously; this glb resolves later, so
-                    // the body never reached the list. What did reach it were the
-                    // driver solids — which this loader then hides, and Babylon
-                    // skips invisible meshes when rendering the shadow map. The
-                    // net effect was an athlete that cast no shadow at all beyond
-                    // its skis, and it read as "the shadows are weak" rather than
-                    // as a missing caster. The drivers stay in the list on purpose:
-                    // if this load ever fails they remain visible and are once
-                    // again the thing that should cast.
-                    if (shadowGen) {
-                        const rl = shadowGen.getShadowMap() && shadowGen.getShadowMap().renderList;
-                        for (const part of bodyParts) {
-                            if (!rl || rl.indexOf(part) === -1) shadowGen.addShadowCaster(part);
-                        }
                     }
 
                     // The body exports with two material slots — suit and helmet —
@@ -1972,7 +2063,8 @@ void main(void) {
                     const aniso = Math.max(
                         4, scene.getEngine().getCaps().maxAnisotropy || 4);
                     const map = (url, isColour) => {
-                        const t = new BABYLON.Texture(url, scene, false, false);
+                        const t = new BABYLON.Texture(url, scene, false, false,
+                            null, function () { t._loadError = true; });
                         t.gammaSpace = !!isColour;
                         t.anisotropicFilteringLevel = aniso;
                         return t;
@@ -2042,30 +2134,19 @@ void main(void) {
                         }
                     }
 
+                    window._athleteMaps = [suitAlbedo, suitNormal, suitAO];
                     for (const m of res.meshes) {
                         if (!bodyParts.includes(m) && !/^ski[LR]$/.test(m.name)) {
                             try { m.dispose(); } catch (e) {}
                         }
                     }
-                    // Start gating reveal: the skinned body, its materials and
-                    // the ski equipment become visible in THIS frame — the
-                    // athlete never exists half-dressed.
-                    for (const part of bodyParts) part.isVisible = true;
-                    _revealSkiEquipment(scene, character.meshes);
-
+                    // NEXT.md item 2: the reveal is DEFERRED to the poll
+                    // above — the body parts arrive VISIBLE from the glTF
+                    // loader, so hide them (and keep the skis hidden) until
+                    // the maps are ready and one frame has rendered.
+                    for (const part of bodyParts) part.isVisible = false;
+                    _pendingBodyParts = bodyParts;
                     window._bodyLinked = linked;
-                    // Instrument for the athlete's load budget (Opus brief
-                    // item 4): ms from navigation start to the frame in which
-                    // the skinned body first exists on screen. Reported in
-                    // docs/OPUS-NOTES.md and asserted in rig.spec.js.
-                    window._bodyVisibleAt = (typeof performance !== 'undefined'
-                        && performance.now) ? performance.now() : 0;
-                    // Goggles adopted by upgradeAthleteGeometry before this
-                    // loader resolved are hidden too — bring them into the
-                    // same reveal frame.
-                    for (const m of scene.meshes) {
-                        if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
-                    }
                 })
                 .catch(function () {
                     window._bodyLinked = 0;
@@ -2219,6 +2300,11 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
+                 // and peak spine bend (deg) for the crash-spec gates.
+                 peakExcDeg: (ragdoll.peakExc || 0) * 180 / Math.PI,
+                 peakSpineDeg: (ragdoll.peakSpine || 0) * 180 / Math.PI,
+                 limp: !!ragdoll.limp,
                  ang: {
                      neck: ang(B.neck, B.torsoBottom, B.headTop),
                      kneeL: ang(B.kneeL, B.hipL, B.ankleL),
@@ -3239,10 +3325,10 @@ void main(void) {
 
     // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge
     const cornerMat = makePBR('cornerMat', scene);
-    // Footage (IMG_3765/3768, "red marks" reviewer order): the kicker carries a
-    // thin DARK edge line at the wall/face junction — the loud red paint is gone.
-    cornerMat.diffuseColor  = new BABYLON.Color3(0.09, 0.09, 0.11);
-    cornerMat.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.03);
+    // Author ruling 2026-08-29: the kicker edge paint is RED as in the footage; it
+    // must never be darkened or recoloured again (iteration 9x wrongly made it near-black).
+    cornerMat.diffuseColor  = new BABYLON.Color3(0.85, 0.07, 0.05);
+    cornerMat.emissiveColor = new BABYLON.Color3(0.30, 0.02, 0.01);
     {
         const arcHalfW = kickerWidth / 2;
 
@@ -3769,50 +3855,480 @@ void main(void) {
         }
     }
 
+    // ── Venue dressing slice 2: landing centreline wands + knoll crest flag ──
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3520/7841): two rows of orange/
+    // red wands with small pennants marking the landing centreline, and ONE
+    // plain blue flag on a pole at the knoll crest (no roundel — no marks).
+    // Display-only scenery: thin-instanced poles/pennants (2 draw calls) plus
+    // one flag (2 meshes), seeded from the physics profile and re-seated once
+    // after the first rendered frame, exactly like the B-net above.
+    {
+        const WAND_X      = 1.3;   // rows either side of the landing centreline
+        const WAND_H      = 1.60;
+        const WAND_SPACING = 5.0;
+        const WAND_Z0     = LANDING_START_Z + 2.0;
+        const WAND_Z1     = OUTRUN_Z - 2.0;
+        const FLAG_X      = 3.6;   // beside the corridor, on the knoll table
+        const FLAG_Z      = KICKER_END_Z;  // the knoll crest
+        const FLAG_POLE_H = 3.0;
+        const RAY_Y2      = 80;
+
+        const wandGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y2, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        // Wand rows: [-1, +1] × z from WAND_Z0 to WAND_Z1 every WAND_SPACING.
+        const wandStations = [];
+        for (const s of [-1, 1]) {
+            for (let z = WAND_Z0; z <= WAND_Z1 + 1e-6; z += WAND_SPACING) {
+                wandStations.push({ x: s * WAND_X, z });
+            }
+        }
+
+        // Column-major identity+position matrices (same pattern as the B-net).
+        const wandMtx = (pts, lift) => {
+            const mtx = new Float32Array(pts.length * 16);
+            pts.forEach((p, i) => {
+                const o = i * 16;
+                mtx[o] = 1; mtx[o + 5] = 1; mtx[o + 10] = 1; mtx[o + 15] = 1;
+                mtx[o + 12] = p.x;
+                mtx[o + 13] = p.y + lift;
+                mtx[o + 14] = p.z;
+            });
+            return mtx;
+        };
+
+        const wandMat = makePBR('wandPoleMat', scene);
+        wandMat.albedoColor = new BABYLON.Color3(0.85, 0.22, 0.04);  // orange/red
+        wandMat.metallic = 0;
+        wandMat.roughness = 0.7;
+        const pennantMat = makePBR('wandPennantMat', scene);
+        pennantMat.albedoColor = new BABYLON.Color3(0.85, 0.22, 0.04);
+        pennantMat.backFaceCulling = false;
+        pennantMat.metallic = 0;
+        pennantMat.roughness = 0.8;
+
+        const wandSrc = BABYLON.MeshBuilder.CreateCylinder('wandPole',
+            { height: WAND_H, diameterBottom: 0.035, diameterTop: 0.025, tessellation: 6 }, scene);
+        wandSrc.material = wandMat;
+        const pennantSrc = BABYLON.MeshBuilder.CreatePlane('wandPennant',
+            { width: 0.22, height: 0.16 }, scene);
+        pennantSrc.material = pennantMat;
+
+        const seatWands = (picker) => {
+            // Wands are PLANTED: base 6 cm below the picked visual surface so
+            // the landing chop's async downward displacement (≤ 7 cm, decodes
+            // after the first render) can never leave a wand floating.
+            const seated = wandStations.map((s) => ({ x: s.x, z: s.z, y: picker(s.x, s.z) - 0.06 }));
+            try {
+                wandSrc.thinInstanceSetBuffer('matrix', wandMtx(seated, WAND_H / 2), 16, true);
+                wandSrc.thinInstanceRefreshBoundingInfo(true);
+                // Pennants fly just under each pole top, offset to the +x side.
+                const penn = seated.map((p) => ({ x: p.x + 0.12, z: p.z, y: p.y + WAND_H - 0.14 }));
+                pennantSrc.thinInstanceSetBuffer('matrix', wandMtx(penn, 0), 16, true);
+                pennantSrc.thinInstanceRefreshBoundingInfo(true);
+            } catch (e) { /* headless: sources stay put */ }
+            window._wandsDebug = {
+                stations: seated,
+                rows: 2,
+                poles: seated.length,
+                planted: 0.06,
+                seated: !!picker.seated,
+            };
+        };
+
+        seatWands((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        // Knoll crest flag: pole + plain blue pennant (no roundel, no marks).
+        const flagPole = BABYLON.MeshBuilder.CreateCylinder('knollFlagPole',
+            { height: FLAG_POLE_H, diameterBottom: 0.05, diameterTop: 0.035, tessellation: 8 }, scene);
+        flagPole.material = wandMat;
+        const flagMat = makePBR('knollFlagMat', scene);
+        flagMat.albedoColor = new BABYLON.Color3(0.10, 0.28, 0.75);  // plain blue
+        flagMat.backFaceCulling = false;
+        flagMat.metallic = 0;
+        flagMat.roughness = 0.8;
+        const flagCloth = BABYLON.MeshBuilder.CreatePlane('knollFlagCloth',
+            { width: 0.85, height: 0.50 }, scene);
+        flagCloth.material = flagMat;
+        flagCloth.position.x = 0.44;   // cloth hangs on the pole's +x side
+
+        const seatFlag = (picker) => {
+            const y = picker(FLAG_X, FLAG_Z);
+            flagPole.position.set(FLAG_X, y + FLAG_POLE_H / 2, FLAG_Z);
+            flagCloth.position.set(FLAG_X + 0.44, y + FLAG_POLE_H - 0.35, FLAG_Z);
+            window._knollFlagDebug = { x: FLAG_X, z: FLAG_Z, baseY: y, seated: !!picker.seated };
+        };
+        seatFlag((x, z) => terrainRootY(z) - FOOT_OFFSET);
+
+        // Re-seat after the first COMPLETED render — same contract as B-net.
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatWands = () => {
+                const picker = (x, z) => wandGroundAt(x, z);
+                picker.seated = true;
+                seatWands(picker);
+                seatFlag(picker);
+            };
+            scene.onAfterRenderObservable.addOnce(reseatWands);
+            // Second pass after the chop height tile has had a chance to
+            // decode and displace the landing — the final seating.
+            setTimeout(() => {
+                reseatWands();
+                window._wandsSeated = true;
+            }, 1500);
+        } else {
+            window._wandsSeated = false;   // headless: keep the seed seating
+        }
+    }
+
+    // ── Venue dressing slice 3: judges'/start deck on shipping containers ──
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3523/3520/7841): a timber-deck
+    // platform on dark shipping containers beside the kicker — the judges'/
+    // start deck. Display-only scenery, 6 meshes, no instancing needed:
+    // two dark ribbed containers (level, sunk into the picked flank so they
+    // can never float), a planked timber deck on top, and a simple two-bar
+    // guard rail on the corridor side. Seeded from a ray pick like slices 1–2
+    // and re-seated once after the first completed render.
+    {
+        const DECK_X0 = 8.0;    // outside the 6.2 m B-net line
+        const DECK_X1 = 14.0;
+        const DECK_Z0 = KICKER_END_Z - 6.0;   // beside the kicker table
+        const DECK_Z1 = DECK_Z0 + 12.0;
+        const CONT_H  = 2.59;   // standard 40 ft container height
+        const DECK_T  = 0.14;   // timber deck thickness
+        const RAIL_H  = 1.05;
+        const RAY_Y3  = 80;
+
+        const cx = (DECK_X0 + DECK_X1) / 2;
+        const cz = (DECK_Z0 + DECK_Z1) / 2;
+        const w  = DECK_X1 - DECK_X0;
+        const d  = DECK_Z1 - DECK_Z0;
+
+        const deckGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y3, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        // Dark ribbed container texture: vertical corrugation stripes on a
+        // near-black box. One shared 128 px tile, cheap.
+        const contTex = new BABYLON.DynamicTexture('judgesDeckContTex',
+            { width: 128, height: 128 }, scene, true);
+        const cc = contTex.getContext();
+        cc.fillStyle = 'rgb(38,42,48)';
+        cc.fillRect(0, 0, 128, 128);
+        cc.fillStyle = 'rgb(28,31,36)';
+        for (let x = 0; x < 128; x += 16) cc.fillRect(x, 0, 7, 128);
+        contTex.update();
+        contTex.uScale = 6; contTex.vScale = 1;
+        const contMat = makePBR('judgesDeckContMat', scene);
+        contMat.albedoTexture = contTex;
+        contMat.metallic = 0;
+        contMat.roughness = 0.85;
+
+        // Timber deck: warm planks with dark seams.
+        const plankTex = new BABYLON.DynamicTexture('judgesDeckPlankTex',
+            { width: 256, height: 128 }, scene, true);
+        const pc = plankTex.getContext();
+        pc.fillStyle = 'rgb(126,96,62)';
+        pc.fillRect(0, 0, 256, 128);
+        pc.fillStyle = 'rgb(96,70,44)';
+        for (let y = 0; y < 128; y += 16) pc.fillRect(0, y, 256, 2);
+        for (let y = 8; y < 128; y += 16) {
+            for (let x = 37 + (y % 32); x < 256; x += 97) pc.fillRect(x, y, 2, 6);
+        }
+        plankTex.update();
+        plankTex.uScale = 3; plankTex.vScale = 1;
+        const plankMat = makePBR('judgesDeckPlankMat', scene);
+        plankMat.albedoTexture = plankTex;
+        plankMat.metallic = 0;
+        plankMat.roughness = 0.9;
+
+        // Two containers, staggered in z, holding the deck corners.
+        const cont1 = BABYLON.MeshBuilder.CreateBox('judgesDeckCont1',
+            { width: w * 0.55, height: CONT_H, depth: d * 0.8 }, scene);
+        cont1.material = contMat;
+        const cont2 = BABYLON.MeshBuilder.CreateBox('judgesDeckCont2',
+            { width: w * 0.4, height: CONT_H, depth: d * 0.8 }, scene);
+        cont2.material = contMat;
+
+        const deck = BABYLON.MeshBuilder.CreateBox('judgesDeckTop',
+            { width: w, height: DECK_T, depth: d }, scene);
+        deck.material = plankMat;
+
+        // Guard rail on the corridor (−x) side: top bar + mid bar.
+        const railMat = makePBR('judgesDeckRailMat', scene);
+        railMat.albedoColor = new BABYLON.Color3(0.16, 0.16, 0.18);
+        railMat.metallic = 0.2;
+        railMat.roughness = 0.6;
+        const railTop = BABYLON.MeshBuilder.CreateBox('judgesDeckRailTop',
+            { width: 0.06, height: 0.06, depth: d }, scene);
+        railTop.material = railMat;
+        const railMid = BABYLON.MeshBuilder.CreateBox('judgesDeckRailMid',
+            { width: 0.04, height: 0.04, depth: d }, scene);
+        railMid.material = railMat;
+
+        const seatDeck = (picker) => {
+            // A real deck is LEVEL: base it on the LOWEST picked corner minus
+            // a 15 cm sink so the container feet can never float on the
+            // banked flank.
+            const ys = [picker(DECK_X0, DECK_Z0), picker(DECK_X1, DECK_Z0),
+                        picker(DECK_X0, DECK_Z1), picker(DECK_X1, DECK_Z1)];
+            const baseY = Math.min(...ys) - 0.15;
+            cont1.position.set(cx - w * 0.22, baseY + CONT_H / 2, cz + d * 0.08);
+            cont2.position.set(cx + w * 0.3, baseY + CONT_H / 2, cz - d * 0.1);
+            const deckY = baseY + CONT_H + DECK_T / 2;
+            deck.position.set(cx, deckY, cz);
+            railTop.position.set(DECK_X0 + 0.03, deckY + DECK_T / 2 + RAIL_H, cz);
+            railMid.position.set(DECK_X0 + 0.03, deckY + DECK_T / 2 + RAIL_H * 0.5, cz);
+            window._judgesDeckDebug = {
+                baseY, corners: ys, sink: 0.15,
+                deckTopY: deckY + DECK_T / 2,
+                level: true,
+                seated: !!picker.seated,
+            };
+        };
+        seatDeck((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        // Re-seat after the first COMPLETED render — same contract as B-net.
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatDeck = () => {
+                const picker = (x, z) => deckGroundAt(x, z);
+                picker.seated = true;
+                seatDeck(picker);
+                window._judgesDeckSeated = true;
+            };
+            scene.onAfterRenderObservable.addOnce(reseatDeck);
+        } else {
+            window._judgesDeckSeated = false;   // headless: keep the seed seating
+        }
+    }
+
+    // ── Venue dressing slice 4: static coach figures at the knoll ──────────
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3523/3520): two or three static
+    // figures at the knoll wearing RED jackets — accent colour against the
+    // white/blue venue. Rendered as cheap upright cards (same spirit as the
+    // tree-card pipeline): one runtime-drawn canvas texture, three planes,
+    // generic panels only (no federation marks). Seeded from the physics
+    // surface and re-seated with the flag/wands contract.
+    {
+        const COACHES = [
+            { x: 2.3, z: KICKER_END_Z - 2.2, h: 1.82 },
+            { x: 3.1, z: KICKER_END_Z - 0.9, h: 1.76 },
+            { x: 4.5, z: KICKER_END_Z - 2.6, h: 1.86 },
+        ];
+        const RAY_Y4 = 80;
+
+        const coachTex = new BABYLON.DynamicTexture('knollCoachTex',
+            { width: 256, height: 512 }, scene, true);
+        const tc = coachTex.getContext();
+        tc.fillStyle = 'rgba(0,0,0,0)';
+        tc.clearRect(0, 0, 256, 512);
+        // Legs (dark trousers) + boots.
+        tc.fillStyle = 'rgb(34,38,46)';
+        tc.fillRect(96, 300, 26, 168);
+        tc.fillRect(134, 300, 26, 168);
+        tc.fillStyle = 'rgb(20,22,26)';
+        tc.fillRect(88, 462, 40, 34);
+        tc.fillRect(128, 462, 40, 34);
+        // Red jacket torso + simple arms.
+        tc.fillStyle = 'rgb(190,26,20)';
+        tc.fillRect(78, 168, 100, 150);
+        tc.fillRect(58, 172, 24, 130);
+        tc.fillRect(174, 172, 24, 130);
+        // Zip line + collar (generic panels only).
+        tc.fillStyle = 'rgb(140,18,14)';
+        tc.fillRect(124, 168, 8, 150);
+        tc.fillRect(98, 156, 60, 16);
+        // Head: face, white helmet, dark goggle band.
+        tc.fillStyle = 'rgb(214,176,148)';
+        tc.fillRect(104, 96, 48, 56);
+        tc.fillStyle = 'rgb(238,240,244)';
+        tc.fillRect(100, 62, 56, 42);
+        tc.fillStyle = 'rgb(30,34,44)';
+        tc.fillRect(102, 100, 52, 20);
+        coachTex.update();
+        coachTex.hasAlpha = true;
+        const coachMat = makePBR('knollCoachMat', scene);
+        coachMat.albedoTexture = coachTex;
+        if (BABYLON.Material && BABYLON.Material.MATERIAL_ALPHATESTMODE !== undefined) {
+            coachMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATESTMODE;
+        }
+        coachMat.metallic = 0;
+        coachMat.roughness = 0.9;
+
+        const coachGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y4, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        const coachMeshes = COACHES.map((c, i) => {
+            const m = BABYLON.MeshBuilder.CreatePlane('knollCoach' + i,
+                { width: c.h * 0.5, height: c.h }, scene);
+            m.material = coachMat;
+            return m;
+        });
+
+        const seatCoaches = (picker) => {
+            const seated = COACHES.map((c, i) => {
+                // Base sunk 2 cm so the knoll surface never leaves feet floating.
+                const y = picker(c.x, c.z) - 0.02;
+                coachMeshes[i].position.set(c.x, y + c.h / 2, c.z);
+                return { x: c.x, z: c.z, baseY: y, h: c.h };
+            });
+            window._knollCoachesDebug = { stations: seated, seated: !!picker.seated };
+        };
+        seatCoaches((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatCoaches = () => {
+                const picker = (x, z) => coachGroundAt(x, z);
+                picker.seated = true;
+                seatCoaches(picker);
+                window._knollCoachesSeated = true;
+            };
+            scene.onAfterRenderObservable.addOnce(reseatCoaches);
+        } else {
+            window._knollCoachesSeated = false;   // headless: keep the seed seating
+        }
+    }
+
+
+
 
 
     // ── P6 layered forested ridgelines ─────────────────────────────────────
     // Footage (docs/REFERENCE-FOOTAGE.md, IMG_3523/3520): the horizon is low
     // forested ridgelines fading with distance — NOT snow-capped cone peaks.
-    // Each ridge is a deterministic "curtain": one vertical strip per column
-    // from below the valley floor up to the ridgeline profile, so the
-    // silhouette is clean from every camera angle and the mesh is seated on
-    // the ground everywhere (A7 look-back gate: nothing may float). Two
-    // summed sines per layer — no RNG, stable golden census. Layer colours
+    //
+    // HUMAN TESTING #4 item 3: the flat "curtains" (one vertical strip per
+    // column) read as 2D cut-outs. Each ridge is now a REAL 3D hill band: a
+    // heightfield whose crest carries the same two-sine silhouette as before
+    // and rolls away from the valley over a cross-run depth of ≥ 21% of its
+    // run (gate in tests/drive/ridges3d.spec.js), with rock/snow/forest
+    // banding from render/textures.js makeRidgeSurface keyed on ELEVATION
+    // (uv.v = (y − valley floor) / RIDGE_SNOWLINE_M) — forest + tree-line
+    // strokes low, fractured rock mid, snowfields high. Layer colours still
     // mix toward the fog colour with distance (EXP2 0.0022 barely reaches).
+    // Two summed sines per layer — no RNG, stable golden census.
     const RIDGE_STEP = 6;                                   // m between columns
     const FOG = scene.fogColor;
+    const RIDGE_SNOWLINE_M = 80;   // elevation mapped to uv v ∈ 0..~1 — must
+    // span the tallest crest (far ≈ 75 m above the valley floor) so the
+    // tree-line/rock/snow bands land on the VISIBLE faces: near ridges (crests
+    // ≈ 29 m) sit in the forest band, mid (≈ 50 m) at the rock/snow edge, and
+    // only the far/back crests are pure snowfield. At 45 the whole visible
+    // face clamped into the snowfield band and read as flat pale felt.
     const _ridgeMat = (name, mix, tint) => {
         const m = makePBR(name, scene);
-        m.albedoColor = new BABYLON.Color3(
-            tint[0] + (FOG.r - tint[0]) * mix,
-            tint[1] + (FOG.g - tint[1]) * mix,
-            tint[2] + (FOG.b - tint[2]) * mix);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
         m.metallic = 0;
         m.roughness = 0.95;
         m.backFaceCulling = false;
+        const T = AerialEngine && AerialEngine.textures;
+        const s = T && T.makeRidgeSurface
+            ? T.makeRidgeSurface(BABYLON, scene, 512, { strength: 3.5 }) : null;
+        // Reviewer fix (Fable, 2026-08-29, HUMAN TESTING #4/#6 "mountains
+        // flat / lost texture"): with scene fog ON, the ridge materials wash
+        // to a single pale fog tint far harder than the EXP2 curve predicts
+        // (measured: exp2 visibility 0.82 at 200 m, yet the band map was
+        // invisible; halving fogDensity to 0.0012 barely changed it, while
+        // fogEnabled=false restored rock/snow/forest banding at once — see
+        // docs/RENDER-PROGRESS.md entry "mountains, reviewer pass"). So the
+        // ridges opt out of scene fog and carry their own distance haze as a
+        // per-layer albedo lift toward the fog colour (mix below). Gate:
+        // tests/drive/ridges3d.spec.js "rendered ridge pixels keep contrast",
+        // whose negative control is exactly the fogged state.
+        m.fogEnabled = false;
+        if (s) {
+            // The map is self-coloured; albedoColor becomes the atmospheric
+            // multiplier, lifted toward the fog colour with distance.
+            m.albedoTexture = s.albedo;
+            m.bumpTexture = s.normal;
+            m.albedoColor = new BABYLON.Color3(
+                1 + (FOG.r - 1) * mix,
+                1 + (FOG.g - 1) * mix,
+                1 + (FOG.b - 1) * mix);
+        } else {
+            // Headless / no-canvas fallback: the old flat tint.
+            m.albedoColor = new BABYLON.Color3(
+                tint[0] + (FOG.r - tint[0]) * mix,
+                tint[1] + (FOG.g - tint[1]) * mix,
+                tint[2] + (FOG.b - tint[2]) * mix);
+        }
         return m;
     };
-    function _ridgeCurtain(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
-        const n = Math.max(2, Math.ceil((to - from) / RIDGE_STEP) + 1);
-        const pos = [], idx = [];
+    function _ridgeMesh(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
+        const L = to - from;
+        // Cross-run depth ≥ 21% of the run so every ridge has body under its
+        // silhouette; the crest edge sits at the old curtain plane and the
+        // hill rolls AWAY from the valley (dir = away-from-valley sign).
+        const DEPTH = Math.max(40, L * 0.21);
+        const STEPS = 12;                       // cross-run rows
+        const dir = axis === 'x'
+            ? Math.sign(fixed)
+            : (fixed < (SLOPE_START_Z + OUTRUN_Z) / 2 ? -1 : 1);
+        const n = Math.max(2, Math.ceil(L / RIDGE_STEP) + 1);
+        const pos = [], uv = [], idx = [];
         for (let i = 0; i < n; i++) {
-            const t = from + (to - from) * i / (n - 1);
-            const h = base + amp * (0.55 * Math.sin(t * f1 + p1)
-                                  + 0.45 * Math.sin(t * f2 + p2) + 0.5);
-            const y0 = valleyFloorY - 4, y1 = valleyFloorY + h;
-            if (axis === 'x') pos.push(fixed, y0, t, fixed, y1, t);
-            else              pos.push(t, y0, fixed, t, y1, fixed);
-            if (i < n - 1) {
-                const a = i * 2;
-                idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+            const t = from + L * i / (n - 1);
+            const crest = base + amp * (0.55 * Math.sin(t * f1 + p1)
+                                      + 0.45 * Math.sin(t * f2 + p2) + 0.5);
+            for (let j = 0; j <= STEPS; j++) {
+                const u = j / STEPS;            // 0 = crest edge
+                const roll = Math.pow(1 - u, 1.25);          // falloff
+                const wob = 0.82 + 0.18 * Math.sin(t * 0.05 + u * 4.1 + fixed);
+                const y = valleyFloorY - 4 + crest * roll * wob + 2.0;
+                const off = dir * u * DEPTH;
+                if (axis === 'x') pos.push(fixed + off, y, t);
+                else              pos.push(t, y, fixed + off);
+                uv.push(t / 55, Math.max(0, (y - valleyFloorY) / RIDGE_SNOWLINE_M));
+            }
+        }
+        for (let i = 0; i < n - 1; i++) {
+            for (let j = 0; j < STEPS; j++) {
+                const a = i * (STEPS + 1) + j, b = a + STEPS + 1;
+                idx.push(a, a + 1, b, a + 1, b + 1, b);
             }
         }
         const m = new BABYLON.Mesh(name, scene);
         const vd = new BABYLON.VertexData();
         vd.positions = pos;
         vd.indices = idx;
+        vd.uvs = uv;
         vd.normals = [];
         BABYLON.VertexData.ComputeNormals(pos, idx, vd.normals);
         vd.applyToMesh(m);
@@ -3821,17 +4337,22 @@ void main(void) {
         return m;
     }
     const RZ0 = SLOPE_START_Z - 170, RZ1 = OUTRUN_Z + 240;
+    // Fog-mix pulls the self-coloured band map toward the fog colour; the
+    // 2026-08-29 look showed mid/far washed to pale felt at 0.12/0.22 — the
+    // global EXP2 fog (0.0022) already supplies distance haze.
+    // Baked haze per layer (scene fog is off on these materials — see
+    // _ridgeMat): near hills stay saturated, far ridges recede.
     const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.35, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.65, [0.38, 0.48, 0.55]);
+    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31]);
+    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55]);
     [-1, 1].forEach(function (s) {
-        _ridgeCurtain('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
-        _ridgeCurtain('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
-        _ridgeCurtain('ridge_far_'  + (s < 0 ? 'L' : 'R'), 'x', s * 150, RZ0, RZ1, 44, 22, 0.024, 0.063, 3.1, 1.2, matFar);
+        _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
+        _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
+        _ridgeMesh('ridge_far_'  + (s < 0 ? 'L' : 'R'), 'x', s * 150, RZ0, RZ1, 44, 22, 0.024, 0.063, 3.1, 1.2, matFar);
     });
     // Cross-valley closures behind the start and beyond the out-run.
-    _ridgeCurtain('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
-    _ridgeCurtain('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
+    _ridgeMesh('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
+    _ridgeMesh('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
 
     } // end mountain environment
 
@@ -4473,6 +4994,7 @@ void main(void) {
     let singleFlipQueued   = false; // D pressed while grounded → apply on next launch
     let crashActive        = false; // true while ragdoll animation is running
     let crashTimer         = 0;
+    let crashImpactSpeed   = 0;   // athlete's actual root speed at the crash trigger (reviewer 89a momentum seed)
     let crashFallDir       = 1;
     let crashPieces        = [];   // detached body-part physics pieces (legacy path, retired by the P11 ragdoll)
     let ragdoll            = null; // coherent crash ragdoll state (P11)
@@ -4657,6 +5179,36 @@ void main(void) {
         for (const pt of parts) pt.r = RADIUS[pt.name] || 0.07;
 
         const dist = function (a, b) { return _crashVLen(_crashVSub(a, b)); };
+        // NEXT item 3 (2026-08-29): capture the impact pose in the TORSO
+        // frame. During the ≤1 s tumble a stiff "shape retention" pass clamps
+        // every limb segment within ±35° of this captured pose (and the head
+        // axis within 40° of the torso axis — the spine gate), so the body
+        // stays a recognisable figure instead of crumpling (author, HUMAN
+        // TESTING #6: "the skier crumples a little too much"). The crash is
+        // display (ADR-0002), so this constrains the renderer's particles only.
+        const _crNrm = function (v) {
+            const l = Math.hypot(v.x, v.y, v.z) || 1e-9;
+            return _crashV(v.x / l, v.y / l, v.z / l);
+        };
+        const _crDot = function (a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+        const _crCross = function (a, b) {
+            return _crashV(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+        };
+        const _tu0 = _crNrm(_crashVSub(P.torsoTop, P.torsoBottom));
+        const _a0 = Math.abs(_tu0.z) < 0.9 ? _crashV(0, 0, 1) : _crashV(1, 0, 0);
+        const _tv0 = _crNrm(_crCross(_tu0, _a0));
+        const _tw0 = _crCross(_tu0, _tv0);
+        const shape = [
+            ['shL', 'elbowL'], ['elbowL', 'wristL'],
+            ['shR', 'elbowR'], ['elbowR', 'wristR'],
+            ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+            ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+            ['neck', 'headTop'],
+        ].map(function (jd) {
+            const dir = _crNrm(_crashVSub(P[jd[1]], P[jd[0]]));
+            return { j: jd[0], d: jd[1], len: dist(P[jd[0]], P[jd[1]]),
+                     x: _crDot(dir, _tv0), y: _crDot(dir, _tw0), z: _crDot(dir, _tu0) };
+        });
         const STICKS = [
             ['torsoTop', 'torsoBottom'], ['neck', 'headTop'],
             // Neck-to-torso brace: without it the neck particle is held only by
@@ -4728,14 +5280,19 @@ void main(void) {
         const torso = P.torsoTop;
         return {
             parts, byName, sticks: STICKS, ang: ANG, skis, neckOff: NECK_OFF,
-            hard: HARD, headRest: dist(P.neck, P.headTop),
+            hard: HARD, headRest: dist(P.neck, P.headTop), shape,
+            peakExc: 0, peakSpine: 0,
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
             maxSpeed: 99, sprayT: 0, t: 0, phase: 'tumble', slideV: null,
+            impactSpeed: crashImpactSpeed,
             // Negative control (NEXT 2026-08-29): window._crashRollDisabled
             // (set by the spec before the crash) restores the old iter-47
-            // exponential stop — the roll phase is bypassed.
+            // exponential stop — the roll phase is bypassed. window._crashLimp
+            // (item 3 negative control) disables the shape-retention pass: a
+            // fully limp ragdoll must FAIL the tumble-excursion gate.
             noRoll: typeof window !== 'undefined' && window._crashRollDisabled === true,
+            limp: typeof window !== 'undefined' && window._crashLimp === true,
         };
     }
 
@@ -4830,6 +5387,66 @@ void main(void) {
                     }
                 }
             };
+            const _xCross = function (a, b) {
+                return _crashV(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+            };
+            // ── Stiff tumble: shape retention (NEXT item 3, 2026-08-29) ──
+            // Clamp every limb segment within ±35° of the pose captured at
+            // impact (expressed in the live torso frame, so it tumbles WITH
+            // the body), and the head axis within 40° of the torso axis
+            // (spine bend). Runs INSIDE the constraint loop (a post-hoc pass
+            // still recorded 122° intra-frame excursions); peaks are tracked
+            // only on the FINAL (track=true) call, post-clamp. The limp
+            // negative control skips the clamps and must exceed the gates.
+            const shapePass = function (track) {
+            if (R.shape && R.shape.length) {
+                const _sb = R.byName.torsoBottom.p, _st = R.byName.torsoTop.p;
+                let _tu = _crashVSub(_st, _sb);
+                const _tul = _crashVLen(_tu);
+                if (_tul > 1e-6) {
+                    _tu = _crashV(_tu.x / _tul, _tu.y / _tul, _tu.z / _tul);
+                    const _ax = Math.abs(_tu.z) < 0.9 ? _crashV(0, 0, 1) : _crashV(1, 0, 0);
+                    let _tv = _xCross(_tu, _ax); const _tvl = _crashVLen(_tv);
+                    if (_tvl < 1e-6) { _tv = _crashV(0, 1, 0); } else { _tv = _crashV(_tv.x / _tvl, _tv.y / _tvl, _tv.z / _tvl); }
+                    const _tw = _xCross(_tu, _tv);
+                    const MAXEX = 35 * Math.PI / 180, MAXSPINE = 40 * Math.PI / 180;
+                    for (const c of R.shape) {
+                        const jp = R.byName[c.j].p, dp = R.byName[c.d].p;
+                        let vx = dp.x - jp.x, vy = dp.y - jp.y, vz = dp.z - jp.z;
+                        const vl = Math.hypot(vx, vy, vz) || 1e-9;
+                        vx /= vl; vy /= vl; vz /= vl;
+                        // Captured direction rebuilt in the live torso frame.
+                        const gx = _tv.x * c.x + _tw.x * c.y + _tu.x * c.z;
+                        const gy = _tv.y * c.x + _tw.y * c.y + _tu.y * c.z;
+                        const gz = _tv.z * c.x + _tw.z * c.y + _tu.z * c.z;
+                        const cG = Math.max(-1, Math.min(1, vx * gx + vy * gy + vz * gz));
+                        const exc = Math.acos(cG);
+                        if (track && exc > R.peakExc) R.peakExc = exc;
+                        let clampAng = exc > MAXEX ? exc - MAXEX : 0;
+                        let tx = gx, ty = gy, tz = gz;
+                        if (c.j === 'neck') {
+                            // Spine bend: head axis vs the TORSO axis.
+                            const cT = Math.max(-1, Math.min(1, vx * _tu.x + vy * _tu.y + vz * _tu.z));
+                            const bend = Math.acos(cT);
+                            if (track && bend > R.peakSpine) R.peakSpine = bend;
+                            if (bend > MAXSPINE && bend - MAXSPINE > clampAng) {
+                                clampAng = bend - MAXSPINE; tx = _tu.x; ty = _tu.y; tz = _tu.z;
+                            }
+                        }
+                        if (R.limp || clampAng <= 0) continue;
+                        // Rotate the distal point toward the target direction
+                        // about (v × t), exactly like the angClamp limits.
+                        const cx = vy * tz - vz * ty, cy = vz * tx - vx * tz, cz = vx * ty - vy * tx;
+                        const cl = Math.hypot(cx, cy, cz);
+                        if (cl < 1e-8) continue;
+                        const q = _crashQAxis(cx / cl, cy / cl, cz / cl, clampAng);
+                        const nv = _crashQRotV(q, _crashV(vx, vy, vz));
+                        const L = c.len || vl;
+                        dp.x = jp.x + nv.x * L; dp.y = jp.y + nv.y * L; dp.z = jp.z + nv.z * L;
+                    }
+                }
+                }
+            };
             for (let it = 0; it < 6; it++) {
                 for (const st of R.sticks) {
                     const d = _crashVSub(st.b.p, st.a.p);
@@ -4868,6 +5485,7 @@ void main(void) {
                 angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
                 hardPass();
                 contactPass();
+                shapePass(false);
             }
             // Polish passes: the FINAL contact of the main loop can leave a
             // small length residual (contact lifts one end of a segment after
@@ -4877,6 +5495,8 @@ void main(void) {
             // worst elbow 0.022 m -> both gate-passing on the violent
             // mid-flight-flip crash variant).
             for (let it = 0; it < 4; it++) { hardPass(); contactPass(); }
+            shapePass(true);
+            if (!R.limp) hardPass();
             // Kinematic neck: pinned 1 cm below the torso top along the torso
             // axis, so the head is attached EXACTLY every frame. (A simulated
             // neck fought the contact radii and the brace — measured joint-gap
@@ -4995,14 +5615,20 @@ void main(void) {
             // Force the roll DOWNHILL: the tumble's mean velocity can end
             // pointing uphill (a caught edge kills vz while verlet jitter
             // leaves a small −z residue), fix the direction: downhill is +z.
-            // Momentum seed: the crash impact speed (~12–15 m/s on the
-            // landing) is the rigid mass's downhill momentum; the PBD
-            // verlet damping under-reports it, so enforce a 15 m/s floor.
-            if (R.slideV.z < 12) {
+            // Momentum seed (reviewer entry-89 refinement (a)): the rigid
+            // mass keeps the athlete's ACTUAL horizontal root speed at the
+            // crash trigger (the PBD verlet damping under-reports it), so
+            // slow landings slide proportionally less instead of always
+            // pretending 15 m/s. Bands: 6 m/s floor keeps even soft crashes
+            // rolling to the flat; 15 m/s ceiling = the verified iter-89
+            // behaviour (a full-charge impact measures ~26 m/s horizontal,
+            // and the 2–5 s motion envelope + roll-to-flat gates were tuned
+            // at 15).
+            const _seed = Math.min(Math.max(R.impactSpeed || 0, 6), 15);
+            if (R.slideV.z < _seed) {
                 R.slideV.x = 0;
-                R.slideV.z = 15;
+                R.slideV.z = _seed;
             }
-            R.phase = 'roll';
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -5086,9 +5712,13 @@ void main(void) {
                 // under the 90°/s gate) so the resting pose lies ON the snow
                 // instead of propped up in the frozen crumple, then re-run
                 // the hard stick projection so joints stay within 2 cm.
+                // NEXT item 3: the stiff frozen pose (limbs clamped within
+                // ±35° of layout) leaves MORE propped parts to lower, and the
+                // 0.3 m/s rate measured an elbow joint rate of 1.79 rad/s
+                // (> π/2) — halve the rate so the joint gate holds.
                 for (const pt of R.parts) {
                     const _tY = _crashFloorY(pt.p.z) + pt.r;
-                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
                 }
                 for (const hp of R.hard) {
                     const a = hp.a.p, b = hp.b.p;
@@ -5544,9 +6174,9 @@ void main(void) {
             state.offAxis     = 0.0; offAxisTarget = 0.0;
             state.airTime     = 0.0;
             poolEntered   = false;
-            poolSplashAmp = 0;
             if (crashActive) {
                 crashActive = false;
+                crashImpactSpeed = 0;
                 crashTimer  = 0;
                 for (const p of crashPieces) {
                     p.mesh.parent = character.root;
@@ -6655,6 +7285,12 @@ void main(void) {
                     // preserve vz so skier glides away down the landing slope
                 } else {
                     state.crashed = true;
+                    // Capture the ACTUAL horizontal root speed before it is
+                    // zeroed — the ragdoll's rigid roll is seeded from this
+                    // (reviewer 89a), so slow and fast crashes slide
+                    // different distances. The vertical fall speed is
+                    // absorbed by the snow, not carried into the slide.
+                    crashImpactSpeed = Math.abs(state.vz);
                     state.flipDir = 1;
                     state.vz      = 0; // stop sliding on crash
                     // Crash — reset comp progression, queue new trick for next jump
@@ -7451,16 +8087,22 @@ void main(void) {
     // itself around a two-metre figure, which is what it is actually good at.
     if (shadowGen) {
         const casters = new Set();
-        for (const key of Object.keys(character.meshes)) {
-            const e = character.meshes[key];
-            const m = (e && e.mesh) ? e.mesh : e;
-            if (m && m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
-        }
-        // The skinned body arrives asynchronously and is parented to the root, so
-        // it is picked up by descendants rather than by name.
-        if (character.root && character.root.getChildMeshes) {
-            for (const m of character.root.getChildMeshes()) {
-                if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+        // NEXT.md item 1 (2026-08-29): the character — drivers, styled skis,
+        // skinned body, goggles — is linked as a caster ONLY by
+        // _linkAthleteShadowCasters, in the same frame the meshes become
+        // visible. Before that frame nothing of the athlete may cast (the
+        // author saw the skis' shadow before the skier). The fallback path
+        // re-links when the primitive figure becomes the reveal.
+        if (window._bodyLinked > 0) {
+            for (const key of Object.keys(character.meshes)) {
+                const e = character.meshes[key];
+                const m = (e && e.mesh) ? e.mesh : e;
+                if (m && m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+            }
+            if (character.root && character.root.getChildMeshes) {
+                for (const m of character.root.getChildMeshes()) {
+                    if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+                }
             }
         }
         // Trees all cast — the CSM frustum follows the camera, so only trees near

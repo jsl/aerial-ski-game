@@ -21,6 +21,7 @@ const GAME = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
  * Each needs a reason — if you cannot write one, it belongs in engine/.
  */
 const ALLOWED_FUNCTIONS = {
+    _linkAthleteShadowCasters: 'links athlete/ski meshes into the shadow renderList in the reveal frame (NEXT item 1) — renderer',
     _lsGet:              'localStorage access — environment, not physics',
     _lsSet:              'localStorage access — environment, not physics',
     _lsRemove:           'localStorage access — environment, not physics',
@@ -39,6 +40,8 @@ const ALLOWED_FUNCTIONS = {
     _showAthleteFallback: 'legacy-solid fallback reveal on load failure — renderer',
     _hideAthleteVisuals:  'hide athlete visuals until body link — renderer',
     _revealSkiEquipment:  'same-frame reveal of skis/equipment on body link — renderer',
+    _ensureAthleteOverlay: 'loading overlay DOM (spinner + text) during the gated athlete load — renderer',
+    _removeAthleteOverlay: 'loading overlay removal in the reveal frame — renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
