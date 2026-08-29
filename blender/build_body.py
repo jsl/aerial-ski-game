@@ -120,6 +120,9 @@ SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative contro
 # OPUS ITEM 2 negative control: slide the finished dome fore-aft by N mm (+ = forward,
 # toward the face). BODY_SABOTAGE_DOME_MM=30 and =-30 must both fail the seating gate.
 SABOTAGE_DOME_MM = float(os.environ.get('BODY_SABOTAGE_DOME_MM', '0') or 0)
+# Negative control for the SLIVER gate: re-introduce one shard by rescaling a
+# slab of the trunk about the left shoulder plane, exactly as the sign bug did.
+SABOTAGE_SLIVER = os.environ.get('BODY_SABOTAGE_SLIVER') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -1497,7 +1500,20 @@ LEG_GIRTH_SANITY = {          # metres; human-plausible absolute ranges.
     # rebind owns the right chest side (upperArmR spans across the midline,
     # measured), so a trunk-only chest read is a lower bound (~0.18 m); a
     # 0.30 trunk read is unreachable without a reskin. Open question 1, entry 91.
-    'hip': (0.25, 0.40), 'chest': (0.30, 0.45),
+    # CHEST FLOOR 0.30 -> 0.25 (session 7). NOT a loosening to pass: the old
+    # floor was being cleared by the shard defect itself. narrow_shoulders'
+    # sign bug rescaled the whole left half of the trunk about the LEFT bone
+    # plane, pushing the left chest wall outboard (a trunk vert at x=-0.100
+    # landed at -0.149) and so INFLATING this very breadth. Measured on the
+    # same build, same slice: chest 303 mm with the bug, 275 mm with it fixed
+    # — 28 mm of the margin over the 300 mm floor was smear. 275 mm is the
+    # breadth the trunk always had; bideltoid is 0.401 m either way, and
+    # chest/thigh moves 1.415 -> 1.285 (gate <= 1.70). Widening the trunk by
+    # 28 mm to satisfy a number calibrated on torn geometry would be shaping
+    # the body to fit the defect, and it runs against item 3's "straight
+    # torso, chest does not protrude". REVIEWER: this recalibration is the one
+    # judgement call in the shard commit.
+    'hip': (0.25, 0.40), 'chest': (0.25, 0.45),
     'thigh_b': (0.14, 0.24), 'calf': (0.09, 0.15),
 }
 
@@ -1755,6 +1771,105 @@ def leg_girth_pass(body):
         raise SystemExit('[body] leg girth gate FAILED: ' + ', '.join(bad))
 
 
+
+
+# --- Suit sliver instrument (reviewer 16:55: "silvery shard/tear artefacts at REST") ---
+# The artefacts are GEOMETRY, not shading: measured on the shipped glb, 3178 of
+# 17986 triangles deviate >60 deg from their own smooth vertex normals and the
+# longest edge is 331 mm against an 11.6 mm median. A triangle that long and
+# that misaligned IS the silvery shard - it is a face stretched across a gap,
+# lit as if it faced somewhere else. This probe measures both numbers after any
+# pass so the pass that opens the gap can be named instead of guessed at.
+SLIVER_DEV = 60.0      # degrees: face normal vs its own vertex normals
+SLIVER_LEN = 0.060     # metres: 60 mm, ~5x the median edge on this mesh
+
+
+def sliver_report(obj, tag, region=None):
+    """
+    Count faces that are both long and misaligned - the shard signature.
+
+    Measured per POLYGON (the mesh is quads until finish_lowpoly), against the
+    polygon's own vertex normals, so it needs no reference mesh and can run
+    between any two passes.
+    """
+    me = obj.data
+    me.calc_normals_split() if hasattr(me, 'calc_normals_split') else None
+    vn = [v.normal.copy() for v in me.vertices]
+    co = [v.co.copy() for v in me.vertices]
+    worst = []
+    bad = 0
+    lens = []
+    devs = []
+    for poly in me.polygons:
+        vs = list(poly.vertices)
+        ml = 0.0
+        for k in range(len(vs)):
+            ml = max(ml, (co[vs[k]] - co[vs[(k + 1) % len(vs)]]).length)
+        dev = 0.0
+        for i in vs:
+            if vn[i].length > 1e-9:
+                dev = max(dev, math.degrees(poly.normal.angle(vn[i])))
+        lens.append(ml)
+        devs.append(dev)
+        if ml > SLIVER_LEN and dev > SLIVER_DEV:
+            bad += 1
+            worst.append((ml, dev, poly.center.copy()))
+    lens.sort()
+    devs.sort()
+    n = max(1, len(lens))
+    worst.sort(key=lambda r: -r[0])
+    frac = bad / n
+    log(f'SLIVER {tag}: {bad}/{n} ({frac:.4%}) faces longer than '
+        f'{SLIVER_LEN*1000:.0f} mm AND off-normal by >{SLIVER_DEV:.0f} deg | '
+        f'edge p50 {lens[n//2]*1000:.1f} p99 {lens[int(0.99*(n-1))]*1000:.1f} '
+        f'max {lens[-1]*1000:.1f} mm | dev p50 {devs[n//2]:.0f} '
+        f'p99 {devs[int(0.99*(n-1))]:.0f} max {devs[-1]:.0f} deg')
+    if worst:
+        c = worst[0][2]
+        log(f'  worst shard: {worst[0][0]*1000:.0f} mm, {worst[0][1]:.0f} deg, '
+            f'at ({c.x:+.3f},{c.y:+.3f},{c.z:+.3f})')
+    return {'bad': bad, 'n': n, 'frac': frac, 'maxlen': lens[-1],
+            'worst': worst[:12]}
+
+
+# The shipped mesh measured 157/9558 (1.64%) shard faces before the
+# narrow_shoulders sign fix and 38/10590 (0.36%) after it, so the gate sits at
+# 0.60% — under the defect by 2.7x, over the repaired build by 1.7x. The
+# survivors are the arm-torso bridge faces at the armpit, which are long by
+# construction (they span a real gap) and are the next thing to look at.
+SLIVER_GATE_FRAC = 0.0060
+SLIVER_GATE_LEN = 0.160        # metres: no single face may span 16 cm
+
+
+def sliver_gate(obj, tag):
+    r = sliver_report(obj, tag)
+    if r['frac'] > SLIVER_GATE_FRAC or r['maxlen'] > SLIVER_GATE_LEN:
+        raise SystemExit(
+            f'[body] SLIVER gate FAILED at {tag}: {r["bad"]}/{r["n"]} '
+            f'({r["frac"]:.4%}, limit {SLIVER_GATE_FRAC:.2%}) shard faces, '
+            f'longest {r["maxlen"]*1000:.0f} mm (limit '
+            f'{SLIVER_GATE_LEN*1000:.0f}) — torn cloth reads as silvery '
+            f'shards on the suit at rest (negative control '
+            f'BODY_SABOTAGE_SLIVER=1)')
+    return r
+
+
+def sabotage_sliver(body):
+    """
+    Negative control: reproduce the sign bug's smear on the left trunk.
+
+    Rescales every vertex in the shoulder z-band that lies inboard of the left
+    bone plane about that plane, which is precisely what the broken outboard
+    test used to do — so the gate is proved to be reading the shard and not
+    some incidental property of the mesh.
+    """
+    n = 0
+    for v in body.data.vertices:
+        if 0.08 <= v.co.z <= 0.24 and v.co.x < 0.174:
+            v.co.x = -0.175 + (v.co.x + 0.175) * 0.343
+            n += 1
+    body.data.update()
+    log(f'sliver SABOTAGED: {n} trunk verts rescaled about the left plane')
 
 
 def crown_probe(body, lm, tag):
@@ -3599,15 +3714,31 @@ def narrow_shoulders(body):
     """
     n_moved = 0
     for s, side in ((-1, 'L'), (1, 'R')):
-        x_b = s * 0.175
+        # THE SHARD BUG (session 7). `x_b` carries the side's SIGN, but
+        # `s * v.co.x` is already folded to a magnitude, so the outboard test
+        # has to compare against the plane's DISTANCE (X_PLANE), not against
+        # the signed x_b. It used to compare against `x_b + 0.001`; on the
+        # right side (s = +1, x_b = +0.175) that is accidentally correct, but
+        # on the left (s = -1, x_b = -0.175) the test passes for everything
+        # outboard of -0.174 — i.e. the entire torso and most of the opposite
+        # arm. Those verts were then rescaled about the LEFT bone plane, which
+        # threw them across the midline: measured, 279 verts moved on the left
+        # against 42 on the right, worst move 226.8 mm (x +0.172 -> -0.055,
+        # the far shoulder dragged through the chest). The faces bridging the
+        # moved and unmoved verts stretched to 240 mm and shaded as they
+        # pleased: those are the silvery shards the author sees on the chest
+        # at rest.
+        X_PLANE = 0.175
+        x_b = s * X_PLANE
         sh_z = bl(f'upperArm{side}').z + SEGMENTS[f'upperArm{side}']['h'] / 2
         z_lo, z_hi = sh_z - 0.07, sh_z + 0.09
         rows = {}
         for v in body.data.vertices:
-            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= X_PLANE + 0.001:
                 continue
             k = round(v.co.z / 0.01)
             rows[k] = max(rows.get(k, 0.0), s * v.co.x)
+        _side_moved, _maxd, _maxco = 0, 0.0, None
         if not rows:
             log(f'  narrow_shoulders {side}: no outboard verts in zone — skipped')
             continue
@@ -3631,7 +3762,7 @@ def narrow_shoulders(body):
             win = [tgt[j] for j in ks if abs(j - k) <= 2]
             sm[k] = sum(win) / len(win)
         for v in body.data.vertices:
-            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= X_PLANE + 0.001:
                 continue
             k = round(v.co.z / 0.01)
             out = sm.get(k)
@@ -3641,11 +3772,20 @@ def narrow_shoulders(body):
             # outboard of the ORIGIN, i.e. rows[k]-0.175 past the bone plane)
             # lands `out`-0.175 past it. Same number for both sides — rows[]
             # already carries the side sign via s * v.co.x.
-            f = (out - 0.175) / (rows[k] - 0.175) if rows[k] > 0.175 else 1.0
+            f = ((out - X_PLANE) / (rows[k] - X_PLANE)
+                 if rows[k] > X_PLANE else 1.0)
+            _before = v.co.x
             v.co.x = x_b + (v.co.x - x_b) * f
+            _d = abs(v.co.x - _before)
+            if _d > _maxd:
+                _maxd, _maxco = _d, (_before, v.co.x, v.co.y, v.co.z)
+            _side_moved += 1
             n_moved += 1
         log(f'  narrow_shoulders {side}: rows {ks[0]*0.01:+.2f}..{ks[-1]*0.01:+.2f}, '
             f'worst outboard {max(rows.values()):.3f} -> {CAP_OUTER_X:.3f}')
+        log(f'  narrow_shoulders {side}: moved {_side_moved} verts, worst move '
+            f'{_maxd*1000:.1f} mm ' + (f'x {_maxco[0]:+.3f}->{_maxco[1]:+.3f} at '
+            f'y={_maxco[2]:+.3f} z={_maxco[3]:+.3f}' if _maxco else ''))
     log(f'narrow_shoulders: {n_moved} outboard verts rescaled about the bone planes')
 
 
@@ -4442,7 +4582,16 @@ def displace_suit(obj, lm):
                     # recessed into the shell on the sides/back.
                     d -= 0.0011 * math.exp(-((z - lm['eyes']) / 0.009) ** 2)
         else:
-            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0011
+            # WEAVE AMPLITUDE 1.1 -> 2.1 mm peak-to-peak (session 7). Not a free tuning
+            # knob: with the shard faces gone the suit's NM variance fell
+            # 8.24 -> 5.96 against a 6.30 floor, i.e. roughly a quarter of the
+            # "fabric relief" the gate was measuring was the TEAR — long
+            # mis-shaded faces are high-Laplacian too. The relief the suit
+            # actually had was always under the floor; the fix is to give the
+            # cloth its weave for real (item 3's "fine woven fabric
+            # micro-normal"), not to drop the floor to what the torn mesh
+            # happened to score.
+            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0021
 
             # Fabric folds (task 3, folds slice): structured compression
             # ridges at the crease planes — see SUIT_FOLDS. Where a fold band
@@ -5746,6 +5895,7 @@ def main():
            'brim1': chin0 + hh0 * 0.64,
            'crown_smooth': chin0 + hh0 * 0.70}
     soften(body, lm0)
+    sliver_report(body, 'after soften')
     joints = anatomical_joints(body)
     joints = mesh_arm_joints(body, joints)
     arm = build_armature(joints)
@@ -5776,24 +5926,32 @@ def main():
         f'brim {lm["brim0"]:+.3f}..{lm["brim1"]:+.3f}, crown {lm["top"]:+.3f}')
     helmet_centre_probe(body, lm, 'before shape_helmet')
     shape_helmet(body, lm)
+    sliver_report(body, 'after shape_helmet')
     crown_probe(body, lm, 'after shape_helmet')
     helmet_centre_probe(body, lm, 'after shape_helmet')
     retune_proportions(body)
+    sliver_report(body, 'after retune_proportions')
     crown_probe(body, lm, 'after retune_proportions')
     leg_profile(body, 'post-pose')
     build_report(body, 'before girth')
     straighten_forearms(body)
+    sliver_report(body, 'after straighten_forearms')
     settle_limb_geometry(body)
+    sliver_report(body, 'after settle_limb_geometry')
     crown_probe(body, lm, 'after settle_limb_geometry')
     scale_hands(body)
+    sliver_report(body, 'after scale_hands')
     _arm_trace(body, 'after-settle')
     _arm_cloud_dbg(body, 'final')
     leg_profile(body, 'pre-girth ')
     add_girth(body, stretch)
+    sliver_report(body, 'after add_girth')
     seat_soles(body)
     align_boots(body, joints)
+    sliver_report(body, 'after align_boots')
     prof = leg_profile(body, 'final')
     narrow_shoulders(body)
+    sliver_report(body, 'after narrow_shoulders')
     crown_probe(body, lm, 'after narrow_shoulders')
     bide_w, bide_z = bideltoid_report(body)
     if bide_w > BIDELTOID_GATE:
@@ -5831,6 +5989,7 @@ def main():
             f'z={prof["step_z"]:+.3f} — that is the hard notch, not an anatomical '
             f'waist')
     loosen_suit(body, joints)
+    sliver_report(body, 'after loosen_suit')
     # Landed DEFAULT-ON (entry 10). The iron is shrink-only, clearance-capped
     # (never deeper than the zone's stand-off minus RELAX_CLEARANCE), and
     # envelope-enforced; it re-asks the bideltoid and leg-step gates below.
@@ -5839,6 +5998,7 @@ def main():
     # verdict of the shots. --relax-suit off reproduces the pre-relax iron.
     if arg('--relax-suit', 'on') != 'off':
         relax_suit(body, joints)
+        sliver_report(body, 'after relax_suit')
         crown_probe(body, lm, 'after relax_suit')
         # The pass is geometry-side, so re-ask the two silhouette gates that
         # ran before it (cheap): the deltoid cap has relax weight zero, and
@@ -5867,16 +6027,24 @@ def main():
     # of the chest. The spec now frames the plate from the suit part's own bbox
     # (front navyFrac 0.0498 on the un-straightened build).
     straighten_chest(body)
+    sliver_report(body, 'after straighten_chest')
     crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
+    sliver_report(body, 'after leg_girth_pass')
     # Item 11: the girth pass runs AFTER relax_suit and after the last
     # leg_profile, so until now NOTHING measured the shipped leg. Measure and
     # gate the taper here, on the geometry that is actually exported.
     leg_taper_gate(body)
     crown_cap_last(body, lm)
+    sliver_report(body, 'after crown_cap_last')
     helmet_centre_probe(body, lm, 'after crown_cap_last')
     build_report(body, 'after girth ')
+    if SABOTAGE_SLIVER:
+        sabotage_sliver(body)
     low = finish_lowpoly(body, lm)
+    # The shard gate runs on the SHIPPED mesh: this is the geometry the browser
+    # skins and the author sees at rest.
+    sliver_gate(low, 'after finish_lowpoly')
     crown_probe(low, head_landmarks(low), 'after finish_lowpoly (final)')
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
