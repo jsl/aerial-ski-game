@@ -6215,6 +6215,68 @@ void main(void) {
     // Persistent lerped state for smooth landing transition
     let _fpPos = null, _fpFwd = null, _fpUp = null;
 
+    // ── P10 free-look camera ──────────────────────────────────────────────────
+    // In the ready state, once a run has stopped, after the crash ragdoll has
+    // settled, and during replay playback, the player may orbit the scene:
+    // mouse/touch drag (attachControl, always live) + wheel zoom + WASD nudge
+    // (layout-aware: the key that TYPES the letter, per the hotkey convention).
+    // While free-look is active the per-frame follow block stands down so the
+    // view stays where the user put it; it resumes on the next run.
+    let _freeLookActive = false;
+    let _freeLookHintT  = null;   // performance.now() when first shown; hint fades
+    function _freeLookAllowed() {
+        const _rested = state.crashed && window._ragdollProbe
+            && window._ragdollProbe() && window._ragdollProbe().resting;
+        return (readyState && readyTurnT === 0.0) || state.stopped
+            || (state.crashed && (!crashActive || _rested)) || replayActive;
+    }
+    // Terrain clamp: the eye never dips below 1 m over the snow under it
+    // (plan P10 "never see under the terrain"). Applied every frame on the
+    // orbit camera; on the steep pitch it clamps beta (camera up) rather than
+    // fighting the orbit target.
+    function _clampCameraAboveTerrain() {
+        try {
+            if (!camera || camera.mode !== BABYLON.Camera.PERSPECTIVE_CAMERA) return;
+            const cp = camera.position;
+            if (!cp || !isFinite(cp.z)) return;
+            const minY = terrainRootY(cp.z) - FOOT_OFFSET + 1.0;
+            if (cp.y >= minY) return;
+            const r  = camera.radius || 10;
+            const ty = camera.target ? camera.target.y : 0;
+            // Highest possible eye is target.y + r·cos(beta); raise the target
+            // first if even the top of the orbit sphere is under the clamp.
+            if (minY > ty + r * Math.cos(0.05) && camera.target) {
+                camera.target.y = minY - r * Math.cos(0.05);
+            }
+            const t2 = camera.target ? camera.target.y : ty;
+            const c  = Math.max(-1, Math.min(1, (minY - t2) / r));
+            // cos(beta) decreasing → cap beta at the value that clears minY.
+            camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
+        } catch (e) { /* a clamp miss must never cost a frame */ }
+    }
+    window._freeLookProbe = function () {
+        try {
+            const cp = camera.position;
+            return {
+                active: _freeLookActive,
+                alpha: camera.alpha, beta: camera.beta, radius: camera.radius,
+                gap: cp.y - (terrainRootY(cp.z) - FOOT_OFFSET),
+            };
+        } catch (e) { return null; }
+    };
+    // Test hook: the orbit camera itself (specs drive beta/radius to extremes).
+    window._freeLookCam = function () { return camera; };
+    // Layout-aware WASD nudge (only while free-look is active). Game keys
+    // (arrows, space) are untouched, so launching a run while orbiting works.
+    window.addEventListener('keydown', e => {
+        if (!_freeLookActive) return;
+        const step = e.shiftKey ? 0.04 : 0.12;
+        if (_keyIsLetter(e, 'a'))      camera.alpha -= step;
+        else if (_keyIsLetter(e, 'd')) camera.alpha += step;
+        else if (_keyIsLetter(e, 'w')) camera.radius = Math.max(camera.lowerRadiusLimit, camera.radius * 0.94);
+        else if (_keyIsLetter(e, 's')) camera.radius = Math.min(camera.upperRadiusLimit, camera.radius / 0.94);
+    });
+
 
     // ── Input ─────────────────────────────────────────────────────────────────
     // SPACE        — tuck while held, open on release
@@ -8263,6 +8325,23 @@ void main(void) {
         if (firstPersonMode) _updateFpCamera(dt);
 
         // ── Camera follow — track character position; free mouse; C lerps smoothly ──
+        // P10 free-look: while active, the follow block stands down entirely so
+        // the user's orbit/zoom/pan stays put; it resumes when the next run starts.
+        const _flAllowed = _freeLookAllowed();
+        if (_flAllowed !== _freeLookActive) {
+            _freeLookActive = _flAllowed;
+            if (_flAllowed) {
+                if (_freeLookHintT === null) _freeLookHintT = performance.now();
+                camera.lowerRadiusLimit = 3;    // wheel zoom opens up
+                camera.upperRadiusLimit = 80;
+            } else {
+                camera.lowerRadiusLimit = 10;   // back to the locked follow distance
+                camera.upperRadiusLimit = 10;
+                camera.radius = 10;
+            }
+        }
+        _clampCameraAboveTerrain();
+        if (!_freeLookActive) {
         if (crashActive && ragdoll) {
             // Camera eases to the tumbling body, then rests on it (P11): lerp
             // the follow target toward the ragdoll torso instead of the frozen
@@ -8292,6 +8371,7 @@ void main(void) {
                 // Slight raise on landing
                 camera.beta += (CAM_BETA_LAND - camera.beta) * Math.min(1, 2.5 * dt);
             }
+        }
         }
 
         // ── Pool water wave animation ──────────────────────────────────────
@@ -8324,14 +8404,17 @@ void main(void) {
         // ── HUD ───────────────────────────────────────────────────────────
         hud.text = '';
         const _fpHint = firstPersonMode ? '\nV: third person' : '\nV: first person';
+        const _flHint = (_freeLookHintT !== null && performance.now() - _freeLookHintT < 5000)
+            ? '\ndrag to look around · wheel or W/S zoom · A/D pan' : '';
+        if (_freeLookHintT !== null && performance.now() - _freeLookHintT >= 5000) _freeLookHintT = 0;
         if (_poolDiveMode) {
             hint.text = readyState
-                ? '↓: charge power\n↑: dive\ndrag: orbit' + _fpHint
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit' + _fpHint;
+                ? '↓: charge power\n↑: dive\ndrag: orbit' + _fpHint + _flHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit' + _fpHint + _flHint;
         } else {
             hint.text = readyState && readyTurnT === 0.0
-                ? '↑: Start run\ndrag: orbit' + _fpHint
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit' + _fpHint;
+                ? '↑: Start run\ndrag: orbit' + _fpHint + _flHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit' + _fpHint + _flHint;
         }
     } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
 
