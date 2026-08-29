@@ -124,6 +124,31 @@ async function plateView(page, name, alpha, sideSign) {
     const navyFrac = navy / n, blueFrac = blue / n;
     console.log(`BIB ${name}: box=[${X0},${Y0} ${bw}x${bh}] n=${n} ` +
         `navyFrac=${navyFrac.toFixed(4)} blueFrac=${blueFrac.toFixed(4)}`);
+    // Ship the measured box as a picture. These bands were originally
+    // calibrated against a render in which the athlete was out of focus (the
+    // depth of field was pinned at 10 m and never tracked the subject), so
+    // "what the box actually contains" is exactly the thing that was never
+    // checked by eye.
+    {
+        const marked = await page.evaluate(async (a) => {
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + a.b64;
+            await img.decode();
+            const cv = document.createElement('canvas');
+            cv.width = img.width; cv.height = img.height;
+            const ctx = cv.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            ctx.strokeStyle = '#ff2020';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(a.X0, a.Y0, a.bw, a.bh);
+            return cv.toDataURL('image/png');
+        }, { b64: (await page.screenshot()).toString('base64'), X0, Y0, bw, bh });
+        const fs = require('node:fs');
+        const dir = require('node:path').resolve(__dirname, '..', '..', 'shots');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(require('node:path').join(dir, `bib_${name}.png`),
+            Buffer.from(marked.split(',')[1], 'base64'));
+    }
     return { navyFrac, blueFrac };
 }
 

@@ -1,25 +1,25 @@
 {
- "normal": "assets/athlete_normal.png",
- "ao": "assets/athlete_ao.png",
- "albedo": "assets/athlete_albedo.png",
+ "normal": "assets/athlete_normal.webp",
+ "ao": "assets/athlete_ao.webp",
+ "albedo": "assets/athlete_albedo.webp",
  "res": 2048,
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6432,
-   "belowHalf": 0.0109,
+   "mean": 0.6476,
+   "belowHalf": 0.0097,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8654,
-   "belowHalf": 0.1158,
+   "mean": 0.8662,
+   "belowHalf": 0.1149,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8555,
-   "belowHalf": 0.0598,
+   "mean": 0.8094,
+   "belowHalf": 0.1314,
    "srgb": true
   },
   "face": {
@@ -37,6 +37,33 @@
    0.0,
    -1.0
   ]
+ },
+ "delivery": {
+  "athlete_albedo": {
+   "mean_abs": 0.0034,
+   "p99_abs": 0.0235,
+   "png": 1064490,
+   "ratio": 3.3,
+   "res": 2048,
+   "web": 322938
+  },
+  "athlete_ao": {
+   "mean_abs": 0.014,
+   "p99_abs": 0.2078,
+   "png": 2419131,
+   "ratio": 14.82,
+   "res": 1024,
+   "web": 163216
+  },
+  "athlete_normal": {
+   "mean_deg": 1.543,
+   "p95_deg": 4.858,
+   "png": 4778571,
+   "ratio": 7.59,
+   "res": 2048,
+   "web": 629864
+  },
+  "total_web": 1116018
  },
  "faceForward": [
   -0.0043,

@@ -1083,12 +1083,29 @@ HEAD_SCALE = 0.84
 # 2.2%, which is 133 faces for a whole head and visibly faceted. These two numbers
 # land the head near 12% and the hands near 5%, leaving the suit ~83%.
 #
-# UV_SHRINK scales the head and hands during the unwrap only, so they claim
+# UV_SHRINK scales the HANDS during the unwrap only, so they claim
 # UV_SHRINK^2 — about a third — of the atlas area they otherwise would.
+#
+# HEAD_GROW is the opposite lever, and it exists because of the author's
+# "everything on the athlete is blurry" (Opus brief item 4). The measured
+# atlas split before this constant was head 1.7% + face 3.2% = 4.9% of a 2048
+# map — roughly a 270 px patch for the whole helmet shell and a 370 px patch
+# for the face, sampled by a canonical close-up that puts the head across
+# ~40% of a 720 px frame. The head was texel-starved by construction: it is
+# the smallest part of the body by area and it was ALSO being shrunk.
+#
+# The head and the face grow TOGETHER about one shared pivot so the shell and
+# the skin stay one coherent piece across the seam. Island area scales as the
+# square, so the share solves as (H*g^2)/(H*g^2 + rest) where H is the head's
+# world-area share. Measured on this mesh: g = 2.05 gave 21.1%, g = 2.50
+# gives 28.3%. Gate: >= 25% (HEAD_ATLAS_MIN).
 GIRTH = 1.00
 REDUCE_W = 0.60
 BODY_KEEP = 0.30
 UV_SHRINK = 0.55
+HEAD_GROW = float(arg('--head-grow', '2.50'))
+# Hard gate on the result, asserted after the unwrap measures it.
+HEAD_ATLAS_MIN = 0.25
 
 
 def retune_proportions(body):
@@ -4511,30 +4528,34 @@ def finish_lowpoly(body, lm):
     # whatever was there, which rendered as dark blotches scattered over the suit.
     # Decimation has already discarded the artist topology those seams were placed
     # for, so there is little left to preserve.
-    # Shrink the head and hands in 3D for the duration of the projection only.
-    # smart_project sizes each island from the world area of the faces it covers,
-    # so this is the lever that decides how many texels a region gets. Scaling by
-    # UV_SHRINK claims UV_SHRINK^2 of the area it otherwise would.
+    # Rescale the head and the hands in 3D for the duration of the projection
+    # only. smart_project sizes each island from the world area of the faces it
+    # covers, so this is the lever that decides how many texels a region gets:
+    # scaling by s claims s^2 of the area it otherwise would.
     saved = [v.co.copy() for v in body.data.vertices]
     own2 = dominant_segments(body)
-    pivots, groups = {}, {'head': [], 'hand': []}
+    # 'skull' is head shell + face scaled together about ONE pivot (HEAD_GROW,
+    # > 1: the head is the part the camera gets closest to and it was the most
+    # texel-starved part of the atlas). 'hand' still shrinks (UV_SHRINK): a
+    # gloved hand carries no detail worth texels.
+    groups = {'skull': [], 'hand': []}
+    scales = {'skull': HEAD_GROW, 'hand': UV_SHRINK}
     for i, v in enumerate(body.data.vertices):
         r = region_of(v.co, own2[i], lm)
-        # The FACE keeps full size — it carries eyes/nose/mouth texels now.
-        # The shell and hands still claim less of the atlas than their world
-        # area would (UV_SHRINK^2).
-        if r in ('head', 'hand'):
-            groups[r].append(i)
+        if r in ('head', 'face'):
+            groups['skull'].append(i)
+        elif r == 'hand':
+            groups['hand'].append(i)
     for r, idxs in groups.items():
         if not idxs:
             continue
         p = Vector((0, 0, 0))
         for i in idxs:
             p = p + body.data.vertices[i].co
-        pivots[r] = p / len(idxs)
+        p = p / len(idxs)
         for i in idxs:
             v = body.data.vertices[i]
-            v.co = pivots[r] + (v.co - pivots[r]) * UV_SHRINK
+            v.co = p + (v.co - p) * scales[r]
 
     bpy.context.scene.tool_settings.use_uv_select_sync = True
     bpy.ops.object.mode_set(mode='EDIT')
@@ -4568,9 +4589,21 @@ def finish_lowpoly(body, lm):
             c = c + vs[vi].co
         area[region_of(c / len(poly.vertices), None, lm)] += abs(a) * 0.5
     total = max(1e-9, sum(area.values()))
-    log(f'unwrap weighted (head/hands x{UV_SHRINK:.2f}, face full): atlas share — '
-        f'head {area["head"] / total:.1%}, face {area["face"] / total:.1%}, '
-        f'hand {area["hand"] / total:.1%}, suit {area["body"] / total:.1%}')
+    head_share = (area['head'] + area['face']) / total
+    log(f'unwrap weighted (skull x{HEAD_GROW:.2f}, hands x{UV_SHRINK:.2f}): '
+        f'atlas share — head {area["head"] / total:.1%}, '
+        f'face {area["face"] / total:.1%}, hand {area["hand"] / total:.1%}, '
+        f'suit {area["body"] / total:.1%}  (head+face {head_share:.1%})')
+    # GATE (Opus brief item 4 — "everything on the athlete is blurry"). The
+    # head is what the canonical close-up frames; at 4.9% of a 2048 atlas it
+    # had fewer texels than the shot has pixels. Negative control:
+    # --head-grow 0.55 reproduces the old layout and must fail here.
+    if head_share < HEAD_ATLAS_MIN:
+        raise SystemExit(
+            f'[body] head+face hold only {head_share:.1%} of the atlas '
+            f'(gate {HEAD_ATLAS_MIN:.0%}) — the head is texel-starved and '
+            f'renders blurry at the canonical face distance. Raise HEAD_GROW '
+            f'(currently {HEAD_GROW:.2f}).')
 
     uvs = body.data.uv_layers.active.data
     us = [d.uv[0] for d in uvs]
@@ -4795,6 +4828,39 @@ def bake_maps(low, high, out_dir):
     stats['albedo'] = run('DIFFUSE', 'athlete_albedo', srgb=True,
                           fill=(SUIT[0], SUIT[1], SUIT[2], 1.0), setup=albedo_only)
     return stats
+
+
+def pack_delivery_maps(out_dir):
+    """
+    Re-encode the baked PNGs for the wire (blender/pack_maps.py), in a
+    SEPARATE process.
+
+    Blender ships its own Python and that Python has no PIL, so the encoder
+    cannot be imported here — it is shelled out to the system interpreter. If
+    there is no usable python3+PIL on the box the build FAILS rather than
+    silently shipping 8 MB of PNG: a quiet fallback here is exactly how the
+    athlete ended up arriving after its own skis.
+    """
+    import shutil
+    import subprocess
+    py = shutil.which('python3') or shutil.which('python')
+    if not py:
+        raise SystemExit('[body] no system python3 on PATH — cannot encode the '
+                         'delivery maps (blender/pack_maps.py needs PIL)')
+    script = os.path.join(HERE, 'pack_maps.py')
+    cmd = [py, script, out_dir]
+    if arg('--keep-png', 'off') != 'off':
+        cmd.append('--keep-png')
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    sys.stdout.write(r.stdout)
+    sys.stderr.write(r.stderr)
+    if r.returncode != 0:
+        raise SystemExit(f'[body] delivery map encode FAILED (exit '
+                         f'{r.returncode}) — see pack_maps output above')
+    for line in r.stdout.splitlines():
+        if line.startswith('[pack_maps] {'):
+            return json.loads(line[len('[pack_maps] '):])
+    raise SystemExit('[body] pack_maps.py printed no stats line')
 
 
 def add_equipment():
@@ -5270,6 +5336,15 @@ def main():
             f'(paint azimuth or bake transfer)')
     suit_nm_variance_gate(low, out_dir)
 
+    # Every build gate above has now measured the LOSSLESS bake. Only after
+    # that does the delivery encoder run: it rewrites the three PNGs as WebP
+    # (albedo/normal at 2048, AO at 1024), gates its own encode error and the
+    # 2.5 MB wire budget, and deletes the PNGs. See blender/pack_maps.py for
+    # the format choices and the measured numbers behind them; the athlete's
+    # texture payload goes 8.1 MB -> ~1.0 MB, which is the author's "the skis
+    # appear before the skier".
+    packed = pack_delivery_maps(out_dir)
+
     # The high-poly has done its job. Leaving it in would export a second body.
     bpy.data.objects.remove(high, do_unlink=True)
 
@@ -5277,10 +5352,11 @@ def main():
 
     with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
         json.dump({
-            'normal': 'assets/athlete_normal.png',
-            'ao': 'assets/athlete_ao.png',
-            'albedo': 'assets/athlete_albedo.png',
-            'res': RES, 'stats': stats, 'faceForward': face['faceForward'],
+            'normal': 'assets/athlete_normal.webp',
+            'ao': 'assets/athlete_ao.webp',
+            'albedo': 'assets/athlete_albedo.webp',
+            'res': RES, 'stats': stats, 'delivery': packed,
+            'faceForward': face['faceForward'],
         }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)

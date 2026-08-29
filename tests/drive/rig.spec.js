@@ -1194,7 +1194,7 @@ test('fabric folds read at the creases (suit normal-map variance)', async ({ pag
             }
         }
         // metric = mean |Laplacian| of the normal map's R channel, masked
-        const blob = await (await fetch('/assets/athlete_normal.png')).blob();
+        const blob = await (await fetch('/assets/athlete_normal.webp')).blob();
         const bmp = await createImageBitmap(blob);
         const cv = document.createElement('canvas');
         cv.width = bmp.width; cv.height = bmp.height;
@@ -1326,4 +1326,98 @@ test('styled skis: shaped geometry replaces the slats, boot line carries a bindi
         expect(m.toeZ, `${side} toe piece is not forward of the heel`)
             .toBeLessThan(m.heelZ);
     }
+});
+
+test('the athlete arrives inside its load budget (bytes on the wire, and sharp)', async ({ page }) => {
+    // Opus brief item 4, the author's two symptoms in one test:
+    //   "the skis appear before the skier"  -> the athlete's four files were
+    //      9.1 MB, of which 8.26 MB was lossless PNG for maps that a WebP
+    //      encoder carries in 1.12 MB (blender/pack_maps.py gates the encode
+    //      error). Anything that quietly reinstates a PNG map, or drops a
+    //      <link rel=preload>, puts the figure back behind the equipment.
+    //   "everything on the athlete is blurry" -> the delivered maps must be
+    //      sampled with real anisotropy, not Babylon's default 4.
+    //
+    // Measured from the NETWORK, not from the filesystem, so it sees what the
+    // browser actually paid: a stale cache-busting ?v= that makes the preload
+    // and the loader fetch different URLs shows up here as a doubled total.
+    const seen = new Map();
+    page.on('response', (res) => {
+        const u = res.url();
+        if (!/\/assets\/athlete_/.test(u)) return;
+        const n = u.replace(/^.*\/assets\//, '').replace(/\?.*$/, '');
+        res.body().then(b => {
+            seen.set(n, Math.max(seen.get(n) || 0, b.length));
+        }).catch(() => {});
+    });
+    await boot(page);
+
+    const wire = {};
+    let total = 0;
+    for (const [n, b] of seen) { wire[n] = b; total += b; }
+    console.log('ATHLETE WIRE ' + JSON.stringify({ wire, total }));
+
+    // No PNG map may reach the browser: the bake writes PNG, the build
+    // deletes it, and only WebP ships.
+    for (const n of Object.keys(wire)) {
+        expect(/^athlete_(albedo|normal|ao)\.png$/.test(n),
+            `${n} is still being served as PNG — blender/pack_maps.py should ` +
+            `have replaced it with WebP (${JSON.stringify(wire)})`).toBe(false);
+    }
+    // All three maps must actually have been fetched — a test that measures
+    // "0 bytes because nothing loaded" would pass a budget trivially.
+    for (const n of ['athlete_albedo.webp', 'athlete_normal.webp',
+        'athlete_ao.webp', 'athlete_body.glb']) {
+        expect(wire[n], `${n} never reached the browser ` +
+            `(${JSON.stringify(wire)})`).toBeGreaterThan(1000);
+    }
+    const maps = wire['athlete_albedo.webp'] + wire['athlete_normal.webp']
+        + wire['athlete_ao.webp'];
+    // Budget from the brief: <= 2.5 MB of maps. Measured 1.12 MB.
+    expect(maps, `athlete maps are ${(maps / 1e6).toFixed(2)} MB on the wire ` +
+        `(budget 2.50 MB) — ${JSON.stringify(wire)}`).toBeLessThan(2_500_000);
+    expect(total, `the whole athlete is ${(total / 1e6).toFixed(2)} MB ` +
+        `(budget 3.00 MB) — ${JSON.stringify(wire)}`).toBeLessThan(3_000_000);
+
+    const s = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const caps = scene.getEngine().getCaps();
+        const parts = scene.meshes.filter(m => m.name
+            && m.name.startsWith('athleteBody') && m.material);
+        const out = [];
+        for (const p of parts) {
+            for (const k of ['albedoTexture', 'bumpTexture', 'ambientTexture']) {
+                const t = p.material[k];
+                if (!t) continue;
+                out.push({
+                    part: p.name, slot: k,
+                    url: (t.name || t.url || '')
+                        .replace(/^.*\//, '').replace(/\?.*$/, ''),
+                    aniso: t.anisotropicFilteringLevel,
+                    mips: !t.noMipmap,
+                    w: t.getSize ? t.getSize().width : 0,
+                });
+            }
+        }
+        return { max: caps.maxAnisotropy, tex: out,
+                 visibleAt: window._bodyVisibleAt || 0 };
+    });
+    console.log('ATHLETE SAMPLING ' + JSON.stringify(s));
+
+    expect(s.tex.length, 'no textured athlete material found').toBeGreaterThan(2);
+    for (const t of s.tex) {
+        expect(t.mips, `${t.slot} on ${t.part} has no mipmaps — minification ` +
+            `will alias instead of filter`).toBe(true);
+        // The blur fix: ask for the driver's real cap, and accept nothing
+        // below 8. Reverting game.js to the default (4) fails here.
+        expect(t.aniso, `${t.slot} on ${t.part} samples at anisotropy ` +
+            `${t.aniso} (engine max ${s.max}); the athlete is a glancing-angle ` +
+            `surface everywhere and reads blurry below 8`)
+            .toBeGreaterThanOrEqual(Math.min(8, s.max));
+        expect(/\.webp$/.test(t.url), `${t.slot} on ${t.part} is bound to ` +
+            `${t.url}, not a WebP delivery map`).toBe(true);
+    }
+    // The instrument the notes report; also proves the reveal ran once.
+    expect(s.visibleAt, 'window._bodyVisibleAt was never stamped — the body ' +
+        'reveal path did not run').toBeGreaterThan(0);
 });

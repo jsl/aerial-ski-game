@@ -23,7 +23,7 @@ Read `docs/REFERENCE-FOOTAGE.md`, `docs/FABLE-REVIEW-80.md`, `docs/ANALYSIS-rend
 requirement). Footage (local only, gitignored): `reference/frames/<clip>/*.jpg`; the athlete in
 `IMG_3523`/`IMG_3520` wears a **white suit with a royal-blue panel/stripe, dark helmet, bib**. Zoom into
 the frames (crop with PIL) for helmet/goggle/face/suit-fit detail before you model anything.
-Blender: `/opt/blender-5.2.1-linux-x64/blender -b -P blender/build_body.py` (see `blender/README*` and the
+Blender: `~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup --python blender/build_body.py -- --out assets/athlete_body.glb --res 2048 --samples 96` (see `blender/README*` and the
 Makefile targets; the build has its own gates that must keep passing).
 
 ## Review findings (Fable, from `shots/face.png`, `figure_front.png`, `figure_side.png`, `pose_tuck_side.png`, head `b5d51b9`) and the fix each needs
@@ -36,13 +36,24 @@ Makefile targets; the build has its own gates that must keep passing).
    subtle blue/orange mirror tint, strap continuing round the helmet. Gate (`rig.spec.js` or the build
    gate): lens band vertical extent within 0.55–0.68 h **measured inside the head silhouette mask**;
    negative control: shifting the band down by 0.08 h must fail.
-2. **Helmet reads as a beret / skull-cap with the forehead exposed** (`face.png`, `figure_side.png`).
+2. **Helmet reads as a beret / skull-cap with the forehead exposed — and the author's 8203 check (HUMAN TESTING #6) says it now sits too FORWARD.** Centre the dome on the skull: front rim ~1.5 cm above the brow (no lower), crown apex above the ear line's midpoint, back rim at the nape. Gate: dome centroid within ±1 cm of the head centroid along the face axis; negative controls ±3 cm fore/aft fail. (`face.png`, `figure_side.png`).
    Required: a dome centred on the skull top, shell coming down to ~1.5 cm above the brow in front, over the
    ears at the sides, to the nape at the back, with a visible thickness at the rim (2–3 mm lip), a chin
    strap, and 2–4 small vents; no "hood" skirt hanging down the back. Colour: dark (near-black or navy)
    glossy shell. Keep `crown_cap_last` as the last geometry pass (an earlier fix was undone by
    `retune_proportions`).
-3. **The suit is a onesie.** It is a flat white skin with blue leg stripes and the number painted straight
+3. **The suit is a onesie.** **Primary design reference (author-supplied, 2026-08-29): `reference/images/aerial_suit.png`
+   (a 1206×2622 still of a real aerialist standing on the flat, arms overhead) and every frame of
+   `reference/frames/IMG_3770/f_001..f_099.jpg` (1920×1080, 30 fps, 3.3 s) — crop and zoom them before modelling.**
+   What that suit actually is: a **light-grey / off-white** (not pure white) relaxed-fit one-piece with a **single
+   royal-blue stripe ~5 cm wide down the OUTSIDE seam of each arm (shoulder → cuff) and each leg (hip → ankle)**,
+   nothing else on the body panels; straight-cut trouser legs with soft folds at the knee and bunching at the
+   ankle over dark ski boots; fitted-but-not-tight sleeves; a small dark logo on the left thigh; a dark fly
+   seam. Over it a **separate loose bib** — light-blue yoke over the shoulders, white middle carrying the number,
+   a magenta/pink band with a sponsor mark at the waist; it hangs 1–2 cm off the suit. At the neck a
+   **multicoloured neck gaiter** filling the gap between collar and helmet. Helmet dark grey/black dome, goggles
+   with a **mirrored blue lens** sitting right under the helmet rim. Use this design; treat the older footage
+   descriptions only as secondary. It is a flat white skin with blue leg stripes and the number painted straight
    on the chest. A real aerials suit (see footage): **two-tone panel design** — white base, royal-blue side
    panels from armpit to ankle and a contrasting shoulder yoke; a **centre-front zip line** (dark seam, neck
    to hip); a **stand-up collar** (~3 cm); **sleeve and ankle cuffs** (slightly darker, elastic ribbing);
@@ -62,7 +73,7 @@ Makefile targets; the build has its own gates that must keep passing).
    WebP; normal → WebP lossless or 1024 PNG; update the loader (`map('assets/athlete_*')`), `ASSET_V`, the
    `index.html ?v=` and report byte totals + first-body-visible time (`window._bodyLinked` timestamp) in
    `docs/OPUS-NOTES.md`. Add `<link rel="preload">` for the GLB and maps in `index.html`.
-5. **Tuck deformation is wrong** (`pose_tuck_side.png`): the torso smears into a single curved shell, the
+5. **Tuck deformation is wrong** (re-confirmed by the author on 8203, HUMAN TESTING #6: "tuck position still very poor - back separating as discussed before" — treat this as a top-priority item right after 1/2) (`pose_tuck_side.png`): the torso smears into a single curved shell, the
    back "separates", the arms vanish. The spine must bend across ≥ 3 spine bones with weights that
    preserve volume (Babylon is linear-blend; add corrective spread of weights across the chain rather than a
    hard 50/50 at one joint), the suit must follow the back with folds, the arms must stay visible in the
@@ -79,8 +90,22 @@ Makefile targets; the build has its own gates that must keep passing).
 9. **Face**: nose, mouth and chin must be discernible at the canonical face distance (compare with a zoomed
    footage crop); skin tone natural; the red line at the neck in `face.png` is the collar seam — make it
    the suit collar (item 3), not a red stripe.
-10. Neutral stance stays perpendicular to the skis (≤ 10° flex); boot–ski invariant, binding-touches-boot,
+11. **Calves look huge** (author, HUMAN TESTING #6 on 8203). The leg-girth pass over-inflated the lower leg. Real proportions: calf circumference ≈ 0.70–0.75 × thigh circumference at mid-segment, ankle ≈ 0.55 × calf; the boot cuff must be wider than the calf above it so the leg tapers INTO the boot, not out of it. Gate on the skinned mesh in the ready stance with those ratios; negative control ×1.25 calf fails.
+10. **Neutral stance: standing straight up, perpendicular to the skis.** Author (HUMAN TESTING #5, 09:45): "skier's hips still a little more forward. should be perpendicular (standing up straight) from skis." In `figure_side.png` the pelvis leads the ankles. Gate (ready state, side view along the ski axis): hip centre within 3 cm of the ankle centre along the ski direction; ankle–hip–shoulder line within 5° of the ski-surface normal; knees ≤ 10° flex; negative control: pushing the pelvis 6 cm forward must fail. boot–ski invariant, binding-touches-boot,
     skis eject only on crash — none of these may regress (their gates are in `rig.spec.js`/`drive` specs).
+
+## Reviewer arbitrations (read at every session start)
+- **APPROVED (Fable, 2026-08-29 10:40): the depth-of-field fix stays in your lane.** The `DefaultRenderingPipeline`
+  DoF block in `game.js` is yours until merge; GLM has been told not to touch it. A distance-driven `fStop` is the
+  right shape. Record the before/after numbers in the notes.
+- **Bib gate:** do not loosen blind — but if the marked-box shot shows the back bib really is a dark slab with a
+  legible "30", recalibrate the band against the SHARP render and write the old/new numbers and the shot name.
+- **Keep your branch current with the integration branch:** at the start of each session, once the tree is clean
+  (committed), run `git merge --no-edit render-realism-glm`; resolve conflicts keeping both sides' intent (GLM's
+  scene work, your athlete work), rerun the gates, commit the merge. The author views your worktree on :8203 and
+  must see the scene fixes (red kicker paint, 3D ridges, reveal gate) there too.
+- Commit as soon as the suite is green — never end a session with uncommitted work if it can be avoided; a
+  partial but green item is better committed than carried.
 
 ## Ground rules
 - Commit after **each** completed item (never carry more than one uncommitted) with the trailer

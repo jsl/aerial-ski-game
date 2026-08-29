@@ -1518,7 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=34';   // 34: P5 chopped-landing bake (landing_chop_albedo/normal/height) (tree_birch_card/atlas_4..5); ASSET_V 32 crown+chest
+    const ASSET_V = '?v=35';   // 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -1957,14 +1957,33 @@ void main(void) {
                     // uniform white suit, as it turned out, with the helmet and the
                     // leg stripe nowhere to be seen. Every structural check passed:
                     // the textures were bound, loaded and ready.
+                    //
+                    // ANISOTROPY (Opus brief item 4). Babylon's default
+                    // anisotropicFilteringLevel is 4. The athlete is almost
+                    // always seen at a glancing angle — the suit wraps away
+                    // from the camera on every limb, and the face is a
+                    // near-tangent surface at the canonical close-up — which
+                    // is precisely the case trilinear mip selection resolves
+                    // by picking a blurrier mip for the whole footprint. The
+                    // fence and trees behind stayed sharp because they are
+                    // flat cards facing the camera. Ask the engine for its
+                    // real maximum rather than hard-coding 16: the cap is
+                    // driver-dependent and Babylon silently clamps.
+                    const aniso = Math.max(
+                        4, scene.getEngine().getCaps().maxAnisotropy || 4);
                     const map = (url, isColour) => {
                         const t = new BABYLON.Texture(url, scene, false, false);
                         t.gammaSpace = !!isColour;
+                        t.anisotropicFilteringLevel = aniso;
                         return t;
                     };
-                    const suitAlbedo = map('assets/athlete_albedo.png' + ASSET_V, true);
-                    const suitNormal = map('assets/athlete_normal.png' + ASSET_V, false);
-                    const suitAO = map('assets/athlete_ao.png' + ASSET_V, false);
+                    // WebP, not PNG: the lossless bake is 8.3 MB and the
+                    // delivered maps are 1.1 MB (blender/pack_maps.py gates
+                    // both the encode error and the wire budget). The author's
+                    // "the skis appear before the skier" was mostly this.
+                    const suitAlbedo = map('assets/athlete_albedo.webp' + ASSET_V, true);
+                    const suitNormal = map('assets/athlete_normal.webp' + ASSET_V, false);
+                    const suitAO = map('assets/athlete_ao.webp' + ASSET_V, false);
 
                     const helmetMat = makePBR('athleteHelmet_mat', scene);
                     helmetMat.albedoTexture = suitAlbedo;
@@ -2035,6 +2054,12 @@ void main(void) {
                     _revealSkiEquipment(scene, character.meshes);
 
                     window._bodyLinked = linked;
+                    // Instrument for the athlete's load budget (Opus brief
+                    // item 4): ms from navigation start to the frame in which
+                    // the skinned body first exists on screen. Reported in
+                    // docs/OPUS-NOTES.md and asserted in rig.spec.js.
+                    window._bodyVisibleAt = (typeof performance !== 'undefined'
+                        && performance.now) ? performance.now() : 0;
                     // Goggles adopted by upgradeAthleteGeometry before this
                     // loader resolved are hidden too — bring them into the
                     // same reveal frame.
@@ -5216,6 +5241,69 @@ void main(void) {
     camera.alpha = Math.PI * 1.5;   // start behind
     camera.beta  = CAM_BETA_BACK;
     if (dofPipeline) dofPipeline.depthOfFieldEnabled = true;
+
+    // ── Keep the depth of field focused on the ATHLETE ──────────────────────
+    //
+    // This is the real answer to the author's "everything on the athlete is
+    // blurry while the fence and the trees behind it are sharp" (Opus brief
+    // item 4). It was never a texture problem. `focusDistance` was set ONCE at
+    // pipeline construction to 10000 — and Babylon reads that field in
+    // MILLIMETRES, so the focal plane was nailed to 10 m in front of whichever
+    // camera was rendering, and never moved again. Every shot then divided
+    // neatly into "10 m away, sharp" and "not 10 m away, blurred": the
+    // background forest sat near the focal plane and the athlete did not. At
+    // the canonical face close-up (r = 0.6 m) the circle of confusion works
+    // out at f^2/(N(S-f)) * |S-d|/d = 2.8 mm on a 36 mm frame — roughly 90x
+    // the 0.03 mm that counts as sharp. That is the whole of `face.png`.
+    //
+    // Two rules, both per-frame because the camera radius, the mode and the
+    // subject all move:
+    //
+    //  1. Focus ON the athlete. The subject of this game is never the scenery.
+    //
+    //  2. Stop down the aperture as the camera closes in, so the athlete's own
+    //     depth always fits inside the depth of field. A lens' total depth of
+    //     field is about 2·N·c·S²/f²; at the shipped f/1.4 that is ~5 m of
+    //     slack at a 12 m follow distance (the athlete sits comfortably
+    //     inside it) but under 2 cm at 0.6 m, thinner than a nose. Inverting
+    //     for the N that buys DOF_DEPTH_M of slack at distance S gives
+    //     N = D·f²/(2·c·S²), which is 0.6 at 12 m (so the clamp keeps the
+    //     artistic f/1.4 and the background still separates) and ~230 at
+    //     0.6 m (so the face is sharp edge to edge). First person lands at
+    //     the far end of the clamp too — the camera is at the eyes, d ≈ 0 —
+    //     and should never have been blurring anything.
+    //
+    // fStop and focusDistance are plain shader uniforms, so both are free to
+    // write every frame. depthOfFieldEnabled is deliberately NOT touched here:
+    // its setter calls _buildPipeline(), and toggling it on a distance
+    // threshold rebuilt the whole post-process chain on every frame the
+    // camera hovered near the threshold.
+    const DOF_COC_MM = 0.03;      // "sharp" circle of confusion, 35 mm frame
+    const DOF_DEPTH_M = 2.0;      // slack the athlete must fit inside
+    const _dofFocus = () => {
+        try {
+            if (!dofPipeline || !dofPipeline.depthOfField) return;
+            const cam = scene.activeCamera;
+            if (!cam || !character || !character.root) return;
+            const d = BABYLON.Vector3.Distance(
+                cam.globalPosition || cam.position,
+                character.root.getAbsolutePosition());
+            if (!isFinite(d) || d <= 0) return;
+            const dof = dofPipeline.depthOfField;
+            const f = dof.focalLength || 50;                 // mm
+            const S = d * 1000;                              // mm
+            const N = (DOF_DEPTH_M * 1000) * f * f / (2 * DOF_COC_MM * S * S);
+            dof.focusDistance = S;
+            dof.fStop = Math.max(1.4, Math.min(256, N));
+            window._dofFocusM = d;
+            window._dofFStop = dof.fStop;
+        } catch (e) { /* a focus miss must never cost a frame */ }
+    };
+    if (scene.onBeforeRenderObservable && scene.onBeforeRenderObservable.add) {
+        scene.onBeforeRenderObservable.add(_dofFocus);
+    } else if (scene.registerBeforeRender) {
+        scene.registerBeforeRender(_dofFocus);       // golden-harness stub
+    }
 
     // ── First-person camera (V key toggles) ─────────────────────────────────
     // Positioned at the skier's eyes; orientation tracks the full body rotation

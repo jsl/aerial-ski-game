@@ -131,7 +131,7 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
             const i = new Image();
             i.onload = () => res(i);
             i.onerror = () => rej(new Error('albedo failed to load'));
-            i.src = 'assets/athlete_albedo.png';
+            i.src = 'assets/athlete_albedo.webp';
         });
         const cv = document.createElement('canvas');
         cv.width = img.width; cv.height = img.height;

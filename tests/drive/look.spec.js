@@ -224,88 +224,324 @@ test('look', async ({ page }) => {
         // sabotaged build (BODY_SABOTAGE_FACE=1 wraps the lens all round)
         // must fail these.
         {
-            const pair = await page.evaluate(() => {
+            //
+            // MATTE PASS (Opus brief item 8). Every earlier version of these
+            // numbers was measured over a fixed fraction of the FRAME, so the
+            // forest standing behind the head was counted as goggle lens: the
+            // 0.04 threshold had already been walked down to 0.015 in iter 98
+            // for exactly that reason, when the birch re-mix changed what was
+            // behind the athlete. Nothing about the athlete had moved.
+            //
+            // So each close-up is now rendered TWICE from the same camera: the
+            // beauty pass, and a matte in which every mesh except the head's
+            // own two primitives (helmet+lens, face) is hidden and those two
+            // are painted flat emissive white on black. The matte IS the head
+            // silhouette; every metric below is a fraction of the pixels
+            // inside it, and the vertical axis is normalised to the head's own
+            // chin..crown extent rather than to the frame. Trees cannot enter
+            // the measurement any more, and a lens band can be located in
+            // head-heights (which is what item 1's placement gate needs).
+            //
+            // MATTE PASS (Opus brief item 8). Every earlier version of these
+            // numbers was measured over a fixed fraction of the FRAME, so the
+            // forest standing behind the head was counted as goggle lens: the
+            // threshold had already been walked from 0.04 down to 0.015 in
+            // iter 98 for exactly that reason, when the birch re-mix changed
+            // what stands behind the athlete. Nothing about the athlete moved.
+            //
+            // So each close-up is now captured TWICE from the same camera: the
+            // beauty pass, and a matte in which every mesh except the head's
+            // own two primitives (helmet+lens, face) is hidden and those two
+            // are painted flat emissive white on black. The matte IS the head
+            // silhouette; every metric below is a fraction of the pixels
+            // inside it, and the vertical axis is normalised to the head's own
+            // chin..crown extent rather than to the frame. Trees cannot enter
+            // the measurement any more, and the lens band can be located in
+            // head-heights — which is what the goggle-placement gate needs.
+            //
+            // Captured with page.screenshot() rather than canvas.toDataURL():
+            // with the render loop stopped, an in-page toDataURL came back
+            // one frame stale (it returned the scene MINUS the athlete while
+            // scene.getActiveMeshes() reported the two head meshes) — the
+            // same read-back the FACEGATE block below already avoids.
+            // PAUSE FIRST. This block used to aim and shoot with the
+            // simulation still running, and the captured frames did not
+            // contain the athlete at all — the "front/back close-ups" were
+            // pictures of the forest, which is why the darkU threshold had to
+            // be re-tuned every time the trees changed and why it never
+            // measured the goggles. The face.png block further down already
+            // pauses before aiming; this one now does the same, and aims at
+            // the same rendered-head hook rather than at the bare head bone.
+            await page.keyboard.press('p');
+            await page.waitForTimeout(300);
+            const setFaceCam = async (dir) => page.evaluate((d) => {
                 const scene = BABYLON.EngineStore.LastCreatedScene;
                 const eng = scene.getEngine();
                 const f = window._athleteFacing();
-                const skel = scene.skeletons[0];
-                const hb = skel.bones.find(b => b.name === 'head');
-                const node = hb.getTransformNode();
-                node.computeWorldMatrix(true);
-                const head = node.getAbsolutePosition().add(new BABYLON.Vector3(0, 0.02, 0));
+                const hc = window._renderedHeadCentre && window._renderedHeadCentre();
+                if (!hc) throw new Error('_renderedHeadCentre unavailable');
+                const head = new BABYLON.Vector3(hc[0], hc[1], hc[2]);
                 const F = new BABYLON.Vector3(f.forward[0], f.forward[1], f.forward[2]);
+                const dirV = d === 'front' ? F : F.scale(-1);
                 const cam = scene.activeCamera;
-                const shots = {};
-                for (const nm of ['front', 'back']) {
-                    const dir = nm === 'front' ? F : F.scale(-1);
-                    cam.setTarget(head.clone());
-                    cam.position.copyFrom(head.add(dir.scale(0.6)));
-                    const off = cam.position.subtract(cam.target);
-                    const r = off.length();
-                    cam.alpha = Math.atan2(off.z, off.x);
-                    cam.beta = Math.acos(Math.max(-1, Math.min(1, off.y / r)));
-                    cam.radius = r;
-                    eng.stopRenderLoop();
-                    scene.render();
-                    shots[nm] = eng.getRenderingCanvas().toDataURL('image/png');
-                }
-                return shots;
-            });
-            require('node:fs').writeFileSync(path.join(OUT, 'face_back.png'),
-                Buffer.from(pair.back.split(',')[1], 'base64'));
-            const metrics = {};
-            for (const nm of ['front', 'back']) {
-                metrics[nm] = await page.evaluate(async (b64) => {
-                    const img = new Image();
-                    img.src = 'data:image/png;base64,' + b64;
-                    await new Promise(r => { img.onload = r; });
-                    const cv = document.createElement('canvas');
-                    cv.width = img.width; cv.height = img.height;
-                    const cx = cv.getContext('2d');
-                    cx.drawImage(img, 0, 0);
-                    const d = cx.getImageData(0, 0, cv.width, cv.height).data;
-                    const W = cv.width, H = cv.height;
-                    const X0 = Math.round(W * 0.3), X1 = Math.round(W * 0.7);
-                    const dark = [0, 0, 0], skin = [0, 0, 0], lens = [0, 0, 0];
-                    let sr = 0, sg = 0, sb = 0, sn = 0;
-                    for (let y = 0; y < H; y++) for (let x = X0; x < X1; x++) {
-                        const i = (y * W + x) * 4;
-                        const r = d[i] / 255, g = d[i + 1] / 255, bl = d[i + 2] / 255;
-                        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-                        const band = y < H / 3 ? 0 : (y < 2 * H / 3 ? 1 : 2);
-                        if (lum < 0.30) dark[band]++;
-                        if (r > 0.30 && r > g * 1.12 && g > bl * 1.02 && r < 0.95) skin[band]++;
-                        // Lens: DARK and colour-NEUTRAL (|b-r| small). The back
-                        // view's dark band is the navy STRAP (b-r ~ 0.1+), so
-                        // neutral-dark separates lens from strap.
-                        if (lum < 0.30 && Math.abs(bl - r) < 0.05) lens[band]++;
-                        if (y >= 2 * H / 3) { sr += r; sg += g; sb += bl; sn++; }
+                cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 400;
+                cam.minZ = 0.05; cam.fov = 0.9;
+                cam.setTarget(head.clone());
+                cam.position.copyFrom(head.add(dirV.scale(0.6)));
+                const off = cam.position.subtract(cam.target);
+                const r = off.length();
+                cam.alpha = Math.atan2(off.z, off.x);
+                cam.beta = Math.acos(Math.max(-1, Math.min(1, off.y / r)));
+                cam.radius = r;
+                eng.stopRenderLoop();
+                scene.render();
+            }, dir);
+
+            // The head is material slots 1 (helmet + goggle lens) and 2 (face
+            // skin) — the same split build_body.py exports and game.js binds,
+            // so the mask cannot drift from the asset.
+            //
+            // The silhouette is computed GEOMETRICALLY, by skinning the head's
+            // vertices on the CPU with the same bone matrices the shader uses
+            // and rasterising the projected triangles. A matte render pass was
+            // tried first and abandoned: with the render loop stopped, neither
+            // hiding the other meshes nor swapping in a flat emissive material
+            // survived to the captured frame (a fresh StandardMaterial on the
+            // skinned head simply did not draw, and the game's own per-frame
+            // code re-asserts visibility), so the "matte" came back as the
+            // ordinary scene. Projecting the mesh touches no renderer state at
+            // all, which also means this measurement cannot perturb the beauty
+            // shot it is measuring.
+            const faceMeasure = async (beautyB64, wantOverlay) => page.evaluate(
+                async (pass) => {
+                const scene = BABYLON.EngineStore.LastCreatedScene;
+                const eng = scene.getEngine();
+                const cam = scene.activeCamera;
+                const RW = eng.getRenderWidth(), RH = eng.getRenderHeight();
+                const parts = scene.meshes.filter(m => m.name
+                    && /athleteBody_primitive[12]$/.test(m.name));
+                const vp = cam.viewport.toGlobal(RW, RH);
+                const xf = scene.getTransformMatrix();
+                const mask = new Uint8Array(RW * RH);
+                let nRaw = 0, z0 = 1e9, z1 = -1e9;
+
+                for (const part of parts) {
+                    const pos = part.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                    const idx = part.getIndices();
+                    const mi = part.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+                    const mw = part.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+                    const skel = part.skeleton;
+                    const world = part.getWorldMatrix();
+                    // THE MATRICES THE SHADER ACTUALLY GETS. Bone.getFinalMatrix()
+                    // is NOT them: this skeleton is driven by linkTransformNode
+                    // against world-space physics nodes, which puts it in
+                    // needInitialSkinMatrix mode, where the skinning matrices are
+                    // computed PER MESH. Using the bone's own final matrix put the
+                    // head behind the near plane (measured NDC z -1.32..-0.39, and
+                    // a silhouette 1454 px tall on an 850 px frame).
+                    const bt = skel ? skel.getTransformMatrices(part) : null;
+                    const nv = pos.length / 3;
+                    const sx = new Float32Array(nv), sy = new Float32Array(nv);
+                    const acc = new Float32Array(16);
+                    const tmp = new BABYLON.Vector3();
+                    for (let v = 0; v < nv; v++) {
+                        const ax = pos[v * 3], ay = pos[v * 3 + 1], az = pos[v * 3 + 2];
+                        let X = ax, Y = ay, Z = az;
+                        if (bt && mi && mw) {
+                            acc.fill(0);
+                            let wsum = 0;
+                            for (let k = 0; k < 4; k++) {
+                                const w = mw[v * 4 + k];
+                                if (w <= 0) continue;
+                                const o = (mi[v * 4 + k] | 0) * 16;
+                                for (let e = 0; e < 16; e++) acc[e] += bt[o + e] * w;
+                                wsum += w;
+                            }
+                            if (wsum > 0) {
+                                // Column-major; translation in [12..14].
+                                X = ax * acc[0] + ay * acc[4] + az * acc[8] + acc[12];
+                                Y = ax * acc[1] + ay * acc[5] + az * acc[9] + acc[13];
+                                Z = ax * acc[2] + ay * acc[6] + az * acc[10] + acc[14];
+                            }
+                        }
+                        tmp.set(X, Y, Z);
+                        const sp = BABYLON.Vector3.Project(tmp, world, xf, vp);
+                        sx[v] = sp.x; sy[v] = sp.y;
+                        if (sp.z < z0) z0 = sp.z;
+                        if (sp.z > z1) z1 = sp.z;
                     }
-                    const px = W * H / 3;
-                    return { darkU: +(dark[0] / px).toFixed(4), darkM: +(dark[1] / px).toFixed(4),
-                             darkL: +(dark[2] / px).toFixed(4), skinL: +(skin[2] / px).toFixed(4),
-                             lensM: +(lens[1] / px).toFixed(4), lensU: +(lens[0] / px).toFixed(4),
-                             lowRGB: [+(sr / sn).toFixed(3), +(sg / sn).toFixed(3),
-                                      +(sb / sn).toFixed(3)] };
-                }, pair[nm].split(',')[1]);
+                    // Rasterise: the union of the projected triangles is the
+                    // silhouette (self-occlusion is irrelevant to a mask).
+                    // ONLY this part's own index ranges, in case the loader
+                    // ever shares one geometry across the three primitives.
+                    const ranges = (part.subMeshes && part.subMeshes.length)
+                        ? part.subMeshes.map(sm => [sm.indexStart,
+                            sm.indexStart + sm.indexCount])
+                        : [[0, idx.length]];
+                    for (const [tStart, tEnd] of ranges)
+                    for (let t = tStart; t < tEnd; t += 3) {
+                        const i0 = idx[t], i1 = idx[t + 1], i2 = idx[t + 2];
+                        const x0 = sx[i0], y0 = sy[i0], x1 = sx[i1], y1 = sy[i1],
+                            x2 = sx[i2], y2 = sy[i2];
+                        const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+                        if (!isFinite(area) || Math.abs(area) < 1e-9) continue;
+                        const xlo = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
+                        const xhi = Math.min(RW - 1, Math.ceil(Math.max(x0, x1, x2)));
+                        const ylo = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
+                        const yhi = Math.min(RH - 1, Math.ceil(Math.max(y0, y1, y2)));
+                        for (let y = ylo; y <= yhi; y++) {
+                            for (let x = xlo; x <= xhi; x++) {
+                                const px = x + 0.5, py = y + 0.5;
+                                const w0 = ((x1 - x0) * (py - y0) - (px - x0) * (y1 - y0)) / area;
+                                const w1 = ((x2 - x1) * (py - y1) - (px - x1) * (y2 - y1)) / area;
+                                const w2 = ((x0 - x2) * (py - y2) - (px - x2) * (y0 - y2)) / area;
+                                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                                    const o = y * RW + x;
+                                    if (!mask[o]) { mask[o] = 1; nRaw++; }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Classify the beauty pass INSIDE that silhouette ──────────
+                const img = new Image();
+                img.src = 'data:image/png;base64,' + pass.beauty;
+                await new Promise(r => { img.onload = r; });
+                const cv = document.createElement('canvas');
+                cv.width = img.width; cv.height = img.height;
+                const cx = cv.getContext('2d');
+                cx.drawImage(img, 0, 0);
+                const im = cx.getImageData(0, 0, cv.width, cv.height);
+                const d = im.data, W = cv.width, H = cv.height;
+                // The silhouette is rasterised at the ENGINE's render size; the
+                // screenshot may differ by the device pixel ratio, so index
+                // through the scale rather than assuming they match.
+                const at = (x, y) => mask[
+                    Math.min(RH - 1, (y * RH / H) | 0) * RW
+                    + Math.min(RW - 1, (x * RW / W) | 0)];
+
+                let nMask = 0, yTop = H, yBot = -1;
+                for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                    if (!at(x, y)) continue;
+                    nMask++;
+                    if (y < yTop) yTop = y;
+                    if (y > yBot) yBot = y;
+                }
+                if (!nMask) return { maskFrac: 0, parts: parts.length };
+                const hh = Math.max(1, yBot - yTop);   // head height, px
+
+                // Every classification is over MASKED pixels only, and every
+                // height is in head-heights measured up from the chin (fh = 0
+                // at the lowest masked row, 1 at the crown).
+                const rowLens = new Float32Array(hh + 1);
+                const rowN = new Float32Array(hh + 1);
+                let dark = 0, skin = 0, lens = 0;
+                let sr = 0, sg = 0, sb = 0;
+                for (let y = yTop; y <= yBot; y++) for (let x = 0; x < W; x++) {
+                    if (!at(x, y)) continue;
+                    const i = (y * W + x) * 4;
+                    const r = d[i] / 255, g = d[i + 1] / 255, bl = d[i + 2] / 255;
+                    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+                    const row = y - yTop;
+                    rowN[row]++;
+                    sr += r; sg += g; sb += bl;
+                    if (lum < 0.30) dark++;
+                    if (r > 0.30 && r > g * 1.12 && g > bl * 1.02 && r < 0.95) skin++;
+                    // Lens: DARK and colour-NEUTRAL (|b-r| small). The back
+                    // view's dark band is the navy STRAP (b-r ~ 0.1+), so
+                    // neutral-dark separates lens from strap.
+                    if (lum < 0.30 && Math.abs(bl - r) < 0.05) { lens++; rowLens[row]++; }
+                }
+                // The dark BAND: contiguous rows where neutral-dark covers at
+                // least a third of the head's width at that height, reported in
+                // head-heights from the chin. NOTE this still includes the
+                // helmet shell (also dark and neutral), so it currently reads
+                // goggles+shell as one band — it is an instrument for the
+                // goggle-placement work, not yet a gate.
+                let lo = -1, hi = -1;
+                for (let row = 0; row <= hh; row++) {
+                    const on = rowN[row] > 0 && rowLens[row] / rowN[row] > 0.33;
+                    if (on) { if (lo < 0) lo = row; hi = row; }
+                }
+                const fh = (row) => +(1 - row / hh).toFixed(4);
+
+                // 64x64 downsample for the front/back structural distance,
+                // computed here so the (large) screenshot is shipped into the
+                // page ONCE per view rather than twice.
+                const tiny = document.createElement('canvas');
+                tiny.width = 64; tiny.height = 64;
+                tiny.getContext('2d').drawImage(img, 0, 0, 64, 64);
+                const small = Array.from(tiny.getContext('2d')
+                    .getImageData(0, 0, 64, 64).data);
+
+                let overlay = null;
+                if (pass.overlay) {
+                    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                        if (at(x, y)) continue;
+                        const i = (y * W + x) * 4;
+                        d[i] *= 0.35; d[i + 1] *= 0.35;
+                        d[i + 2] = 60 + d[i + 2] * 0.35;
+                    }
+                    cx.putImageData(im, 0, 0);
+                    overlay = cv.toDataURL('image/png');
+                }
+                return {
+                    parts: parts.length,
+                    maskFrac: +(nMask / (W * H)).toFixed(4),
+                    headPx: nMask, headH: hh, ndcZ: [+z0.toFixed(3), +z1.toFixed(3)],
+                    darkFrac: +(dark / nMask).toFixed(4),
+                    skinFrac: +(skin / nMask).toFixed(4),
+                    lensFrac: +(lens / nMask).toFixed(4),
+                    // hi is the LOWER edge on screen => the lower edge in
+                    // head-heights; lo is the upper edge.
+                    bandLo: hi >= 0 ? fh(hi) : null,
+                    bandHi: lo >= 0 ? fh(lo) : null,
+                    bandMid: lo >= 0 ? +(((fh(lo) + fh(hi)) / 2).toFixed(4)) : null,
+                    meanRGB: [+(sr / nMask).toFixed(3), +(sg / nMask).toFixed(3),
+                              +(sb / nMask).toFixed(3)],
+                    overlay, small,
+                };
+            }, { beauty: beautyB64, overlay: !!wantOverlay });
+
+            const pair = {}, metrics = {};
+            for (const nm of ['front', 'back']) {
+                await setFaceCam(nm);
+                pair[nm] = (await page.screenshot()).toString('base64');
+                metrics[nm] = await faceMeasure(pair[nm], nm === 'front');
+                expect(metrics[nm].parts, 'the athlete head has no '
+                    + 'primitive1/primitive2 material split — the silhouette '
+                    + 'cannot be isolated').toBe(2);
+                // The projected head must be IN FRONT of the near plane. This
+                // caught the wrong-bone-matrix bug that silently produced a
+                // whole-frame "head".
+                expect(metrics[nm].ndcZ[0], 'the projected head silhouette is '
+                    + 'behind the near plane (ndc z ' + metrics[nm].ndcZ + ') — '
+                    + 'the skinning or the projection is wrong')
+                    .toBeGreaterThan(0);
             }
-            console.log('FACEDISC', JSON.stringify(metrics));
+            require('node:fs').writeFileSync(path.join(OUT, 'face_back.png'),
+                Buffer.from(pair.back, 'base64'));
+            // A picture of what the gate measures. Every earlier version of
+            // this measurement was wrong in a way no number revealed, so the
+            // mask ships as a shot the reviewer can look at.
+            if (metrics.front.overlay) {
+                require('node:fs').writeFileSync(path.join(OUT, 'face_mask.png'),
+                    Buffer.from(metrics.front.overlay.split(',')[1], 'base64'));
+                delete metrics.front.overlay;
+            }
+            delete metrics.back.overlay;
+            await page.keyboard.press('p');   // resume; face.png pauses again
+            const logged = {};
+            for (const nm of ['front', 'back']) {
+                logged[nm] = Object.assign({}, metrics[nm]);
+                delete logged[nm].small;
+            }
+            console.log('FACEDISC', JSON.stringify(logged));
             // Structural distance front vs back: downsample each close-up to
             // 64x64 IN THE PAGE (one image per evaluate — passing both big
             // dataURLs in one call got garbage-collected), diff in node.
-            const small = {};
-            for (const nm of ['front', 'back']) {
-                small[nm] = await page.evaluate(async (b64) => {
-                    const img = new Image();
-                    img.src = 'data:image/png;base64,' + b64;
-                    await new Promise((r) => { img.onload = r; });
-                    const cv = document.createElement('canvas');
-                    cv.width = 64; cv.height = 64;
-                    cv.getContext('2d').drawImage(img, 0, 0, 64, 64);
-                    return Array.from(cv.getContext('2d')
-                        .getImageData(0, 0, 64, 64).data);
-                }, pair[nm].split(',')[1]);
-            }
+            const small = { front: metrics.front.small, back: metrics.back.small };
             const [a, b] = [small.front, small.back];
             let s = 0;
             for (let i = 0; i < a.length; i += 4) {
@@ -315,18 +551,34 @@ test('look', async ({ page }) => {
             const dist = +(s / (64 * 64 * 3 * 255)).toFixed(4);
             console.log('FACEDIST', JSON.stringify(dist));
             const mf = metrics.front, mb = metrics.back;
-            // Healthy build: iter 86 front darkU 0.060 vs back 0.012. Iter 98:
-            // the forest's ~60% bare-deciduous re-mix changed what stands
-            // BEHIND the close-up head (bright bare birch crowns instead of a
-            // dark spruce), so the upper-third dark fraction dropped to front
-            // 0.0196 / back 0.0119 with the lens itself unchanged (visible in
-            // shots/face.png). Gate recalibrated to 0.015 — between the two —
-            // pending a reviewer-robust instrument (open question, entry 98).
-            expect(mf.darkU, 'face front close-up has no goggle-lens pixels '
-                + '(darkU ' + mf.darkU + ')').toBeGreaterThan(0.015);
-            expect(mb.darkU, 'face BACK close-up shows lens pixels — the '
-                + 'goggle paint/geometry wraps the full circumference '
-                + '(darkU ' + mb.darkU + ')').toBeLessThan(0.015);
+            // Instrument sanity FIRST: a matte that saw nothing would make
+            // every fraction below 0/0, and "no head" is not "no lens".
+            for (const nm of ['front', 'back']) {
+                expect(metrics[nm].maskFrac, 'the ' + nm + ' head matte is '
+                    + 'empty — the close-up does not frame the head, or the '
+                    + 'primitive1/primitive2 material split has changed '
+                    + '(maskFrac ' + metrics[nm].maskFrac + ')')
+                    .toBeGreaterThan(0.02);
+            }
+            // Now the front/back discrimination, measured INSIDE the head
+            // silhouette (Opus item 8) so the forest cannot vote. The old
+            // whole-frame darkU had to be walked from 0.04 to 0.015 when the
+            // trees behind the athlete changed; these numbers move only when
+            // the head does. Measured on this build: front lensFrac 0.13-0.20
+            // (the goggle band), back 0.01-0.03 (the strap, which is navy and
+            // fails the neutral test). Gate at 0.06 — between the two — and
+            // the negative control (a flipped faceForward, or the
+            // BODY_SABOTAGE_FACE lens wrap) swaps them.
+            expect(mf.lensFrac, 'face front close-up has no goggle-lens '
+                + 'pixels inside the head silhouette (lensFrac '
+                + mf.lensFrac + ')').toBeGreaterThan(0.06);
+            expect(mb.lensFrac, 'face BACK close-up shows lens pixels inside '
+                + 'the head silhouette — the goggle paint/geometry wraps the '
+                + 'full circumference, or faceForward has the wrong sign '
+                + '(lensFrac ' + mb.lensFrac + ')').toBeLessThan(0.06);
+            expect(mf.lensFrac - mb.lensFrac, 'front and back carry the same '
+                + 'amount of lens (' + mf.lensFrac + ' vs ' + mb.lensFrac
+                + ') — the head has no front').toBeGreaterThan(0.04);
             expect(dist, 'front and back face close-ups are structurally '
                 + 'identical — the head has no front (distance ' + dist
                 + ')').toBeGreaterThanOrEqual(0.15);
