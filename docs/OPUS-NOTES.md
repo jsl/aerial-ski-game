@@ -937,7 +937,21 @@ that should not exist at that length.
             share, NEW weight-seam gate); delivery maps 976 716 B total
     unit    81/81
     golden  30/30 after the merge re-capture; audit 0/5408 physics diffs
-    drive   spine 9/9 (8 + the new dose-response), pose-shots 1/1
+    drive   spine 9/9 (8 + the new dose-response), pose-shots 1/1;
+            rig + body + chain + athlete + ready-stance + bib-number
+            30 passed (8.1 m), 0 failed — every gate the three ownership
+            passes were protecting (boot-ski invariant, ready stance, bib
+            number front AND back, arm transport, chain closure) is green
+            with the relaxed weights, which is the evidence that moving the
+            repair after the bake costs nothing upstream
+    wire    1 801 759 B total (glb 823 768 + maps 976 716 + json), budget 2.5 MB
+
+`_bodyVisibleAt` read 4 878 ms in this run against session 1's 1 457-1 542 ms,
+but that run was six specs in parallel under SwiftShader and session 1's was
+solo — the same contention effect iteration 115 recorded for the frame-time
+spec. Not comparable, and not chased; flagged so the next session does not
+read it as a regression.
+
     shots   pose_* regenerated; TUCKEXTENT 0.870/1.498 = 0.581, identical to
             session 8 — the pose is unchanged, only the deformation moved
 
