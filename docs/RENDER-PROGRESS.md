@@ -6578,7 +6578,17 @@ gate passes vs darkest flank per the 07:30 ruling).
    unanswered items are still pending.
 
 *Code diff this iteration: `tests/drive/crash-ragdoll.spec.js` (leash +
-comments) only. No assets, no ASSET_V change.*
+comments) and `tests/drive/extract-terrain.spec.js` only. No assets, no
+ASSET_V change.*
+
+**Follow-up fix found during the commit review:** the suite's
+extract-terrain run had silently rewritten `blender/terrain.json` with
+fallback material values — entry 99's MultiMaterial on terrainCorridor has
+no `albedoColor`, so `extract-terrain.spec` wrote its `[0.8,0.8,0.8]` /
+roughness-0.8 fallbacks (was `[0.98,0.995,1]` / 0.46). The extractor now
+resolves a MultiMaterial to its first submaterial; re-extracted and
+verified albedo/roughness restored. The ~7 cm position deltas vs HEAD~1 in
+the same file are entry 99's chop-band vertex sink and are correct.
 
 ### 99 — P5 slice 1: chopped landing baked (bake_landing.py) + landing
 material split + downward vertex displacement

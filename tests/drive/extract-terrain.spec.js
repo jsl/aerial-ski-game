@@ -56,7 +56,13 @@ test('extract static scenery to blender/terrain.json', async ({ page }) => {
                 world.push(t.x, t.y, t.z);
             }
 
-            const mat = m.material;
+            // iter 99 put a MultiMaterial on terrainCorridor (snow +
+            // chopped-landing SubMeshes); MultiMaterial has no albedoColor,
+            // which silently wrote the [0.8,0.8,0.8]/0.8 fallbacks into the
+            // extract — resolve to the first submaterial instead.
+            let mat = m.material;
+            if (mat && mat.getClassName && mat.getClassName() === 'MultiMaterial'
+                && mat.subMaterials && mat.subMaterials[0]) mat = mat.subMaterials[0];
             out.push({
                 name: m.name,
                 positions: world,
