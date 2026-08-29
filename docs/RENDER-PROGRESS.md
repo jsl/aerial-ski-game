@@ -7036,3 +7036,21 @@ elevation mapping `RIDGE_SNOWLINE_M = 70` putting near/mid crests at v ≈
 2. The crash-tumble gates now pin stiffness at ±35°/40°+3° tolerance. If the
    author wants it even stiffer (more "rag-doll-ness" removal), the same two
    constants control it.
+
+### 103 addendum — NEXT item 2 slice landed (commit after `2189384`)
+
+With the remaining time budget, a measured slice of the mountains pass went
+in: the per-layer fog-mix albedoColor multiplier halved (near/mid/far
+0.10/0.25/0.42 → **0.05/0.12/0.22**), `RIDGE_SNOWLINE_M` **70 → 45 m** so the
+elevation-keyed snow fields and rock band land on the mid-ridge crests, and
+the ridge normal-map strength **2.2 → 3.5** so the sun shades the facets.
+`ridges3d.spec.js` 2/2 green (depth + texture gates, flat-curtain negative
+control still fails it); golden 30/30 (the headless harness takes the
+stub-canvas fallback tint, so traces are untouched — verified by re-run); unit
+0 fail; shots regenerated 11:07–11:12. Honest caveat: the numeric instrument
+(top third of scene.png) is sky-dominated and cannot resolve the improvement
+(blueish 0.928 → 0.925, texture energy 0.188 → 0.185) — the acceptance for
+this item is explicitly visual, so `docs/NEXT.md` is KEPT with only the
+eye-confirmation step (and a contrast plan inside `makeRidgeSurface` if the
+ridges still read flat). Open question 1 from the main entry is answered by
+this slice; the reviewer should still confirm by eye.
