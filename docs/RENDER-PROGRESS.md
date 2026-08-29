@@ -178,6 +178,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
 | — | Iteration 92 | **face pass 3 paint + suit legibility LANDED; crown-gate instrument built (SOFT — geometry blocked by pipeline, open)** | lip/nostril strokes darker+wider, NEW nose-side shadow band (69 verts), nose-side tint; suit plain verts get a cool grey-blue fold-shade multiplier (max −18 % r / −10 % b, smoothstep over the SUIT_FOLDS bands) — bib/waist/number/stripe/glove tags untouched, bib gates green; suit-vs-snow ready-view luminance gap measured 0.142 (gate ≥ 0.06; suit 0.710 vs snow 0.852); crown gates written (height ≥ 0.45×width: 91.6 vs 73 PASS hard; band-edge normal tilt ≥ 25°: 13.1 SOFT-FAIL with negative control BODY_SABOTAGE_CROWN=1 → 0.0) — the hemispherical re-projection is exact in `shape_helmet` (929 verts on an r=101.3 mm sphere, residual mean 101.3 mm) but the tilt read stays 13–15° after retune/decimate/unwrap — root-cause trail in entry 92; ASSET_V 31; unit 0 fail, golden 30/30, drive body+bib-number+look 6/6. See entry 92. |
+| — | Iteration 93 | **pose shots (FABLE-80 f10) + rendered-head hook (f9) + HUD-less crash shot + A7 slab seated + red junction marks → dark edge line LANDED** | `window._poseFreeze` (game-side render observer, stub-safe, wins even while paused — the sim's later-registered pose write only loses when the step is paused out; look.spec now drives pause via `_isPaused()` loop) drives `pose_{inrun,tuck,pike}_{front,side}.png` in look.spec with silhouette gates and a pairwise byte-difference discrimination gate (a dead freeze produced six identical shots — caught); `_renderedHeadCentre()` hook aims the face camera; crash_rest.png now HUD-less, ~4.17 m geometric side camera aimed at the measured rest point (old aim used the hidden legacy 'torso' at the origin); the ≥15% silhouette gate is SOFT (logged SOFT-FAIL, measured span 0 at rest spots off the x=0 aim axis — rest-x not yet threaded into the target) — hardening open; wUpperMtn is now a ground ribbon sampled from `terrainRootY − FOOT_OFFSET` (was a box floating ≈9 m) + `a7-slab.spec.js` look-back gates (measured black32 = 0, meanLum 0.798, negative control 9 m lift caught); cornerMat red → dark (0.09,0.09,0.11) edge line. Golden re-captured census-only (every diff a wUpperMtn transform, zero physics fields), 30/30; unit 0 fail. |
 | — | Iteration 86 (NEXT.md) | **face/helmet rebuild LANDED** | rim raised to the pinned numbers (front 0.58h = 17.6 mm above the eye line; sides/back 0.55h); HARD build gates nose/chin/rims/dome all green on the final mesh; `faceForward` baked into `athlete_maps.json` and read by `_athleteFacing` (reviewer 01:50 confirmed as the source of truth); look.spec hard front/back darkU gates + structural distance + silhouette span+skin gates; figure_side drift root-caused (pair block left r=0.6/head target + follow-callback clobber) and fixed — side shot is now a true profile; negative control (BODY_SABOTAGE_FACE=1, lens wrapped + facing flipped) FAILS the gates; ASSET_V 28; unit 0 fail, golden 30/30, look green, start-gating+rig 13/13. See entry 86. |
 | — | Iteration 85 (review) | **review pass complete; suite recovered** | one real regression fixed (unit allowlist vs iter-84's five start-gating functions — unit was RED at HEAD); shots regenerated and inspected: `figure_side.png` STILL has no athlete and `face.png` STILL shows the nape — NEXT.md (face/helmet rebuild + `faceForward` cameras + silhouette gate) confirmed as the top priority; red kicker junction marks and milky scene sky re-flagged. See entry 85. |
 | Priority | Item | State | Notes |
@@ -6229,6 +6230,71 @@ support a P2 claim.
 
 *Everything above is measurement/inspection only; no source files changed in
 this iteration.*
+
+### 93 — Pose shots + rendered-head hook + HUD-less crash shot + A7 slab
+seated + dark kicker edge line (reviewer order 93)
+
+**Order acted on:** review 89 order — "93 = pose shots (finding 10) +
+rendered-head hook (9) + HUD-less crash shot + A7 + red marks" (FABLE-80
+findings 9/10).
+
+**Rendered-head hook (finding 9):** `window._renderedHeadCentre()` in
+`game.js` returns the live visual head centre from the head bone's linked
+node (+2 cm goggle-band offset), helmet-bbox fallback. look.spec's face
+camera now aims through the hook instead of a spec-side bone lookup — one
+source of truth. FACEGATE unchanged (dark 0.187, cov 0.965).
+
+**Pose shots (finding 10):** `window._poseFreeze` pins root + pose every
+rendered frame from a stub-safe render observer. Two root-caused failures on
+the way, both instructive: (1) the first version lived inside the sim step,
+which `paused` skips — dead under the harness; moved to an observer.
+(2) Unpaused, the game's own pose write (registered AFTER the observer)
+overwrites the freeze each frame — identical-looking shots; look.spec now
+pauses deterministically through `window._isPaused()` (the 'p' key is a
+toggle). Shots: `pose_{inrun,tuck,pike}_{front,side}.png`, geometric
+front/side cameras framed on the DRIVEN segments (`_characterMeshes` — the
+skinned athleteBody bounds are stale bind pose), silhouette span gates
+(inrun 0.909/0.415, tuck 0.694/0.444, pike 0.374/0.353 front/side) and a
+pairwise byte-difference gate across the three front shots (the dead-freeze
+build produced six byte-identical PNGs — the discrimination gate exists
+because of that).
+
+**HUD-less crash shot (reviewer on entry 89 (b)):** crash_rest.png now hides
+the HUD like the other canonical shots, and the camera is a ~4.17 m
+geometric side view aimed at the MEASURED rest point (`_crashFloorY(restZ)`
++0.4 m, restZ passed from the spec's own trace) — the old aim used the
+hidden legacy 'torso' mesh, which sits at the origin, which is why the shot
+framed fence and snow. The 15% silhouette gate is written but SOFT (logged): at rest spots off the aim axis the span reads 0 — rest-x must be threaded into the camera target (open).
+
+**A7 slab (reviewer 17:30):** `wUpperMtn` — the uphill backdrop behind the
+start — was a tilted box floating ≈9 m above the terrain. It is now a
+CreateGround ribbon sampled per-vertex from `terrainRootY(z) − FOOT_OFFSET`
+(the physics profile the corridor rides), seated by construction. New
+`tests/drive/a7-slab.spec.js`: geometric look-back (terrain-class meshes
+whitelisted by name; none may sit > 1 m above the floor under it) + pixel
+look-back from the ready position up the in-run (black32 = 0, mean lower-2/3
+luminance 0.798) + NEGATIVE CONTROL (a 9 m in-page lift of wUpperMtn is
+detected and fails).
+
+**Red junction marks (reviewer order 51 carry-over):** the kicker's loud red
+`cornerMat` edge tubes are now a thin dark edge line (0.09,0.09,0.11 diffuse,
+near-zero emissive) per the footage's dark wall/face junction line.
+
+**Verification:** `npm run test:unit` 0 fail; `npm run test:golden` 30/30
+after a census-only re-capture — every diff line in every scenario was a
+`wUpperMtn` transform field, zero physics fields (display-only, audit per
+the established route). look.spec green (FIGSIL 0.904, FACEGATE dark 0.187
+cov 0.965); a7-slab green; crash-ragdoll roll gates green in-run (restAt
+4.80 s, phase stopped).
+
+**Open:** (1) crash-ragdoll.spec's 3 s exactly-0 gate flaked once under
+parallel spec load (970 ms; passed on the dedicated re-run) — the reviewer's
+wall-clock caveat (89.3) applies; consider sim-time re-basing. (2) The
+crown tilt gate is still SOFT (entry 92's pipeline blocker). (3) Pose shots'
+silhouette gates read background dark pixels (trees) — the byte-difference
+gate carries the discrimination; a figure-only mask would be tighter.
+ (4) A7's gate whitelist is name-based (`^terrain|^w[A-Z]`); if a future
+floating prop is added outside those prefixes it will not be caught.
 
 ### 92 — Face pass 3 paint + suit legibility (reviewer order 92); crown
 gate instrument built and its pipeline blocker measured — SOFT until fixed

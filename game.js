@@ -2147,12 +2147,40 @@ void main(void) {
 
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
+    // FABLE-80 finding 10 (iter 93): game-state-driven pose shots. When the
+    // shot harness sets window._poseFreeze, EVERY rendered frame — including
+    // frames while the sim is paused ('p'), which the shot harness uses —
+    // pins the root and re-applies the frozen pose. Registered as a render
+    // observer (not inside the sim step, which paused skips) and AFTER the
+    // step's own pose write, so the freeze wins the last write before the
+    // render. applyPose includes the P13 reconciliation, so frozen poses are
+    window._poseFreeze = null;
+    const _registerFreeze = (fn) => {
+        if (scene.onBeforeRenderObservable && scene.onBeforeRenderObservable.add) {
+            scene.onBeforeRenderObservable.add(fn);
+        } else if (scene.registerBeforeRender) {
+            scene.registerBeforeRender(fn);   // golden-harness stub
+        }
+    };
+    _registerFreeze(() => {
+        const F = window._poseFreeze;
+        if (!F || crashActive) return;
+        character.root.position.y = F.rootY;
+        character.root.position.z = F.posZ;
+        applyPose(character.meshes, F.tuck, 1, 1, 0, 0, 0,
+            F.grounded !== false, F.pike || 0, 0);
+    });
     // Crash-ragdoll probe (P11 spec): the surface the ragdoll contacts (the
     // physics surface: terrainRootY(z) - FOOT_OFFSET, or the mode floor).
     window._crashFloorY = function (z) { return _crashFloorY(z); };
     // Terrain landmarks for the crash spec's rest-position gate (NEXT
     // 2026-08-29): the roll-out (landing slope → flat) z.
     window._crashRollOutZ = OUTRUN_Z;
+    // Run-profile landmarks for the shot harness (iter 93; kept OUT of
+    // _getGameState, whose key set the golden traces serialise).
+    window._runAnchors = function () {
+        return { SLOPE_START_Z, LANDING_START_Z, OUTRUN_Z };
+    };
     // Ragdoll settle probe (human item 2): rest state for the drive spec.
     window._ragdollProbe = function () {
         if (!ragdoll) return null;
@@ -2630,6 +2658,32 @@ void main(void) {
         };
     };
 
+    // FABLE-80 finding 9 (iter 93): the RENDERED head centre, one source of
+    // truth for anything that aims at the head (canonical cameras, gates).
+    // The head BONE's linked transform node is where P13 actually leaves the
+    // visual head — the bare `character.meshes.head` driver sits ~0.3 m low
+    // once the solver displaces it. Falls back to the helmet bbox centre.
+    window._renderedHeadCentre = function () {
+        const skel = scene.skeletons && scene.skeletons[0];
+        const hb = skel && skel.bones.find(b => b.name === 'head');
+        const node = hb && hb.getTransformNode && hb.getTransformNode();
+        if (node) {
+            node.computeWorldMatrix(true);
+            const p = node.getAbsolutePosition();
+            return [p.x, p.y + 0.02, p.z];
+        }
+        let best = null, vol = Infinity;
+        for (const m of scene.meshes) {
+            if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
+            m.computeWorldMatrix(true);
+            const b = m.getBoundingInfo().boundingBox;
+            const e = b.maximumWorld.subtract(b.minimumWorld);
+            const v = e.x * e.y * e.z;
+            if (v < vol) { vol = v; best = b.centerWorld; }
+        }
+        return best ? [best.x, best.y, best.z] : null;
+    };
+
     // Hop-turn phase schedule for the drive spec (fractions of READY_TURN_DUR;
     // see the HOP_TURN note at READY_TURN_DUR for why the author's 0.95 s
     // schedule is scaled into the physics-locked 0.7 s turn).
@@ -3065,8 +3119,10 @@ void main(void) {
 
     // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge
     const cornerMat = makePBR('cornerMat', scene);
-    cornerMat.diffuseColor  = new BABYLON.Color3(1, 0, 0);
-    cornerMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
+    // Footage (IMG_3765/3768, "red marks" reviewer order): the kicker carries a
+    // thin DARK edge line at the wall/face junction — the loud red paint is gone.
+    cornerMat.diffuseColor  = new BABYLON.Color3(0.09, 0.09, 0.11);
+    cornerMat.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.03);
     {
         const arcHalfW = kickerWidth / 2;
 
@@ -3323,18 +3379,26 @@ void main(void) {
     //    terrainCorridor field IS the ground now, continuous across the old
     //    seams and sharing snowMat everywhere (the cyan-seam class cannot
     //    recur). What stays is only the distant backdrop behind the start:
-    // Upper mountain slope — continues the inrun angle upward behind the start gate.
-    // This gives the impression the jump is midway down a much bigger mountain.
+    // Upper mountain slope — continues the terrain uphill behind the start.
+    // A7 slab disposition (reviewer 17:30, iter 93): the old tilted box floated
+    // ≈9 m above the terrain behind the start. It is now a GROUND continuation:
+    // a ribbon sampled from the same physics profile the corridor rides
+    // (terrainRootY − FOOT_OFFSET), so its surface IS the terrain uphill —
+    // seated by construction, no look-through gap under it.
     {
         const extDepth = 90;
-        const midExtZ  = SLOPE_START_Z - 27 - extDepth / 2;
-        // Continue slope upward: at z units behind SLOPE_START_Z, y rises by z*tan(SLOPE_ANGLE)
-        const midExtY  = (-midExtZ) * Math.tan(SLOPE_ANGLE) - FOOT_OFFSET;
-        const depth    = extDepth / Math.cos(SLOPE_ANGLE) + 2;
-        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 1.6, depth }, scene);
-        wb.rotation.x = SLOPE_ANGLE;
-        wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        const z0 = SLOPE_START_Z - 27;          // near edge (meets the corridor field)
+        const W = 130, NX = 24, NZ = 16;
+        const wb = BABYLON.MeshBuilder.CreateGround('wUpperMtn',
+            { width: W, height: extDepth, subdivisionsX: NX, subdivisionsZ: NZ }, scene);
+        wb.position.z = z0 - extDepth / 2;
+        const pos = wb.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+        for (let i = 0; i < pos.length; i += 3) {
+            pos[i + 1] = terrainRootY(pos[i + 2] + wb.position.z) - FOOT_OFFSET;
+        }
+        wb.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
         wb.material = lsMat;
+        wb.receiveShadows = true;
     }
 
 
@@ -6801,6 +6865,7 @@ void main(void) {
         // The in-run forward hold (review note: "from the transition into the
         // kicker the arms rise together and are straight overhead by the lip")
         // releases here: entering the kicker arc sets drop→0 (raised side of
+
         // the sweep) and raise→1; ARM_DROP_RATE completes both in ~0.25 s, so
         // the arms are overhead by the lip. The grounded fade above is undone
         // deliberately; _inrunArmForward's w = tuck·(1−armRaise) hands the

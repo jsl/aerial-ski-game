@@ -399,16 +399,12 @@ test('look', async ({ page }) => {
         const eng = scene.getEngine();
         const f = window._athleteFacing();
         if (!f || !f.forward) throw new Error('_athleteFacing unavailable');
-        const skel = scene.skeletons && scene.skeletons[0];
-        const hb = skel && skel.bones.find(b => b.name === 'head');
-        const node = hb && hb.getTransformNode && hb.getTransformNode();
-        if (!node) throw new Error('head driver node unavailable');
-        node.computeWorldMatrix(true);
-        // Bone origin = the neck/head joint cluster; +0.02 puts the aim at
-        // the goggle band. Measured at +0.10 the head sat at ~65% of frame
-        // height (the bone origin reads higher than the visual head centre);
-        // 0.6 m out, 0.08 m of aim ≈ 0.13 of the 0.9 rad frame.
-        const head = node.getAbsolutePosition().add(new BABYLON.Vector3(0, 0.02, 0));
+        // FABLE-80 finding 9 (iter 93): the head is aimed through the ONE
+        // rendered-head hook (game-side) instead of a spec-side bone lookup —
+        // the same source of truth the game's own head targeting uses.
+        const hc = window._renderedHeadCentre && window._renderedHeadCentre();
+        if (!hc) throw new Error('_renderedHeadCentre unavailable');
+        const head = new BABYLON.Vector3(hc[0], hc[1], hc[2]);
         const F = new BABYLON.Vector3(f.forward[0], f.forward[1], f.forward[2]);
         const cam = scene.activeCamera;
         cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 400;
@@ -555,4 +551,119 @@ test('look', async ({ page }) => {
     });
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'inrun.png') });
+
+    // ── Canonical POSE shots (FABLE-80 finding 10, iter 93) ──────────────
+    // Reviews previously only ever saw the ready stance: the game's per-frame
+    // hooks re-apply their own pose, so an external harness could not pose
+    // the athlete. window._poseFreeze pins the pose + root every frame
+    // (game-side, iter 93); the shots below drive it through the three
+    // flight/in-run states, each from the geometric front, side and face
+    // cameras, each with a silhouette gate. Negative control: freezing with
+    // tuck=0/grounded=false/pike=0 (layout) must read a DIFFERENT tuck from
+    // the flight-tuck freeze in the same camera (measured dark-pixel span).
+    const POSES = [
+        { name: 'inrun',   tuck: 1, grounded: true,  pike: 0 },
+        { name: 'tuck',    tuck: 1, grounded: false, pike: 0 },
+        { name: 'pike',    tuck: 0, grounded: false, pike: 1 },
+    ];
+    const measureSpan = () => page.evaluate(async () => {
+        // One synchronous frame, then read the canvas — the sim is paused.
+        BABYLON.EngineStore.LastCreatedScene.render();
+        const gl = BABYLON.EngineStore.LastCreatedScene.getEngine().getRenderingCanvas();
+        const cv = document.createElement('canvas');
+        cv.width = gl.width; cv.height = gl.height;
+        const cx = cv.getContext('2d');
+        cx.drawImage(gl, 0, 0);
+        const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+        const W = cv.width, H = cv.height;
+        const X0 = Math.round(W / 3), X1 = Math.round(2 * W / 3);
+        let ymin = H, ymax = -1, n = 0, fig = 0;
+        for (let y = 0; y < H; y++) for (let x = X0; x < X1; x++) {
+            const i = (y * W + x) * 4;
+            const lum = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+            n++;
+            if (lum < 0.35) { fig++; if (y < ymin) ymin = y; if (y > ymax) ymax = y; }
+        }
+        return { span: ymax >= 0 ? +((ymax - ymin) / H).toFixed(3) : 0, frac: +(fig / n).toFixed(4) };
+    });
+    // Pause deterministically: 'p' is a TOGGLE, and earlier sections may have
+    // left it either way. The sim's own pose write is registered AFTER the
+    // freeze observer, so while unpaused it overwrites the freeze every
+    // frame — the freeze only wins when the step is paused out.
+    while (!(await page.evaluate(() => window._isPaused()))) {
+        await page.keyboard.press('p');
+        await page.waitForTimeout(120);
+    }
+    await page.waitForTimeout(300);
+    for (const P of POSES) {
+        const info = await page.evaluate((pose) => {
+            const scene = BABYLON.EngineStore.LastCreatedScene;
+            const gs = window._getGameState();
+            const A = window._runAnchors();
+            const zMid = A.SLOPE_START_Z - 20;                     // mid in-run
+            const zAir = (A.LANDING_START_Z + A.OUTRUN_Z) / 2;     // mid landing
+            const floor = (z) => window._crashFloorY(z);
+            const grounded = pose.grounded;
+            const z = grounded ? zMid : zAir;
+            // Root offset learned from the live ready stance (root sits a
+            // fixed amount above the floor it stands on).
+            const body = scene.meshes.find(m => (m.name || '').indexOf('athleteBody') === 0);
+            const root = body ? body.getAbsolutePosition() : null;
+            const standOff = root ? root.y - floor(gs.posZ) : 1.5;
+            window._poseFreeze = {
+                tuck: pose.tuck, grounded, pike: pose.pike,
+                posZ: z,
+                rootY: grounded ? floor(z) + standOff : floor(z) + standOff + 8,
+            };
+            return { z, standOff: +standOff.toFixed(3) };
+        }, P);
+        // Geometric cameras from the frozen figure.
+        for (const view of ['front', 'side']) {
+            await page.evaluate(([pose, v]) => {
+                const scene = BABYLON.EngineStore.LastCreatedScene;
+                const cam = scene.activeCamera;
+                // Skinned athleteBody bounds are STALE (bind pose) — frame
+                // from the DRIVEN segments (window._characterMeshes), which
+                // the freeze actually moves, same source the crash solver
+                // and _renderedHeadCentre read.
+                const parts = Object.values(window._characterMeshes || {})
+                    .filter(m => m && m.getBoundingInfo);
+                if (!parts.length) throw new Error('_characterMeshes unavailable');
+                let lo = null, hi = null;
+                for (const p of parts) {
+                    p.computeWorldMatrix(true);
+                    const b = p.getBoundingInfo().boundingBox;
+                    lo = lo ? BABYLON.Vector3.Minimize(lo, b.minimumWorld) : b.minimumWorld.clone();
+                    hi = hi ? BABYLON.Vector3.Maximize(hi, b.maximumWorld) : b.maximumWorld.clone();
+                }
+                const c = lo.add(hi).scale(0.5);
+                const f = window._athleteFacing();
+                const a = Math.atan2(f.forward[2], f.forward[0]);
+                cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 200;
+                cam.setTarget(c.clone());
+                cam.radius = 2.4; cam.fov = 0.8;
+                cam.beta = Math.PI / 2.2;
+                cam.alpha = v === 'front' ? a : a - Math.PI / 2;
+            }, [P, view]);
+            await page.waitForTimeout(150);
+            const sil = await measureSpan();
+            await page.screenshot({ path: path.join(OUT, `pose_${P.name}_${view}.png`) });
+            console.log(`POSESHOT ${P.name} ${view}`, JSON.stringify({ ...info, ...sil }));
+            expect(sil.span, `pose_${P.name}_${view}.png shows no athlete silhouette (span ${sil.span})`)
+                .toBeGreaterThan(0.15);
+        }
+    }
+    // DISCRIMINATION gate (FABLE-80 finding 11: every gate ships with a way
+    // to fail): the three poses are visually distinct states — the frozen
+    // shots must actually differ pairwise. (A broken freeze that never
+    // applied produced six byte-identical shots during development.)
+    const fs = require('node:fs');
+    const fronts = POSES.map(p =>
+        fs.readFileSync(path.join(OUT, `pose_${p.name}_front.png`)));
+    for (let i = 0; i < fronts.length; i++)
+        for (let j = i + 1; j < fronts.length; j++)
+            expect(fronts[i].equals(fronts[j]),
+                `pose_${POSES[i].name}_front.png and pose_${POSES[j].name}_front.png are identical — the pose freeze is not differentiating`).toBe(false);
+    await page.evaluate(() => { window._poseFreeze = null; });
+    await page.keyboard.press('p');
 });
