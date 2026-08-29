@@ -208,7 +208,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P3 | Venue dressing | **B-net (iter 16/22), wands + knoll flag (iter 102), judges'/start deck (iter 107), coach figures (iter 108) — P3 COMPLETE** | B-net: 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips, net top ≤1.20 m, permanent gates in venue-dressing.spec; iter-107 deck: timber deck on two dark containers + rail beside the kicker, level-seated by post-render ray pick, gated (test 3 of 4); iter-108 coaches: 3 red-jacket card figures at the knoll, 1 shared alpha-test material, seated + gated (test 4 of 4) |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | **slice 1 landed (iter 56); slice 2 bare-deciduous MAJORITY landed (iter 98: 2 birch variants, 56.6% birch mix, 6 draw calls, species census gates, ASSET_V 33)** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 6 thin-instanced cross-card meshes = 6 draw calls (plan cap ≤ 20); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, understory |
-| P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
+| P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89); iter-109 REGRESSION FIXED + spec made state-deterministic (iter 112)** | iter-112: iter 109 accidentally deleted `R.phase = 'roll'` — the machine never left tumble, never stopped (the "flaky" crash spec was red BY CONSTRUCTION at HEAD since 109); line restored, golden re-captured 30/30 (13 crash tails, state-diff 0, node-only from f495); `window._debugTriggerCrash()` forces the crash from game state; open: restAt 9.0 s vs the 5 s gate for low-seed crashes (seed floor 6 = the real browser impact; 2–5 s envelope + ≥60% + never-stall-mid-slope are mutually incompatible at seed 6 — reviewer question) |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth INSTRUMENT corrected + calf growth (iter 91, entry 91); chest-wall RESKIN + crown sphere-cap landed (iter 96); partially landed otherwise** | **iter 96: chest-wall ownership restored (25 verts upperArmR -> torso via normal-alignment rule; nipple-line chest 303 mm, sanity band back to 0.30-0.45) and the helmet crown is a sphere cap (95.0 mm, gate 73) applied as the LAST geometry pass; tilt p10 14.0 deg still soft (instrument question, entry 96); goggle-proud gate recalibrated 71.5 -> 68.0 for the new pipeline; ASSET_V 32**. Prior: iter 91 instrument correction (hip 295 / thigh 214 / calf 146, ASSET_V 30); iter 32 arm transport root cause. |
@@ -258,6 +258,75 @@ entry 90 below.)*
 rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
 Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
+
+### 112 — Crash spec made state-deterministic (`window._debugTriggerCrash`) +
+REAL iter-109 regression found and fixed: `R.phase = 'roll'` was deleted, the
+crash machine never stopped; golden re-captured 30/30 (state-diff 0, crash-tail
+nodes only); `window._crashImpactSpeed` instrument actually landed; main crash
+test now reaches `stopped` but fails the 5 s envelope at the real impact speed
+(reviewer question 1 of entry 109, now with numbers)
+
+**Order acted on:** the reviewer ruling on entry 109 (d260fb9): "queue the
+deterministic crash trigger for iteration 111 (110 is review-only) — the spec
+must force the crash from game state, then remove the flake allowance.
+Bug-fix rule applies: the refactor ships with the spec that would have caught
+it." No `docs/NEXT.md`. That spec caught a real bug, exactly as the ruling
+predicted.
+
+**Regression (the headline):** iter 109 (bda34d6) accidentally deleted
+`R.phase = 'roll';` from the tumble→roll freeze block in `_crashRagdollStep`
+(`git log -L` proves it: present in 7774a89, removed in bda34d6). Consequence:
+the freeze block re-ran EVERY frame after t≥1.0 s, `R.phase` stayed
+`'tumble'` forever, the roll branch (5616) was dead code and
+`R.phase='stopped'` (5673) was unreachable — **the crash state machine could
+never reach `stopped` at HEAD since 109**. Entry 110's run-all
+("89 passed / 1 FAILED") could not have included a green crash-ragdoll main
+test with these gates; the "flaky" label in entries 109/110 was this
+deterministic red. Fix: restore the one line.
+
+**Deterministic trigger (`game.js` + spec):**
+- `window._debugTriggerCrash()` sets a module flag; the next touchdown takes
+  the crash branch (`goodLanding &&= !debugForceCrash`) regardless of flip
+  timing. Reset on run restart. Display-side only; not in `_getGameState`.
+- The spec arms it once AIRBORNE PAST THE KICKER (`!grounded && posZ ≥
+  KICKER_END_Z`). Two earlier arming boundaries were wrong and are documented
+  here as landmines: arming immediately after `readyState === false` crashes
+  on the READY-TURN HOP's in-run touchdown (ragdoll then never settles — 2 of
+  3 tests "passed" only because they expect gate failures), and arming on
+  `flipPower ≥ 0.999` while airborne never fires at all.
+- 90 s `crashedAt` leash tightened to 60 s (the crash is now guaranteed;
+  the leash only bounds SwiftShader wall-clock).
+- `window._crashImpactSpeed()` instrument landed (entry 109 claimed it; it
+  was never in the tree).
+
+**Verification:** `npm run test:unit` 78/78. `npm run test:golden`: the 13
+crash-tail scenarios diverged (the machine now actually stops) → re-captured →
+**30/30**; audit vs pre-change traces: **state diffs 0 in all 13**, node diffs
+confined to f495 (crash frame) onward — same display-only class as iters
+56/109. crash-ragdoll solo: negative controls 2/2 green (no-roll: frac 4%,
+slope 40° → gate fails as required; limp: peakExc 160.8° > 38°); MAIN test
+now gets past `stopped` (restAt 8.96–9.05 s, phase=stopped, peakExc 35.3° ≤
+38°, peakSpine 39.2–40.2° ≤ 43°) but fails the 2–5 s envelope gate — see the
+open question. `look` NOT re-run this iteration (no visual-path change; the
+crash pose endpoints are what changed and the crash_rest shot comes from the
+red spec — flagged for 113).
+
+**Open question for the reviewer (blocks the main crash test):** the real
+browser impact speed at the trigger is ≈ 5–6 m/s (NOT the ~26 m/s entry 109
+recorded — that number does not reproduce), so the seed floor 6 engages and
+the body rides the 4 m/s never-stall floor down the full 27.7 m of landing
+slope: restAt ≈ 9.0 s vs the ≤ 5 s gate. With `decel = 3 m/s², floor = 4
+m/s, never stall mid-slope, envelope 2–5 s, rest ≥ 60 % to roll-out`, a
+seed-6 crash CANNOT satisfy the envelope (≥ 16.6 m at ≤ 4 m/s ≈ 4.2 s minimum,
+plus the flat stop). Entry 109's ruling (1) offered "speed-scaled decel so
+rest distance still grows with entry speed" — please pick: (a) drop/raise the
+never-stall floor so low-speed crashes stop on the slope (restAt ~4 s, rest
+~60–70 %), (b) rescale the envelope for the measured seed, or (c) revert to
+the constant 15 m/s seed (iter-89 verified, but slow and fast crashes then
+slide identically).
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete lane files, DoF block.
+Scratch probes removed from `~/aerial-agents/scratch/iter-112/`.
 
 ### 110 — REVIEW-ONLY + one REAL breakage fixed: venue-dressing test 4 RED at
 HEAD (solo too) — root cause: `MATERIAL_ALPHATESTMODE` is undefined in the
