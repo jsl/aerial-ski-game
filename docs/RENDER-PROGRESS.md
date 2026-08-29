@@ -6232,6 +6232,61 @@ support a P2 claim.
 *Everything above is measurement/inspection only; no source files changed in
 this iteration.*
 
+### 94 — P6 ridgelines + lighter B-net (reviewer order); NEXT.md diagnosis
+started (crown pipeline killer found, cap drafted, not landed)
+
+**Reviewer order acted on:** 05:05 order "94 = lighter B-net + P6 ridgelines"
+(commit f9b2b60), then the new `docs/NEXT.md` (05:55) was picked up as the
+mandated task; it is NOT complete and stays in place.
+
+**P6 ridgelines:** the 11 snow-capped cone peaks (`pk_body_`/`pk_cap_`
+cylinders) are replaced by 8 deterministic ridgeline "curtains"
+(`ridge_near/mid/far_{L,R}`, `ridge_back`, `ridge_ahead`) — a vertical strip
+per column from below the valley floor to a two-sine profile (RIDGE_STEP 6 m,
+~170 verts each, 8 draw calls), seated by construction (A7-safe), colours
+mixed toward the fog colour with distance (forest green near -> hazy far).
+`rockMat` retired; extract-terrain whitelist `pk_*` -> `ridge_`. Shots:
+`kicker.png`/`scene.png` now show smooth layered hill silhouettes above the
+treeline instead of cones.
+
+**Lighter B-net:** rope texture paler blue rgb(126,158,226), 3 px strands,
+single horizontal ropes (net tex mean luminance 156, alpha coverage 0.239).
+
+**grey-ramp kickerFace instrument:** the fixed fractional box sampled the new
+horizon ridge above the lip (lum 0.7626 vs floor 0.7627, skyFrac 0.0235); it
+is now anchored to the projected take-off face (lower face, +-0.014 box:
+0.7702, skyFrac 0). GREY_RAMP: corridor 0.8289, flanks 0.8509/0.8427, inrun
+0.8278, face 0.7702 — all gates green.
+
+**Golden:** census-only re-capture; audit script confirms physics `state`
+byte-identical in all 30 scenarios, node diffs confined to pk_* removal /
+ridge_* addition.
+
+**NEXT.md item 1 (crown) — diagnosis landed, fix NOT landed.** New
+`crown_probe()` logs crown height + plateau tilt after every head-touching
+pass. Findings: `retune_proportions` is the pipeline killer (crown
+115.1 -> 74.8 mm); `shape_helmet`'s ellipsoid is itself too flat (tilt p10
+12.6 deg vs gate 25 even before it). A draft `crown_cap_last()` sphere cap
+(R = 1.02 x half-width, cranium-centred, rim-plane origin) hits the crown
+gates by construction (94.8 mm >= 68, tilt 29.9 >= 25) but shifts two
+neighbours out of band: goggle proud 68.9-69.9 < 71.5 and, in one variant,
+the tilt band dilutes with fade-band verts (14.0 deg over 267 verts). The
+call is DISABLED in `main()` with the numbers in a comment; the build passes
+all gates with it off (crown 91.6, tilt 13.1 SOFT). Assets restored — no
+rebuild shipped, no ASSET_V bump needed. NEXT.md items 2 (chest-wall
+ownership) and 3 (corridor parity — note the anchored face box now reads
+0.7702 >= 0.7627 floor) are NOT started.
+
+**Verification:** unit 78/0; golden 30/30; drive green: look, a7-slab,
+venue-dressing, extract-terrain, sky, shadows, trees, grey-ramp.
+
+**Open for the reviewer / next iteration:** (1) crown fix strategy — cap
+owning the full band above brim1 vs excluding head verts from
+`retune_proportions`; goggle-proud gate may need re-calibration if the
+cap changes the skin reference (sabotage control still measures 68.4).
+(2) Items 2-3 of NEXT.md. (3) The ridgelines read slightly pale against the
+sky in `scene.png` — depth cueing vs visibility is an eye call.
+
 ### 93 — Pose shots + rendered-head hook + HUD-less crash shot + A7 slab
 seated + dark kicker edge line (reviewer order 93)
 

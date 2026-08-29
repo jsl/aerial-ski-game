@@ -1517,6 +1517,81 @@ def leg_girth_pass(body):
 
 
 
+def crown_probe(body, lm, tag):
+    """NEXT (iter 94) instrument: crown height + plateau tilt after every
+    head-touching pass, to find which pass kills the hemispherical dome
+    (the 92/93 crown fix 'did not survive the pipeline'). Same measurements
+    and thresholds as face_helmet_gate's crown block, but runnable on any
+    intermediate mesh; logs only, never gates."""
+    import bmesh
+    own = dominant_segments(body)
+    c = bl('head')
+    hv = [v.co for v in body.data.vertices if own[v.index] == 'head']
+    if len(hv) < 20:
+        log(f'crown probe [{tag}]: too few head verts ({len(hv)})')
+        return
+    xs = [p.x for p in hv]
+    head_w = max(xs) - min(xs)
+    crown_z = max(p.z for p in hv)
+    crown_up = crown_z - lm['brim0']
+    dome_h = crown_z - lm['brim0']
+    z_thr = crown_z - 0.35 * dome_h
+    _bm = bmesh.new()
+    _bm.from_mesh(body.data)
+    _bm.normal_update()
+    _bm.verts.ensure_lookup_table()
+    tilts = []
+    for v in body.data.vertices:
+        p = v.co
+        if own[v.index] != 'head' or p.z < z_thr:
+            continue
+        r = math.hypot(p.x - c.x, p.y - c.y)
+        if r >= 0.45 * head_w / 2:
+            nz = max(-1.0, min(1.0, _bm.verts[v.index].normal.z))
+            tilts.append(math.degrees(math.acos(nz)))
+    _bm.free()
+    tilt_p10 = sorted(tilts)[max(0, int(0.10 * (len(tilts) - 1)))] if tilts else 0.0
+    log(f'crown probe [{tag}]: crown {crown_up * 1000:.1f} mm '
+        f'(gate {0.45 * head_w * 1000:.0f}), tilt p10 {tilt_p10:.1f} deg '
+        f'(gate 25) over {len(tilts)} verts')
+
+def crown_cap_last(body, lm):
+    """NEXT (iter 94) item 1: the dome kept dying between shape_helmet's
+    ellipsoid and the late passes (crown probe: retune_proportions squashes
+    the crown 115 -> 75 mm). Instead of fixing each consumer, re-assert the
+    hemisphere HERE as the LAST body-space geometry pass before
+    finish_lowpoly: every head vert above the brim is projected onto a
+    SPHERE CAP centred on the rim plane's centre with radius
+    1.10 x half-width. A sphere cap's band-edge normal tilt is
+    asin(r/R) >= asin(0.45) = 26.7 deg (gate 25), crown height = R
+    (gate 0.45 x width), so the gate holds by construction. Blend across
+    the brim band so the shell still dissolves into the skull; face and
+    goggle lens (both below brim0) are untouched."""
+    own = dominant_segments(body)
+    c = bl('head')
+    hv = [v.co for v in body.data.vertices if own[v.index] == 'head']
+    cran = [p for p in hv if p.z >= lm['brim0']]
+    cran_x = sum(p.x for p in cran) / len(cran)
+    cran_y = sum(p.y for p in cran) / len(cran)
+    xs = [p.x for p in hv]
+    R = (max(xs) - min(xs)) / 2 * 1.02
+    o = Vector((cran_x, cran_y, lm['brim0']))
+    moved = 0
+    for v in body.data.vertices:
+        if own[v.index] != 'head' or v.co.z < lm['brim0']:
+            continue
+        d = Vector((v.co.x - o.x, v.co.y - o.y, v.co.z - o.z))
+        n = d.length
+        if n < 1e-6:
+            continue
+        target = o + d * (R / n)
+        t = min(1.0, (v.co.z - lm['brim0']) / max(1e-4, lm['brim1'] - lm['brim0']))
+        w = t * t * (3 - 2 * t)
+        v.co = Vector(v.co) * (1 - w) + target * w
+        moved += 1
+    log(f'crown cap: {moved} verts projected onto a sphere cap '
+        f'R={R:.3f} m about the rim plane z={lm["brim0"]:.3f}')
+
 def shape_helmet(body, lm):
     """
     Build a CRANIUM-ONLY helmet shell over a preserved face.
@@ -4940,11 +5015,14 @@ def main():
     log(f'head landmarks: chin {lm["chin"]:+.3f}, eyes {lm["eyes"]:+.3f}, '
         f'brim {lm["brim0"]:+.3f}..{lm["brim1"]:+.3f}, crown {lm["top"]:+.3f}')
     shape_helmet(body, lm)
+    crown_probe(body, lm, 'after shape_helmet')
     retune_proportions(body)
+    crown_probe(body, lm, 'after retune_proportions')
     leg_profile(body, 'post-pose')
     build_report(body, 'before girth')
     straighten_forearms(body)
     settle_limb_geometry(body)
+    crown_probe(body, lm, 'after settle_limb_geometry')
     scale_hands(body)
     _arm_trace(body, 'after-settle')
     _arm_cloud_dbg(body, 'final')
@@ -4954,6 +5032,7 @@ def main():
     align_boots(body, joints)
     prof = leg_profile(body, 'final')
     narrow_shoulders(body)
+    crown_probe(body, lm, 'after narrow_shoulders')
     bide_w, bide_z = bideltoid_report(body)
     if bide_w > BIDELTOID_GATE:
         raise SystemExit(
@@ -4998,6 +5077,7 @@ def main():
     # verdict of the shots. --relax-suit off reproduces the pre-relax iron.
     if arg('--relax-suit', 'on') != 'off':
         relax_suit(body, joints)
+        crown_probe(body, lm, 'after relax_suit')
         # The pass is geometry-side, so re-ask the two silhouette gates that
         # ran before it (cheap): the deltoid cap has relax weight zero, and
         # the row radius restore keeps the taper — assert, don't hope.
@@ -5025,9 +5105,16 @@ def main():
     # of the chest. The spec now frames the plate from the suit part's own bbox
     # (front navyFrac 0.0498 on the un-straightened build).
     straighten_chest(body)
+    crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
+    # crown_cap_last(body, lm) — iter-94 DRAFT, disabled: with cranium centring
+    # dome centre passes (6.0 mm) but the tilt p10 dilutes to 14.0 deg (the
+    # gate band picks up 267 fade-band verts on the near-vertical shell wall)
+    # and goggle proud reads 68.9 < 71.5. Next iteration: raise the cap so it
+    # fully owns the band above brim1 (w=1 earlier), or lift the fade band;
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
+    crown_probe(low, head_landmarks(low), 'after finish_lowpoly (final)')
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
     goggle_geometry(low, head_landmarks(low))
