@@ -23,7 +23,7 @@ Read `docs/REFERENCE-FOOTAGE.md`, `docs/FABLE-REVIEW-80.md`, `docs/ANALYSIS-rend
 requirement). Footage (local only, gitignored): `reference/frames/<clip>/*.jpg`; the athlete in
 `IMG_3523`/`IMG_3520` wears a **white suit with a royal-blue panel/stripe, dark helmet, bib**. Zoom into
 the frames (crop with PIL) for helmet/goggle/face/suit-fit detail before you model anything.
-Blender: `/opt/blender-5.2.1-linux-x64/blender -b -P blender/build_body.py` (see `blender/README*` and the
+Blender: `~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup --python blender/build_body.py -- --out assets/athlete_body.glb --res 2048 --samples 96` (see `blender/README*` and the
 Makefile targets; the build has its own gates that must keep passing).
 
 ## Review findings (Fable, from `shots/face.png`, `figure_front.png`, `figure_side.png`, `pose_tuck_side.png`, head `b5d51b9`) and the fix each needs
