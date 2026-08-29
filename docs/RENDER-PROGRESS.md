@@ -7164,3 +7164,10 @@ visible at gameplay distance in these framings; P6 mountains per item 1.
 Verification summary: run-all ALL GREEN (drive 88/2skip, 22.2 m); unit
 78/78; golden 30/30; look 1/1 (3.5 m); shots regenerated 11:39–11:42 and
 inspected (scene, figure, figure_front, inrun, kicker).
+
+Addendum: `./tests/run-all.sh`'s `extract-terrain.spec.js` regenerated
+`blender/terrain.json` from live game state — the committed copy was stale vs
+the current geometry code (3694 differing position components, mostly flank
+extent z −68 → −76.6/−85.3). Committed as generated-artifact cutover; suite
+was ALL GREEN with the regenerated file; shots above predate it (visual
+delta negligible — flank extent only).
