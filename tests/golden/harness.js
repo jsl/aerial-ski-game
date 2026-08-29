@@ -107,6 +107,21 @@ function createSim(opts = {}) {
         const out = {};
         const names = [...BABYLON._nodes.keys()].sort();
         for (const name of names) {
+            // OPUS ITEM 5: the spine_01..03 driver nodes are NOT recorded.
+            //
+            // They carry no state of their own. updateSpineChain walks them up
+            // the torso mesh driver every frame from transforms this trace
+            // already records in full (torso, head, upperLeg*), so a change in
+            // any of them shows up here through its cause, and a change in the
+            // spine alone is a rendering change these traces do not exist to
+            // pin. Recording them would have meant re-capturing all 30 golden
+            // traces to add three derived nodes, which ADR-0005 reserves for
+            // deliberate behaviour changes — this is not one.
+            //
+            // The spine's own geometry is gated in tests/drive/spine.spec.js
+            // (structure, weights, skinned strain, chain C1 continuity), with
+            // a negative control.
+            if (/^spine_\d+$/.test(name)) continue;
             const n = BABYLON._nodes.get(name);
             if (!n) continue;
             const rec = {};

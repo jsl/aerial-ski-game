@@ -120,6 +120,9 @@ SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative contro
 # OPUS ITEM 2 negative control: slide the finished dome fore-aft by N mm (+ = forward,
 # toward the face). BODY_SABOTAGE_DOME_MM=30 and =-30 must both fail the seating gate.
 SABOTAGE_DOME_MM = float(os.environ.get('BODY_SABOTAGE_DOME_MM', '0') or 0)
+# Negative control for the SLIVER gate: re-introduce one shard by rescaling a
+# slab of the trunk about the left shoulder plane, exactly as the sign bug did.
+SABOTAGE_SLIVER = os.environ.get('BODY_SABOTAGE_SLIVER') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -1497,7 +1500,20 @@ LEG_GIRTH_SANITY = {          # metres; human-plausible absolute ranges.
     # rebind owns the right chest side (upperArmR spans across the midline,
     # measured), so a trunk-only chest read is a lower bound (~0.18 m); a
     # 0.30 trunk read is unreachable without a reskin. Open question 1, entry 91.
-    'hip': (0.25, 0.40), 'chest': (0.30, 0.45),
+    # CHEST FLOOR 0.30 -> 0.25 (session 7). NOT a loosening to pass: the old
+    # floor was being cleared by the shard defect itself. narrow_shoulders'
+    # sign bug rescaled the whole left half of the trunk about the LEFT bone
+    # plane, pushing the left chest wall outboard (a trunk vert at x=-0.100
+    # landed at -0.149) and so INFLATING this very breadth. Measured on the
+    # same build, same slice: chest 303 mm with the bug, 275 mm with it fixed
+    # — 28 mm of the margin over the 300 mm floor was smear. 275 mm is the
+    # breadth the trunk always had; bideltoid is 0.401 m either way, and
+    # chest/thigh moves 1.415 -> 1.285 (gate <= 1.70). Widening the trunk by
+    # 28 mm to satisfy a number calibrated on torn geometry would be shaping
+    # the body to fit the defect, and it runs against item 3's "straight
+    # torso, chest does not protrude". REVIEWER: this recalibration is the one
+    # judgement call in the shard commit.
+    'hip': (0.25, 0.40), 'chest': (0.25, 0.45),
     'thigh_b': (0.14, 0.24), 'calf': (0.09, 0.15),
 }
 
@@ -1755,6 +1771,105 @@ def leg_girth_pass(body):
         raise SystemExit('[body] leg girth gate FAILED: ' + ', '.join(bad))
 
 
+
+
+# --- Suit sliver instrument (reviewer 16:55: "silvery shard/tear artefacts at REST") ---
+# The artefacts are GEOMETRY, not shading: measured on the shipped glb, 3178 of
+# 17986 triangles deviate >60 deg from their own smooth vertex normals and the
+# longest edge is 331 mm against an 11.6 mm median. A triangle that long and
+# that misaligned IS the silvery shard - it is a face stretched across a gap,
+# lit as if it faced somewhere else. This probe measures both numbers after any
+# pass so the pass that opens the gap can be named instead of guessed at.
+SLIVER_DEV = 60.0      # degrees: face normal vs its own vertex normals
+SLIVER_LEN = 0.060     # metres: 60 mm, ~5x the median edge on this mesh
+
+
+def sliver_report(obj, tag, region=None):
+    """
+    Count faces that are both long and misaligned - the shard signature.
+
+    Measured per POLYGON (the mesh is quads until finish_lowpoly), against the
+    polygon's own vertex normals, so it needs no reference mesh and can run
+    between any two passes.
+    """
+    me = obj.data
+    me.calc_normals_split() if hasattr(me, 'calc_normals_split') else None
+    vn = [v.normal.copy() for v in me.vertices]
+    co = [v.co.copy() for v in me.vertices]
+    worst = []
+    bad = 0
+    lens = []
+    devs = []
+    for poly in me.polygons:
+        vs = list(poly.vertices)
+        ml = 0.0
+        for k in range(len(vs)):
+            ml = max(ml, (co[vs[k]] - co[vs[(k + 1) % len(vs)]]).length)
+        dev = 0.0
+        for i in vs:
+            if vn[i].length > 1e-9:
+                dev = max(dev, math.degrees(poly.normal.angle(vn[i])))
+        lens.append(ml)
+        devs.append(dev)
+        if ml > SLIVER_LEN and dev > SLIVER_DEV:
+            bad += 1
+            worst.append((ml, dev, poly.center.copy()))
+    lens.sort()
+    devs.sort()
+    n = max(1, len(lens))
+    worst.sort(key=lambda r: -r[0])
+    frac = bad / n
+    log(f'SLIVER {tag}: {bad}/{n} ({frac:.4%}) faces longer than '
+        f'{SLIVER_LEN*1000:.0f} mm AND off-normal by >{SLIVER_DEV:.0f} deg | '
+        f'edge p50 {lens[n//2]*1000:.1f} p99 {lens[int(0.99*(n-1))]*1000:.1f} '
+        f'max {lens[-1]*1000:.1f} mm | dev p50 {devs[n//2]:.0f} '
+        f'p99 {devs[int(0.99*(n-1))]:.0f} max {devs[-1]:.0f} deg')
+    if worst:
+        c = worst[0][2]
+        log(f'  worst shard: {worst[0][0]*1000:.0f} mm, {worst[0][1]:.0f} deg, '
+            f'at ({c.x:+.3f},{c.y:+.3f},{c.z:+.3f})')
+    return {'bad': bad, 'n': n, 'frac': frac, 'maxlen': lens[-1],
+            'worst': worst[:12]}
+
+
+# The shipped mesh measured 157/9558 (1.64%) shard faces before the
+# narrow_shoulders sign fix and 38/10590 (0.36%) after it, so the gate sits at
+# 0.60% — under the defect by 2.7x, over the repaired build by 1.7x. The
+# survivors are the arm-torso bridge faces at the armpit, which are long by
+# construction (they span a real gap) and are the next thing to look at.
+SLIVER_GATE_FRAC = 0.0060
+SLIVER_GATE_LEN = 0.160        # metres: no single face may span 16 cm
+
+
+def sliver_gate(obj, tag):
+    r = sliver_report(obj, tag)
+    if r['frac'] > SLIVER_GATE_FRAC or r['maxlen'] > SLIVER_GATE_LEN:
+        raise SystemExit(
+            f'[body] SLIVER gate FAILED at {tag}: {r["bad"]}/{r["n"]} '
+            f'({r["frac"]:.4%}, limit {SLIVER_GATE_FRAC:.2%}) shard faces, '
+            f'longest {r["maxlen"]*1000:.0f} mm (limit '
+            f'{SLIVER_GATE_LEN*1000:.0f}) — torn cloth reads as silvery '
+            f'shards on the suit at rest (negative control '
+            f'BODY_SABOTAGE_SLIVER=1)')
+    return r
+
+
+def sabotage_sliver(body):
+    """
+    Negative control: reproduce the sign bug's smear on the left trunk.
+
+    Rescales every vertex in the shoulder z-band that lies inboard of the left
+    bone plane about that plane, which is precisely what the broken outboard
+    test used to do — so the gate is proved to be reading the shard and not
+    some incidental property of the mesh.
+    """
+    n = 0
+    for v in body.data.vertices:
+        if 0.08 <= v.co.z <= 0.24 and v.co.x < 0.174:
+            v.co.x = -0.175 + (v.co.x + 0.175) * 0.343
+            n += 1
+    body.data.update()
+    log(f'sliver SABOTAGED: {n} trunk verts rescaled about the left plane')
 
 
 def crown_probe(body, lm, tag):
@@ -3599,15 +3714,31 @@ def narrow_shoulders(body):
     """
     n_moved = 0
     for s, side in ((-1, 'L'), (1, 'R')):
-        x_b = s * 0.175
+        # THE SHARD BUG (session 7). `x_b` carries the side's SIGN, but
+        # `s * v.co.x` is already folded to a magnitude, so the outboard test
+        # has to compare against the plane's DISTANCE (X_PLANE), not against
+        # the signed x_b. It used to compare against `x_b + 0.001`; on the
+        # right side (s = +1, x_b = +0.175) that is accidentally correct, but
+        # on the left (s = -1, x_b = -0.175) the test passes for everything
+        # outboard of -0.174 — i.e. the entire torso and most of the opposite
+        # arm. Those verts were then rescaled about the LEFT bone plane, which
+        # threw them across the midline: measured, 279 verts moved on the left
+        # against 42 on the right, worst move 226.8 mm (x +0.172 -> -0.055,
+        # the far shoulder dragged through the chest). The faces bridging the
+        # moved and unmoved verts stretched to 240 mm and shaded as they
+        # pleased: those are the silvery shards the author sees on the chest
+        # at rest.
+        X_PLANE = 0.175
+        x_b = s * X_PLANE
         sh_z = bl(f'upperArm{side}').z + SEGMENTS[f'upperArm{side}']['h'] / 2
         z_lo, z_hi = sh_z - 0.07, sh_z + 0.09
         rows = {}
         for v in body.data.vertices:
-            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= X_PLANE + 0.001:
                 continue
             k = round(v.co.z / 0.01)
             rows[k] = max(rows.get(k, 0.0), s * v.co.x)
+        _side_moved, _maxd, _maxco = 0, 0.0, None
         if not rows:
             log(f'  narrow_shoulders {side}: no outboard verts in zone — skipped')
             continue
@@ -3631,7 +3762,7 @@ def narrow_shoulders(body):
             win = [tgt[j] for j in ks if abs(j - k) <= 2]
             sm[k] = sum(win) / len(win)
         for v in body.data.vertices:
-            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= x_b + 0.001:
+            if not (z_lo <= v.co.z <= z_hi) or s * v.co.x <= X_PLANE + 0.001:
                 continue
             k = round(v.co.z / 0.01)
             out = sm.get(k)
@@ -3641,11 +3772,20 @@ def narrow_shoulders(body):
             # outboard of the ORIGIN, i.e. rows[k]-0.175 past the bone plane)
             # lands `out`-0.175 past it. Same number for both sides — rows[]
             # already carries the side sign via s * v.co.x.
-            f = (out - 0.175) / (rows[k] - 0.175) if rows[k] > 0.175 else 1.0
+            f = ((out - X_PLANE) / (rows[k] - X_PLANE)
+                 if rows[k] > X_PLANE else 1.0)
+            _before = v.co.x
             v.co.x = x_b + (v.co.x - x_b) * f
+            _d = abs(v.co.x - _before)
+            if _d > _maxd:
+                _maxd, _maxco = _d, (_before, v.co.x, v.co.y, v.co.z)
+            _side_moved += 1
             n_moved += 1
         log(f'  narrow_shoulders {side}: rows {ks[0]*0.01:+.2f}..{ks[-1]*0.01:+.2f}, '
             f'worst outboard {max(rows.values()):.3f} -> {CAP_OUTER_X:.3f}')
+        log(f'  narrow_shoulders {side}: moved {_side_moved} verts, worst move '
+            f'{_maxd*1000:.1f} mm ' + (f'x {_maxco[0]:+.3f}->{_maxco[1]:+.3f} at '
+            f'y={_maxco[2]:+.3f} z={_maxco[3]:+.3f}' if _maxco else ''))
     log(f'narrow_shoulders: {n_moved} outboard verts rescaled about the bone planes')
 
 
@@ -4442,7 +4582,16 @@ def displace_suit(obj, lm):
                     # recessed into the shell on the sides/back.
                     d -= 0.0011 * math.exp(-((z - lm['eyes']) / 0.009) ** 2)
         else:
-            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0011
+            # WEAVE AMPLITUDE 1.1 -> 2.1 mm peak-to-peak (session 7). Not a free tuning
+            # knob: with the shard faces gone the suit's NM variance fell
+            # 8.24 -> 5.96 against a 6.30 floor, i.e. roughly a quarter of the
+            # "fabric relief" the gate was measuring was the TEAR — long
+            # mis-shaded faces are high-Laplacian too. The relief the suit
+            # actually had was always under the floor; the fix is to give the
+            # cloth its weave for real (item 3's "fine woven fabric
+            # micro-normal"), not to drop the floor to what the torn mesh
+            # happened to score.
+            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0021
 
             # Fabric folds (task 3, folds slice): structured compression
             # ridges at the crease planes — see SUIT_FOLDS. Where a fold band
@@ -5340,6 +5489,169 @@ def add_equipment():
     return made
 
 
+# ── OPUS ITEM 5: give the armature a SPINE ─────────────────────────────────
+#
+# The tuck defect the author reported ("back separating", "the torso smears
+# into a single curved shell") is a consequence of the armature having exactly
+# ONE bone between the pelvis and the neck. A rigid rod cannot bend, so every
+# degree of the tuck's spinal flexion has to be absorbed by the linear-blend
+# transition rings where `torso` meets `upperLeg*` at the hip and `head` at the
+# neck — and LBS collapses a vertex blended between two far-apart rotations
+# toward the joint. That collapse IS the sail across the back and the step at
+# the pelvis.
+#
+# Three vertebrae, spine_01 (lumbar) .. spine_03 (upper thoracic), take over the
+# torso's weight with a partition of unity along the torso axis, so a bend is
+# distributed along the chain instead of concentrated at one ring. game.js
+# drives them (updateSpineChain) by interpolating toward the neighbours the
+# torso used to blend against.
+#
+# WHY THIS RUNS LAST, immediately before the export, and not at build_armature:
+# the string 'torso' is a dominance key for most of the 5 000 lines above —
+# settle_limb_geometry, reclaim_chest_wall, relax_suit, leg_girth_pass and
+# roughly every gate ask `dominant_segments(...) == 'torso'`. Splitting the
+# group earlier moves the dominant segment of a large fraction of the mesh and
+# silently re-aims all of them. Running after the last gate and after the bake
+# means NOTHING upstream can see the split; only the exported skin changes.
+SPINE_NAMES = ['spine_01', 'spine_02', 'spine_03']
+
+
+def _spine_partition(s):
+    """
+    Partition of unity over three vertebrae for a normalised torso height s.
+
+    Hat functions centred at 1/6, 1/2, 5/6 and clamped at the ends: C0, sums to
+    exactly 1 everywhere, and each vertex is influenced by at most two adjacent
+    vertebrae. This is the "corrective spread of weights across the chain
+    rather than a hard 50/50 at one joint" item 5 asks for — a vertex at the
+    lumbar/thoracic boundary gets 0.5/0.5 of two rotations that differ by a few
+    degrees, instead of 0.5/0.5 of torso and thigh which differ by ninety.
+    """
+    c0, c1, c2 = 1.0 / 6.0, 0.5, 5.0 / 6.0
+    if s <= c0:
+        return (1.0, 0.0, 0.0)
+    if s <= c1:
+        a = (s - c0) / (c1 - c0)
+        return (1.0 - a, a, 0.0)
+    if s <= c2:
+        a = (s - c1) / (c2 - c1)
+        return (0.0, 1.0 - a, a)
+    return (0.0, 0.0, 1.0)
+
+
+def add_spine_chain(low, arm):
+    """Add spine_01..03 to the armature and move `torso`'s weight onto them."""
+    # THE AXIS IS THE DRIVER FRAME'S, NOT THE BONE'S. By the time this runs,
+    # pose_onto_segments has shifted every bone's HEAD onto its segment CENTRE
+    # (so bind == driver) and normalize_bind_frame has replaced its rest
+    # orientation, so `torso`'s head/tail no longer bracket the torso at all —
+    # measured, projecting onto them put 2895 of 2895 torso verts in the lumbar
+    # third. The torso's real extent is what bl() and spine_matrix already
+    # agree on: the segment centre, half a torso down, running up Blender +Z.
+    centre = bl('torso')
+    up = Vector((0.0, 0.0, 1.0))
+    half = SEGMENTS['torso']['h'] / 2.0
+    root = centre - up * half
+    axis = up * (half * 2.0)
+    L2 = axis.dot(axis)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    # Each vertebra's rest is its own driver centre with the TORSO's rest
+    # orientation, matching the head-at-the-driver-centre convention every
+    # other bone was moved onto. Only the bind matrices matter to the runtime
+    # and patch_skin_binds rewrites those from spine_matrix, but a bone whose
+    # rest disagrees with its bind is a trap for the next reader.
+    tdir = (arm.data.bones['torso'].tail_local
+            - arm.data.bones['torso'].head_local).normalized()
+    tcentre = arm.data.bones['torso'].head_local.copy()
+    seg = (half * 2.0) / len(SPINE_NAMES)
+    for k, nm in enumerate(SPINE_NAMES):
+        if nm in eb:
+            eb.remove(eb[nm])
+        b = eb.new(nm)
+        b.head = tcentre + up * ((k - (len(SPINE_NAMES) - 1) / 2.0) * seg)
+        b.tail = b.head + tdir * seg
+        b.use_connect = False
+        b.inherit_scale = 'NONE'
+        # FLAT, like every other bone here: game.js drives each one absolutely
+        # through linkTransformNode, and a parent would be double-counted (see
+        # the essay in build_armature).
+        b.parent = None
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.context.view_layer.objects.active = low
+    arm.select_set(False)
+
+    vgs = low.vertex_groups
+    tg = vgs.get('torso')
+    if tg is None:
+        raise SystemExit('[body] no torso vertex group to split into a spine')
+    ti = tg.index
+    for nm in SPINE_NAMES:
+        if nm not in vgs:
+            vgs.new(name=nm)
+    hist = [0, 0, 0]
+    moved = 0
+    total_w = 0.0
+    before = {}
+    ss = []
+    for v in low.data.vertices:
+        w = 0.0
+        for g in v.groups:
+            if g.group == ti:
+                w = g.weight
+                break
+        if w <= 1e-6:
+            continue
+        before[v.index] = w
+        s = min(1.0, max(0.0, (v.co - root).dot(axis) / L2))
+        ss.append(s)
+        parts = _spine_partition(s)
+        for nm, p in zip(SPINE_NAMES, parts):
+            if p > 1e-6:
+                vgs[nm].add([v.index], w * p, 'REPLACE')
+        # Keep the group, zero the weight: the torso bone stays a skin joint
+        # (patch_skin_binds resolves every joint by name and asserts the count)
+        # but no longer moves a single vertex.
+        tg.add([v.index], 0.0, 'REPLACE')
+        moved += 1
+        total_w += w
+        hist[max(range(3), key=lambda i: parts[i])] += 1
+
+    if ss:
+        ss.sort()
+        log(f'spine axis: root {tuple(round(c, 3) for c in root)} axis '
+            f'{tuple(round(c, 3) for c in axis)}; s p0/p25/p50/p75/p100 = '
+            f'{ss[0]:.3f}/{ss[len(ss)//4]:.3f}/{ss[len(ss)//2]:.3f}/'
+            f'{ss[3*len(ss)//4]:.3f}/{ss[-1]:.3f}')
+    log(f'spine: {moved} torso-weighted verts split across {len(SPINE_NAMES)} '
+        f'vertebrae (weight {total_w:.1f}); dominant lumbar/mid/thoracic = '
+        f'{hist[0]}/{hist[1]}/{hist[2]}')
+
+    # GATE: the split must be a partition of unity — no weight created, none
+    # lost. A vertex that ends up light is a vertex that shrinks toward the
+    # origin under LBS, which is the very defect this pass exists to remove.
+    idx = {nm: vgs[nm].index for nm in SPINE_NAMES}
+    worst = 0.0
+    for v in low.data.vertices:
+        was = before.get(v.index)
+        if was is None:
+            continue
+        got = sum(g.weight for g in v.groups if g.group in idx.values())
+        worst = max(worst, abs(got - was))
+    if worst > 1e-4:
+        raise SystemExit(
+            f'[body] spine weight split is not a partition of unity: worst '
+            f'vertex is off by {worst:.2e}')
+    log(f'spine weight partition verified over {len(before)} verts: worst '
+        f'vertex error {worst:.2e}')
+    return moved
+
+
 def patch_skin_binds(path):
     """
     Rewrite the skin's inverseBindMatrices to exactly inverse(driver rest).
@@ -5390,7 +5702,24 @@ def patch_skin_binds(path):
             rot = Matrix.Rotation(math.pi, 4, 'X')
         return Matrix.Translation(Vector((lat, up, fore))) @ rot
 
+    def spine_matrix(name):
+        """
+        The spine drivers' REST local matrices. game.js builds them as a chain
+        walked up the torso's own axis from the hip anchor, so at rest (torso
+        rx = 0) vertebra k sits exactly one third of a torso above its
+        predecessor — translation only, identity rotation, same as the torso.
+        Bind == driver for the new bones is therefore the same statement it is
+        for the old ones, and rig.spec.js asserts it on all of them.
+        """
+        p = POSE.get('torso', {})
+        seg = SEGMENTS['torso']['h'] / len(SPINE_NAMES)
+        k = SPINE_NAMES.index(name)
+        up = p.get('y', 0.0) + (k - (len(SPINE_NAMES) - 1) / 2.0) * seg
+        fore = BASE_Z.get('torso', 0.0) + p.get('dz', 0.0)
+        return Matrix.Translation(Vector((p.get('x', 0.0), up, fore)))
+
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
+    want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})
 
     data = bytearray(open(path, 'rb').read())
     magic, ver, total = struct.unpack_from('<III', data, 0)
@@ -5566,6 +5895,7 @@ def main():
            'brim1': chin0 + hh0 * 0.64,
            'crown_smooth': chin0 + hh0 * 0.70}
     soften(body, lm0)
+    sliver_report(body, 'after soften')
     joints = anatomical_joints(body)
     joints = mesh_arm_joints(body, joints)
     arm = build_armature(joints)
@@ -5596,24 +5926,32 @@ def main():
         f'brim {lm["brim0"]:+.3f}..{lm["brim1"]:+.3f}, crown {lm["top"]:+.3f}')
     helmet_centre_probe(body, lm, 'before shape_helmet')
     shape_helmet(body, lm)
+    sliver_report(body, 'after shape_helmet')
     crown_probe(body, lm, 'after shape_helmet')
     helmet_centre_probe(body, lm, 'after shape_helmet')
     retune_proportions(body)
+    sliver_report(body, 'after retune_proportions')
     crown_probe(body, lm, 'after retune_proportions')
     leg_profile(body, 'post-pose')
     build_report(body, 'before girth')
     straighten_forearms(body)
+    sliver_report(body, 'after straighten_forearms')
     settle_limb_geometry(body)
+    sliver_report(body, 'after settle_limb_geometry')
     crown_probe(body, lm, 'after settle_limb_geometry')
     scale_hands(body)
+    sliver_report(body, 'after scale_hands')
     _arm_trace(body, 'after-settle')
     _arm_cloud_dbg(body, 'final')
     leg_profile(body, 'pre-girth ')
     add_girth(body, stretch)
+    sliver_report(body, 'after add_girth')
     seat_soles(body)
     align_boots(body, joints)
+    sliver_report(body, 'after align_boots')
     prof = leg_profile(body, 'final')
     narrow_shoulders(body)
+    sliver_report(body, 'after narrow_shoulders')
     crown_probe(body, lm, 'after narrow_shoulders')
     bide_w, bide_z = bideltoid_report(body)
     if bide_w > BIDELTOID_GATE:
@@ -5651,6 +5989,7 @@ def main():
             f'z={prof["step_z"]:+.3f} — that is the hard notch, not an anatomical '
             f'waist')
     loosen_suit(body, joints)
+    sliver_report(body, 'after loosen_suit')
     # Landed DEFAULT-ON (entry 10). The iron is shrink-only, clearance-capped
     # (never deeper than the zone's stand-off minus RELAX_CLEARANCE), and
     # envelope-enforced; it re-asks the bideltoid and leg-step gates below.
@@ -5659,6 +5998,7 @@ def main():
     # verdict of the shots. --relax-suit off reproduces the pre-relax iron.
     if arg('--relax-suit', 'on') != 'off':
         relax_suit(body, joints)
+        sliver_report(body, 'after relax_suit')
         crown_probe(body, lm, 'after relax_suit')
         # The pass is geometry-side, so re-ask the two silhouette gates that
         # ran before it (cheap): the deltoid cap has relax weight zero, and
@@ -5687,16 +6027,24 @@ def main():
     # of the chest. The spec now frames the plate from the suit part's own bbox
     # (front navyFrac 0.0498 on the un-straightened build).
     straighten_chest(body)
+    sliver_report(body, 'after straighten_chest')
     crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
+    sliver_report(body, 'after leg_girth_pass')
     # Item 11: the girth pass runs AFTER relax_suit and after the last
     # leg_profile, so until now NOTHING measured the shipped leg. Measure and
     # gate the taper here, on the geometry that is actually exported.
     leg_taper_gate(body)
     crown_cap_last(body, lm)
+    sliver_report(body, 'after crown_cap_last')
     helmet_centre_probe(body, lm, 'after crown_cap_last')
     build_report(body, 'after girth ')
+    if SABOTAGE_SLIVER:
+        sabotage_sliver(body)
     low = finish_lowpoly(body, lm)
+    # The shard gate runs on the SHIPPED mesh: this is the geometry the browser
+    # skins and the author sees at rest.
+    sliver_gate(low, 'after finish_lowpoly')
     crown_probe(low, head_landmarks(low), 'after finish_lowpoly (final)')
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
@@ -5843,6 +6191,10 @@ def main():
             'res': RES, 'stats': stats, 'delivery': packed,
             'faceForward': face['faceForward'],
         }, f, indent=1)
+
+    # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
+    # dominance query upstream can see the torso group split. See add_spine_chain.
+    add_spine_chain(low, arm)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
