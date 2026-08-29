@@ -84,13 +84,32 @@ test('corridor reads at least as bright as its flanks; no sky through the seams'
     });
     const cor = { x0: box.x / box.W - 0.05, x1: box.x / box.W + 0.05,
                   y0: box.y / box.H - 0.008, y1: box.y / box.H + 0.008 };
+    // The kicker-face box was a fixed fractional region tuned when the
+    // background above the lip was sky. P6 ridgelines (iter 94) now put hazy
+    // hill silhouette there, and the fixed box's top rows sampled ridge pixels
+    // (lum 0.7626 vs a 0.7627 floor, skyFrac 0.0235). Anchor the box to the
+    // projected take-off face instead — same instrument fix the corridor box
+    // got when the ribbon replaced the slabs.
+    const kfBox = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cfg = window._terrainCfg;
+        const z = cfg.KICKER_END_Z - 0.05;
+        const y = AerialEngine.aerialSki.terrainRootY(z, cfg) - 1.025 - 1.1; // lower face, clear of the lip/ridge line
+        const p = BABYLON.Vector3.Project(new BABYLON.Vector3(0, y, z),
+            BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+            scene.activeCamera.viewport.toGlobal(
+                scene.getEngine().getRenderWidth(), scene.getEngine().getRenderHeight()));
+        return { x: p.x, y: p.y, W: scene.getEngine().getRenderWidth(), H: scene.getEngine().getRenderHeight() };
+    });
     const f = await grabPixels(page);
 
     const stats = {
         corridor:   regionStats(f, cor.x0, cor.y0, cor.x1, cor.y1),
         flankNear:  regionStats(f, 0.06, 0.78, 0.30, 0.92),
         flankFar:   regionStats(f, 0.78, 0.60, 0.95, 0.68),
-        kickerFace: regionStats(f, 0.14, 0.30, 0.20, 0.36),
+        kickerFace: regionStats(f,
+            kfBox.x / kfBox.W - 0.014, kfBox.y / kfBox.H - 0.014,
+            kfBox.x / kfBox.W + 0.014, kfBox.y / kfBox.H + 0.014),
         inrun:      regionStats(f, 0.18, 0.46, 0.28, 0.52),
     };
     console.log('GREY_RAMP ' + JSON.stringify(stats) + ' corridorBox ' +

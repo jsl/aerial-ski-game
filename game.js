@@ -3367,10 +3367,6 @@ void main(void) {
     lsMat.specularColor = new BABYLON.Color3(0.09, 0.12, 0.18);
     lsMat.specularPower = 7;
 
-    // Rock face — for mountain bodies below the snow line
-    const rockMat = makePBR('rockMat', scene);
-    rockMat.diffuseColor  = new BABYLON.Color3(0.41, 0.37, 0.33);
-    rockMat.specularColor = new BABYLON.Color3(0.04, 0.04, 0.04);
 
     const valleyFloorY = terrainRootY(OUTRUN_Z) - FOOT_OFFSET;  // lowest playable surface
 
@@ -3448,17 +3444,18 @@ void main(void) {
             { width: 128, height: 128 }, scene, true);
         const bc = bnetTex.getContext();
         bc.clearRect(0, 0, 128, 128);
-        bc.strokeStyle = 'rgb(58,110,222)';
-        // Thinner rope strands (reviewer order item 3: the weave read heavier
-        // than IMG_3523; 7 px on the 128 px tile ≈ 3 cm rope at 1.2 m scale).
-        bc.lineWidth = 5;
+        bc.strokeStyle = 'rgb(126,158,226)';
+        // Lighter net (reviewer order 94: the net read heavier than IMG_3523).
+        // 3 px strands on the 128 px tile ≈ 2 cm rope at 1.2 m scale, and the
+        // doubled horizontal ropes are gone — one rope per crossing so the
+        // alpha-cut holes open up and the fence reads as a light net.
+        bc.lineWidth = 3;
         bc.beginPath();
         for (let i = 0; i <= 4; i++) {
             const p = i * 32;
             bc.moveTo(p, 0);      bc.lineTo(p + 128, 128);   // diagonal weave /
-            bc.moveTo(p, 128);    bc.lineTo(p + 128, 0);     // diagonal weave \, other direction
+            bc.moveTo(p, 128);    bc.lineTo(p + 128, 0);     // diagonal weave \
             bc.moveTo(0, p);      bc.lineTo(128, p);         // horizontal ropes
-            bc.moveTo(0, p + 16); bc.lineTo(128, p + 16);
         }
         bc.stroke();
         bnetTex.update(false);
@@ -3639,43 +3636,67 @@ void main(void) {
 
 
 
-    // ── Background mountain peaks — distributed to fill the horizon ────────────
-    // Camera in side view looks from -X toward +X, so peaks at positive X form
-    // the main backdrop. Peaks at large Z and at ±X add depth to the valley.
-    const peaks = [
-        // Main backdrop (behind the kicker — the prime spot from side view)
-        { x:  72, z: KICKER_END_Z,       h: 54, rb: 62 },
-        { x:  58, z: SLOPE_START_Z + 5,  h: 40, rb: 46 },
-        { x:  90, z: OUTRUN_Z + 15,      h: 48, rb: 58 },
-        // Behind the slope start (the mountain above)
-        { x:   8, z: SLOPE_START_Z - 95, h: 72, rb: 85 },
-        { x:  35, z: SLOPE_START_Z - 75, h: 50, rb: 58 },
-        { x: -18, z: SLOPE_START_Z - 65, h: 44, rb: 52 },
-        // Valley sides (left, deeper into fog)
-        { x: -50, z: OUTRUN_Z - 15,      h: 36, rb: 45 },
-        { x: -55, z: SLOPE_START_Z - 10, h: 42, rb: 50 },
-        // Ahead (visible when soaring)
-        { x:  55, z: OUTRUN_Z + 110,     h: 62, rb: 72 },
-        { x:  80, z: OUTRUN_Z + 90,      h: 44, rb: 54 },
-        { x: -28, z: OUTRUN_Z + 140,     h: 38, rb: 48 },
-    ];
-    peaks.forEach(function(m, i) {
-        const bodyH = m.h * 0.80;
-        const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
-            height: bodyH, diameterTop: m.rb * 0.12, diameterBottom: m.rb * 2, tessellation: 10
-        }, scene);
-        body.position.set(m.x, valleyFloorY + bodyH / 2 - 1.5, m.z);
-        body.material = rockMat;
-
-        // Snow cap on top third
-        const capH = m.h * 0.32;
-        const capR = m.rb * 0.28;
-        const cap = BABYLON.MeshBuilder.CreateCylinder('pk_cap_' + i, {
-            height: capH, diameterTop: 0, diameterBottom: capR * 2, tessellation: 10
-        }, scene);
-        cap.position.set(m.x, valleyFloorY + bodyH - capH / 2 - 1.5, m.z);
-        cap.material = snowMat;
+    // ── P6 layered forested ridgelines ─────────────────────────────────────
+    // Footage (docs/REFERENCE-FOOTAGE.md, IMG_3523/3520): the horizon is low
+    // forested ridgelines fading with distance — NOT snow-capped cone peaks.
+    // Each ridge is a deterministic "curtain": one vertical strip per column
+    // from below the valley floor up to the ridgeline profile, so the
+    // silhouette is clean from every camera angle and the mesh is seated on
+    // the ground everywhere (A7 look-back gate: nothing may float). Two
+    // summed sines per layer — no RNG, stable golden census. Layer colours
+    // mix toward the fog colour with distance (EXP2 0.0022 barely reaches).
+    const RIDGE_STEP = 6;                                   // m between columns
+    const FOG = scene.fogColor;
+    const _ridgeMat = (name, mix, tint) => {
+        const m = makePBR(name, scene);
+        m.albedoColor = new BABYLON.Color3(
+            tint[0] + (FOG.r - tint[0]) * mix,
+            tint[1] + (FOG.g - tint[1]) * mix,
+            tint[2] + (FOG.b - tint[2]) * mix);
+        m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+        m.metallic = 0;
+        m.roughness = 0.95;
+        m.backFaceCulling = false;
+        return m;
+    };
+    function _ridgeCurtain(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
+        const n = Math.max(2, Math.ceil((to - from) / RIDGE_STEP) + 1);
+        const pos = [], idx = [];
+        for (let i = 0; i < n; i++) {
+            const t = from + (to - from) * i / (n - 1);
+            const h = base + amp * (0.55 * Math.sin(t * f1 + p1)
+                                  + 0.45 * Math.sin(t * f2 + p2) + 0.5);
+            const y0 = valleyFloorY - 4, y1 = valleyFloorY + h;
+            if (axis === 'x') pos.push(fixed, y0, t, fixed, y1, t);
+            else              pos.push(t, y0, fixed, t, y1, fixed);
+            if (i < n - 1) {
+                const a = i * 2;
+                idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+            }
+        }
+        const m = new BABYLON.Mesh(name, scene);
+        const vd = new BABYLON.VertexData();
+        vd.positions = pos;
+        vd.indices = idx;
+        vd.normals = [];
+        BABYLON.VertexData.ComputeNormals(pos, idx, vd.normals);
+        vd.applyToMesh(m);
+        m.material = mat;
+        m.isPickable = false;
+        return m;
+    }
+    const RZ0 = SLOPE_START_Z - 170, RZ1 = OUTRUN_Z + 240;
+    const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
+    const matMid  = _ridgeMat('ridgeMatMid',  0.35, [0.24, 0.33, 0.31]);
+    const matFar  = _ridgeMat('ridgeMatFar',  0.65, [0.38, 0.48, 0.55]);
+    [-1, 1].forEach(function (s) {
+        _ridgeCurtain('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
+        _ridgeCurtain('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
+        _ridgeCurtain('ridge_far_'  + (s < 0 ? 'L' : 'R'), 'x', s * 150, RZ0, RZ1, 44, 22, 0.024, 0.063, 3.1, 1.2, matFar);
     });
+    // Cross-valley closures behind the start and beyond the out-run.
+    _ridgeCurtain('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
+    _ridgeCurtain('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
 
     } // end mountain environment
 
