@@ -1587,7 +1587,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=37';   // 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
+    const ASSET_V = '?v=38';   // 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are

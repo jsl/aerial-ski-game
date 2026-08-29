@@ -4230,14 +4230,25 @@ def bib_mask(name, along, front, lat):
 #   what makes both readable to their respective viewers instead of one being
 #   printed through the body like a transfer decal.
 #
-#   SIZE. The bib spans 1.20 along-units (h/2 = 0.275 m per unit ⇒ 0.33 m).
-#   The digit plate covers along −0.54..+0.32 (71% of the bib height) and the
-#   ink band 90% of THAT, giving digits ≈ 0.19 m tall ≈ 58–65% of the bib —
-#   inside the acceptance band (≥ 60% of the bib height).
+#   SIZE, and the ASPECT that size implies. The bib spans 1.20 along-units
+#   (h/2 = 0.275 m per unit ⇒ 0.33 m). The digit plate covers along
+#   −0.54..+0.32 (71% of the bib height ⇒ 0.2365 m) and is 2·NUM_W = 0.15 m
+#   wide, so each of the two digit cells is 0.47 · 0.15 = 0.0705 m wide.
+#   The ink band used to take 90% of the plate height, which made every digit
+#   0.0705 m wide by 0.213 m tall — an aspect of 0.33, i.e. a vertical BAR.
+#   A drawn numeral is about 0.58 wide-over-tall, so the band is now the
+#   middle 52% of the plate (0.24..0.76) and a digit measures 0.0705 × 0.122 m
+#   ⇒ aspect 0.58. The plate's own footprint is deliberately unchanged: it
+#   sets how much bib blue the render gate's box sees beside and around the
+#   number, and that balance is what bib-number.spec's blueFrac bands measure.
 
 NUM_W = 0.075                    # patch half-width in metres (15 cm wide)
 NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
-NUM_DV0, NUM_DV1 = 0.06, 0.96    # ink occupies this vertical share of the patch
+# Negative control for the digit-aspect gate: the pre-fix full-height ink
+# band, which made each digit 7.0 x 21.3 cm (aspect 0.33 — a vertical bar).
+NUM_DV0, NUM_DV1 = ((0.06, 0.96)
+                    if os.environ.get('BODY_SABOTAGE_BIBASPECT') == '1'
+                    else (0.24, 0.76))   # ink's vertical share of the patch
 NUM_INK = (0.07, 0.10, 0.18)     # dark navy on the white plate
 
 # Glyph outlines as (u0,u1,v0,v1) rectangles in a per-digit cell [0,1]².
@@ -4274,6 +4285,18 @@ def number_uv(front, lx, along):
     and vice versa. Swapping the branches puts each rule on the side its
     normal actually faces; both plates now read left-to-right to their own
     viewer (verified in the rebuilt assets at the look camera).
+
+    STILL OPEN (session 5, 2026-08-29). Paused close-ups taken down
+    _athleteFacing().forward (scratch s5/plate*_{front,back}_z.png) show the
+    CHEST reading a clean "30" and the BACK reading a mirrored glyph pair.
+    Both branch values were built and photographed: with `- lx` the back
+    reads "E0" (cell order right, each glyph mirrored); with `+ lx` it reads
+    "0E" (cell order reversed, glyphs still mirrored). No choice of sign in
+    THIS function produces a correct back, because flipping u flips the cell
+    order and the within-cell orientation together — so whatever mirrors the
+    back plate is upstream of the u mapping, not in it. `- lx` is kept: it is
+    the shipped mapping and it is the one that gets the digit ORDER right.
+    Do not "fix" this by flipping the sign again; it has been measured.
     """
     u = (NUM_W + lx) / (2 * NUM_W) if front > 0 else (NUM_W - lx) / (2 * NUM_W)
     return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
@@ -4609,7 +4632,16 @@ def paint_suit(obj, lm):
                 col, tag = HELMET, 'helmet'
         elif name.startswith('lowerArm') and along < -0.78:
             col, tag = GLOVE, 'glove'
-        elif name == 'torso' and -0.95 < along < -0.70:
+        elif name == 'torso' and -1.00 < along < -0.90:
+            # A waistband at the HIP, not a slab across the lower back. It
+            # used to span -0.95..-0.70, i.e. it began 2 hundredths of an
+            # along-unit below the bib's lower edge (-0.68) — so from behind,
+            # where a forward-leaning torso lifts its rear surface, a 7 cm
+            # navy band sat immediately under the bib and filled the bottom
+            # 40% of the render gate's box: measured 0.61 and 0.83 navy in
+            # the box's lowest two fifths, against 0.09/0.57/0.00 for the
+            # three fifths that hold the actual number. That band, not the
+            # digits, was ~70% of the back face's 0.4099 navy fraction.
             col, tag = WAIST, 'waist'
         elif name.startswith(('upperLeg', 'lowerLeg')):
             # See displace_suit for the transverse-angle convention: outboard is
@@ -4625,16 +4657,26 @@ def paint_suit(obj, lm):
             if dphi < 0.32:
                 col, tag = STRIPE, 'stripe'
 
-        if bib_mask(name, along, front, lx) > 0.5:
-            # A real competition numeral: dark navy "30" on the white plate,
-            # on both faces, each reading left-to-right to its own viewer
-            # (see the orientation essay above bib_mask).
-            if in_number_patch(name, along, front, lx):
-                u, v = number_uv(front, lx, along)
-                col = NUM_INK if digit30_mask(u, v) > 0.5 else BIB_NUMBER
-                tag = 'number'
-            else:
-                col, tag = BIB, 'bib'
+        # A real competition numeral: dark navy "30" on the white plate, on
+        # both faces, each reading left-to-right to its own viewer (see the
+        # orientation essay above bib_mask).
+        #
+        # The plate is tested BEFORE, and independently of, the wrap ramp.
+        # It used to be nested inside `bib_mask > 0.5`. That nesting was a
+        # latent trap rather than an active bug: the back wrap crosses 0.5 at
+        # |lx| = 0.08, just 5 mm outside the patch's own NUM_W = 0.075, so the
+        # plate fitted through with almost no margin and any widening of the
+        # patch would have silently started shaving its outer columns. It was
+        # measured, not assumed — a build with the nesting restored produced
+        # ink fractions identical to this one (0.110 front / 0.109 back), so
+        # the clip was NOT the cause of the 0.377-vs-0.175 asymmetry the
+        # earlier builds showed; the ink band did that (see NUM_DV0/NUM_DV1).
+        if in_number_patch(name, along, front, lx):
+            u, v = number_uv(front, lx, along)
+            col = NUM_INK if digit30_mask(u, v) > 0.5 else BIB_NUMBER
+            tag = 'number'
+        elif bib_mask(name, along, front, lx) > 0.5:
+            col, tag = BIB, 'bib'
         if tag == 'suit':
             f = fold_shade(name, along)
             if f > 0.0:
@@ -4697,6 +4739,9 @@ def _bin_blobs(on_bins):
             x, y = q
             stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
     return n
+
+
+BIB_ASPECT = (0.45, 0.75)        # digit cell width / height
 
 
 def bib_number_gate(low, out_dir):
@@ -4812,6 +4857,31 @@ def bib_number_gate(low, out_dir):
                 f'fraction {frac:.3f} — outside the plausible band '
                 f'[0.10, 0.45] (≥300 samples required): digits did not land')
     bpy.data.images.remove(img)
+
+    # Front/back ink is logged, NOT gated. A symmetry gate was written here
+    # and then removed: with the front at 0.110 against the [0.10, 0.45]
+    # floor, any face that loses enough ink to break a 1.35 ratio breaks the
+    # floor first, so the ratio gate could never fire on its own — its
+    # negative control (BODY_SABOTAGE_BIBFACE, halving the back plate's ink)
+    # tripped the FRACTION gate at 0.017 and never reached it. A gate that
+    # cannot fire independently of one already present is decoration.
+    fr, bk = report['front'][1], report['back'][1]
+    log(f'bib number faces: front {fr:.3f} / back {bk:.3f} '
+        f'= ratio {max(fr, bk) / max(1e-6, min(fr, bk)):.2f} (instrument)')
+
+    # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
+    # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
+    # numeral is near 0.58.
+    cell_w = 0.47 * 2 * NUM_W
+    cell_h = (NUM_DV1 - NUM_DV0) * (NUM_A1 - NUM_A0) * (SEGMENTS['torso']['h'] / 2)
+    aspect = cell_w / cell_h
+    log(f'bib digit cell: {cell_w * 100:.1f} x {cell_h * 100:.1f} cm, '
+        f'aspect {aspect:.3f} (band {BIB_ASPECT[0]}-{BIB_ASPECT[1]})')
+    if not (BIB_ASPECT[0] <= aspect <= BIB_ASPECT[1]):
+        raise SystemExit(
+            f'[body] bib digit aspect {aspect:.3f} outside {BIB_ASPECT} — '
+            f'each digit measures {cell_w * 100:.1f} x {cell_h * 100:.1f} cm, '
+            f'which reads as a bar, not a numeral')
     return report
 
 
