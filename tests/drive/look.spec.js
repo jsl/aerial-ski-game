@@ -72,7 +72,50 @@ test('look', async ({ page }) => {
     });
     console.log('LOOK', JSON.stringify(dims));
 
+    // Silhouette gate (reviewer 00:40 + NEXT.md): every canonical figure shot
+    // must actually contain the athlete — the figure's pixels (anything
+    // darker than sunlit snow, ~0.93) in the central third of the columns
+    // (dark: helmet, gloves, boots, ski) must span >= 15% of the frame height.
+    // Iteration 85's figure_side.png
+    // was fence and trees only.
+    const silhouette = async () => {
+        const shot = await page.screenshot();
+        return page.evaluate(async (b64) => {
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + b64;
+            await new Promise((r) => { img.onload = r; });
+            const cv = document.createElement('canvas');
+            cv.width = img.width; cv.height = img.height;
+            const cx = cv.getContext('2d');
+            cx.drawImage(img, 0, 0);
+            const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+            const W = cv.width, H = cv.height;
+            const X0 = Math.round(W / 3), X1 = Math.round(2 * W / 3);
+            let ymin = H, ymax = -1, n = 0, fig = 0, sk = 0;
+            for (let y = 0; y < H; y++) {
+                for (let x = X0; x < X1; x++) {
+                    const i = (y * W + x) * 4;
+                    const r = d[i] / 255, g = d[i + 1] / 255,
+                        b = d[i + 2] / 255;
+                    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b);
+                    n++;
+                    if (lum < 0.35) {
+                        fig++;
+                        if (y < ymin) ymin = y;
+                        if (y > ymax) ymax = y;
+                    }
+                    if (r > 0.30 && r > g * 1.12 && g > b * 1.02 && r < 0.95) sk++;
+                }
+            }
+            return { span: ymax >= 0 ? +((ymax - ymin) / H).toFixed(3) : 0,
+                    frac: +(fig / n).toFixed(4), skin: +(sk / n).toFixed(4) };
+        }, shot.toString('base64'));
+    };
     await page.waitForTimeout(900);
+    const figSil = await silhouette();
+    console.log('FIGSIL', JSON.stringify(figSil));
+    expect(figSil.span, 'figure.png has no athlete silhouette (span '
+        + figSil.span + ')').toBeGreaterThan(0.15);
     await page.screenshot({ path: path.join(OUT, 'figure.png') });
 
     // A second angle from the FRONT. The bib and the number patch are
@@ -174,8 +217,12 @@ test('look', async ({ page }) => {
         // the shell, so it measures helmet geometry: it "confirmed" both +z
         // and -z on different runs). Instead: render a SECOND close-up from
         // -forward with identical camera parameters (saved as face_back.png)
-        // and compare where the dark goggle band and the skin sit. The metrics
-        // are logged this iteration; the hard gate is tuned from the numbers.
+        // and compare where the dark goggle band and the skin sit. HARD gates
+        // (NEXT.md item 5): the FRONT close-up has lens pixels and skin below;
+        // the BACK close-up has no lens pixels; the two images differ
+        // structurally (mean |gray delta| on a 64x64 downsample >= 0.3). The
+        // sabotaged build (BODY_SABOTAGE_FACE=1 wraps the lens all round)
+        // must fail these.
         {
             const pair = await page.evaluate(() => {
                 const scene = BABYLON.EngineStore.LastCreatedScene;
@@ -219,7 +266,8 @@ test('look', async ({ page }) => {
                     const d = cx.getImageData(0, 0, cv.width, cv.height).data;
                     const W = cv.width, H = cv.height;
                     const X0 = Math.round(W * 0.3), X1 = Math.round(W * 0.7);
-                    const dark = [0, 0, 0], skin = [0, 0, 0];
+                    const dark = [0, 0, 0], skin = [0, 0, 0], lens = [0, 0, 0];
+                    let sr = 0, sg = 0, sb = 0, sn = 0;
                     for (let y = 0; y < H; y++) for (let x = X0; x < X1; x++) {
                         const i = (y * W + x) * 4;
                         const r = d[i] / 255, g = d[i + 1] / 255, bl = d[i + 2] / 255;
@@ -227,23 +275,110 @@ test('look', async ({ page }) => {
                         const band = y < H / 3 ? 0 : (y < 2 * H / 3 ? 1 : 2);
                         if (lum < 0.30) dark[band]++;
                         if (r > 0.30 && r > g * 1.12 && g > bl * 1.02 && r < 0.95) skin[band]++;
+                        // Lens: DARK and colour-NEUTRAL (|b-r| small). The back
+                        // view's dark band is the navy STRAP (b-r ~ 0.1+), so
+                        // neutral-dark separates lens from strap.
+                        if (lum < 0.30 && Math.abs(bl - r) < 0.05) lens[band]++;
+                        if (y >= 2 * H / 3) { sr += r; sg += g; sb += bl; sn++; }
                     }
                     const px = W * H / 3;
                     return { darkU: +(dark[0] / px).toFixed(4), darkM: +(dark[1] / px).toFixed(4),
-                             darkL: +(dark[2] / px).toFixed(4), skinL: +(skin[2] / px).toFixed(4) };
+                             darkL: +(dark[2] / px).toFixed(4), skinL: +(skin[2] / px).toFixed(4),
+                             lensM: +(lens[1] / px).toFixed(4), lensU: +(lens[0] / px).toFixed(4),
+                             lowRGB: [+(sr / sn).toFixed(3), +(sg / sn).toFixed(3),
+                                      +(sb / sn).toFixed(3)] };
                 }, pair[nm].split(',')[1]);
             }
             console.log('FACEDISC', JSON.stringify(metrics));
+            // Structural distance front vs back: downsample each close-up to
+            // 64x64 IN THE PAGE (one image per evaluate — passing both big
+            // dataURLs in one call got garbage-collected), diff in node.
+            const small = {};
+            for (const nm of ['front', 'back']) {
+                small[nm] = await page.evaluate(async (b64) => {
+                    const img = new Image();
+                    img.src = 'data:image/png;base64,' + b64;
+                    await new Promise((r) => { img.onload = r; });
+                    const cv = document.createElement('canvas');
+                    cv.width = 64; cv.height = 64;
+                    cv.getContext('2d').drawImage(img, 0, 0, 64, 64);
+                    return Array.from(cv.getContext('2d')
+                        .getImageData(0, 0, 64, 64).data);
+                }, pair[nm].split(',')[1]);
+            }
+            const [a, b] = [small.front, small.back];
+            let s = 0;
+            for (let i = 0; i < a.length; i += 4) {
+                s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1])
+                    + Math.abs(a[i + 2] - b[i + 2]);
+            }
+            const dist = +(s / (64 * 64 * 3 * 255)).toFixed(4);
+            console.log('FACEDIST', JSON.stringify(dist));
+            const mf = metrics.front, mb = metrics.back;
+            // Healthy build (iter 86): front darkU 0.060 (the lens band
+            // reaches the upper third) vs back darkU 0.012 (plain shell —
+            // the back's dark band is the navy STRAP, which sits in the
+            // MIDDLE third). Sabotaged-build numbers in the entry.
+            expect(mf.darkU, 'face front close-up has no goggle-lens pixels '
+                + '(darkU ' + mf.darkU + ')').toBeGreaterThan(0.04);
+            expect(mb.darkU, 'face BACK close-up shows lens pixels — the '
+                + 'goggle paint/geometry wraps the full circumference '
+                + '(darkU ' + mb.darkU + ')').toBeLessThan(0.04);
+            expect(dist, 'front and back face close-ups are structurally '
+                + 'identical — the head has no front (distance ' + dist
+                + ')').toBeGreaterThanOrEqual(0.15);
         }
     }
 
     // Canonical side view (review 70): perpendicular to the geometric
     // forward — not a fixed quarter turn from whatever the front picker chose.
+    // RE-ANCHOR the whole camera: the front/back close-up pair above left
+    // radius at 0.6 m targeting the HEAD, and the sim's follow callback
+    // re-clobbers target during the settle wait — the iter-85/86 drift.
     await page.evaluate((a) => {
-        BABYLON.EngineStore.LastCreatedScene.activeCamera.alpha = a + Math.PI / 2;
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        const parts = scene.meshes.filter(m => m.name
+            && m.name.startsWith('athleteBody'));
+        let lo = null, hi = null;
+        for (const p of parts) {
+            p.computeWorldMatrix(true);
+            const b = p.getBoundingInfo().boundingBox;
+            lo = lo ? BABYLON.Vector3.Minimize(lo, b.minimumWorld)
+                    : b.minimumWorld.clone();
+            hi = hi ? BABYLON.Vector3.Maximize(hi, b.maximumWorld)
+                    : b.maximumWorld.clone();
+        }
+        cam.setTarget(lo.add(hi).scale(0.5));
+        cam.radius = 2.4; cam.fov = 0.8;
+        cam.alpha = a + Math.PI / 2;
+        cam.beta = Math.PI / 2.35;
     }, front.a);
-    await page.waitForTimeout(900);
+    // Pause + compose + ONE synchronous render (the face close-up's
+    // counter-measure): the sim's follow callback rewrites target/radius
+    // during any settle wait, which is how the side shot kept drifting off
+    // the body (iter-85 defect).
+    await page.keyboard.press('p');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        scene.getEngine().stopRenderLoop();
+        scene.render();
+    });
     await page.screenshot({ path: path.join(OUT, 'figure_side.png') });
+    const sideSil = await silhouette();
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        scene.getEngine().runRenderLoop(() => scene.render());
+    });
+    await page.keyboard.press('p');
+    console.log('SIDESIL', JSON.stringify(sideSil));
+    expect(sideSil.span, 'figure_side.png has no athlete silhouette (span '
+        + sideSil.span + ' — camera drifted off the body, iter-85 defect)')
+        .toBeGreaterThan(0.15);
+    expect(sideSil.skin, 'figure_side.png shows no skin — dark trees/fence '
+        + 'pass the span gate, only the athlete carries skin pixels (skin '
+        + sideSil.skin + ')').toBeGreaterThan(0.002);
 
     // Canonical face close-up (author 2b pass 1): r = 0.6 m in front of the
     // head. Entry-77 root causes of three iterations of landscape face.png,

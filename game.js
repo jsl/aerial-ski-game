@@ -1518,7 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=27';   // 27: leg-girth gates landed (build-side measurement; geometry unchanged) — rebuild per reviewer rule 4
+    const ASSET_V = '?v=28';   // 28: face/helmet rebuild — rim raised to NEXT.md numbers, face/helmet hard gates, faceForward baked into athlete_maps.json
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
@@ -1856,6 +1856,18 @@ void main(void) {
         try {
             if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) {
                 return _showAthleteFallback(scene, character.meshes);
+            }
+            // NEXT.md (reviewer, 2026-08-29): the athlete's true facing is
+            // BAKED from the build (the face sector's measured azimuth in the
+            // driver frame). Fallback keeps the old axis if the fetch fails.
+            window._bakedFaceForward = null;
+            if (typeof fetch === 'function') {
+                fetch('assets/athlete_maps.json' + ASSET_V)
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (j) {
+                        if (j && j.faceForward) window._bakedFaceForward = j.faceForward;
+                    })
+                    .catch(function () {});
             }
             BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb' + ASSET_V, scene)
                 .then(function (res) {
@@ -2585,8 +2597,15 @@ void main(void) {
     // called from drive specs, never from the physics path.
     window._athleteFacing = function () {
         if (!character.root || !character.root.rotationQuaternion) return null;
-        const fwd = _quatRotateVec(character.root.rotationQuaternion,
-            new BABYLON.Vector3(0, 0, -1));
+        // Baked face forward first (NEXT.md, reviewer 2026-08-29): the build
+        // measures the face sector's azimuth and ships it in
+        // assets/athlete_maps.json; the old hard-coded (0,0,-1) aimed the
+        // face camera at the nape. Fallback keeps the historical axis.
+        const local = window._bakedFaceForward
+            ? new BABYLON.Vector3(window._bakedFaceForward[0],
+                window._bakedFaceForward[1], window._bakedFaceForward[2])
+            : new BABYLON.Vector3(0, 0, -1);
+        const fwd = _quatRotateVec(character.root.rotationQuaternion, local);
         let helmet = null, suit = null, suitHalf = null, hVol = Infinity, sVol = -Infinity;
         for (const m of scene.meshes) {
             if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;

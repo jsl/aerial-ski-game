@@ -99,9 +99,9 @@ def arg(name, default):
     return default
 
 
+RES = int(arg('--res', '2048'))
 OUT = arg('--out', 'assets/athlete_body.glb')
 BASE = arg('--base', 'blender/human_base_male.blend')
-RES = int(arg('--res', '2048'))
 SAMPLES = int(arg('--samples', '128'))
 DECIMATE = float(arg('--decimate', '0.85'))
 
@@ -112,6 +112,8 @@ BASE_Z = MODEL['BASE_Z']
 POSE = MODEL['POSE_UNTUCKED']
 
 BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
+
+SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
 
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
@@ -130,7 +132,6 @@ def log(m):
     print(f'[body] {m}', flush=True)
 
 
-# The arms are bound HANGING DOWN, not overhead.
 #
 # POSE_UNTUCKED holds them up beside the head, and binding there was wrong in the
 # way that matters most: the game's resting pose has them down. engine/core/pose.js
@@ -223,15 +224,20 @@ def head_landmarks(body):
     """
     Measure the head off the MESH, not off the physics segment.
 
-    A real helmet covers the cranium only; below the brow the FACE shows —
+    A real helmet covers the cranium only; below the rim the FACE shows —
     goggles across the eyes, skin on the nose, cheeks and chin. Every one of
     those features is defined in fractions of the head's own height
-    (chin -> crown), because that is how a helmet actually fits:
+    (chin -> crown), because that is how a helmet actually fits. NEXT.md
+    (reviewer, 2026-08-29) pins the rim numbers in metres on a ~0.20 m head,
+    i.e. 5–10% of h: the FRONT rim sits 1–2 cm above the brow (brow ~= the
+    eye line), the SIDE rims just above the ears, the BACK rim on the
+    occipital line.
 
-        eyes   0.50   goggle lens centred here
-        brow   0.55   just above the lens band
-        brim   0.52   shell fade STARTS here (fades in to 0.64)
-        nape   0.18   back coverage stops around here
+        eyes    0.50   goggle lens centred here (brow level)
+        lens    0.34.. lens band, below the shell rim
+        brim0   0.58   FRONT rim: 0.08h = 1.6 cm above the eye line
+        brim1   0.68   shell fade END (fully shell above this)
+        rimside 0.55   SIDE/BACK rim: just above the ears
 
     The fractions are read from adult proportions rather than guessed per
     build, so they survive retune_proportions' head shrink as long as the
@@ -247,8 +253,9 @@ def head_landmarks(body):
     return {
         'chin': chin, 'top': top, 'h': h,
         'eyes': chin + h * 0.50,
-        'brim0': chin + h * 0.52,
-        'brim1': chin + h * 0.64,
+        'brim0': chin + h * 0.58,
+        'brim1': chin + h * 0.68,
+        'rim_side': chin + h * 0.55,
         'crown_smooth': chin + h * 0.70,
     }
 
@@ -269,18 +276,23 @@ def head_region(co, lm):
     # Frontal sector: within ~66 degrees of straight-ahead (ly > 0).
     theta = math.atan2(lx, ly) if (lx or ly) else 0.0
     frontal = ly > 0 and abs(theta) < 1.15
+    # NEGATIVE CONTROL (NEXT.md item 5): BODY_SABOTAGE_FACE=1 wraps the lens
+    # band around the FULL circumference — the pre-FABLE-80 defect — so the
+    # look.spec front/back discrimination gates have something to fail on.
+    if SABOTAGE_FACE and lm['chin'] + lm['h'] * 0.34 < co.z < lm['eyes']:
+        return 'lens'
     if frontal and lm['chin'] + lm['h'] * 0.34 < co.z < lm['eyes']:
-        # Face pass 2: the band moved BELOW the shell brim (0.52h) — the old
-        # 0.44..0.58h band was ~60% under the shell mesh and read as part of
-        # the dome. Goggles sit under the helmet rim, top edge at the eyes.
+        # Face pass 2: the band sits BELOW the shell rim (0.58h) — goggles
+        # under the helmet edge, top of the lens at the eyes.
         return 'lens'
     if not frontal and abs(co.z - lm['eyes']) < lm['h'] * 0.04 \
             and co.z > lm['chin'] + lm['h'] * 0.30:
         return 'strap'
-    # RIM (author 2026-08-28): the shell stops at the occiput line behind and
-    # just above the ears at the sides — everything below ear-top height is
+    # RIM (NEXT.md): the shell stops at the occiput line behind and just
+    # above the ears at the sides (rim_side, 0.55h); in FRONT it rides 1–2 cm
+    # above the brow (brim0, 0.58h). Everything below the local rim is
     # skin/collar, not shell. A ski helmet is a dome, not a hood.
-    if co.z < lm['chin'] + lm['h'] * 0.50:
+    if co.z < lm['rim_side']:
         return 'face'
     if frontal and co.z < lm['brim0']:
         return 'face'
@@ -1522,11 +1534,130 @@ def shape_helmet(body, lm):
         # shell dissolves INTO the skull right at its edge.
         t = min(1.0, (v.co.z - lm['brim0']) / max(1e-4, lm['brim1'] - lm['brim0']))
         w = t * t * (3 - 2 * t)
+
+
         v.co = Vector(v.co) * (1 - w) + target * w
         moved += 1
     log(f'helmet shaped: {moved} verts projected onto a '
         f'{rx * 2:.3f}x{ry * 2:.3f}x{rz * 2:.3f} m shell above the brim '
         f'z={lm["brim0"]:.3f}..{lm["brim1"]:.3f} (face below kept)')
+def _sector(co, c):
+    """(frontal, theta) for a head vertex relative to the head centre c."""
+    lx, ly = co.x - c.x, co.y - c.y
+    theta = math.atan2(lx, ly) if (lx or ly) else 0.0
+    return (ly > 0 and abs(theta) < 1.15), theta
+
+
+def face_helmet_gate(low, lm):
+    """
+    NEXT.md (reviewer, 2026-08-29) hard gates, measured on the FINAL low-poly
+    mesh (Blender frame; glTF export maps (x,y,z) -> (x,z,-y)):
+
+      1. nose protrudes >= 2 cm beyond the cheek line in profile;
+      2. the chin is distinct from the neck (>= 1.5 cm of profile relief);
+      3. helmet rim: FRONT 1–2 cm above the brow (eye line), SIDES just above
+         the ears (rim_side ± 0.5 cm), BACK on the occipital line (0.45–0.60h);
+      4. dome centre within 1 cm of the head centre, fore-aft;
+      5. faceForward measured off the face sector's azimuth (gate |turn|<10 deg)
+         and returned for baking into athlete_maps.json.
+
+    Every number is logged; 1–4 are hard failures so a face-less build cannot
+    ship again (FABLE-REVIEW-80 findings 1–2, skipped in 81–83).
+    """
+    own = dominant_segments(low)
+    c = bl('head')
+    hv = [v.co for v in low.data.vertices if own[v.index] == 'head']
+    if len(hv) < 100:
+        raise SystemExit('[body] face gate: too few head verts on the low mesh')
+    chin, top, h = lm['chin'], lm['top'], lm['h']
+
+    def band(z0, z1):
+        return [p for p in hv if z0 <= p.z < z1]
+
+    # (1) NOSE: max fore-aft reach in the eye band's frontal sector vs the
+    # cheek line (the 80th percentile of the same band — robust to a few
+    # eyebrow/lens verts).
+    eyeband = [p for p in band(chin + 0.42 * h, chin + 0.55 * h)
+               if _sector(p, c)[0]]
+    if len(eyeband) < 20:
+        raise SystemExit('[body] face gate: empty frontal eye band')
+    lys = sorted(p.y - c.y for p in eyeband)
+    cheek = lys[int(0.8 * (len(lys) - 1))]
+    nose = lys[-1]
+    nose_out = nose - cheek
+    log(f'face gate: nose {nose_out * 1000:.1f} mm beyond the cheek line '
+        f'(gate 20)')
+    # (2) CHIN vs THROAT: max reach below chin+0.04h vs the 10th percentile
+    # of the throat band above it.
+    chinband = [p for p in band(chin, chin + 0.04 * h) if _sector(p, c)[0]]
+    throatband = [p for p in band(chin + 0.06 * h, chin + 0.12 * h)
+                  if _sector(p, c)[0]]
+    chin_y = max((p.y - c.y for p in chinband), default=-9)
+    tb = sorted(p.y - c.y for p in throatband)
+    throat = tb[int(0.1 * (len(tb) - 1))] if tb else 0
+    chin_relief = chin_y - throat
+    log(f'face gate: chin relief {chin_relief * 1000:.1f} mm over the throat '
+        f'(gate 15)')
+    # (3) RIM heights: lowest SHELL vertex per sector. Shell = a vertex the
+    # paint/region classifier calls 'helmet' — the shell fades into the skull
+    # across brim0..brim1, so the VISIBLE edge is the region boundary, not
+    # where the ellipsoid projection reaches full strength.
+    shell = [p for p in hv if head_region(p, lm) == 'helmet']
+    if len(shell) < 20:
+        raise SystemExit('[body] face gate: no shell verts past the fade')
+    rim_front = min(p.z for p in shell if _sector(p, c)[0])
+    sides = [[p for p in shell if (p.x - c.x) * (1 if s else -1) > abs(p.y - c.y) * 0.5]
+             for s in (True, False)]
+    rim_side = min(min(p.z for p in s) for s in sides if s)
+    rim_back = min(p.z for p in shell if p.y - c.y < 0 and not _sector(p, c)[0])
+    rim_front_up = rim_front - lm['eyes']
+    log(f'face gate: rim front {rim_front_up * 1000:.1f} mm above the brow '
+        f'(gate 10-20), side {rim_side * 1000:.0f} '
+        f'({(rim_side - chin) / h:.2f}h, gate 0.50-0.60h), back '
+        f'{(rim_back - chin) / h:.2f}h (gate 0.45-0.60h)')
+    # (4) DOME CENTRE fore-aft vs the head's own centroid (the visible head
+    # centre; the beanie defect was the dome sat back off the skull).
+    head_cy = sum(p.y for p in hv) / len(hv)
+    dome_cy = sum(p.y for p in shell) / len(shell)
+    dome_off = abs(dome_cy - head_cy)
+    log(f'face gate: dome centre {dome_off * 1000:.1f} mm off the head '
+        f'centroid fore-aft (gate 10)')
+    # (5) FACE FORWARD from the face sector's azimuth (the nose's direction).
+    face = [p for p in hv
+            if _sector(p, c)[0] and chin + 0.30 * h < p.z < lm['brim0']]
+    fx = sum(p.x - c.x for p in face) / len(face)
+    fy = sum(p.y - c.y for p in face) / len(face)
+    turn = math.degrees(math.atan2(fx, fy))
+    log(f'face gate: faceForward turn {turn:+.1f} deg from +y (gate 10)')
+
+    bad = []
+    if nose_out < 0.020:
+        bad.append(f'nose {nose_out * 1000:.1f} mm < 20')
+    if chin_relief < 0.015:
+        bad.append(f'chin relief {chin_relief * 1000:.1f} mm < 15')
+    if not 0.010 <= rim_front_up <= 0.020:
+        bad.append(f'front rim {rim_front_up * 1000:.1f} mm not in 10-20')
+    if not 0.50 <= (rim_side - chin) / h <= 0.60:
+        bad.append(f'side rim {(rim_side - chin) / h:.2f}h not in 0.50-0.60')
+    if not 0.45 <= (rim_back - chin) / h <= 0.60:
+        bad.append(f'back rim {(rim_back - chin) / h:.2f}h not in 0.45-0.60')
+    if dome_off > 0.010:
+        bad.append(f'dome off {dome_off * 1000:.1f} mm > 10')
+    if abs(turn) > 10.0:
+        bad.append(f'faceForward turn {turn:+.1f} deg > 10')
+    if bad:
+        raise SystemExit('[body] FACE/HELMET GATES FAILED: ' + '; '.join(bad))
+    # Driver frame (glTF Y-up, forward on -z): Babylon = (Bx, Bz, -By).
+    # Sabotage also FLIPS the facing (the iteration-85 defect: the 'front'
+    # camera aimed at the nape) so the look gates have a failing run.
+    if SABOTAGE_FACE:
+        turn += 180.0
+    fwd = (math.sin(math.radians(turn)), 0.0, -math.cos(math.radians(turn)))
+    return {'nose_out': nose_out, 'chin_relief': chin_relief,
+            'rim_front': rim_front_up, 'rim_side_h': (rim_side - chin) / h,
+            'rim_back_h': (rim_back - chin) / h, 'dome_off': dome_off,
+            'turn_deg': turn, 'faceForward': [round(fwd[0], 4), 0.0,
+                                              round(fwd[2], 4)]}
 
 
 def seat_soles(body):
@@ -4704,12 +4835,19 @@ def main():
     leg_girth_pass(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
+    # NEXT.md face/helmet hard gates + the faceForward measurement, on the
+    # final low-poly mesh (FABLE-REVIEW-80 findings 1-2).
+    face = face_helmet_gate(low, head_landmarks(low))
     high = make_highpoly(low, lm)
 
     device = configure_cycles()
     out_dir = os.path.join(ROOT, 'assets')
     os.makedirs(out_dir, exist_ok=True)
     stats = bake_maps(low, high, out_dir)
+    stats['face'] = {k: (round(v, 4) if isinstance(v, float) else v)
+                     for k, v in face.items() if k != 'faceForward'}
+    stats['faceForward'] = face['faceForward']
+    log(f'faceForward (driver frame): {face["faceForward"]}')
 
     # Per-segment albedo census on the LOW mesh: sample the saved albedo at
     # each vertex's UV and classify it, grouped by dominant bone group. This
@@ -4788,7 +4926,7 @@ def main():
             'normal': 'assets/athlete_normal.png',
             'ao': 'assets/athlete_ao.png',
             'albedo': 'assets/athlete_albedo.png',
-            'res': RES, 'stats': stats,
+            'res': RES, 'stats': stats, 'faceForward': face['faceForward'],
         }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
