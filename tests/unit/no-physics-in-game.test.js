@@ -39,6 +39,8 @@ const ALLOWED_FUNCTIONS = {
     _showAthleteFallback: 'legacy-solid fallback reveal on load failure — renderer',
     _hideAthleteVisuals:  'hide athlete visuals until body link — renderer',
     _revealSkiEquipment:  'same-frame reveal of skis/equipment on body link — renderer',
+    _ensureAthleteOverlay: 'loading overlay DOM (spinner + text) during the gated athlete load — renderer',
+    _removeAthleteOverlay: 'loading overlay removal in the reveal frame — renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {

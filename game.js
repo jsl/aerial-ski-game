@@ -372,6 +372,42 @@ function _buildStyledSki(scene, driver, seg, assets) {
     return vis;
 }
 
+// ── Loading overlay + one-frame reveal (NEXT.md item 2, 2026-08-29) ────────
+// The author still saw skis before the skier: the skinned body and the ski
+// equipment were revealed the moment the GLB RESOLVED, but the ~7 MB of
+// athlete PNG maps were still in flight, so the body rendered as an
+// unshaded/white shape against the snow while the (already-textured) skis
+// popped first. Now a visible overlay covers the gap: nothing of the athlete
+// OR the skis shows until the body GLB is linked AND all three maps report
+// ready AND one frame has rendered in that state — then everything appears in
+// the SAME frame and the overlay is removed in that frame.
+function _ensureAthleteOverlay() {
+    try {
+        if (document.getElementById('athleteLoading')) return;
+        const d = document.createElement('div');
+        d.id = 'athleteLoading';
+        d.innerHTML = '<div class="athleteLoadingSpinner"></div>' +
+            '<span>Loading athlete&hellip;</span>';
+        d.style.cssText = 'position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);' +
+            'background:rgba(20,30,45,.78);color:#fff;font:15px sans-serif;' +
+            'padding:14px 22px;border-radius:10px;z-index:98;display:flex;' +
+            'align-items:center;gap:12px;pointer-events:none';
+        const st = document.createElement('style');
+        st.textContent = '.athleteLoadingSpinner{width:18px;height:18px;' +
+            'border:3px solid rgba(255,255,255,.3);border-top-color:#fff;' +
+            'border-radius:50%;animation:athleteSpin 0.9s linear infinite}' +
+            '@keyframes athleteSpin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(st);
+        document.body.appendChild(d);
+    } catch (e) { /* no DOM in a harness */ }
+}
+function _removeAthleteOverlay() {
+    try {
+        const d = document.getElementById('athleteLoading');
+        if (d) d.remove();
+    } catch (e) { /* no DOM in a harness */ }
+}
+
 // ── Start gating (author, 2026-08-26 / FABLE-80 finding 7) ────────────────
 // The legacy primitive athlete used to be visible from the first frame and
 // was only swapped for the skinned body when athlete_body.glb arrived, so on
@@ -403,6 +439,9 @@ function _alpineWorld() {
 
 function _showAthleteFallback(scene, meshes) {
     window._bodyFallback = (window._bodyFallback || 0) + 1;
+    // The fallback IS the reveal: clear the loading overlay in the same frame.
+    window._athleteRevealed = 1;
+    _removeAthleteOverlay();
     for (const m of _athleteVisualMeshes(scene, meshes)) m.isVisible = true;
     // Ski equipment: the shipped world rules decide, not the fallback — the
     // primitive ski boxes stay hidden in the alpine world (the styled skis
@@ -1847,9 +1886,41 @@ void main(void) {
     // skinned body follows. computePose, the pose tables, the ragdoll and the
     // first-person camera are all untouched.
     //
-    // The drivers themselves become invisible — they are still the articulation,
-    // just no longer the thing you see.
     (function loadContinuousBody() {
+        // NEXT.md item 2 (2026-08-29): overlay up immediately; nothing of the
+        // athlete OR the skis shows until the body GLB is linked, all three
+        // athlete maps are ready AND one frame has rendered in that state.
+        _ensureAthleteOverlay();
+        const _revealT0 = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : 0;
+        let _pendingBodyParts = null, _revealReadyFrames = 0;
+        function _maybeRevealAthlete() {
+            if (window._athleteRevealed || window._bodyFallback) return true;
+            if (!window._bodyLinked || !_pendingBodyParts) return false;
+            const maps = window._athleteMaps || [];
+            const ready = maps.length === 3 && maps.every(
+                t => (t.isReady && t.isReady()) || t._loadError);
+            const timedOut = _revealT0 && performance.now() - _revealT0 > 15000;
+            if (!ready && !timedOut) return false;
+            // One frame renders in the ready state BEFORE the reveal frame.
+            if (typeof requestAnimationFrame === 'function') {
+                if (_revealReadyFrames < 2) { _revealReadyFrames++; return false; }
+            }
+            window._athleteRevealed = 1;
+            for (const part of _pendingBodyParts) part.isVisible = true;
+            _revealSkiEquipment(scene, character.meshes);
+            for (const m of scene.meshes) {
+                if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
+            }
+            _removeAthleteOverlay();
+            return true;
+        }
+        (function pollReveal() {
+            if (_maybeRevealAthlete()) return;
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(pollReveal);
+            }
+        })();
         try {
             if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) {
                 return _showAthleteFallback(scene, character.meshes);
@@ -1958,7 +2029,8 @@ void main(void) {
                     // leg stripe nowhere to be seen. Every structural check passed:
                     // the textures were bound, loaded and ready.
                     const map = (url, isColour) => {
-                        const t = new BABYLON.Texture(url, scene, false, false);
+                        const t = new BABYLON.Texture(url, scene, false, false,
+                            null, function () { t._loadError = true; });
                         t.gammaSpace = !!isColour;
                         return t;
                     };
@@ -2023,24 +2095,19 @@ void main(void) {
                         }
                     }
 
+                    window._athleteMaps = [suitAlbedo, suitNormal, suitAO];
                     for (const m of res.meshes) {
                         if (!bodyParts.includes(m) && !/^ski[LR]$/.test(m.name)) {
                             try { m.dispose(); } catch (e) {}
                         }
                     }
-                    // Start gating reveal: the skinned body, its materials and
-                    // the ski equipment become visible in THIS frame — the
-                    // athlete never exists half-dressed.
-                    for (const part of bodyParts) part.isVisible = true;
-                    _revealSkiEquipment(scene, character.meshes);
-
+                    // NEXT.md item 2: the reveal is DEFERRED to the poll
+                    // above — the body parts arrive VISIBLE from the glTF
+                    // loader, so hide them (and keep the skis hidden) until
+                    // the maps are ready and one frame has rendered.
+                    for (const part of bodyParts) part.isVisible = false;
+                    _pendingBodyParts = bodyParts;
                     window._bodyLinked = linked;
-                    // Goggles adopted by upgradeAthleteGeometry before this
-                    // loader resolved are hidden too — bring them into the
-                    // same reveal frame.
-                    for (const m of scene.meshes) {
-                        if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
-                    }
                 })
                 .catch(function () {
                     window._bodyLinked = 0;
@@ -3837,8 +3904,8 @@ void main(void) {
     }
     const RZ0 = SLOPE_START_Z - 170, RZ1 = OUTRUN_Z + 240;
     const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.35, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.65, [0.38, 0.48, 0.55]);
+    const matMid  = _ridgeMat('ridgeMatMid',  0.25, [0.24, 0.33, 0.31]);
+    const matFar  = _ridgeMat('ridgeMatFar',  0.42, [0.38, 0.48, 0.55]);
     [-1, 1].forEach(function (s) {
         _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);

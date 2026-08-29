@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aerial Skiing</title>
+    <!-- NEXT.md item 2 (2026-08-29): warm the athlete's bytes in parallel with
+         the scene instead of after it. The ?v= must match ASSET_V in game.js
+         so the preloaded response is the SAME cache entry the game requests.
+         Bump these together with ASSET_V. -->
+    <link rel="preload" href="assets/athlete_body.glb?v=34" as="fetch" crossorigin />
+    <link rel="preload" href="assets/athlete_albedo.png?v=34" as="image" />
+    <link rel="preload" href="assets/athlete_normal.png?v=34" as="image" />
+    <link rel="preload" href="assets/athlete_ao.png?v=34" as="image" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
