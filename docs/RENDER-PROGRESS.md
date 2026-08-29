@@ -6485,3 +6485,83 @@ paint pass).
 3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
    reading, sim-time gate) and entry 90's open questions 1–3 still await
    answers.
+
+### 95 — Review-only: full suite ALL GREEN, shots regenerated + inspected
+by eye; helmet crown still flat, canonical front camera still frames the
+back, crash_rest shot still unusable, corridor still under flank parity —
+all four confirmed with fresh numbers; NEXT.md stays for 96
+
+**Scope:** no features (review iteration). `docs/NEXT.md` exists but this is
+a review iteration, so it is untouched and remains iteration 96's only task.
+Entry 94's work (P6 ridgelines + lighter B-net + crown diagnosis) self-review:
+commits 52ad1ef / f9b2b60 are coherent, build green, assets untouched — no
+regression found. `git status` clean before this entry.
+
+**Suite (`./tests/run-all.sh`, this iteration):** ALL GREEN in 1293 s — unit
+fail 0, golden 30/30 (census-only state from iter 94 holds), live-diff PASS,
+browser PASS, mutation PASS, coverage PASS (all scenarios differentiate; the
+two known OPEN-002 duplicates unchanged), drive **79 passed / 2 skipped**
+in 21.3 m. `look` green, shots regenerated:
+FIGSIL span 0.904 frac 0.1498, FACEGATE dark 0.165 cov 0.9259, FACEDISC
+front lensU 0.0566 vs back 0.0064, FRONTGATE alignDeg 0 navyFrac 0.0515.
+
+**Fresh measurements (this iteration):**
+- Grey ramp: corridor 0.8289 vs flankNear 0.8509 / flankFar 0.8427 →
+  corridor is **2.6 % darker than the NEAR flank** (was 1.6–2.4 % under in
+  entry 90) but still passes the widened −0.02 gate against the darkest
+  flank (0.8289 ≥ 0.8227). Direction unchanged since entry 90; the
+  near-flank parity target ("run is the brightest surface") is still not
+  met — NEXT.md item 3.
+- Scene-view suit legibility: navy pixel fraction in the athlete's central
+  scene band (x 0.35–0.65, y 0.35–0.75) = **0.0037**; blue-ish fraction
+  0.0274. The suit still reads white-on-white at gameplay distance; only
+  skis/boots/helmet separate the figure. Entry 90 finding 1 confirmed
+  unchanged; 92's suit-vs-snow gap 0.142 was measured at 2.6 m, not at the
+  scene camera — the scene-distance gate proposed in entry 90 remains open.
+- `crash_rest.png` is still 320×220 with the resting athlete a speck at
+  frame centre — entry 90 finding 2 and the reviewer-89 refinement (b)
+  (geometric side camera ~4 m, HUD hidden, silhouette ≥ 15 %) are still
+  not implemented.
+- Face at the canonical camera (`face.png`, by eye): helmet crown still
+  reads as a flat beret plateau; goggle band and faint nose relief are the
+  only features; no brows/eyes/mouth contrast at 0.6 m. Matches entry 94's
+  diagnosis (crown squashed 115.1 → 74.8 mm by `retune_proportions`; gate
+  tilt p10 12.6° vs 25°) — the fix is drafted but DISABLED in `main()`
+  (build 52ad1ef) and is NEXT.md item 1.
+
+**What now reads right (vs entry 90):** P6 ridgelines landed and read well —
+`scene.png`/`figure.png` show layered hazy hill silhouettes instead of cone
+peaks, with distance fading toward fog; the B-net is visibly paler blue with
+thin strands (both per iter 94); the athlete's shadow and tree shadows are
+consistent; sky gradient + clouds correct; kicker block reads white and
+cool. The figure at 2.6 m (`figure_front.png`) shows the bib "30" clearly
+and fuller calves from iter 91.
+
+**Gaps vs the plan / reference footage (re-prioritised):**
+1. **(NEXT.md, iter 96)** Helmet crown hemisphere + chest-wall ownership +
+   corridor/flank parity — one Blender rebuild, per the reviewer's NEXT file.
+2. **In-run crouch arms swing backward** (reviewer 06:00 finding (a)) —
+   hands must be FORWARD at knee height; `_inrunArmForward` pivot rewrite.
+3. **Pike tear at the hip** (reviewer 06:00 finding (b)).
+4. **Canonical front camera frames the athlete's BACK** (`figure_front.png`
+   shows the rear three-quarter; entry-80 finding, still open) and
+   **crash_rest.png camera/HUD** — both are shot-instrument fixes.
+5. **Scene-distance suit legibility** — broad blue panel / bib presence at
+   gameplay distance (P7 intent), gated on the scene camera, not the 2.6 m
+   front shot.
+6. Then the 51–105 schedule: P5 landing chop (landing still reads smooth
+   corduroy in `scene.png`), P4 trees slice (d)/(e) (bare deciduous majority
+   still missing — the forest is all spruce cards), P10 free-look, P9 night
+   mode, P12 polish.
+
+**Open questions for the reviewer:**
+1. Corridor parity: the shipped gate is `corridor ≥ darkestFlank − 0.02`
+   (near flank excluded since iter 51's sun-angle note). Entry 90 and this
+   review both measure corridor under the NEAR flank (~2.6 %). Should the
+   gate go back to near-flank parity (hard), or is darkest-flank + NEXT
+   item 3's rebuild sufficient?
+2. Entry 90's open questions 1–3 (white-suit intent, seamWorstRow skyFrac
+   0.1747 discrimination, entry 89's roll parameters) and entry 91's 1–3
+   (chest instrument ruling, calf margin) still await answers.
+
+*No source files changed in this iteration; the only diff is this entry.*
