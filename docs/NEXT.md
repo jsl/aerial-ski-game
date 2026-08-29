@@ -1,27 +1,26 @@
-# NEXT — single mandated task for the next work iteration (reviewer, 2026-08-29 08:00)
+# NEXT — single mandated task for the next GLM iteration (reviewer override, 2026-08-29 09:00)
 
-This file overrides the plan order. Do ONLY this; delete it in the commit that completes it.
-(These three were the highest-priority open items for 97 AND 98 and were skipped both times.)
+**The athlete is no longer yours.** A Claude Opus lane (`docs/OPUS-BODY-BRIEF.md`) now owns
+`blender/build_body.py`, `assets/athlete_*`, `tests/drive/rig.spec.js`, the athlete-loading/pose blocks of
+`game.js` and the figure/face/pose shots. Do not edit any of them; the three athlete items formerly here
+(crouch arms, pike hip tear, front camera sign) moved to that brief. Your iteration does exactly these two
+scene items, in order, each committed separately:
 
-## 1. In-run crouch: arms FORWARD
-`pose_inrun_side.png` shows the hands behind the hips. Required (author, footage `IMG_3768`): while
-`grounded && tuck > 0.5`, both hands are ahead of the knees by 0.10–0.30 m along the body forward
-axis, below shoulder height, elbows slightly bent, arms symmetric. Rewrite `_inrunArmForward` so the
-arm chain rotates about the shoulder toward forward-down in the body frame (no fixed world pivot).
-Gate in `inrun-contact`/`chain` spec on the skinned hand positions; negative control = the old blend.
+1. **Mountains regressed to flat cut-outs** (author, HUMAN TESTING #4 item 3): "I actually like the
+   mountains a bit more before — now the ones on the side seem 2D, and we seem to have lost texture on them
+   so they seem very fake." Replace the ridgeline curtains with real 3D ridge meshes (rolling forested hills
+   with snow fields and rock bands, a tree-line on the near ridges) that keep the layered-silhouette look but
+   have depth and the rock/snow texturing + shading the earlier peaks had. Gate: every ridge mesh has bbox
+   depth ≥ 20 % of its width and a textured (non-flat-colour) material; a negative control with a flat
+   curtain fails. Regenerate `scene.png`, `inrun.png`, `kicker.png` and describe them honestly in your
+   entry (a flat band with a vertical edge, as in the current `pose_tuck_side.png` background, is a fail).
+2. **Skis still render before the skier** (item 4): audit every mesh created at startup — styled skis,
+   driver skis, boots, bindings, poles, fence, markers — nothing of the athlete OR skis may be visible until
+   the body GLB and its maps report ready and one frame has rendered; show a loading overlay
+   (spinner + "Loading athlete…") until then and reveal everything in the same frame. Add
+   `<link rel="preload">` for `assets/athlete_body.glb` and the three athlete maps in `index.html`. Gate in
+   a drive spec: no ski/athlete mesh has `isVisible && isEnabled()` in any frame before `_bodyLinked > 0`;
+   the overlay is gone in the frame the body appears; negative control: forcing a ski visible early fails.
 
-## 2. Pike: hip tear
-`pose_pike_side.png` shows a white shard at the hip/torso join. The endpoint tear gate must evaluate the
-skinned buffer at the pike endpoint in the real browser and include the pelvis ring; fix the P13
-reconciliation at the hip fold (blend-scaled hip reconciliation must also run at pike=1). Gate: no
-edge > 3× rest length anywhere at the pike endpoint; negative control = reconciliation disabled.
-
-## 3. Front canonical camera and the face gate
-Review 95 saw `figure_front.png` framing the BACK again. The front camera must use the baked
-`faceForward` with the correct sign; gate: the front shot contains goggle-lens pixels and the bib
-plate, the back shot neither; negative control = flipped sign fails. Also make the face close-up gate
-robust: measure dark/skin fractions INSIDE the head silhouette (mask from the skinned head vertices
-projected to screen), never against the background — entry 98 shows foliage behind the head moving
-the metric.
-
-Describe `pose_inrun_side.png`, `pose_pike_side.png`, `figure_front.png`, `face.png` by eye.
+Everything else (free-look + camera clamp, dressing remainder, night snowfall, polish) resumes next
+iteration from the plan.
