@@ -179,7 +179,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P5 | Snow surfaces | open | |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | **arm transport fixed (iter 32); partially landed otherwise** | **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re-anchors the arm chain on the mesh's own silhouette axis (50 deg corrections), fallback (ii) rebind re-applied with chest-safe selector (margin 30 mm, weight floor 0.30); strict cloud on-column ((-0.158,+0.006) vs x=-0.175; was mirrored (+0.156,+0.087)); ARM GATES 210.9/178.7/90.0/96.7 -> 12.5 mm/25.5 mm/6.1 deg/28.0 mm, STILL SOFT (limits 10/10/10/5); ASSET_V 11; open drive gates: hands-out 0.1534 vs 0.155, stripe spec window vs bake 0.070; prior state:  hands beside thighs (clear ≥16 cm laterally, mirrored 3 mm), shins 2.9 cm off ski line (< 4 cm gate), face/goggles landed; open: hands ride slightly forward in the ready crouch (re-check after the ready-stance pose), crotch loop is base-mesh geometry, shoulders 31% of height; **iter 31: `APPROVED: arm fallback (ii)` attempted per spec and REVERTED — pure binding lands the arm cloud MIRRORED (+0.160,+0.093 vs target −0.175,−0.008; bib gate 820→180 samples) because the arm transport in the bake is mirrored, which the mixed weights masked as "lag"; ARM GATES instrument made honest (reads 210.9 mm / 178.7 mm / 90.0° / 96.7 mm where the old windowed instrument read 43.9 mm), glb byte-identical; next: transport conjugation fix → (ii) on top → gates hard** |
+| P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth gates landed (iter 82, entry 82); partially landed otherwise** | **iter 82: leg-girth measurement + HARD build gates in `build_body.py` — current mesh passes all four reviewer ratios without growth (thigh/hip 1.792, thighD/B 1.037, calf/hip 0.911, chest/thigh 0.941); negative control fails 3/4; ASSET_V 27**; prior: **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates; iter-63: FOUR distinct spruce variants (review-60 (c)) + 0.7–1.4 scale band + variant gates** | `blender/bake_trees.py` bakes card_0..3 + atlas_0..3 in the shared 7.3×14.6 frame (per-variant seed/height 11.9–14.3/radial envelope/droop/needle tint, all inside the review-60 band; spike-zone filler whorls keep every silhouette continuous); 152 thin instances over 4 meshes = 4 draw calls (cap ≤ 20), one full-forest proxy cone buffer; widthL1min 0.339, lum 0.520–0.558; gates in `trees.spec.js` (mix counts ≥ 15/variant, scale 0.695–1.405 spread ≥ 1.5, per-variant census, pairwise L1 ≥ 0.02); ASSET_V 19; open: deciduous majority, near-tree cards, 8-view billboards |
@@ -889,6 +889,59 @@ forest.
   in-run, coach position at the knoll; all documented in `docs/REFERENCE-FOOTAGE.md`):
   the plan has no slot for camera work. Renderer-side presets only, no engine change.
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
+
+### 82 — Leg-girth measurement + HARD build gates (FABLE-80 finding 3 /
+reviewer 72.3): the current mesh passes all four reviewer ratios WITHOUT
+growth — the "legs too skinny" complaint does not reproduce at the
+reviewer's own definitions
+
+**Order acted on:** FABLE-REVIEW-80 iteration 82 (leg girth 3 + pose shots 10
++ rendered-head hook 9). Item 3 landed as gates; items 10 and 9 NOT started
+(time) — they stay at the head of 83.
+
+**Build (`blender/build_body.py`, no `engine/`, no `body-model.json` numbers):**
+new `leg_girth_pass` runs on the FINAL geometry (after chest straighten):
+`_leg_girth_ratios` measures torso-dominated hip/chest slices and
+leg-dominated mid-thigh (breadth + depth) / mid-calf slices (same
+dominant-segment ownership + median outlier filter as `leg_profile`), logs
+the four reviewer ratios, and hard-fails (`SystemExit`) outside
+thigh ≥ 0.55 × hip, thigh depth ≥ 0.9 × breadth, calf ≥ 0.35 × hip,
+chest ≤ 1.9 × thigh. A radial thigh/shin growth pass (`_radial_girth`,
+(x,y) scale about each bone's own z axis, identity fade over the end 15% of
+the segment so the knee/ankle continuity gates and pinned boots are safe)
+stands by for builds under 0.57 × hip; `BODY_LEG_GIRTH_FACTOR` forces it
+for the negative control.
+
+**Measured (probe build, production build identical):** hip 105, chest 177,
+thigh 189 w / 195 d, calf 96 mm → thigh/hip **1.792** (gate ≥ 0.55),
+thighD/B **1.037** (≥ 0.90), calf/hip **0.911** (≥ 0.35), chest/thigh
+**0.941** (≤ 1.90). All pass with no growth applied — geometry unchanged,
+so `athlete_body.glb` is functionally identical; the maps were regenerated
+anyway per rule 4 and `ASSET_V` bumped 26 → 27.
+
+**Negative control (reviewer item 11):** `BODY_LEG_GIRTH_FACTOR=0.5`
+sabotaged build FAILS the gate: thigh/hip 0.505, calf/hip 0.228,
+chest/thigh 3.342 (3 of 4 ratios red; thighD/B 0.920 still passes).
+
+**Verification:** unit 76/76, golden 30/30 (no physics surface touched),
+drive body + rig + bib-number + athlete + chain 27/27, look GREEN
+(1.7 m). Shots inspected by eye: figure.png / figure_front.png / face.png /
+scene.png unchanged from entry 81 — bib "30" reads, legs read proportionate
+in profile; the face-on-back defect (entry 81) persists and still blocks the
+FABLE-81 helmet/face work.
+
+**Open / not done:** FABLE items 10 (game-state-driven pose shots in
+`look.spec`: in-run crouch, flight tuck, pike, crash rest × front/side/face)
+and 9 (rendered-head-centre hook replacing `_characterMeshes.head` driver
+reads) — next iteration, before 83's tuck-pose table change.
+
+**Open questions for the reviewer:** the "legs too skinny" complaint does
+not reproduce at the reviewer's own four ratios on the shipped mesh
+(numbers above). Either the gate definitions need to change (e.g. thigh
+DEPTH vs CHEST DEPTH instead of breadth, or measured at a different
+height), or the perceived thinness is a paint/shading effect (the white
+suit + blue stripe may be eating the leg silhouette in the shots). A
+by-eye pointing at `figure.png` would settle it.
 
 ## Iterations
 
