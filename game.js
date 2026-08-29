@@ -1444,7 +1444,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=26';   // 26: face pass 2 — goggle light rim + wider lip band + nostrils (entry-78 face item)
+    const ASSET_V = '?v=27';   // 27: leg-girth gates landed (build-side measurement; geometry unchanged) — rebuild per reviewer rule 4
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 

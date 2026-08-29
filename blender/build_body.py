@@ -1346,6 +1346,125 @@ def add_girth(body, stretch):
         f'inverse-square field')
 
 
+# ── Leg girth vs torso (FABLE-80 finding 3 / reviewer 19:50 + 72.3) ─────────
+# Targets, all measured on the FINAL geometry: thigh breadth >= 0.55 x hip
+# breadth, thigh depth >= 0.9 x thigh breadth (leg-dominant race suit),
+# calf breadth >= 0.35 x hip breadth, chest breadth <= 1.9 x mid-thigh
+# breadth. The pass scales the thigh/shin clusters RADIALLY about their own
+# bone axes (never lengthening; the knee and ankle fade to identity so the
+# continuity gates and the pinned boots stay intact).
+LEG_GIRTH_GATE = {
+    'thigh_hip': 0.55, 'thigh_depth': 0.90,
+    'calf_hip': 0.35, 'chest_thigh': 1.90,
+}
+
+
+def _leg_girth_ratios(body):
+    own = dominant_segments(body)
+    hip_z = bl('torso').z - SEGMENTS['torso']['h'] / 2 * 0.80
+    chest_z = bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.30
+
+    def extents(z, segs, tol, xlo, xhi, medwin):
+        cand = [(v.co.x, v.co.y) for v in body.data.vertices
+                if abs(v.co.z - z) < tol and own[v.index] in segs
+                and xlo < v.co.x < xhi]
+        if len(cand) < 6:
+            return None, None
+        if medwin:
+            med = sorted(x for x, _ in cand)[len(cand) // 2]
+            cand = [p for p in cand if abs(p[0] - med) < medwin]
+        if len(cand) < 4:
+            return None, None
+        xs = [x for x, _ in cand]
+        ys = [y for _, y in cand]
+        return max(xs) - min(xs), max(ys) - min(ys)
+
+    hip_b, _ = extents(hip_z, ('torso',), 0.015, -0.35, 0.35, 0)
+    chest_b, _ = extents(chest_z, ('torso',), 0.015, -0.35, 0.35, 0)
+    thigh_b, thigh_d = extents(bl('upperLegL').z, ('upperLegL',),
+                               0.015, -0.24, 0.055, 0.11)
+    calf_b, _ = extents(bl('lowerLegL').z, ('lowerLegL',),
+                        0.015, -0.24, 0.055, 0.11)
+    if None in (hip_b, chest_b, thigh_b, thigh_d, calf_b):
+        raise SystemExit('[body] leg girth: unmeasurable slice '
+                         f'(hip {hip_b}, chest {chest_b}, thigh {thigh_b}, '
+                         f'calf {calf_b})')
+    return {
+        'hip': hip_b, 'chest': chest_b,
+        'thigh_b': thigh_b, 'thigh_d': thigh_d, 'calf': calf_b,
+        'thigh_hip': thigh_b / hip_b,
+        'thigh_depth': thigh_d / thigh_b,
+        'calf_hip': calf_b / hip_b,
+        'chest_thigh': chest_b / thigh_b,
+    }
+
+
+def leg_girth_report(body, tag):
+    r = _leg_girth_ratios(body)
+    log(f'{tag} girth: hip {r["hip"]*1000:.0f} chest {r["chest"]*1000:.0f} '
+        f'thigh {r["thigh_b"]*1000:.0f}w/{r["thigh_d"]*1000:.0f}d '
+        f'calf {r["calf"]*1000:.0f} mm | ratios '
+        f'thigh/hip {r["thigh_hip"]:.3f} (>= {LEG_GIRTH_GATE["thigh_hip"]}), '
+        f'thighD/B {r["thigh_depth"]:.3f} (>= {LEG_GIRTH_GATE["thigh_depth"]}), '
+        f'calf/hip {r["calf_hip"]:.3f} (>= {LEG_GIRTH_GATE["calf_hip"]}), '
+        f'chest/thigh {r["chest_thigh"]:.3f} (<= {LEG_GIRTH_GATE["chest_thigh"]})')
+    return r
+
+
+def _radial_girth(body, seg, factor):
+    """Radial (x,y) scale of the seg-dominated cluster about its own bone
+    axis (z-aligned: head at +z per leg_profile), faded to identity at both
+    ends over 15% of the segment length."""
+    c = bl(seg)
+    h = SEGMENTS[seg]['h']
+    a = c + Vector((0.0, 0.0, h / 2))
+    b = c - Vector((0.0, 0.0, h / 2))
+    ab = b - a
+    len2 = ab.length_squared
+    n = 0
+    for v in body.data.vertices:
+        t = (v.co - a).dot(ab) / len2
+        w = min(1.0, min(t, 1.0 - t) / 0.15)
+        if w <= 0.0:
+            continue
+        axis = a + ab * t
+        s = 1.0 + (factor - 1.0) * w
+        v.co.x = axis.x + (v.co.x - axis.x) * s
+        v.co.y = axis.y + (v.co.y - axis.y) * s
+        n += 1
+    return n
+
+
+def leg_girth_pass(body):
+    """Grow the legs to the girth targets; hard gate on the ratios."""
+    r = leg_girth_report(body, 'girth-pass in ')
+    forced = os.environ.get('BODY_LEG_GIRTH_FACTOR')
+    if forced is not None:      # negative control: sabotage the pass
+        _radial_girth(body, 'upperLegL', float(forced))
+        _radial_girth(body, 'upperLegR', float(forced))
+        _radial_girth(body, 'lowerLegL', float(forced))
+        _radial_girth(body, 'lowerLegR', float(forced))
+        r = leg_girth_report(body, 'girth-pass ctl')
+    else:
+        if r['thigh_hip'] < 0.57:           # margin above the 0.55 gate
+            n1 = _radial_girth(body, 'upperLegL', f)
+            _radial_girth(body, 'upperLegR', f)
+            log(f'girth-pass: thigh x{f:.3f} ({n1} cluster verts)')
+        r = leg_girth_report(body, 'girth-pass out')
+    bad = []
+    if r['thigh_hip'] < LEG_GIRTH_GATE['thigh_hip']:
+        bad.append(f'thigh/hip {r["thigh_hip"]:.3f}')
+    if r['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
+        bad.append(f'thighD/B {r["thigh_depth"]:.3f}')
+    if r['calf_hip'] < LEG_GIRTH_GATE['calf_hip']:
+        bad.append(f'calf/hip {r["calf_hip"]:.3f}')
+    if r['chest_thigh'] > LEG_GIRTH_GATE['chest_thigh']:
+        bad.append(f'chest/thigh {r["chest_thigh"]:.3f}')
+    if bad:
+        raise SystemExit('[body] leg girth gate FAILED: ' + ', '.join(bad))
+
+
+
 
 def shape_helmet(body, lm):
     """
@@ -4582,6 +4701,7 @@ def main():
     # of the chest. The spec now frames the plate from the suit part's own bbox
     # (front navyFrac 0.0498 on the un-straightened build).
     straighten_chest(body)
+    leg_girth_pass(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     high = make_highpoly(low, lm)
