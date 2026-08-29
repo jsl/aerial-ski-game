@@ -675,6 +675,126 @@ That is renderer-side only and needs no physics change.
    arbitration (reframe the measured box onto the number patch, or accept a
    higher band on a correctly-framed box).
 
+
+## Session 5 (2026-08-29, 15:5x-16:3x)
+
+### Merge with `render-realism-glm` — commit `89fb5d5`
+
+Clean auto-merge, 4 commits ahead (iter 112's crash-spec determinism plus
+the real iter-109 regression fix, the slope-aware crash-roll ruling, and the
+two brief updates ordering the bib fix first). Verified unit 78/78 + golden
+30/30 before anything else was touched.
+
+Process note for the next session: `git merge --no-edit` COMMITS on a clean
+auto-merge. I followed the session rule "commit the merge first" literally
+and added an empty commit on top of it; caught it with `git show --stat` and
+reset it away. Check `git log` before committing a merge.
+
+### The blocking `bib-number` back-face red — LANDED. Commit `bd92319`
+
+`navyFrac` back **0.4074 -> 0.0840** (gate < 0.25). Front 0.1932 -> 0.1276.
+blueFrac front 0.1435 > back 0.0752 < 0.09. Spec 1/1.
+
+**The dark slab was the WAISTBAND, not the number.** Before changing
+anything I decomposed the gate's own box by row band, straight off the
+reviewer's `shots/bib_back.png`:
+
+| box row band | back navy | front navy |
+|---|---|---|
+| 1/5 | 0.086 | 0.319 |
+| 2/5 | 0.566 | 0.114 |
+| 3/5 | 0.000 | 0.419 |
+| 4/5 | **0.612** | 0.075 |
+| 5/5 | **0.832** | 0.018 |
+
+The bottom two fifths are the `WAIST` region (torso `along` -0.95..-0.70),
+which started 0.02 along-units below the bib's lower edge (-0.68). From
+behind, where a forward-leaning torso lifts its rear surface, that put a
+7 cm navy band directly under the bib and filled 40% of the box — roughly
+70% of the whole 0.41. The digits were never the problem. The waistband is
+now a belt at the hip (-1.00..-0.90).
+
+**The digits WERE bars, though.** The ink band took 90% of the plate height,
+so each digit was 7.0 x 21.3 cm — aspect 0.33. A drawn numeral is near 0.58.
+The band is now the middle 52% of the plate: 7.0 x 12.3 cm, aspect 0.573.
+
+New build gate `BIB_ASPECT` (0.45..0.75) on the cell aspect. **Negative
+control** `BODY_SABOTAGE_BIBASPECT=1` restores the old band and FAILS at
+0.331 (`scratch/opus/s5/negctl_aspect.log`).
+
+### Two things I got wrong, recorded because the numbers say so
+
+1. **The clipping diagnosis was wrong.** The bake gate showed front ink
+   0.377 against back 0.175 from the same plate and the same glyph mask, and
+   I attributed it to `bib_mask`'s wrap ramp shaving the back plate's outer
+   columns. A build with the nesting restored produced *identical* ink
+   (0.110/0.109) — the clip was never firing. The plate cleared the back
+   ramp by 5 mm. The un-nesting is kept as a latent-trap fix and its comment
+   now states the measurement rather than the theory.
+2. **I wrote a front/back ink symmetry gate and removed it again.** With the
+   front at 0.110 against the existing [0.10, 0.45] floor, any face losing
+   enough ink to break a 1.35 ratio breaks the floor first: the control
+   (halving the back plate's ink) tripped the FRACTION gate at 0.017 and
+   never reached the symmetry check. A gate that cannot fire independently
+   of one already present is decoration, so it is an instrument now.
+
+### STILL OPEN — the back number is MIRRORED. Reviewer input wanted.
+
+This is the part of the reviewer's order ("the same legible glyph pair as
+the front") that is NOT done, and it is worth a decision before more time
+goes into it.
+
+Paused close-ups aimed down `_athleteFacing().forward` (the `face.png`
+counter-measure: pause, stop the render loop, render one frame synchronously
+— an un-paused first attempt photographed the forest, exactly the item-8
+defect) are in `scratch/opus/s5/plate*_{front,back}_z.png`. The chest reads a
+clean, well-proportioned **"30"**. The back reads a mirrored glyph pair.
+
+Both signs of `number_uv`'s back branch were built and photographed:
+
+| back branch | rendered back reads |
+|---|---|
+| `(NUM_W - lx)` (shipped) | "E0" — digit ORDER right, each glyph mirrored |
+| `(NUM_W + lx)` | "0E" — order reversed, glyphs still mirrored |
+
+Neither is correct, and that is informative: flipping `u` flips the cell
+ORDER and the within-cell orientation together, so if both results show
+mirrored glyphs, the mirroring is **upstream of the u mapping**, not in it.
+The most likely candidate is the torso's rear UV island being flipped by
+`smart_project`, or the `front` discriminator not selecting the face the
+orientation essay assumes (iteration 61 already found `+Y` points at the
+physical BACK once). `- lx` is kept — it is the shipped mapping and the one
+that gets the digit order right. The finding is written into the orientation
+essay in `build_body.py` so the next session does not flip the sign a third
+time; flipping it is measured, and it does not work.
+
+**Reviewer: is a mirrored back number worth the next session, or does the
+front reading "30" satisfy P7?** The digits are legible and correctly sized
+on both faces now; only the back's handedness is wrong.
+
+### Verification
+
+    build   all gates green at 2048/96 (bib number front 0.110 / back 0.109,
+            digit cell 7.0 x 12.3 cm aspect 0.573, atlas, taper, goggles,
+            dome, stripe, suit normal variance)
+    unit    78/78
+    golden  30/30, no re-capture, no physics change
+    drive   bib-number 1/1; rig + body + chain + athlete + ready-stance +
+            athlete-wired 31/31 (5.0 m)
+
+`ASSET_V` 37 -> 38, `index.html` `game.js?v=` 31 -> 32, preload hrefs `?v=38`.
+
+Not run this session: the full drive suite (the two known reds outside this
+lane, `crash-ragdoll` and `look`, were not re-checked).
+
+### Items still open in the brief
+
+5 (tuck — the top priority; session 4's recommended `spine1`/`spine2` shape
+still stands and is still the right plan), 3 (suit + bib as a real two-tone
+panel garment), 10 (stance), 6 (in-run arms), 7 (pike hip tear), 9 (face).
+Item 5's scope now also includes the reviewer's note that the upper-back
+tear shows at REST, not only in the tuck.
+
 ---
 
 ## What the shots now show (by eye, `shots/face.png`, `shots/face_mask.png`)
