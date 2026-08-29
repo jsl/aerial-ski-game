@@ -94,6 +94,19 @@ Makefile targets; the build has its own gates that must keep passing).
 10. **Neutral stance: standing straight up, perpendicular to the skis.** Author (HUMAN TESTING #5, 09:45): "skier's hips still a little more forward. should be perpendicular (standing up straight) from skis." In `figure_side.png` the pelvis leads the ankles. Gate (ready state, side view along the ski axis): hip centre within 3 cm of the ankle centre along the ski direction; ankle–hip–shoulder line within 5° of the ski-surface normal; knees ≤ 10° flex; negative control: pushing the pelvis 6 cm forward must fail. boot–ski invariant, binding-touches-boot,
     skis eject only on crash — none of these may regress (their gates are in `rig.spec.js`/`drive` specs).
 
+## Reviewer arbitrations (read at every session start)
+- **APPROVED (Fable, 2026-08-29 10:40): the depth-of-field fix stays in your lane.** The `DefaultRenderingPipeline`
+  DoF block in `game.js` is yours until merge; GLM has been told not to touch it. A distance-driven `fStop` is the
+  right shape. Record the before/after numbers in the notes.
+- **Bib gate:** do not loosen blind — but if the marked-box shot shows the back bib really is a dark slab with a
+  legible "30", recalibrate the band against the SHARP render and write the old/new numbers and the shot name.
+- **Keep your branch current with the integration branch:** at the start of each session, once the tree is clean
+  (committed), run `git merge --no-edit render-realism-glm`; resolve conflicts keeping both sides' intent (GLM's
+  scene work, your athlete work), rerun the gates, commit the merge. The author views your worktree on :8203 and
+  must see the scene fixes (red kicker paint, 3D ridges, reveal gate) there too.
+- Commit as soon as the suite is green — never end a session with uncommitted work if it can be avoided; a
+  partial but green item is better committed than carried.
+
 ## Ground rules
 - Commit after **each** completed item (never carry more than one uncommitted) with the trailer
   `Co-Authored-By: Claude Opus 5 (claude-opus-5) <noreply@anthropic.com>`. Never push anywhere.
