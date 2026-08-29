@@ -1,45 +1,77 @@
 {
- "normal": "assets/athlete_normal.png",
- "ao": "assets/athlete_ao.png",
- "albedo": "assets/athlete_albedo.png",
+ "normal": "assets/athlete_normal.webp",
+ "ao": "assets/athlete_ao.webp",
+ "albedo": "assets/athlete_albedo.webp",
  "res": 2048,
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6432,
-   "belowHalf": 0.0109,
+   "mean": 0.6455,
+   "belowHalf": 0.01,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8654,
-   "belowHalf": 0.1158,
+   "mean": 0.866,
+   "belowHalf": 0.1127,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8555,
-   "belowHalf": 0.0598,
+   "mean": 0.8208,
+   "belowHalf": 0.095,
    "srgb": true
   },
   "face": {
-   "nose_out": 0.0245,
+   "nose_out": 0.0241,
    "chin_relief": 0.0342,
-   "rim_front": 0.0181,
-   "rim_side_h": 0.5504,
-   "rim_back_h": 0.5504,
-   "dome_off": 0.0061,
-   "turn_deg": -0.2456,
-   "goggle_proud": 0.0689
+   "rim_front": 0.0184,
+   "rim_side_h": 0.5538,
+   "rim_back_h": 0.5574,
+   "dome_off": 0.0006,
+   "turn_deg": -0.3417,
+   "goggle_proud": 0.045,
+   "goggle_push_mm": 6.5599,
+   "lens_band_h": [
+    0.4001,
+    0.5685
+   ]
   },
   "faceForward": [
-   -0.0043,
+   -0.006,
    0.0,
    -1.0
   ]
  },
+ "delivery": {
+  "athlete_albedo": {
+   "mean_abs": 0.0035,
+   "p99_abs": 0.0275,
+   "png": 1101885,
+   "ratio": 3.55,
+   "res": 2048,
+   "web": 310412
+  },
+  "athlete_ao": {
+   "mean_abs": 0.0139,
+   "p99_abs": 0.2039,
+   "png": 2458916,
+   "ratio": 15.35,
+   "res": 1024,
+   "web": 160186
+  },
+  "athlete_normal": {
+   "mean_deg": 1.533,
+   "p95_deg": 4.797,
+   "png": 4885722,
+   "ratio": 7.78,
+   "res": 2048,
+   "web": 627876
+  },
+  "total_web": 1098474
+ },
  "faceForward": [
-  -0.0043,
+  -0.006,
   0.0,
   -1.0
  ]
