@@ -885,6 +885,62 @@ forest.
 
 ## Iterations
 
+### 78 — Face camera landed for real (entry-77 open item 1): live head
+driver aim, r = 0.6 enforced, stopped render loop + one synchronous frame,
+pixel-based gate; plus a camera-convention bug of my own found and fixed
+
+**Order acted on:** entry-77 "Open / next" (1) — the FACEGATE shipped in
+entry 76 was proven broken at HEAD (camera never aimed at r = 0.6; stale
+skinned bounds; pause/stale-canvas trap). This iteration landed the
+diagnosed rewrite; it also answers entry-77 open question 1: the
+bbox-projection criterion is replaced by pixel measurements on an
+explicitly framed r = 0.6 shot.
+
+**Changes (`tests/drive/look.spec.js` only — no assets, no ASSET_V bump):**
+- The face close-up now aims explicitly: head position read LIVE from the
+  `head` bone's linked driver node (`bone.getTransformNode()`; bind ==
+  driver is gated in rig.spec) instead of the stale `athleteBody*` bounding
+  boxes; target = head + 0.02 y (measured: +0.10 aimed 0.08 m high, the head
+  sat at ~65% of frame height); position = head + forward × 0.6,
+  `minZ = 0.05`, fov 0.9; alpha/beta/radius re-derived from the actual
+  offset; render loop stopped and ONE frame rendered synchronously in the
+  same evaluate (the kicker-faces.spec countermeasure), then a plain render
+  loop handed back for the remaining wide shots.
+- FACEGATE rewritten pixel-based on the actual shot: dark-helmet + skin
+  cloud vertical coverage ≥ 30% of frame height, dark ≥ 0.05 and skin
+  ≥ 0.01 in the central region. (Coverage reads 0.96 because the cloud
+  includes dark trees/fence background — the dark/skin central-region checks
+  carry the discrimination; noted below as a future tightening.)
+
+**A bug of mine found and fixed inside this iteration:** my first rewrite
+derived `alpha = atan2(off.x, off.z)` — inverted for Babylon's ArcRotate
+convention (`offset = r·(cosα·sinβ, cosβ, sinα·sinβ)`, so `alpha =
+atan2(z, x)`). The camera parked 90° to the side and face.png showed a left
+PROFILE, which initially looked like a head-yaw mesh defect. Measured via
+FACECAM (`fwd [1,0,0]`, `campos [0, 7.38, −16.7]` — a z-offset instead of x)
+vs the corrected run (`campos [0.6, 7.38, −17.3]` — exactly head + forward
+× 0.6). The mesh head is NOT yawed; the spec's frontal formula (line ~88)
+was right all along.
+
+**Verification:** unit fail 0; golden 30/30; `look` GREEN at HEAD for the
+first time since entry 76: FRONTGATE align 0.00° / navyFrac 0.0229 (bib 30
+legible), FACEGATE dark 0.2121 / skin 0.0511 / cov 0.9647, FACECAM r = 0.600
+on the forward ray. Shots regenerated and inspected: face.png finally
+frames the head frontally at 0.6 m — dark helmet dome over the brow, skin
+below, head centred; the face itself is still featureless (no brows, lashes,
+lips, goggles) — that is face pass 2, unstarted. figure_front.png shows the
+white bib plate with navy 30 centred on the chest; the darker suit (entry
+77) still reads very close to the snow at 2.4 m in this light. The entry-77
+SUITGATE is NOT re-added this iteration (time) — its code exists in this
+iteration's history. figure.png / figure_side.png / scene.png / kicker.png /
+inrun.png unchanged in content.
+
+**Open / next:** (1) face pass 2 (brows, lash line, lips, goggles) now has
+a trustworthy close-up to iterate against; (2) re-add SUITGATE and re-judge
+suit-vs-snow separation at the canonical cameras; (3) tighten the cov
+criterion to exclude background dark (trees/fence) — restrict the coverage
+scan to the central region or chroma-classify the helmet.
+
 ### 77 — Suit legibility (entry-75 item 2): suit albedo darkened + stripe
 panel broadened (one Blender rebuild, ASSET_V 25); suit-vs-snow gate built
 and passing; found the canonical face gate broken at HEAD (stale skinned
