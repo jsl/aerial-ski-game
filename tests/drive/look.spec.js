@@ -434,6 +434,19 @@ test('look', async ({ page }) => {
                 // Every classification is over MASKED pixels only, and every
                 // height is in head-heights measured up from the chin (fh = 0
                 // at the lowest masked row, 1 at the crown).
+                // Opus item 1: mirrored-blue lens thresholds. The lens
+                // albedo is (0.09,0.28,0.55); the navy goggle STRAP that wraps
+                // the back of the helmet is (0.08,0.11,0.20) — also blue-
+                // dominant, so blue dominance ALONE cannot separate them. The
+                // lens is much BRIGHTER in blue, which is the second axis.
+                // Calibrated on this build against the CAL curve below.
+                const LENS_DB = 0.10;    // blue - red
+                const LENS_B = 0.32;     // absolute blue
+                const CAL = [[0.05, 0.10], [0.10, 0.10], [0.10, 0.20],
+                             [0.10, 0.26], [0.10, 0.32], [0.10, 0.38],
+                             [0.10, 0.45], [0.15, 0.32], [0.20, 0.32],
+                             [0.20, 0.45]];
+                const calN = new Float64Array(CAL.length);
                 const rowLens = new Float32Array(hh + 1);
                 const rowN = new Float32Array(hh + 1);
                 let dark = 0, skin = 0, lens = 0;
@@ -448,17 +461,33 @@ test('look', async ({ page }) => {
                     sr += r; sg += g; sb += bl;
                     if (lum < 0.30) dark++;
                     if (r > 0.30 && r > g * 1.12 && g > bl * 1.02 && r < 0.95) skin++;
-                    // Lens: DARK and colour-NEUTRAL (|b-r| small). The back
-                    // view's dark band is the navy STRAP (b-r ~ 0.1+), so
-                    // neutral-dark separates lens from strap.
-                    if (lum < 0.30 && Math.abs(bl - r) < 0.05) { lens++; rowLens[row]++; }
+                    // Lens: the MIRRORED BLUE goggle lens (Opus item 1).
+                    // This used to be "dark and colour-NEUTRAL", which could
+                    // not tell the lens from the HELMET SHELL — both were dark
+                    // and both were neutral (shell albedo 0.09/0.10/0.12, lens
+                    // 0.04/0.06/0.08), so the shell voted in every lensFrac
+                    // and the band detector below merged goggles and shell
+                    // into one dark mass (it read 0.44h..0.97h on the front).
+                    // The lens albedo is now 0.09/0.28/0.55 against that same
+                    // shell and a 0.08/0.11/0.20 strap, so BLUE DOMINANCE
+                    // separates all three — which is what turns the band
+                    // detector into item 1's placement gate.
+                    if (bl - r > LENS_DB && bl > LENS_B) {
+                        lens++; rowLens[row]++;
+                    }
+                    // Calibration curve for the two thresholds above, so the
+                    // numbers that separate lens from strap come out of ONE
+                    // run instead of being guessed. Logged in FACEDISC.
+                    for (let k = 0; k < CAL.length; k++) {
+                        if (bl - r > CAL[k][0] && bl > CAL[k][1]) calN[k]++;
+                    }
                 }
-                // The dark BAND: contiguous rows where neutral-dark covers at
-                // least a third of the head's width at that height, reported in
-                // head-heights from the chin. NOTE this still includes the
-                // helmet shell (also dark and neutral), so it currently reads
-                // goggles+shell as one band — it is an instrument for the
-                // goggle-placement work, not yet a gate.
+                // The lens BAND: contiguous rows where lens pixels cover at
+                // least a third of the head's width at that height, reported
+                // in head-heights from the LOWEST MASKED ROW (not the
+                // anatomical chin — see the gate below). With the mirrored-blue
+                // classifier above this is the goggles alone, so it is now
+                // item 1's placement GATE, not just an instrument.
                 let lo = -1, hi = -1;
                 for (let row = 0; row <= hh; row++) {
                     const on = rowN[row] > 0 && rowLens[row] / rowN[row] > 0.33;
@@ -493,6 +522,8 @@ test('look', async ({ page }) => {
                     darkFrac: +(dark / nMask).toFixed(4),
                     skinFrac: +(skin / nMask).toFixed(4),
                     lensFrac: +(lens / nMask).toFixed(4),
+                    cal: Array.from(calN).map((n, k) => CAL[k].join('/') + '='
+                        + (n / nMask).toFixed(4)).join(' '),
                     // hi is the LOWER edge on screen => the lower edge in
                     // head-heights; lo is the upper edge.
                     bandLo: hi >= 0 ? fh(hi) : null,

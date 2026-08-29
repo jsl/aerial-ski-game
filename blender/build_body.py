@@ -115,7 +115,15 @@ BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 
 SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
 SABOTAGE_GOGGLES = os.environ.get('BODY_SABOTAGE_GOGGLES') == '1'  # negative control for the goggle-geometry gate
+_GOGGLE_PRE = {}   # OPUS ITEM 1: lens vertex index -> radius from the head axis before goggle_geometry's push
 SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative control for the crown gates
+# OPUS ITEM 2 negative control: slide the finished dome fore-aft by N mm (+ = forward,
+# toward the face). BODY_SABOTAGE_DOME_MM=30 and =-30 must both fail the seating gate.
+SABOTAGE_DOME_MM = float(os.environ.get('BODY_SABOTAGE_DOME_MM', '0') or 0)
+# Dome-seating band in mm (back rim minus occiput). Measured on this build at
+# -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
+# ~22 mm of margin each way, so both +-30 mm negative controls fail.
+DOME_SEAT_LO, DOME_SEAT_HI = -40.0, 5.0
 
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
@@ -126,11 +134,30 @@ WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
 HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
-LENS       = (0.04, 0.06, 0.08)      # dark glossy goggle lens across the eyes
+# OPUS ITEM 1: a MIRRORED lens. The old (0.04,0.06,0.08) was DARKER and less
+# saturated than the helmet shell (0.09,0.10,0.12), which is why the whole eye
+# zone read as one black band and why look.spec's "neutral-dark" lens detector
+# could not tell goggles from shell. Measured off the author's reference
+# (reference/images/aerial_suit.png, lens rows 908..945): the real lens reads
+# RGB ~ (26,68,108)/255 = (0.10,0.27,0.42) in bright sun — strongly blue and
+# BRIGHTER than the (5,22,45) shell beside it.
+LENS       = (0.09, 0.28, 0.55)      # mirrored blue goggle lens across the eyes
+LENS_WARM  = (0.42, 0.30, 0.18)      # the orange half of the mirror flash, low-outer corners
 BROW       = (0.10, 0.07, 0.06)      # face pass 3: dark, wide strokes — the 0.16 brown washed out at 0.6 m
 LIP        = (0.45, 0.20, 0.18)      # face pass 3: darker/wider lips (was 0.62/0.34/0.30)
 SKIN_SHADE = (0.62, 0.43, 0.37)      # face pass 3: nose-side / nostril shadow shading on the face
-GOGGLE_RIM = (0.82, 0.85, 0.88)   # face pass 2: light frame round the lens so it separates from the navy shell
+# OPUS ITEM 1: the frame is DARK in the reference, not white. The near-white
+# frame existed only to separate a black lens from a black shell; the mirrored
+# lens now separates itself, and a white outline round the goggles read as a
+# toy. Kept 2 shades off the shell so the edge is still a line, not a merge.
+GOGGLE_RIM = (0.14, 0.15, 0.17)   # dark goggle frame between the lens and the shell/skin
+
+# OPUS ITEM 1: the goggle lens band as fractions of the head's chin->crown
+# height. ONE definition — head_region, goggle_geometry, paint_suit and
+# face_helmet_gate all read the landmarks derived from these, so the band can
+# never again be moved in one pass and not the others.
+LENS_LO = float(arg('--lens-lo', '0.40'))   # band bottom (above the nose tip)
+LENS_HI = float(arg('--lens-hi', '0.57'))   # band top (just under the front rim, 0.58)
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -236,11 +263,26 @@ def head_landmarks(body):
     eye line), the SIDE rims just above the ears, the BACK rim on the
     occipital line.
 
-        eyes    0.50   goggle lens centred here (brow level)
-        lens    0.34.. lens band, below the shell rim
+        eyes    0.50   the eye line (brow level)
+        lens0   0.40   lens band BOTTOM (above the nose tip)
+        lens1   0.57   lens band TOP (0.01h = ~2 mm under the front rim)
         brim0   0.58   FRONT rim: 0.08h = 1.6 cm above the eye line
         brim1   0.68   shell fade END (fully shell above this)
         rimside 0.55   SIDE/BACK rim: just above the ears
+
+    OPUS ITEM 1 (2026-08-29). The band used to run 0.34h..0.50h — it stopped
+    AT the eye line, so the lens covered the nose and cheekbones and left
+    0.08h (~1.6 cm) of bare forehead between its top and the helmet rim. That
+    is the author's "goggles sit on the nose, not the eyes".
+
+    Re-measured off the author's primary reference
+    (reference/images/aerial_suit.png, head crown y=852 px, chin y=1008 px,
+    h=156 px; the mirrored lens occupies rows 908..945): the real band is
+    0.40h..0.64h of the helmeted head height, i.e. it reaches all the way UP
+    to the helmet rim and there is NO bare forehead. The band here stops at
+    0.57h instead of 0.64h only because item 2 pins the front rim at 0.58h
+    ("~1.5 cm above the brow, no lower"); ~2 mm of skin is left showing,
+    against the brief's "<= 1 cm" allowance. See docs/OPUS-NOTES.md.
 
     The fractions are read from adult proportions rather than guessed per
     build, so they survive retune_proportions' head shrink as long as the
@@ -256,6 +298,8 @@ def head_landmarks(body):
     return {
         'chin': chin, 'top': top, 'h': h,
         'eyes': chin + h * 0.50,
+        'lens0': chin + h * LENS_LO,
+        'lens1': chin + h * LENS_HI,
         'brim0': chin + h * 0.58,
         'brim1': chin + h * 0.68,
         'rim_side': chin + h * 0.55,
@@ -282,14 +326,17 @@ def head_region(co, lm):
     # NEGATIVE CONTROL (NEXT.md item 5): BODY_SABOTAGE_FACE=1 wraps the lens
     # band around the FULL circumference — the pre-FABLE-80 defect — so the
     # look.spec front/back discrimination gates have something to fail on.
-    if SABOTAGE_FACE and lm['chin'] + lm['h'] * 0.34 < co.z < lm['eyes']:
+    if SABOTAGE_FACE and lm['lens0'] < co.z < lm['lens1']:
         return 'lens'
-    if frontal and lm['chin'] + lm['h'] * 0.34 < co.z < lm['eyes']:
-        # Face pass 2: the band sits BELOW the shell rim (0.58h) — goggles
-        # under the helmet edge, top of the lens at the eyes.
+    if frontal and lm['lens0'] < co.z < lm['lens1']:
+        # OPUS ITEM 1: the band reaches UP to just under the shell rim, so the
+        # lens covers the eyes and brow the way the reference does, instead of
+        # stopping at the eye line and sitting on the nose.
         return 'lens'
-    if not frontal and abs(co.z - lm['eyes']) < lm['h'] * 0.04 \
+    if not frontal and abs(co.z - (lm['lens0'] + lm['lens1']) / 2) < lm['h'] * 0.05 \
             and co.z > lm['chin'] + lm['h'] * 0.30:
+        # OPUS ITEM 1: the strap continues the lens band round the helmet, so
+        # it is centred on the BAND, not on the (now lower) eye line.
         return 'strap'
     # RIM (NEXT.md): the shell stops at the occiput line behind and just
     # above the ears at the sides (rim_side, 0.55h); in FRONT it rides 1–2 cm
@@ -1626,6 +1673,82 @@ def crown_probe(body, lm, tag):
         f'(gate {0.45 * head_w * 1000:.0f}), tilt p10 {tilt_p10:.1f} deg '
         f'(gate 25) over {len(tilts)} verts')
 
+def _band_mid_y(pts):
+    """Fore-aft centre of a set of head points as the Y BOUNDING-BOX MIDPOINT.
+
+    OPUS ITEM 2. The dome used to be centred on the cranium CENTROID, and that
+    is a biased estimator of where the skull actually is: the base mesh carries
+    far more vertices on the front of the skull (the forehead sheet that runs
+    down into the face) than on the occiput, so the vertex average sits well
+    forward of the shape's own centre. Measured on this build, cranium centroid
+    +100.1 mm vs the shaped dome's Y bbox midpoint +67.5 mm — a 33 mm forward
+    bias, which is the author's "the helmet sits too FORWARD" (HUMAN TESTING
+    #6). The bbox midpoint is density-independent.
+    """
+    ys = [p.y for p in pts]
+    return (min(ys) + max(ys)) / 2
+
+
+def helmet_centre_probe(body, lm, tag):
+    """OPUS ITEM 2 instrument (author, HUMAN TESTING #6: the helmet "sits too
+    FORWARD"). Logs the fore-aft (Y, chest-positive) geometry of the dome so
+    the gate that follows is calibrated on measurements rather than on the
+    word "forward":
+
+      seg      the physics head segment centre bl('head').y
+      skull    centroid of head-dominant verts BELOW the rim on the sides
+               (rim_side) — the cranium's own column, face bulge excluded by
+               taking only |theta| > 1.15 (non-frontal) verts
+      head     centroid of ALL head-dominant verts (the brief's "head
+               centroid"; it is pulled FORWARD by the nose and chin)
+      dome     centroid of the verts head_region calls 'helmet'
+      rimF/rimB the frontmost / backmost dome vert
+
+    Logs only, never gates."""
+    own = dominant_segments(body)
+    c = bl('head')
+    head = [v.co for v in body.data.vertices if own[v.index] == 'head']
+    if len(head) < 20:
+        log(f'helmet centre probe [{tag}]: too few head verts ({len(head)})')
+        return None
+    dome = [p for p in head if head_region(p, lm) == 'helmet']
+    if not dome:
+        log(f'helmet centre probe [{tag}]: no helmet-region verts')
+        return None
+    def cy(ps):
+        return sum(p.y for p in ps) / len(ps)
+    skull = [p for p in head
+             if p.z < lm['rim_side'] and not _sector(p, c)[0]]
+    # The OCCIPUT reference: the rearmost skin in the band just BELOW the side
+    # rim. The shell never reaches there (head_region calls everything under
+    # rim_side skin), so it is the one fore-aft landmark a mis-seated dome
+    # cannot move — unlike the head centroid, which is 59% shell verts and so
+    # largely measures the dome against itself (that gate read 6.0 mm while the
+    # author was looking at a helmet visibly out over the brow).
+    occ_band = [p for p in head
+                if lm['rim_side'] - 0.12 * lm['h'] <= p.z < lm['rim_side']]
+    occiput = min((p.y for p in occ_band), default=float('nan'))
+    r = {
+        'seg': c.y,
+        'skull': cy(skull) if skull else float('nan'),
+        'head': cy(head),
+        'dome': cy(dome),
+        'dome_mid': _band_mid_y(dome),
+        'head_mid': _band_mid_y(head),
+        'occiput': occiput,
+        'rimF': max(p.y for p in dome),
+        'rimB': min(p.y for p in dome),
+        'n_dome': len(dome),
+    }
+    log(f'helmet centre probe [{tag}]: dome centroid {r["dome"] * 1000:+.1f} mm, '
+        f'dome bbox-mid {r["dome_mid"] * 1000:+.1f}, head centroid '
+        f'{r["head"] * 1000:+.1f}, head bbox-mid {r["head_mid"] * 1000:+.1f}, '
+        f'seg {r["seg"] * 1000:+.1f} | rim {r["rimB"] * 1000:+.1f}..'
+        f'{r["rimF"] * 1000:+.1f}, occiput {occiput * 1000:+.1f}, '
+        f'backRim-occiput {(r["rimB"] - occiput) * 1000:+.1f} mm '
+        f'over {len(dome)} dome verts')
+    return r
+
 def crown_cap_last(body, lm):
     """NEXT (iter 94) item 1: the dome kept dying between shape_helmet's
     ellipsoid and the late passes (crown probe: retune_proportions squashes
@@ -1643,7 +1766,10 @@ def crown_cap_last(body, lm):
     hv = [v.co for v in body.data.vertices if own[v.index] == 'head']
     cran = [p for p in hv if p.z >= lm['brim0']]
     cran_x = sum(p.x for p in cran) / len(cran)
-    cran_y = sum(p.y for p in cran) / len(cran)
+    # OPUS ITEM 2: bbox midpoint, matching shape_helmet — a centroid-centred
+    # cap re-asserted the forward bias as the LAST geometry pass, undoing the
+    # centring above.
+    cran_y = _band_mid_y(cran)
     xs = [p.x for p in hv]
     R = (max(xs) - min(xs)) / 2 * 1.02
     o = Vector((cran_x, cran_y, lm['brim0']))
@@ -1691,7 +1817,14 @@ def shape_helmet(body, lm):
                if own4[v.index] == 'head' and v.co.z >= lm['brim0']]
     if len(cranium) < 50:
         raise SystemExit('[body] helmet centring: too few cranium verts')
-    cranium_y = sum(p.y for p in cranium) / len(cranium)
+    # OPUS ITEM 2: the fore-aft centre is the cranium's Y BBOX MIDPOINT, not
+    # its vertex centroid — see _band_mid_y. The centroid over-shot forward by
+    # ~33 mm on this mesh, which is what put the shell out over the brow.
+    cranium_y = _band_mid_y(cranium)
+    cranium_cy = sum(p.y for p in cranium) / len(cranium)
+    log(f'helmet centring: cranium bbox mid {cranium_y * 1000:+.1f} mm vs '
+        f'centroid {cranium_cy * 1000:+.1f} mm (centroid bias '
+        f'{(cranium_cy - cranium_y) * 1000:+.1f} mm — the "too forward")')
     # The measured offset IS the beanie defect (build 2026-08-28: 97 mm);
     # re-centring on the cranium is the fix. Only an absurd drift fails.
     if abs(cranium_y - c.y) > 0.15:
@@ -1742,7 +1875,7 @@ def goggle_geometry(low, lm):
     0.6 m close-up the eye zone read as one flat dark patch. This pass pushes
     the head verts of each goggle region radially out of the skull (in the
     head's XY plane, so the push follows the local surface direction):
-      lens   0.34h..0.50h frontal  +7.0 mm   (the lens sits proud of the face)
+      lens   lens0..lens1 frontal   +7.0 mm   (the lens sits proud of the face)
       rim    lens band top/bottom 1.5%h edges  +4.5 mm (the frame, between the
              dark lens and the shell/skin it separates)
       strap  eye level behind      +2.5 mm   (over the shell, not painted on it)
@@ -1755,6 +1888,11 @@ def goggle_geometry(low, lm):
     own = dominant_segments(low)
     c = bl('head')
     moved = {}
+    # OPUS ITEM 1: record every lens vertex's radius BEFORE the push, so the
+    # gate below can measure the displacement this pass actually realised on
+    # the FINAL mesh instead of inferring it from the skull's front-to-side
+    # radius difference. See face_helmet_gate block (6).
+    _GOGGLE_PRE.clear()
     for v in low.data.vertices:
         if own[v.index] != 'head':
             continue
@@ -1763,7 +1901,7 @@ def goggle_geometry(low, lm):
         push = 0.0
         if reg == 'lens':
             hzl = (p.z - lm['chin']) / lm['h']
-            edge = (0.50 - hzl) < 0.015 or (hzl - 0.34) < 0.015
+            edge = (LENS_HI - hzl) < 0.015 or (hzl - LENS_LO) < 0.015
             push = 0.0045 if edge else 0.0070
         elif reg == 'strap':
             push = 0.0025
@@ -1773,6 +1911,8 @@ def goggle_geometry(low, lm):
         n = d.length
         if n < 1e-6:
             continue
+        if reg == 'lens':
+            _GOGGLE_PRE[v.index] = n
         if SABOTAGE_GOGGLES:
             continue
         v.co = p + d * (push / n)
@@ -1862,6 +2002,28 @@ def face_helmet_gate(low, lm):
     dome_off = abs(dome_cy - head_cy)
     log(f'face gate: dome centre {dome_off * 1000:.1f} mm off the head '
         f'centroid fore-aft (gate 10)')
+    # (4b) OPUS ITEM 2 — DOME SEATING, measured against the OCCIPUT.
+    #
+    # The centroid test above is very nearly self-referential: 59% of the head
+    # verts on this mesh ARE the shell, so the "head centroid" moves with the
+    # dome. It read 6.0 mm — a pass — on the build the author looked at and
+    # called "the helmet sits too FORWARD" (HUMAN TESTING #6). This gate uses a
+    # landmark the shell cannot move: the rearmost skin in the band just BELOW
+    # the side rim, which head_region classifies as face/skin at every height.
+    # A correctly seated dome's back rim sits AT or just behind that occiput
+    # (the shell stands a few mm proud of the skull); a dome slid forward
+    # uncovers the occiput and the difference goes positive.
+    occ_band = [p for p in hv
+                if lm['rim_side'] - 0.12 * h <= p.z < lm['rim_side']]
+    if len(occ_band) < 20:
+        raise SystemExit('[body] face gate: empty occiput band')
+    occiput = min(p.y for p in occ_band)
+    dome_back = min(p.y for p in shell)
+    seat = (dome_back - occiput) * 1000.0
+    log(f'face gate: dome seating — back rim {dome_back * 1000:+.1f} mm vs '
+        f'occiput {occiput * 1000:+.1f} mm = {seat:+.1f} mm '
+        f'(gate {DOME_SEAT_LO:+.0f}..{DOME_SEAT_HI:+.0f}; negative controls '
+        f'BODY_SABOTAGE_DOME_MM=+30/-30)')
     xs = [p.x for p in hv]
     head_w = max(xs) - min(xs)
     crown_z = max(p.z for p in shell)
@@ -1893,6 +2055,13 @@ def face_helmet_gate(low, lm):
         f'(gate >= {0.45 * head_w * 1000:.0f} = 0.45 x width '
         f'{head_w * 1000:.1f}), crown normal tilt p10 {tilt_p10:.1f} deg '
         f'from vertical at the band edge over {len(tilts)} verts (gate 25)')
+    if not (DOME_SEAT_LO <= seat <= DOME_SEAT_HI):
+        raise SystemExit(
+            f'[body] dome seating gate FAILED: back rim {seat:+.1f} mm '
+            f'relative to the occiput (band {DOME_SEAT_LO:+.0f}..'
+            f'{DOME_SEAT_HI:+.0f}) — the helmet has slid '
+            + ('FORWARD off the back of the skull' if seat > DOME_SEAT_HI
+               else 'BACK off the brow'))
     crown_bad = []
     if crown_up < 0.45 * head_w:
         crown_bad.append(f'crown height {crown_up * 1000:.1f} mm '
@@ -1913,19 +2082,44 @@ def face_helmet_gate(low, lm):
     fy = sum(p.y - c.y for p in face) / len(face)
     turn = math.degrees(math.atan2(fx, fy))
     log(f'face gate: faceForward turn {turn:+.1f} deg from +y (gate 10)')
-    # (6) GOGGLES PROUD (FABLE-80 finding 2). Instrument: per height-slab in
-    # the lens band, mean radial distance from the head centre of the LENS
-    # verts minus that of the SKIN verts in the SAME slab (the undisplaced
-    # side/back skin is the skull's own reference at that height, so the
-    # head's aspect ratio and fore-aft taper cancel). BODY_SABOTAGE_
-    # GOGGLES=1 skips the displacement; the gate threshold sits between the
-    # two measured runs (calibrated against the negative control, as in
-    # iter-86's structural distance).
+    # (6) GOGGLES PROUD (FABLE-80 finding 2), measured TWO ways.
+    #
+    # (6a) THE GATE, OPUS ITEM 1. The realised radial displacement of the lens
+    # band on the FINAL low-poly: each lens vertex's radius from the head axis
+    # now, minus the radius goggle_geometry recorded for it before its push.
+    # This measures the thing the gate is named for. It replaces an absolute
+    # "lens radius minus same-slab side/back skull radius" comparison whose
+    # value was dominated by the skull's own front-to-side difference at the
+    # band height, not by the goggles: at the old band that instrument read
+    # 68.9 mm normal against a 68.4 mm negative control — a 0.5 mm margin —
+    # and iter 96 had already recorded that BODY_SABOTAGE_CROWN corrupted its
+    # binning so the control no longer exercised it at all. Moving the band to
+    # the brow line (item 1) exposed the confound outright: the same
+    # instrument read 46.5 mm normal vs 41.7 mm sabotaged, because the brow is
+    # simply flatter fore-aft than the cheekbone the old band sat on. The
+    # geometry had not changed. The direct measurement below reads the push
+    # itself, so BODY_SABOTAGE_GOGGLES=1 measures exactly 0.0 mm.
+    #
+    # (6b) The old same-slab instrument is KEPT as a log-only number so the
+    # band can be moved again without losing continuity with the earlier
+    # builds. It is no longer a gate.
     import collections
+    rim_side_h_gate = (rim_side - chin) / h
     slabs = collections.defaultdict(lambda: [0.0, 0, 0.0, 0])
     for p in hv:
         zi = int((p.z - chin) / h / 0.02)
-        if not 17 <= zi <= 24:      # 0.34h..0.50h: the lens band
+        # OPUS ITEM 1: the slab window follows the band landmarks. It used to
+        # be the literals 17..24 (0.34h..0.50h); moving the band and not this
+        # would have measured the lens against slabs that no longer hold any.
+        #
+        # The window stops at the SIDE RIM (0.55h), not at the band top: the
+        # reference population is the undisplaced side/back SKIN in the same
+        # slab, and above the side rim there is no skin — it is all shell. The
+        # first build with the band at 0.40..0.57h measured 50.4 mm over ONE
+        # usable slab for exactly that reason. This is a window fix, not a
+        # threshold fix: the gate value (68.0 mm) is untouched.
+        if not int(LENS_LO / 0.02) + 1 <= zi <= min(
+                int(LENS_HI / 0.02) - 1, int(rim_side_h_gate / 0.02) - 1):
             continue
         rad = math.hypot(p.x - c.x, p.y - c.y)
         reg = head_region(p, lm)
@@ -1933,7 +2127,14 @@ def face_helmet_gate(low, lm):
         if reg == 'lens':
             s[0] += rad
             s[1] += 1
-        elif reg == 'face':
+        elif not _sector(p, c)[0]:
+            # OPUS ITEM 1: the reference is the SIDE/BACK of the skull at the
+            # same height, whatever region it is classified as. It used to be
+            # region == 'face' only, which excluded the strap band — and the
+            # strap band (band centre +- 0.05h) now covers almost the whole
+            # side of the window, leaving ONE usable slab. Including the strap
+            # costs at most its own 2.5 mm push, i.e. it can only make the
+            # measured step SMALLER; the gate stays conservative.
             s[2] += rad
             s[3] += 1
     diffs = [s[0] / s[1] - s[2] / s[3]
@@ -1941,10 +2142,55 @@ def face_helmet_gate(low, lm):
     proud = sum(diffs) / len(diffs) if diffs else -1.0
     nlens = sum(1 for p in hv
                 if head_region(p, lm) == 'lens' and _sector(p, c)[0])
-    log(f'face gate: goggle lens radial step vs same-slab skin '
-        f'{proud * 1000:.1f} mm (gate 68.0, recalibrated for the crown-cap pipeline; old flat-skull control 68.4) over {len(diffs)} slabs, '
-        f'{nlens} lens verts')
+    log(f'face gate: [instrument, no longer a gate] goggle lens radial step '
+        f'vs same-slab side/back skull {proud * 1000:.1f} mm over '
+        f'{len(diffs)} slabs, {nlens} lens verts')
+    # (6a) the gate proper: the push this build actually realised.
+    pushes = []
+    for v in low.data.vertices:
+        pre = _GOGGLE_PRE.get(v.index)
+        if pre is None:
+            continue
+        pushes.append(math.hypot(v.co.x - c.x, v.co.y - c.y) - pre)
+    push_mm = (sum(pushes) / len(pushes) * 1000) if pushes else -1.0
+    log(f'face gate: goggle lens REALISED radial push {push_mm:.2f} mm over '
+        f'{len(pushes)} lens verts (gate 4.0; BODY_SABOTAGE_GOGGLES=1 = 0.00)')
+    # (7) LENS BAND PLACEMENT, OPUS ITEM 1 (the brief's "lens band vertical
+    # extent" gate, build side). The vertical extent of the frontal lens verts
+    # on the FINAL low-poly, in head-heights up from the chin.
+    #
+    # The band is gated against the LITERALS MEASURED OFF THE REFERENCE, not
+    # against LENS_LO/LENS_HI — otherwise the gate would follow the knob it is
+    # supposed to constrain and `--lens-lo 0.32 --lens-hi 0.49` (the brief's
+    # "shift the band down by 0.08 h" negative control) would pass. Reference:
+    # reference/images/aerial_suit.png, head crown y=852 px, chin y=1008 px
+    # (h=156 px), mirrored lens rows 908..945 -> 0.40h..0.64h. The model's top
+    # is pinned at 0.57h by item 2's front rim at 0.58h, so the required window
+    # is 0.40..0.57 with a +-0.03h build tolerance (the band is assigned per
+    # vertex, so its realised extent lands inside the requested one by up to
+    # one vertex row).
+    LENS_BAND_REF = (0.40, 0.57)
+    LENS_BAND_TOL = 0.03
+    lens_z = [(p.z - chin) / h for p in hv
+              if head_region(p, lm) == 'lens' and _sector(p, c)[0]]
+    band_lo = min(lens_z) if lens_z else -1.0
+    band_hi = max(lens_z) if lens_z else -1.0
+    log(f'face gate: lens band {band_lo:.3f}h..{band_hi:.3f}h '
+        f'(centre {(band_lo + band_hi) / 2:.3f}h) over {len(lens_z)} frontal '
+        f'lens verts (gate {LENS_BAND_REF[0]:.2f}..{LENS_BAND_REF[1]:.2f} '
+        f'+-{LENS_BAND_TOL:.2f}, measured off the reference still)')
     bad = []
+    if not lens_z:
+        bad.append('no frontal lens verts on the final mesh')
+    else:
+        if abs(band_lo - LENS_BAND_REF[0]) > LENS_BAND_TOL:
+            bad.append(f'lens band BOTTOM {band_lo:.3f}h off the reference '
+                       f'{LENS_BAND_REF[0]:.2f}h by more than {LENS_BAND_TOL:.2f}'
+                       f' — the goggles ride the nose (low) or the forehead (high)')
+        if abs(band_hi - LENS_BAND_REF[1]) > LENS_BAND_TOL:
+            bad.append(f'lens band TOP {band_hi:.3f}h off the reference '
+                       f'{LENS_BAND_REF[1]:.2f}h by more than {LENS_BAND_TOL:.2f}'
+                       f' — bare forehead between the lens and the helmet rim')
     bad.extend(crown_bad)
     if nose_out < 0.020:
         bad.append(f'nose {nose_out * 1000:.1f} mm < 20')
@@ -1960,15 +2206,15 @@ def face_helmet_gate(low, lm):
         bad.append(f'dome off {dome_off * 1000:.1f} mm > 10')
     if abs(turn) > 10.0:
         bad.append(f'faceForward turn {turn:+.1f} deg > 10')
-    # iter 96: recalibrated 71.5 -> 68.0 for the crown-cap pipeline. The cap
-    # grows the chin->crown h the slab binning divides by and shifts every
-    # slab's vertex population (normal build 68.9; the old flat-skull
-    # calibration 68.4 no longer applies, and BODY_SABOTAGE_CROWN now measures
-    # 78.5 — the sabotage control corrupts this instrument's h, so it no
-    # longer exercises THIS gate; open question, entry 96).
-    if proud < 0.0680:
-        bad.append(f'goggle lens radial step {proud * 1000:.1f} mm < 68.0 '
-                   f'(recalibrated for the crown-cap pipeline)')
+    # OPUS ITEM 1: gate on the REALISED push. goggle_geometry pushes the band
+    # interior 7.0 mm and its 1.5%h edges 4.5 mm, so a correct build averages
+    # ~6 mm; the floor is 4.0 mm, and the negative control measures 0.00.
+    if len(pushes) < 50:
+        bad.append(f'only {len(pushes)} lens verts recorded a pre-push radius '
+                   f'— goggle_geometry did not run on this mesh')
+    elif push_mm < 4.0:
+        bad.append(f'goggle lens realised radial push {push_mm:.2f} mm < 4.0 '
+                   f'(negative control BODY_SABOTAGE_GOGGLES=1 reads 0.00)')
     if bad:
         raise SystemExit('[body] FACE/HELMET GATES FAILED: ' + '; '.join(bad))
     # Driver frame (glTF Y-up, forward on -z): Babylon = (Bx, Bz, -By).
@@ -1980,7 +2226,8 @@ def face_helmet_gate(low, lm):
     return {'nose_out': nose_out, 'chin_relief': chin_relief,
             'rim_front': rim_front_up, 'rim_side_h': (rim_side - chin) / h,
             'rim_back_h': (rim_back - chin) / h, 'dome_off': dome_off,
-            'turn_deg': turn, 'goggle_proud': proud,
+            'turn_deg': turn, 'goggle_proud': proud, 'goggle_push_mm': push_mm,
+            'lens_band_h': [round(band_lo, 4), round(band_hi, 4)],
             'faceForward': [round(fwd[0], 4), 0.0, round(fwd[2], 4)]}
 
 
@@ -4195,12 +4442,24 @@ def paint_suit(obj, lm):
                 # and the skin below (face pass 1's lens merged into the
                 # shell — the whole eye zone read as one dark beret).
                 hzl = (z - lm['chin']) / lm['h']
-                lens_top = 0.50
-                lens_bot = 0.34
+                lens_top = LENS_HI
+                lens_bot = LENS_LO
                 if lens_top - hzl < 0.015 or hzl - lens_bot < 0.015:
                     col, tag = GOGGLE_RIM, 'rim'
                 else:
-                    col, tag = LENS, 'goggle'
+                    # MIRROR TINT (brief item 1: "a subtle blue/orange mirror
+                    # tint"). A mirrored lens is not one flat colour — it
+                    # reflects sky at the top and ground/skin at the bottom.
+                    # Brighten toward the top of the band, and mix a warm
+                    # flash into the low OUTER corners, where a real lens
+                    # catches the snow. Kept subtle: 0.25 max warm mix.
+                    t = (hzl - lens_bot) / max(1e-4, lens_top - lens_bot)
+                    sky = 0.80 + 0.45 * t                     # 0.80 .. 1.25
+                    warm = 0.25 * max(0.0, 1.0 - 2.2 * t) \
+                        * min(1.0, abs(x - hx) / max(1e-4, lm['h'] * 0.16))
+                    col = tuple(min(1.0, LENS[k] * sky * (1 - warm)
+                                    + LENS_WARM[k] * warm) for k in range(3))
+                    tag = 'goggle'
             elif reg == 'face':
                 # Face pass 2: feature bands on the skin below the goggles.
                 # Face pass 3 (review-90 order 92): features must read at
@@ -5142,8 +5401,10 @@ def main():
     lm = head_landmarks(body)
     log(f'head landmarks: chin {lm["chin"]:+.3f}, eyes {lm["eyes"]:+.3f}, '
         f'brim {lm["brim0"]:+.3f}..{lm["brim1"]:+.3f}, crown {lm["top"]:+.3f}')
+    helmet_centre_probe(body, lm, 'before shape_helmet')
     shape_helmet(body, lm)
     crown_probe(body, lm, 'after shape_helmet')
+    helmet_centre_probe(body, lm, 'after shape_helmet')
     retune_proportions(body)
     crown_probe(body, lm, 'after retune_proportions')
     leg_profile(body, 'post-pose')
@@ -5236,12 +5497,31 @@ def main():
     crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
     crown_cap_last(body, lm)
+    helmet_centre_probe(body, lm, 'after crown_cap_last')
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     crown_probe(low, head_landmarks(low), 'after finish_lowpoly (final)')
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
+    helmet_centre_probe(low, head_landmarks(low), 'final low-poly')
     goggle_geometry(low, head_landmarks(low))
+    if SABOTAGE_DOME_MM:
+        # Negative control for the dome-seating gate: slide every shell vertex
+        # fore-aft, blending to zero across the fade band so the mesh stays
+        # closed and only the SEATING changes.
+        _lm = head_landmarks(low)
+        _own = dominant_segments(low)
+        _n = 0
+        for v in low.data.vertices:
+            if _own[v.index] != 'head':
+                continue
+            if head_region(v.co, _lm) != 'helmet':
+                continue
+            v.co.y += SABOTAGE_DOME_MM / 1000.0
+            _n += 1
+        low.data.update()
+        log(f'dome SABOTAGED: {_n} shell verts slid '
+            f'{SABOTAGE_DOME_MM:+.1f} mm fore-aft')
     if SABOTAGE_CROWN:
         # Negative control for the crown gates: flatten the top 20% of the
         # dome into a plateau (the beret defect) BEFORE the gate measures.
@@ -5261,8 +5541,16 @@ def main():
     high = make_highpoly(low, lm)
 
     device = configure_cycles()
-    out_dir = os.path.join(ROOT, 'assets')
+    # OPUS ITEM 1 TRAP FIX: out_dir follows --out. It used to be hard-coded to
+    # ROOT/assets, so a build aimed at a scratch directory (--out
+    # ~/scratch/build1/athlete_body.glb) still overwrote assets/athlete_*.webp
+    # and athlete_maps.json in the working tree — which silently contaminated an
+    # in-flight drive run here (the glb stayed at the committed build while the
+    # maps jumped to the experiment's paint).
+    out_dir = os.path.dirname(os.path.abspath(
+        OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)))
     os.makedirs(out_dir, exist_ok=True)
+    log(f'map output directory (follows --out): {out_dir}')
     stats = bake_maps(low, high, out_dir)
     stats['face'] = {k: (round(v, 4) if isinstance(v, float) else v)
                      for k, v in face.items() if k != 'faceForward'}
