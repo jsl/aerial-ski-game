@@ -26,11 +26,15 @@ const SKI_SELF_INERTIA_D = 1.20;
 // Moment of inertia about the flip axis (X, shoulder-to-shoulder).
 // Distance from X axis = sqrt(y² + z²), so I = Σ [ m_i·(y_i²+z_i²) + m_i·(h_i²+d_i²)/12 ]
 function computeI(tuck, model) {
-    const { SEGMENTS, POSE_UNTUCKED, POSE_TUCKED, BASE_Z } = model || _bodyModel;
+    // POSE_TUCKED_INERTIA, not POSE_TUCKED: the display tuck was rebuilt
+    // chain-consistent (Opus item 5) and that must not move the physics, so the
+    // mass distribution is pinned at the pre-rebuild y/dz. See the comment on
+    // POSE_TUCKED_INERTIA in body-model.js.
+    const { SEGMENTS, POSE_UNTUCKED, POSE_TUCKED_INERTIA, BASE_Z } = model || _bodyModel;
     let I = 0;
     for (const seg of SEGMENTS) {
         const up = POSE_UNTUCKED[seg.name];
-        const tk = POSE_TUCKED[seg.name];
+        const tk = POSE_TUCKED_INERTIA[seg.name];
         const y  = lerp(up.y,  tk.y,  tuck);
         const dz = lerp(up.dz, tk.dz, tuck);
         const z  = (BASE_Z[seg.name] || 0) + dz;

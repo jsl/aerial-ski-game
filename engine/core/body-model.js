@@ -76,21 +76,82 @@ const POSE_INRUN_TUCK = {
     skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
+// Flight tuck. REBUILT chain-consistent, item 5 (Opus session 8) under
+// "APPROVED (Fable, 17:05): close the POSE_TUCKED hip gap".
+//
+// The old table was free-standing: every segment was placed by eye, so at the
+// tuck=1 endpoint (where the blend-scaled reconciler is inert) the skeleton was
+// DISLOCATED — shoulder 0.536 m, hip 0.329 m, neck 0.211 m, knee 0.207 m off
+// their anchors. That is the author's "back separating": linear-blend skinning
+// averages bone matrices, and two rigid transforms whose shared joint is a
+// third of a metre apart cannot average into anything but a smear.
+//
+// It was also anatomically backwards: upperLeg rx = -1.20 pointed the thigh's
+// knee end BEHIND the hip (hip 0.34 m forward of the knee) while the table
+// then translated the whole leg forward to compensate. A tuck needs the knee
+// in FRONT of the hip, which is rx > pi/2 — the same range POSE_PIKED uses.
+//
+// Rebuilt by forward kinematics from the torso, so the chain closes on itself:
+// max joint gap 0.9 mm (analytic, on these rounded literals; was 536 mm).
+// Joint angles, from RTMPose on reference/pose/IMG_3520 (the airborne tuck,
+// frames 193-205 — the only clip in reference/pose with a real tuck; IMG_3768
+// tracks a bystander and never leaves 170 deg):
+//   trunk-thigh interior 50 deg  (measured 54-64 deg at frames 193-196; the
+//                                 deepest reliable frames, scores 0.41-0.47)
+//   thigh-shin  interior 30 deg  (150 deg knee flexion, the anatomical limit;
+//                                 2D measurement bottoms out at 89 deg because
+//                                 the shin runs along the camera axis there)
+//   trunk 25 deg forward of vertical, head 20 deg further (chin toward chest)
+//   hands IK'd onto the upper shin, 30% knee-to-ankle — the footage grab point
+// Forward = -z; a segment's +Y end sits at position + halfH*(cos rx, sin rx)
+// in (y, z), and the arm anchors carry the cos(rz) foreshortening.
+//
+// NOTE: computeI does NOT read this table — see POSE_TUCKED_INERTIA below.
 const POSE_TUCKED = {
-    // Knees lift forward (-dz) and up toward chest — tuck in the YZ plane
-    torso:     { x:  0.000, y:  0.000, rx:  0.35, rz:  0.00, dz:  0.00 },  // torso curls forward
-    head:      { x:  0.000, y:  0.340, rx:  0.45, rz:  0.00, dz: -0.06 },  // chin toward knees
-    upperArmL: { x: -0.130, y: -0.180, rx: -1.00, rz:  0.20, dz: -0.18 },  // arms reach forward to grab shins
-    upperArmR: { x:  0.130, y: -0.180, rx: -1.00, rz: -0.20, dz: -0.18 },
-    lowerArmL: { x: -0.070, y: -0.280, rx: -1.00, rz:  0.20, dz: -0.26 },
-    lowerArmR: { x:  0.070, y: -0.280, rx: -1.00, rz: -0.20, dz: -0.26 },
-    upperLegL: { x: -0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },  // thighs up and forward
-    upperLegR: { x:  0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },
-    lowerLegL: { x: -0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },  // shins fold in
-    lowerLegR: { x:  0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },
-    // Skis track feet: foot moves to ~y=-0.396 at same rx as lower leg
-    skiL:      { x: -0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
+    torso:     { x:  0.000, y:  0.000, rx: -0.436, rz:  0.00, dz:  0.000 },  // trunk 25 deg forward
+    head:      { x:  0.000, y:  0.338, rx: -0.785, rz:  0.00, dz: -0.205 },  // chin toward chest
+    upperArmL: { x: -0.130, y:  0.120, rx:  0.497, rz:  0.20, dz: -0.186 },  // reaching down-forward
+    upperArmR: { x:  0.130, y:  0.120, rx:  0.497, rz: -0.20, dz: -0.186 },
+    lowerArmL: { x: -0.070, y: -0.121, rx: -0.426, rz:  0.20, dz: -0.206 },  // hands on the shins
+    lowerArmR: { x:  0.070, y: -0.121, rx: -0.426, rz: -0.20, dz: -0.206 },
+    upperLegL: { x: -0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },  // knees up and FORWARD
+    upperLegR: { x:  0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },
+    lowerLegL: { x: -0.075, y: -0.283, rx: -0.785, rz:  0.00, dz: -0.104 },  // heels folded under
+    lowerLegR: { x:  0.075, y: -0.283, rx: -0.785, rz:  0.00, dz: -0.104 },
+    skiL:      { x: -0.075, y: -0.421, rx: -0.785, rz:  0.00, dz:  0.034 },
+    skiR:      { x:  0.075, y: -0.421, rx: -0.785, rz:  0.00, dz:  0.034 },
+};
+
+// The tuck's MASS DISTRIBUTION, frozen at the pre-rebuild numbers.
+//
+// This lane may not change physics and may not rebaseline a golden trace, and
+// computeI reads only y and dz — so rebuilding POSE_TUCKED above would have
+// altered I_tuck and, through it, every tucked rotation rate and every landing
+// outcome. (Measured: iteration 33 showed a 4.1% I_tuck shift flipping three
+// knife-edge landings.) The rebuild therefore ships as a DISPLAY change only:
+// these literals are the old table's y/dz, byte for byte, and computeI keeps
+// consuming them, so the physics is unchanged by construction rather than by
+// measurement. tests/unit/tuck-inertia-frozen.test.js pins that.
+//
+// The two are close but not equal. Measured divergence of the drawn tuck from
+// the simulated one: -0.24% at the tuck=1 endpoint, +9.1% at tuck=0.5. (The
+// mid-blend figure is not new: the P13 reconciler already re-anchors every
+// joint at mid-blend and computeI has never seen that either.) Reconciling
+// them is a physics retune with its own outcome contract — see the
+// NEEDS-APPROVAL line in docs/OPUS-NOTES.md.
+const POSE_TUCKED_INERTIA = {
+    torso:     { y:  0.000, dz:  0.00 },
+    head:      { y:  0.340, dz: -0.06 },
+    upperArmL: { y: -0.180, dz: -0.18 },
+    upperArmR: { y: -0.180, dz: -0.18 },
+    lowerArmL: { y: -0.280, dz: -0.26 },
+    lowerArmR: { y: -0.280, dz: -0.26 },
+    upperLegL: { y: -0.140, dz: -0.20 },
+    upperLegR: { y: -0.140, dz: -0.20 },
+    lowerLegL: { y: -0.230, dz: -0.10 },
+    lowerLegR: { y: -0.230, dz: -0.10 },
+    skiL:      { y: -0.410, dz:  0.00 },
+    skiR:      { y: -0.410, dz:  0.00 },
 };
 
 const POSE_PIKED = {
@@ -154,11 +215,13 @@ function deepFreeze(o) {
     }
     return o;
 }
-[SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED, POSE_PIKED,
+[SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED,
+ POSE_TUCKED_INERTIA, POSE_PIKED,
  POSE_ARMS_FORWARD, POSE_ARMS_DROPPED, POSE_ARMS_50DEG, POSE_ARMS_T,
  POSE_ARMS_UP].forEach(deepFreeze);
 
-const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED, POSE_PIKED, POSE_ARMS_FORWARD, POSE_ARMS_DROPPED, POSE_ARMS_50DEG, POSE_ARMS_T, POSE_ARMS_UP };
+const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED,
+              POSE_TUCKED_INERTIA, POSE_PIKED, POSE_ARMS_FORWARD, POSE_ARMS_DROPPED, POSE_ARMS_50DEG, POSE_ARMS_T, POSE_ARMS_UP };
 
 // Dual-mode: require() in node --test, <script> in the browser, and
 // vm.runInContext in the headless harness. The project has no bundler.
