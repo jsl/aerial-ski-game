@@ -3985,7 +3985,7 @@ void main(void) {
     // Two summed sines per layer — no RNG, stable golden census.
     const RIDGE_STEP = 6;                                   // m between columns
     const FOG = scene.fogColor;
-    const RIDGE_SNOWLINE_M = 70;   // elevation mapped to uv v ∈ 0..~1
+    const RIDGE_SNOWLINE_M = 45;   // elevation mapped to uv v ∈ 0..~1
     const _ridgeMat = (name, mix, tint) => {
         const m = makePBR(name, scene);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
@@ -3994,7 +3994,7 @@ void main(void) {
         m.backFaceCulling = false;
         const T = AerialEngine && AerialEngine.textures;
         const s = T && T.makeRidgeSurface
-            ? T.makeRidgeSurface(BABYLON, scene, 512, {}) : null;
+            ? T.makeRidgeSurface(BABYLON, scene, 512, { strength: 3.5 }) : null;
         if (s) {
             // The map is self-coloured; albedoColor becomes the atmospheric
             // multiplier, lifted toward the fog colour with distance.
@@ -4059,9 +4059,9 @@ void main(void) {
         return m;
     }
     const RZ0 = SLOPE_START_Z - 170, RZ1 = OUTRUN_Z + 240;
-    const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.25, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.42, [0.38, 0.48, 0.55]);
+    const matNear = _ridgeMat('ridgeMatNear', 0.05, [0.12, 0.18, 0.13]);  // forest green
+    const matMid  = _ridgeMat('ridgeMatMid',  0.12, [0.24, 0.33, 0.31]);
+    const matFar  = _ridgeMat('ridgeMatFar',  0.22, [0.38, 0.48, 0.55]);
     [-1, 1].forEach(function (s) {
         _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
