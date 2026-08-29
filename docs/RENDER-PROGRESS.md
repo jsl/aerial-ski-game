@@ -176,6 +176,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ## Status board
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
+| — | Iteration 92 | **face pass 3 paint + suit legibility LANDED; crown-gate instrument built (SOFT — geometry blocked by pipeline, open)** | lip/nostril strokes darker+wider, NEW nose-side shadow band (69 verts), nose-side tint; suit plain verts get a cool grey-blue fold-shade multiplier (max −18 % r / −10 % b, smoothstep over the SUIT_FOLDS bands) — bib/waist/number/stripe/glove tags untouched, bib gates green; suit-vs-snow ready-view luminance gap measured 0.142 (gate ≥ 0.06; suit 0.710 vs snow 0.852); crown gates written (height ≥ 0.45×width: 91.6 vs 73 PASS hard; band-edge normal tilt ≥ 25°: 13.1 SOFT-FAIL with negative control BODY_SABOTAGE_CROWN=1 → 0.0) — the hemispherical re-projection is exact in `shape_helmet` (929 verts on an r=101.3 mm sphere, residual mean 101.3 mm) but the tilt read stays 13–15° after retune/decimate/unwrap — root-cause trail in entry 92; ASSET_V 31; unit 0 fail, golden 30/30, drive body+bib-number+look 6/6. See entry 92. |
 | — | Iteration 86 (NEXT.md) | **face/helmet rebuild LANDED** | rim raised to the pinned numbers (front 0.58h = 17.6 mm above the eye line; sides/back 0.55h); HARD build gates nose/chin/rims/dome all green on the final mesh; `faceForward` baked into `athlete_maps.json` and read by `_athleteFacing` (reviewer 01:50 confirmed as the source of truth); look.spec hard front/back darkU gates + structural distance + silhouette span+skin gates; figure_side drift root-caused (pair block left r=0.6/head target + follow-callback clobber) and fixed — side shot is now a true profile; negative control (BODY_SABOTAGE_FACE=1, lens wrapped + facing flipped) FAILS the gates; ASSET_V 28; unit 0 fail, golden 30/30, look green, start-gating+rig 13/13. See entry 86. |
 | — | Iteration 85 (review) | **review pass complete; suite recovered** | one real regression fixed (unit allowlist vs iter-84's five start-gating functions — unit was RED at HEAD); shots regenerated and inspected: `figure_side.png` STILL has no athlete and `face.png` STILL shows the nape — NEXT.md (face/helmet rebuild + `faceForward` cameras + silhouette gate) confirmed as the top priority; red kicker junction marks and milky scene sky re-flagged. See entry 85. |
 | Priority | Item | State | Notes |
@@ -6227,6 +6228,68 @@ support a P2 claim.
 
 *Everything above is measurement/inspection only; no source files changed in
 this iteration.*
+
+### 92 — Face pass 3 paint + suit legibility (reviewer order 92); crown
+gate instrument built and its pipeline blocker measured — SOFT until fixed
+
+**Order acted on:** review 90 order — "92 = face pass 3 (hemispherical
+crown, feature contrast) + suit legibility (faint cool grey-blue shading in
+the folds/AO and a ≥ 0.06 luminance gap between suit mid-tone and snow in
+the ready view, without darkening the bib plate)".
+
+**Face paint (blender/build_body.py `paint_suit`):** lip band widened
+0.20–0.295h → 0.19–0.305h and LIP darkened (0.62,0.34,0.30) → (0.45,0.20,
+0.18); nostril band widened (±0.020h → ±0.026h) and BROW darkened to
+(0.10,0.07,0.06); NEW nose-side shadow band `SKIN_SHADE` (0.62,0.43,0.37)
+each flank of the nose (0.33–0.47h, |abs(x−hx)−0.032h| < 0.022h, frontal):
+69 verts. Paint census: face 19925, lip 171, nostril 14, noshade 69.
+
+**Suit legibility:** plain-'suit' verts now get a cool grey-blue fold
+shade — smoothstep over the SUIT_FOLDS band centres (`fold_shade`), max
+multiplier ×(0.82, 0.85, 0.90) at a band centre. Bib plate, number patch,
+waistband, stripe and glove tags are NOT multiplied, so all bib gates keep
+their colours exactly (bib 746 / number 1582 verts unchanged; bib-number
+drive spec green). Measured suit-vs-snow luminance gap on the regenerated
+front figure shot: **suit mid-tone 0.710 vs snow 0.852 → gap 0.142**
+(reviewer gate ≥ 0.06). PASS.
+
+**Crown (hemispherical dome): instrument + negative control landed, the
+geometry fix did NOT survive the pipeline — open for iteration 93.**
+Evidence trail, all measured this iteration:
+1. Confirmed the beret is real: band-edge (top 35 % of dome, radial ≥ 0.45
+   × half-width) mean-normal tilt from vertical is **13.1°** on the shipped
+   mesh (bmesh-fresh normals). The reviewer's criterion is ≥ 25°.
+2. Wrote the gates: crown height above the rim plane ≥ 0.45 × head width
+   (measured 91.6 mm vs gate ≥ 73 mm — PASS, hard) and the tilt gate
+   (SOFT — logs, does not fail; hardening blocked by item 4).
+3. Negative control `BODY_SABOTAGE_CROWN=1` flattens the top 20 % of the
+   dome (198 verts) before the gate measures: tilt read drops 13.1° →
+   **0.0°**, height 91.6 → 83.9 mm. The instrument detects the plateau.
+4. Attempted fix: re-project all verts above brim1 onto a hemisphere seated
+   at the rim plane. In `shape_helmet` this is EXACT — 929 verts, sphere
+   residual mean 101.3 mm vs r = 101.3 mm, crown at 543.1 mm. But
+   downstream (`retune_proportions` 0.84 head scale → girth/relax →
+   decimate with the `reduce` vertex group → the unwrap shrink/restore)
+   the gate still reads 13–15° tilt and a 501 mm crown. The shrink/restore
+   in `finish_lowpoly` and the segment-ownership reclassification after the
+   0.84 scale are the prime suspects; the next build-side pass must fix the
+   crown THROUGH the pipeline and then flip the tilt gate to hard.
+
+**Verification:** ASSET_V 30 → 31. `npm run test:unit` 0 fail; `npm run
+test:golden` 30/30 (no rebaseline — asset-only change); drive specs
+body + bib-number + look 6/6 green (FACEGATE dark 0.1872, cov 0.9659;
+frontal align within 5°). Shots regenerated (scene, figure, figure_front,
+face, figure_side, inrun, kicker, crash_rest); PNG-by-eye inspection NOT
+available in this session — the numbers above are the visual evidence,
+per plan rule 7.
+
+**Open:** (1) crown tilt gate hard + geometry fix through the pipeline
+(entry trail above); (2) reviewer's "80 % radius" tilt read on the TRUE
+dome needs an ownership-independent selector — `dominant_segments`
+reclassifies dome verts after the 0.84 head scale, capping the head-owned
+crown at 501 mm; (3) suit gap instrument is a one-off script this
+iteration — promote it into a drive spec with its ≥ 0.06 gate and a
+negative control (no-shade build) next suit touch.
 
 ### 91 — Leg-girth instrument fix + growth (reviewer order after review 90 /
 00:15 note): sane slices, sanity bounds, working growth loop, one rebuild

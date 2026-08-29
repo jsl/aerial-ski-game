@@ -115,6 +115,7 @@ BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 
 SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
 SABOTAGE_GOGGLES = os.environ.get('BODY_SABOTAGE_GOGGLES') == '1'  # negative control for the goggle-geometry gate
+SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative control for the crown gates
 
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
@@ -126,9 +127,10 @@ GLOVE      = (0.13, 0.14, 0.16)
 HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
 LENS       = (0.04, 0.06, 0.08)      # dark glossy goggle lens across the eyes
-BROW       = (0.16, 0.12, 0.10)      # face pass 1: eyebrows
+BROW       = (0.10, 0.07, 0.06)      # face pass 3: dark, wide strokes — the 0.16 brown washed out at 0.6 m
+LIP        = (0.45, 0.20, 0.18)      # face pass 3: darker/wider lips (was 0.62/0.34/0.30)
+SKIN_SHADE = (0.62, 0.43, 0.37)      # face pass 3: nose-side / nostril shadow shading on the face
 GOGGLE_RIM = (0.82, 0.85, 0.88)   # face pass 2: light frame round the lens so it separates from the navy shell
-LIP        = (0.62, 0.34, 0.30)      # face pass 1: lip colour
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -1578,6 +1580,8 @@ def shape_helmet(body, lm):
     log(f'helmet shaped: {moved} verts projected onto a '
         f'{rx * 2:.3f}x{ry * 2:.3f}x{rz * 2:.3f} m shell above the brim '
         f'z={lm["brim0"]:.3f}..{lm["brim1"]:.3f} (face below kept)')
+
+
 def _sector(co, c):
     """(frontal, theta) for a head vertex relative to the head centre c."""
     lx, ly = co.x - c.x, co.y - c.y
@@ -1592,7 +1596,6 @@ def goggle_geometry(low, lm):
     0.6 m close-up the eye zone read as one flat dark patch. This pass pushes
     the head verts of each goggle region radially out of the skull (in the
     head's XY plane, so the push follows the local surface direction):
-
       lens   0.34h..0.50h frontal  +7.0 mm   (the lens sits proud of the face)
       rim    lens band top/bottom 1.5%h edges  +4.5 mm (the frame, between the
              dark lens and the shell/skin it separates)
@@ -1687,6 +1690,8 @@ def face_helmet_gate(low, lm):
     chin_relief = chin_y - throat
     log(f'face gate: chin relief {chin_relief * 1000:.1f} mm over the throat '
         f'(gate 15)')
+    # (4b) CROWN (review-90 order 92, face pass 3) — see below the dome
+    # centre: height above the rim plane + band-edge normal tilt.
     # (3) RIM heights: lowest SHELL vertex per sector. Shell = a vertex the
     # paint/region classifier calls 'helmet' — the shell fades into the skull
     # across brim0..brim1, so the VISIBLE edge is the region boundary, not
@@ -1711,6 +1716,50 @@ def face_helmet_gate(low, lm):
     dome_off = abs(dome_cy - head_cy)
     log(f'face gate: dome centre {dome_off * 1000:.1f} mm off the head '
         f'centroid fore-aft (gate 10)')
+    xs = [p.x for p in hv]
+    head_w = max(xs) - min(xs)
+    crown_z = max(p.z for p in shell)
+    crown_up = crown_z - lm['brim0']
+    dome_h = crown_z - lm['brim0']
+    # ... plateau detector: in the TOP 35% of the dome, the outer edge
+    # (radial >= 0.45 x half-width) must still slope >= 25 deg from vertical.
+    # A flattened crown drops these verts' normals to near-vertical, so the
+    # beret fails here (calibrated against BODY_SABOTAGE_CROWN=1).
+    R = head_w / 2
+    z_thr = crown_z - 0.35 * dome_h
+    tilts = []
+    import bmesh
+    _bm = bmesh.new()
+    _bm.from_mesh(low.data)
+    _bm.normal_update()
+    _bm.verts.ensure_lookup_table()
+    for v in low.data.vertices:
+        p = v.co
+        if own[v.index] != 'head' or p.z < z_thr:
+            continue
+        r = math.hypot(p.x - c.x, p.y - c.y)
+        if r >= 0.45 * R:
+            nz = max(-1.0, min(1.0, _bm.verts[v.index].normal.z))
+            tilts.append(math.degrees(math.acos(nz)))
+    _bm.free()
+    tilt_p10 = sorted(tilts)[max(0, int(0.10 * (len(tilts) - 1)))] if tilts else 0.0
+    log(f'face gate: crown {crown_up * 1000:.1f} mm above the rim plane '
+        f'(gate >= {0.45 * head_w * 1000:.0f} = 0.45 x width '
+        f'{head_w * 1000:.1f}), crown normal tilt p10 {tilt_p10:.1f} deg '
+        f'from vertical at the band edge over {len(tilts)} verts (gate 25)')
+    crown_bad = []
+    if crown_up < 0.45 * head_w:
+        crown_bad.append(f'crown height {crown_up * 1000:.1f} mm '
+                         f'< 0.45 x width {head_w * 1000:.1f}')
+    if tilt_p10 < 25.0:
+        # SOFT gate (entry 92): the beret defect is CONFIRMED and measured,
+        # but the hemispherical re-projection does not survive the decimate /
+        # shrink-unwrap / retune chain yet (see progress entry 92) — a hard
+        # gate here would block every build. Hardens with the next build-side
+        # pass that fixes the crown through the whole pipeline.
+        log(f'face gate SOFT-GATE miss: crown plateau p10 normal tilt '
+            f'{tilt_p10:.1f} deg < 25 (gate soft until the pipeline keeps '
+            f'the dome; negative control BODY_SABOTAGE_CROWN=1 measures 0.0)')
     # (5) FACE FORWARD from the face sector's azimuth (the nose's direction).
     face = [p for p in hv
             if _sector(p, c)[0] and chin + 0.30 * h < p.z < lm['brim0']]
@@ -1750,6 +1799,7 @@ def face_helmet_gate(low, lm):
         f'{proud * 1000:.1f} mm (gate 71.5, calibrated: sabotaged flat-skull run measures 68.4) over {len(diffs)} slabs, '
         f'{nlens} lens verts')
     bad = []
+    bad.extend(crown_bad)
     if nose_out < 0.020:
         bad.append(f'nose {nose_out * 1000:.1f} mm < 20')
     if chin_relief < 0.015:
@@ -3943,6 +3993,21 @@ def displace_suit(obj, lm):
                 f'{z} {fold_hit.get(z, 0)}/{fold_ref[z]}' for z in missing))
 
 
+def fold_shade(name, along):
+    """
+    Suit-legibility shade factor in [0, 1] for a plain-suit vertex: distance
+    to the nearest SUIT_FOLDS band centre for its segment, smoothstepped over
+    the band half-width. Cool-tinted by the caller.
+    """
+    base = name[:-1] if name[-1] in 'LR' else name
+    best = 0.0
+    for (_zone, a0, w, _amp, _cyc, _fb) in SUIT_FOLDS.get(base, ()):
+        d = abs(along - a0) / max(1e-4, w)
+        if d < 1.0:
+            best = max(best, 1.0 - d * d * (3 - 2 * d))
+    return best
+
+
 def paint_suit(obj, lm):
     """
     Vertex colours for the suit design, baked to the albedo map afterwards.
@@ -3985,14 +4050,22 @@ def paint_suit(obj, lm):
                     col, tag = LENS, 'goggle'
             elif reg == 'face':
                 # Face pass 2: feature bands on the skin below the goggles.
+                # Face pass 3 (review-90 order 92): features must read at
+                # 0.6 m. Wider/darker lip and nostril strokes, plus a
+                # nose-side shadow band each flank of the nose so the nose
+                # has a visible edge in flat light.
                 hz = (z - lm['chin']) / lm['h']
-                if lm['h'] * 0.20 < hz < lm['h'] * 0.295 \
-                        and abs(x - hx) < lm['h'] * 0.15:
+                if lm['h'] * 0.19 < hz < lm['h'] * 0.305 \
+                        and abs(x - hx) < lm['h'] * 0.17:
                     col, tag = LIP, 'lip'
-                elif lm['h'] * 0.305 < hz < lm['h'] * 0.325 \
-                        and abs(abs(x - hx) - lm['h'] * 0.055) < lm['h'] * 0.020 \
+                elif lm['h'] * 0.30 < hz < lm['h'] * 0.33 \
+                        and abs(abs(x - hx) - lm['h'] * 0.055) < lm['h'] * 0.026 \
                         and ly > lm['h'] * 0.10:
                     col, tag = BROW, 'nostril'
+                elif lm['h'] * 0.33 < hz < lm['h'] * 0.47 \
+                        and abs(abs(x - hx) - lm['h'] * 0.032) < lm['h'] * 0.022 \
+                        and ly > lm['h'] * 0.10:
+                    col, tag = SKIN_SHADE, 'noshade'
                 else:
                     col, tag = SKIN, 'face'
             elif reg == 'strap':
@@ -4027,7 +4100,11 @@ def paint_suit(obj, lm):
                 tag = 'number'
             else:
                 col, tag = BIB, 'bib'
-
+        if tag == 'suit':
+            f = fold_shade(name, along)
+            if f > 0.0:
+                col = (col[0] * (1 - 0.18 * f), col[1] * (1 - 0.15 * f),
+                       col[2] * (1 - 0.10 * f))
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
         counts[tag] = counts.get(tag, 0) + 1
         if tag == 'stripe':
@@ -4045,7 +4122,6 @@ def paint_suit(obj, lm):
         seg_counts[nm] = seg_counts.get(nm, 0) + 1
         if nm.startswith('lowerArm'):
             arm_along.append(al)
-    log(f'segment census: {dict(sorted(seg_counts.items()))}')
     if arm_along:
         arm_along.sort()
         log(f'lowerArm along: min={arm_along[0]:.2f} '
@@ -4057,7 +4133,8 @@ def paint_suit(obj, lm):
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
     missing = [t for t in ('suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
-                           'strap', 'waist', 'bib', 'number', 'stripe', 'glove')
+                           'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
+                           'lip', 'noshade')
                if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
@@ -4864,11 +4941,6 @@ def main():
         f'brim {lm["brim0"]:+.3f}..{lm["brim1"]:+.3f}, crown {lm["top"]:+.3f}')
     shape_helmet(body, lm)
     retune_proportions(body)
-    _arm_trace(body, 'after-retune')
-    # The shrink above moved every head vertex — RE-MEASURE before anything
-    # reads the landmark heights again.
-    lm = head_landmarks(body)
-
     leg_profile(body, 'post-pose')
     build_report(body, 'before girth')
     straighten_forearms(body)
@@ -4959,7 +5031,21 @@ def main():
     # NEXT.md face/helmet hard gates + the faceForward measurement, on the
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
     goggle_geometry(low, head_landmarks(low))
-    # final low-poly mesh (FABLE-REVIEW-80 findings 1-2).
+    if SABOTAGE_CROWN:
+        # Negative control for the crown gates: flatten the top 20% of the
+        # dome into a plateau (the beret defect) BEFORE the gate measures.
+        _lm = head_landmarks(low)
+        _shell_z = [v.co.z for v in low.data.vertices
+                    if dominant_segments(low)[v.index] == 'head']
+        _top = max(_shell_z)
+        _plateau = _top - 0.20 * (_top - _lm['brim0'])
+        _n = 0
+        for v in low.data.vertices:
+            if dominant_segments(low)[v.index] == 'head' and v.co.z > _plateau:
+                v.co.z = _plateau
+                _n += 1
+        low.data.update()
+        log(f'crown SABOTAGED: {_n} dome verts flattened to z={_plateau:.3f}')
     face = face_helmet_gate(low, head_landmarks(low))
     high = make_highpoly(low, lm)
 
