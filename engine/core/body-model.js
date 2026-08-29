@@ -50,17 +50,28 @@ const POSE_UNTUCKED = {
     skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
+// In-run tuck (APPROVED: adjust POSE_INRUN_TUCK, reviewer 22:25 / FABLE-80
+// finding 6). Rebuilt kinematically so the chain is CONTINUOUS at the tuck=1
+// endpoint (the old table tore: torso hip 13 cm off the thigh top, knee 17 cm).
+// Forward = −z. Conventions (match applyPose/P13 reconciliation): a segment's
+// +Y end sits at position + (h/2)·(cos rx, sin rx) in (y, z).
+// Targets (progress file, 22:25): hips back over the heels (hip joint above
+// the ankle ±10 cm along the ski), knees flexed 90–110°, shins ~25° forward,
+// hip→shoulder line 63° from vertical (back near-horizontal), head up-forward,
+// hands forward at knee height below the shoulders.
+// Chain: ski centre (−0.660, 0) → ankle (−0.645, 0) → knee (−0.319, −0.152)
+// → hip (−0.069, 0.107) → shoulder (0.181, −0.383); every joint gap ≤ 3 mm.
 const POSE_INRUN_TUCK = {
-    torso:     { x:  0.000, y:  0.000, rx: -1.10, rz:  0.00, dz: -0.10 },  // torso tips forward
-    head:      { x:  0.000, y:  0.160, rx: -1.00, rz:  0.00, dz: -0.45 },  // head drives forward/down
-    upperArmL: { x: -0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.15 },
-    upperArmR: { x:  0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.15 },
-    lowerArmL: { x: -0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.30 },
-    lowerArmR: { x:  0.175, y:  0.150, rx: -1.00, rz:  0.00, dz: -0.30 },
-    upperLegL: { x: -0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },  // thighs push back
-    upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
-    lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward
-    lowerLegR: { x:  0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },
+    torso:     { x:  0.000, y:  0.055, rx: -1.10, rz:  0.00, dz: -0.14 },  // back near-horizontal, hips stay over heels
+    head:      { x:  0.000, y:  0.270, rx: -0.80, rz:  0.00, dz: -0.47 },  // head up-forward at the end of the back curve
+    upperArmL: { x: -0.175, y:  0.075, rx:  0.80, rz:  0.00, dz: -0.49 },
+    upperArmR: { x:  0.175, y:  0.075, rx:  0.80, rz:  0.00, dz: -0.49 },
+    lowerArmL: { x: -0.175, y: -0.145, rx:  0.30, rz:  0.00, dz: -0.64 },  // slight elbow bend, hands at knee height
+    lowerArmR: { x:  0.175, y: -0.145, rx:  0.30, rz:  0.00, dz: -0.64 },
+    upperLegL: { x: -0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },  // thighs back down to the flexed knees
+    upperLegR: { x:  0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },
+    lowerLegL: { x: -0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },  // shins ~25° forward over the ankles
+    lowerLegR: { x:  0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },
     skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
     skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
