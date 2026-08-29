@@ -6848,3 +6848,91 @@ and fuller calves from iter 91.
    (chest instrument ruling, calf margin) still await answers.
 
 *No source files changed in this iteration; the only diff is this entry.*
+
+### 101 — NEXT.md (reviewer override 09:00) BOTH items landed: (1) P6
+ridgelines rebuilt as real 3D textured hill bands, (2) gated athlete reveal —
+nothing of the athlete OR skis visible until body GLB + all three maps ready +
+one rendered frame, with a loading overlay and preload links. NEXT.md deleted.
+
+**Item 1 — 3D mountains (HUMAN TESTING #4 item 3, author 08:40).** The flat
+curtains (one vertical strip per column) are replaced by `_ridgeMesh`
+heightfields: the crest keeps the SAME two-sine silhouette (golden census
+stable, no re-capture) and rolls away from the valley over a cross-run depth
+of 21% of the run (side ridges 103.5 m × 493 m run, cross-valley 71.4 m ×
+340 m), 13 cross rows × ~83 columns per ridge, still 8 draw calls, seated by
+construction. Texturing: new `makeRidgeSurface` in `render/textures.js` —
+512² albedo + normal keyed on ELEVATION (uv.v = (y − valley floor)/70 m):
+forest band with vertical tree-line strokes, fractured rock band with snow
+clinging near the snowline, snowfield with fbm rock outcrops (strengthened to
+`max(0, d−0.52)*2.2` this iteration after the first shots read washed out);
+band edges jitter with fbm. Per-layer fog mixes cut (mid 0.35→0.25, far
+0.65→0.42) — the fog-mix albedoColor multiplier was flattening the texture at
+distance. Headless/stub canvas falls back to the old flat tint (golden
+harness untouched).
+
+**Gates (`tests/drive/ridges3d.spec.js`, new):** every `ridge_*` mesh bbox
+depth ≥ 20% of width (measured ratio 0.210 on all 8) AND a textured material
+with real pixel variation (albedo map present + 64² luminance stddev > 0.02);
+NEGATIVE CONTROL: a flat in-page curtain with a flat PBR fails the same
+predicate. 2/2 green.
+
+**Item 2 — skis-before-skier (HUMAN TESTING #4 item 4).** Root cause found:
+iter-84 revealed the body and skis the moment the GLB RESOLVED, while the
+~7 MB of athlete PNG maps were still in flight — and the glTF loader creates
+body parts VISIBLE, so half-dressed geometry could also flash. Now
+(`game.js`): overlay (spinner + "Loading athlete…") goes up when the loader
+starts; body parts are hidden on arrival; a rAF poll reveals body + ski
+equipment + goggles in ONE frame only after `_bodyLinked > 0` AND all three
+maps `isReady()` (texture onError counts ready, 15 s timeout backstop) AND
+one frame has rendered in that state; overlay removed in that frame. Fallback
+path clears the overlay too. `index.html` gains `<link rel=preload>` for
+`athlete_body.glb` + the three maps (`?v=34` pinned to ASSET_V — bump
+together).
+
+**Gates (`tests/drive/reveal-gate.spec.js`, new):** init-script rAF watcher
+samples every frame — no mesh matching
+`/ski|boot|bind|goggle|athleteBody|_glove|visor/i` (terrain* excluded —
+`terrainSkirt` false-positives `/ski/i`) is `isVisible && isEnabled()` before
+`_bodyLinked > 0`; overlay present ≥ 1 frame and GONE at the reveal check;
+NEGATIVE CONTROL pins `_bodyLinked=0` and forces a ski visible — the same
+detector catches it. 2/2 green. start-gating 2/2 green (existing gate
+compatible).
+
+**Verification:** `npm run test:unit` 0 fail (allowlist gained
+`_ensureAthleteOverlay`/`_removeAthleteOverlay`); `npm run test:golden` 30/30
+with NO re-capture (ridges are outside the physics census; crest formula
+unchanged); ridges3d + reveal-gate + start-gating 6/6; `look` regenerated
+scene/inrun/kicker/figure/figure_front shots. BY EYE: the hills now have real
+rounded volume and layered overlap (clear in `kicker.png`); texture banding is
+present but still reads subtly at scene distance on the far layer — the near
+ridges sit outside the canonical framings, so the strongest texture evidence
+is the gate's pixel stddev, not the distant view.
+
+**Two self-inflicted breakages during this iteration, both caught and fixed
+in-iteration:** a mangled edit temporarily dropped the `const T/s` declarations
+in `_ridgeMat` and the `forestEdge` band constant in `makeRidgeSurface`,
+producing startup `ReferenceError`s ("s is not defined", "forestEdge is not
+defined") — found by a scratch console probe, fixed before commit. Lesson:
+the edit tool's stale-hash recovery can silently misplace hunks; probe the
+page after multi-block edits.
+
+**Also this iteration:** the reveal-gate run surfaced stale orphaned
+`http.server 8099` processes from timed-out playwright runs repeatedly
+blocking the drive webServer (entry 90's warning, hit again — this time from
+my own timed-out runs). Kill before re-running drive specs.
+
+**Open / next:** (1) `look` pose shots were cut by a 300 s spec timeout under
+process contention (scene/figure/inrun/kicker shots regenerated; pose shots
+kept their 08:59 versions) — rerun `look` at the start of iteration 102.
+(2) Far-ridge texture presence at scene distance: consider a stronger rock
+tint or nearer snowline if the author still finds them fake. (3) Athlete
+items (crouch arms, pike tear, goggles height, suit design) are with the Opus
+lane per `docs/OPUS-BODY-BRIEF.md`; `pose_inrun_side.png` still reads fused —
+re-confirm after Opus lands.
+
+**Open questions for the reviewer:** (1) Is the 15 s map-ready timeout
+backstop acceptable, or do you want the overlay to persist until the maps
+actually arrive (risk: a hung CDN path never reveals)? (2) The preload `?v=`
+is hand-pinned to ASSET_V 34 — want a unit gate asserting the two stay in
+sync? (3) Ridge depth is uniformly 21% of run — acceptable, or should the far
+layer taper for a more distant feel?
