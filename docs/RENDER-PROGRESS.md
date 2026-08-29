@@ -881,6 +881,76 @@ forest.
 
 ## Iterations
 
+### 77 — Suit legibility (entry-75 item 2): suit albedo darkened + stripe
+panel broadened (one Blender rebuild, ASSET_V 25); suit-vs-snow gate built
+and passing; found the canonical face gate broken at HEAD (stale skinned
+bounds + pause/stale-canvas trap) — look.spec reverted, diagnosis recorded
+
+**Order acted on:** entry-75 item 2 ("suit reads near-white … broaden the
+blue panel / darken the albedo; gate on suit-vs-snow luminance delta in
+figure.png"), confirmed as "next" by entry 76.
+
+**Changes (`blender/build_body.py`, ASSET_V 24→25 in `game.js`):**
+- `SUIT` (0.86, 0.88, 0.91) → **(0.80, 0.82, 0.85)** — mean albedo
+  0.883 → 0.823 against snow's 0.975, so the suit separates at 3 m. A first
+  attempt at (0.77, 0.80, 0.86) was REVERTED: its b−r = 0.09 crossed
+  `bib-number.spec`'s blue threshold (`b > r + 0.08`) and the plain suit
+  read as "bib wrapped around the back" (back.blueFrac 0.0950 vs gate 0.09).
+  The shipped tint keeps b−r = 0.05, as before.
+- Leg stripe panel `dphi < 0.26` → **0.32** rad (broad panel, still under
+  the 0.38 that made legs read all-blue; census 291 → 290 blue leg verts —
+  a 3 mm width change at shin scale, as expected).
+- One rebuild (`--res 2048 --samples 96`, 21 s): all build gates green
+  (bib ink 0.280 front / 0.178 back; stripe bake 0.090; suit NM variance
+  7.02 ≥ 6.3; helmet/arm/leg gates unchanged, incl. the two known SOFT
+  gates: ARM 21.7/24.3 mm > 10, chest d/b 1.20 — entry-72 open question).
+
+**SUITGATE (built, PASSING, then reverted with the spec — see below):**
+median luma of a 10 px box on a raycast of the plain upper chest (above the
+bib's top edge) vs the brightest of four side terrain picks: **suit 0.597 vs
+sunlit snow 0.645, delta 0.048 ≥ gate 0.03** (pre-change suit measured
+0.625–0.644 → delta ≈ 0.02, so the gate discriminates). FRONTGATE passed
+throughout (align 0.00°, navyFrac 0.0229).
+
+**Face gate finding (root-caused, not landed):** rerunning `look` at HEAD
+(before any of my spec edits) already FAILED the iteration-76 FACEGATE —
+helmet frame-height fraction 0.1115 vs the 0.4121 shipped in entry 76. The
+40% criterion measured camera-state drift, not geometry: (1) the promised
+r = 0.6 face camera is never actually set in the spec — the shot inherits
+whatever radius the sim's follow camera is at; (2) skinned
+`athleteBody*` parts report stale bind-pose bounds (`refreshBoundingInfo(true)`
+did not move them), so both `_athleteFacing().helmet` and the FACEGATE
+projection aim/measure the wrong point; (3) after the `p` "pause" the render
+loop is still driven and its per-frame callback rewrites `camera.target`,
+and screenshots can return stale canvases — FACEPIX returned byte-identical
+numbers (headFrac 0.1365) across four different camera aimings. Fixing this
+properly needs an explicit aim at the live `head` driver node + a stopped
+render loop + forced `scene.render()` — did not fit the iteration budget.
+
+**Verification:** unit fail 0; golden 30/30 (display-only change, no
+recapture); drive green on the shipped tree: body 4/4, bib-number 1/1
+(after the tint re-derivation), rig 16/16. `look` is RED at HEAD itself
+(FACEGATE 0.1115 < 0.40 on rerun) — pre-existing, see above; my
+look.spec work (SUITGATE + geometric face camera) was reverted to keep the
+shipped suite in its known state. Shots NOT regenerated this iteration; the
+entry-76 shot set remains the latest reviewed imagery. Scratch:
+`~/aerial-agents/scratch/iter-77/build*.log`.
+
+**Open / next:** (1) land the face-camera fix as its own iteration (head
+driver aim + stopRenderLoop + forced render; then re-add SUITGATE — the
+code exists in this iteration's history and measured 0.597 vs 0.645);
+(2) regenerate shots + confirm the darker suit by eye at the canonical
+cameras; (3) entry-75 item 3 (kicker red marks) after the cameras are
+trustworthy again.
+
+**Open questions for the reviewer:** (1) the FACEGATE shipped in entry 76
+passes only on the exact tree/timing it was written on — approve the
+diagnosed rewrite (pixel-based head-coverage gate ≥ 35% on an explicitly
+framed r = 0.6 shot) to replace the bbox-projection criterion? (2) the
+first SUIT tint tripped `bib-number.spec`'s `b > r + 0.08` blue test — is
+that threshold worth re-deriving (it constrains how cool the suit white can
+be), or keep it and treat suit hue as pinned at b−r ≤ 0.05?
+
 
 ### 76 — Canonical cameras fixed GEOMETRICALLY (entry-75 item 1): forward
 read from the root quaternion, not colour-searched; face.png landscape

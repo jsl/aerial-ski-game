@@ -114,7 +114,7 @@ POSE = MODEL['POSE_UNTUCKED']
 BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 
 # ── Suit palette, read off the reference footage ────────────────────────────
-SUIT       = (0.86, 0.88, 0.91)      # white race suit, very slightly cool
+SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
 STRIPE     = (0.09, 0.24, 0.62)      # royal blue, full length of the outer leg
 BIB        = (0.55, 0.72, 0.88)      # powder-blue competition bib
 BIB_NUMBER = (0.95, 0.96, 0.97)      # white number patch on the bib
@@ -3627,10 +3627,10 @@ def paint_suit(obj, lm):
             azim = limb_azim(lx, ly, z, name, paint_slices)
             outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
-            # Narrowed from 0.38: at that width the stripe wrapped most of the
-            # way round the shin and the leg read as blue with a white edge
-            # rather than white with a blue stripe.
-            if dphi < 0.26:
+            # Entry-75 item 2: 0.26 read as a pinstripe at 3 m; 0.32 is a
+            # broad panel. Kept under the 0.38 that wrapped most of the way
+            # round the shin and made the leg read all blue.
+            if dphi < 0.32:
                 col, tag = STRIPE, 'stripe'
 
         if bib_mask(name, along, front, lx) > 0.5:
