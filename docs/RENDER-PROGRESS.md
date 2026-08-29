@@ -891,6 +891,80 @@ forest.
 
 ## Iterations
 
+### 81 — Front-axis investigation: entry-80's "forward convention" theory is
+WRONG — the axis was never the bug; `_athleteFacing` unchanged (documentation
+only), nose-raycast discriminator tried and rejected, paired front/back
+close-up + band metrics instrumented in `look`; the real second defect is
+still open
+
+**Order acted on:** entry-80 re-prioritised item 1 (camera forward convention
+ front-discriminating gates), as the prerequisite for FABLE-REVIEW-80's
+iteration-81 head work (helmet dome + face geometry — NOT started; see Open).
+
+**What was measured (real browser, ready state):**
+1. Four-way close-up probe (camera at ±90° and 0/180° around the head,
+   r = 0.6, head-bone aim): the two ±90° profile shots show the nose
+   pointing along the SAME world direction from both sides; the 0/180° pair
+   shows shell-rear + nape from BOTH ends. Pixel ground truth with numbers:
+   FACECAM campos = head + [0.6,0,0] (fwd = [1,0,0]) renders the NAPE.
+2. `_athleteFacing` was flipped to (0,0,+1), look re-run: `face.png` STILL
+   rendered the nape (FACECAM campos [−0.6,7.38,−17.3]). Flipped back. With
+   the flip in place `FRONTGATE` navy 0.0625, reverted navy 0.0474 (=
+   entry-80's number), FACEGATE dark 0.2203 / skin 0.0365 / cov 0.9647 —
+   byte-same gates on both conventions. **The axis sign changes nothing the
+   gates or the shots can see: entry-77..80's face.png framing defect is NOT
+   a 180° convention error in `_athleteFacing`.**
+3. Nose-protrusion raycast (discriminator candidate): at head-centre height
+   the +z_local side reads 1.45 cm prouder than −z_local (0.0684 vs 0.0539,
+   ±x symmetric 0.0572) — but it read the same on both conventions while the
+   pixels disagreed with it, so it measures shell/brow geometry (the ray at
+   head-centre height passes OVER the goggle lens). Rejected as a gate.
+4. Head-frame probe: the head driver's world −z is EXACTLY the root forward
+   (headNz = rootFwd = [1,0,0], headNx = [0,0,−1]) — no head-twist in the
+   DRIVER graph. Combined with (1): the rendered FACE is on head-local **+z**
+   while every frame convention (root, head driver, FP camera at
+   game.js:5539, rig.spec's "faces −z" toe gate) says the figure faces −z.
+   The face paint/geometry sits on the WRONG SIDE of the head mesh — a
+   Blender-side defect (or a 180° head-mesh yaw baked into the GLB), not a
+   camera-probe bug.
+5. Contradiction left open: under the flipped axis the camera should then
+   have been in front and shown the face; it still showed the nape — so
+   FACECAM's aim path has a second, unresolved defect (stale skinned head
+   transform at screenshot time is the prime suspect: the driver frame is
+   measured correct in one evaluate and the shot framed wrong in another).
+
+**What shipped:** `_athleteFacing` comment now records the measured evidence
+and the rejected raycast (axis value UNCHANGED at (0,0,−1) — no behaviour
+change; unit 76/76 and golden 30/30 re-run green; physics untouched,
+ASSET_V unchanged at 26). `look.spec` gained the front-discrimination
+harness: a second close-up from −forward with identical camera parameters
+saved as `shots/face_back.png`, plus upper/mid/lower dark-band and lower-skin
+metrics logged as `FACEDISC` (this run: front darkU 0.0605 / darkM 0.1017,
+back 0.0121 / 0.1431 — but the back shot MISSED THE BODY entirely this run,
+so the numbers are not yet a gate). look GREEN otherwise; shots inspected by
+eye: `face.png` = nape + shell rear (defect reproduced), `figure_front.png` =
+back with the bib "30" legible on the back only, `figure.png` = rear ¾,
+`figure_side.png` = rear-side profile.
+
+**Open / next (this blocks ALL FABLE-81 head work — a face camera that
+cannot find the face cannot verify a rebuild):**
+1. Root-cause the face-side defect: dump the head-mesh LOCAL geometry
+   (vertex z-extent of the goggle-band/lip paint islands in the GLB vs the
+   albedo atlas) to decide "paint on the wrong side" vs "mesh yawed in the
+   build"; fix in `blender/build_body.py`, one rebuild, ASSET_V bump.
+2. Root-cause FACECAM's stale-aim flake (frame rendered between driver
+   writes?), then land the hard FACEDISC gate from the paired-shot metrics
+   with a negative control (gate must fail when the camera is put on the
+   opposite side on purpose).
+3. Then FABLE-REVIEW-80 order: helmet dome + face geometry/goggles (its
+   iteration 81), leg girth + suit (82), tuck pose + tear gate (83), crash +
+   start gating (84).
+
+**Open questions for the reviewer:** (1) entry-80's finding stands
+(face.png/back framing) but its CAUSE is now disproven — the re-prioritised
+queue's item 1 should read "face-side build defect + FACECAM aim" instead of
+"forward convention"; OK? (2) do you want the paired `face_back.png` kept in
+
 ### 80 — Review-only: full run-all ALL GREEN; shots regenerated and inspected
 by eye — **the face/front cameras frame the athlete's BACK again**, and both
 pixel gates pass on the wrong view

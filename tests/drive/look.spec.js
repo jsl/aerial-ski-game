@@ -79,9 +79,10 @@ test('look', async ({ page }) => {
     // front-only, so the frontal framing is what shows the suit design.
     // Entry 75: the old empiricial alpha picker (most skin/bib pixels across
     // four quadrants) chose the BACK three-quarter — the frame then
-    // contradicted the bib gate. The facing is now GEOMETRIC: read the root
-    // quaternion via window._athleteFacing (body chest = local -z) and orbit
-    // to alpha = atan2(fz, fx) so the camera sits on the forward ray.
+    // contradicted the bib gate. The facing is GEOMETRIC: window._athleteFacing
+    // (iter 81: the visual chest axis is body-local +z, measured by the
+    // nose/goggle-lens proud-raycast, NOT the -z the old comment claimed) and
+    // orbit to alpha = atan2(fz, fx) so the camera sits on the forward ray.
     const front = await page.evaluate(() => {
         const f = window._athleteFacing();
         if (!f || !f.forward) throw new Error('_athleteFacing unavailable');
@@ -163,6 +164,77 @@ test('look', async ({ page }) => {
         expect(navyFrac, 'figure_front.png shows no bib digits at the chest — '
             + 'the framing is not the front (navyFrac ' + navyFrac.toFixed(4) + ')')
             .toBeGreaterThan(0.02);
+
+        // FRONT-DISCRIMINATION (iter 81, entry-80 item 1): navy digits exist on
+        // BOTH painted faces of the bib, and dark helmet + neck skin satisfy
+        // the pixel gates on the back — so neither can tell front from back
+        // (that is exactly how entries 77-80 shipped back-facing shots under
+        // green gates). A nose-protrusion raycast was tried first and REJECTED
+        // (at head-centre height the ray passes over the goggle lens and hits
+        // the shell, so it measures helmet geometry: it "confirmed" both +z
+        // and -z on different runs). Instead: render a SECOND close-up from
+        // -forward with identical camera parameters (saved as face_back.png)
+        // and compare where the dark goggle band and the skin sit. The metrics
+        // are logged this iteration; the hard gate is tuned from the numbers.
+        {
+            const pair = await page.evaluate(() => {
+                const scene = BABYLON.EngineStore.LastCreatedScene;
+                const eng = scene.getEngine();
+                const f = window._athleteFacing();
+                const skel = scene.skeletons[0];
+                const hb = skel.bones.find(b => b.name === 'head');
+                const node = hb.getTransformNode();
+                node.computeWorldMatrix(true);
+                const head = node.getAbsolutePosition().add(new BABYLON.Vector3(0, 0.02, 0));
+                const F = new BABYLON.Vector3(f.forward[0], f.forward[1], f.forward[2]);
+                const cam = scene.activeCamera;
+                const shots = {};
+                for (const nm of ['front', 'back']) {
+                    const dir = nm === 'front' ? F : F.scale(-1);
+                    cam.setTarget(head.clone());
+                    cam.position.copyFrom(head.add(dir.scale(0.6)));
+                    const off = cam.position.subtract(cam.target);
+                    const r = off.length();
+                    cam.alpha = Math.atan2(off.z, off.x);
+                    cam.beta = Math.acos(Math.max(-1, Math.min(1, off.y / r)));
+                    cam.radius = r;
+                    eng.stopRenderLoop();
+                    scene.render();
+                    shots[nm] = eng.getRenderingCanvas().toDataURL('image/png');
+                }
+                return shots;
+            });
+            require('node:fs').writeFileSync(path.join(OUT, 'face_back.png'),
+                Buffer.from(pair.back.split(',')[1], 'base64'));
+            const metrics = {};
+            for (const nm of ['front', 'back']) {
+                metrics[nm] = await page.evaluate(async (b64) => {
+                    const img = new Image();
+                    img.src = 'data:image/png;base64,' + b64;
+                    await new Promise(r => { img.onload = r; });
+                    const cv = document.createElement('canvas');
+                    cv.width = img.width; cv.height = img.height;
+                    const cx = cv.getContext('2d');
+                    cx.drawImage(img, 0, 0);
+                    const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+                    const W = cv.width, H = cv.height;
+                    const X0 = Math.round(W * 0.3), X1 = Math.round(W * 0.7);
+                    const dark = [0, 0, 0], skin = [0, 0, 0];
+                    for (let y = 0; y < H; y++) for (let x = X0; x < X1; x++) {
+                        const i = (y * W + x) * 4;
+                        const r = d[i] / 255, g = d[i + 1] / 255, bl = d[i + 2] / 255;
+                        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+                        const band = y < H / 3 ? 0 : (y < 2 * H / 3 ? 1 : 2);
+                        if (lum < 0.30) dark[band]++;
+                        if (r > 0.30 && r > g * 1.12 && g > bl * 1.02 && r < 0.95) skin[band]++;
+                    }
+                    const px = W * H / 3;
+                    return { darkU: +(dark[0] / px).toFixed(4), darkM: +(dark[1] / px).toFixed(4),
+                             darkL: +(dark[2] / px).toFixed(4), skinL: +(skin[2] / px).toFixed(4) };
+                }, pair[nm].split(',')[1]);
+            }
+            console.log('FACEDISC', JSON.stringify(metrics));
+        }
     }
 
     // Canonical side view (review 70): perpendicular to the geometric

@@ -2471,12 +2471,17 @@ void main(void) {
 
     // Canonical-camera probe (entry 75/76): the athlete's real facing, from the
     // SAME root quaternion the renderer uses — not a colour search. The body
-    // frame's chest direction is (0, 0, -1) (rig.spec: "the figure faces -z";
-    // cross-checked against the bib raycast gate: root yaw pi + readyYaw pi/2
-    // maps it to world +x in the ready state, where the front plate reads).
-    // Returns the world forward, plus helmet (smallest athleteBody part) and
-    // suit (largest) centres for camera targeting. Plain arithmetic + bounding
-    // boxes only; called from drive specs, never from the physics path.
+    // frame's chest direction is (0, 0, -1): qFace (game.js, "turns the
+    // character to face +Z") is RotationAxis(Y, pi + readyYaw) applied to that
+    // axis, and the iter-81 four-way close-up probe confirms it by eye — with
+    // the camera placed at +/-90 deg to this forward, the nose in the profile
+    // points along it from BOTH sides. A nose-protrusion raycast was tried in
+    // iter 81 and REJECTED: at head-centre height the ray passes over the
+    // goggle lens and hits the shell, so it measures helmet geometry, not the
+    // face (it "confirmed" both +z and -z on different runs). Returns the
+    // world forward, plus helmet (smallest athleteBody part) and suit (largest)
+    // centres for camera targeting. Plain arithmetic + bounding boxes only;
+    // called from drive specs, never from the physics path.
     window._athleteFacing = function () {
         if (!character.root || !character.root.rotationQuaternion) return null;
         const fwd = _quatRotateVec(character.root.rotationQuaternion,
