@@ -195,6 +195,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
+| — | Iteration 114 | **cone-peak re-land ATTEMPTED, NOT LANDED — tree reverted to HEAD; two blockers measured: back/front darkU dose–response knife edge (emissive 0.10→0.3822 back FAIL / 0.25→0.0078 front FAIL) and ridges3d contrast mask collapsing to 0 whenever peaks exist (contradictory signature, unresolved)** | unit 0 fail, golden 30/30 at reverted HEAD, ridges3d 4/4; peaks golden footprint nil (state byte-identical ×30); full evidence table in entry 114 |
 | — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
@@ -7584,3 +7585,68 @@ A/B spec run with peaks off: 1 passed.
    exclude the sky/background region (it is a goggle-paint discriminator, not
    a background gate). Scratch file `game.peaks.js` is the /30+clamp variant.
 2. Then the parked polish group (height haze, LOD/frame time).
+
+### 114 — cone-peak re-land ATTEMPTED, NOT LANDED — two decoupled blockers measured (darkU dose–response knife edge; ridges3d mask collapse with a contradictory signature); tree reverted to HEAD, all suites green
+
+**Task:** entry 113's open item 1 — re-land the peaks with the shaded-flank
+fix. Implementation was restored from
+`~/aerial-agents/scratch/iter-113/game.peaks.js` (11 `pk_body_*`, band UV,
+/55 v-clamp) and the flank fix was attacked with `peakMat.emissiveColor`
+lifts (no albedo/fog/UV changes). **Nothing committed: game.js and the
+golden traces are back at HEAD (`43b571b`), verified green.**
+
+**Measured dose–response (look.spec FACEDISC, swiftshader; gates: front
+darkU > 0.015, back darkU < 0.015):**
+
+| peakMat emissive (cool white) | front darkU | back darkU | verdict |
+|---|---|---|---|
+| 0 (entry 113 state) | pass | 0.3926 | back FAIL |
+| 0.10 | 0.3443 | 0.3822 | back FAIL — the flank base is far below 0.30, not marginally below |
+| 0.20 | 0.0505 | 0.1418 | both still FAIL |
+| 0.25 | 0.0078 | 0.0327 | back passes, front FAILS — bloom (pipeline threshold 0.88) smears the brightened peaks into the FRONT close-up and washes out the goggle lens |
+
+So the fix is a knife edge: back needs ≈ 0.24, front breaks at 0.25 — and
+0.10 barely moved back darkU (−0.01), meaning the dark region is NOT uniformly
+flank at ~0.3 luminance; large parts of it are much darker (likely the
+between-cone gaps / bump-shaded facets seen sky-through). Emissive alone
+cannot decouple the two gates. Next candidates (cheapest first): (a) raise
+the emissive AND raise `dofPipeline.bloomThreshold` — but DoF/pipeline is the
+Opus lane (standing rule), needs their sign-off; (b) drop `peakMat.bumpTexture`
++ geometry-side: lower the side-range peaks below the back close-up's upper
+third (needs a framing-angle calc); (c) reviewer call on the face-back gate
+excluding the background (queued below).
+
+**Second blocker — ridges3d contrast mask collapses to 0 whenever the peaks
+exist** (`maskFrac 0` in BOTH the positive and the fogged negative control,
+i.e. the gate fails "ridges in frame", and even the negative control loses
+its signal). Signature measured with a throwaway probe spec in the Playwright
+environment:
+- Peaks ARE rendered and DO change the frame: hiding `pk_body_*` alone moves
+  311,059 px (8.3% of frame) and mean frame luminance A(all)=0.669 →
+  B(peaks hidden)=0.742 → C(peaks+ridges hidden)=0.767 — per-channel means
+  differ by 9–23/255, far above the mask's d ≥ 12 threshold.
+- Yet the spec's withR/without differencing returns 0 differing pixels. The
+  probe's A-vs-B order (hide peaks first) vs the spec's (hide ridges+peaks in
+  one step) is the only structural difference found; the discrepancy is NOT
+  resolved. Suspects: a per-pixel vs per-mean error in my probe (the mask
+  might be true-zero only when BOTH backdrop layers hide in the same grab),
+  or a readPixels double-buffer effect tied to the peaks' extra 512² ridge
+  surface texture allocation. Widening the spec mask to `ridge_` +
+  `pk_body_\d+` did NOT lift maskFrac — needs a fresh iteration with
+  screenshots instead of inference.
+- At reverted HEAD: ridges3d 4/4, mask 0.1214/0.498/0.165 (unchanged from
+  entry 110's numbers).
+
+**Verification at the committed (reverted) state:** unit 0 fail; golden 30/30
+(traces were re-captured once with peaks in, audited state byte-identical ×30
+including delta-node hashes, then reverted — the harness apparently does not
+see scene-only nodes, so the peaks' golden footprint is nil, which makes the
+eventual re-land cheap); ridges3d 4/4 green; look NOT re-run at reverted HEAD
+(was 1/1 twice in entry 113, untouched since). `game.js?v=28` bump was also
+reverted with the tree.
+
+**Open (next iteration):** 1. Resolve the ridges3d mask contradiction
+(screenshot-diff, not readPixels inference) — the gate as written cannot pass
+with any backdrop behind the ridges if its mask empties. 2. Then re-land
+peaks with the emissive + one of (a)–(c) above. 3. Parked polish group
+unchanged (height haze, LOD/frame time).
