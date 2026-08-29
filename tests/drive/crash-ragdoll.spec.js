@@ -108,7 +108,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         requestAnimationFrame(tick);
     });
 
-    // rAF sampler from just before the crash until settled (or 10 s).
+    // rAF sampler from just before the crash until settled (or 30 s wall).
     await page.evaluate((SEG_H) => {
         window._cr = { trace: [], stop: false, t0: performance.now(), crashedAt: null };
         const tick = () => {
@@ -182,7 +182,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                         / Math.max(1e-3, (now - last.t) / 1000) : null;
                 }
                 window._cr.trace.push(rec);
-                if (now - window._cr.crashedAt > 10_000) window._cr.stop = true;
+                if (now - window._cr.crashedAt > 30_000) window._cr.stop = true;
             }
             } catch (e) {
                 window._cr.err = String((e && e.stack) || e);
@@ -199,7 +199,10 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     // clock while the sim is still mid-flight (iter 40 and iter 45 both saw
     // the 30 s crashedAt wait fire solo-green specs). The predicates are
     // state boundaries; the leash only bounds how long we are willing to
-    // wait for them. The sampler still stops itself at crashedAt + 10 s.
+    // wait for them. The sampler still stops itself at crashedAt + 30 s
+    // wall (iter 100: 10 s was not enough under full-suite load — the
+    // rest lands past crashedAt+7 s wall and the 3 s zero-span gate saw
+    // 2 s; solo runs were always green).
     await page.waitForFunction(() => window._cr && window._cr.crashedAt !== null,
         null, { timeout: 90_000 });
     await page.waitForFunction(() => window._cr && window._cr.stop,

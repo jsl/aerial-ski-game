@@ -183,6 +183,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
 ## Status board
+| — | Iteration 100 (review) | **suite recovered from ONE load-sensitive crash gate; review recorded** | `crash-ragdoll.spec` sampler leash crashedAt+10 s→+30 s wall (spec-only; the ≥3 s zero-span gate measures WALL ms and under full-suite load the rest landed past +7 s wall → 2 s span; solo always 2/2 green; gate and game code untouched, re-run 2/2). Shots inspected: figure_front correctly FRONTAL (review-95 finding closed); crown dome holds; BUT pose_inrun_side arms read fused (gates pass — visual gate proposed), face featureless at 0.6 m, crash_rest body a speck, suit white-on-white at scene distance (corridor 0.8289 vs flankNear 0.8509). NEXT.md (crouch arms, pike gate, face mask) untouched — top priority. See entry 100. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
 | — | Iteration 92 | **face pass 3 paint + suit legibility LANDED; crown-gate instrument built (SOFT — geometry blocked by pipeline, open)** | lip/nostril strokes darker+wider, NEW nose-side shadow band (69 verts), nose-side tint; suit plain verts get a cool grey-blue fold-shade multiplier (max −18 % r / −10 % b, smoothstep over the SUIT_FOLDS bands) — bib/waist/number/stripe/glove tags untouched, bib gates green; suit-vs-snow ready-view luminance gap measured 0.142 (gate ≥ 0.06; suit 0.710 vs snow 0.852); crown gates written (height ≥ 0.45×width: 91.6 vs 73 PASS hard; band-edge normal tilt ≥ 25°: 13.1 SOFT-FAIL with negative control BODY_SABOTAGE_CROWN=1 → 0.0) — the hemispherical re-projection is exact in `shape_helmet` (929 verts on an r=101.3 mm sphere, residual mean 101.3 mm) but the tilt read stays 13–15° after retune/decimate/unwrap — root-cause trail in entry 92; ASSET_V 31; unit 0 fail, golden 30/30, drive body+bib-number+look 6/6. See entry 92. |
@@ -6492,6 +6493,92 @@ paint pass).
 3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
    reading, sim-time gate) and entry 90's open questions 1–3 still await
    answers.
+
+### 100 — Review-only: suite red on ONE load-sensitive crash gate (fixed:
+observation leash 10→30 s, gate untouched); shots inspected — in-run crouch
+arms read fused/ambiguous, crash_rest silhouette still a speck, face still
+featureless; NEXT.md (3 items) untouched and still the top work priority
+
+**Scope:** review iteration — no features. `docs/NEXT.md` exists (crouch
+arms FORWARD, pike hip tear, front camera + silhouette-masked face gate) but
+applies to work iterations; untouched here and unchanged as the top
+priority. Self-review of iteration 99 (af7a727): commit is coherent, no
+half-done work found, no unaccounted assets.
+
+**Suite (`./tests/run-all.sh`, this iteration): unit PASS, golden PASS
+(30/30, no re-capture), browser PASS, mutation PASS, coverage PASS (both
+OPEN-002 duplicates unchanged), drive 79 passed / 2 skipped / 1 FAILED.**
+The one failure was `crash-ragdoll.spec.js:57` — the "≥ 3 s of exactly-0
+samples after the stop" gate. Root cause measured: the sampler stopped at
+crashedAt + **10 s wall**; under full-suite load the rest lands ~7 s wall
+after the crash (restAt(sim) 4.8 s stretched), leaving < 3 s of post-stop
+trace. The span also measures **wall** ms (`r.t` is `performance.now()`),
+so slow wall clocks shrink it; solo runs were always green (2/2 before and
+after the fix). **Fix: sampler leash crashedAt + 10 s → + 30 s wall, spec
+only — no gate, no game code, no asset changed.** Re-run: 2/2 green. After
+the spec-only change the failed spec, `look`, and `review-measure` were
+re-run green this iteration (the other drive specs and non-drive layers
+are untouched by a sampler leash and passed in the full run).
+
+**Fresh measurements (`review-measure`, this iteration):** corridor 0.8289
+vs flankNear 0.8509 (−2.2 %) / flankFar 0.8427 (−1.4 %); sky lum 0.6735;
+seamWorstRow y 0.475 skyFrac 0.0803; athlete shadow drop 0.748, ring
+0.796–0.861; face darkFrac 0.000 at the review instrument (n 289). Grey
+ramp unchanged since entry 90 (corridor under the NEAR flank; the hard
+gate passes vs darkest flank per the 07:30 ruling).
+
+**Shots inspected by eye (regenerated this iteration):**
+- `scene.png` — reads well: mixed birch/spruce forest, B-net, ridgelines,
+  sky with cumulus. The athlete is **white-on-white** at gameplay distance
+  (only skis/helmet separate the figure) — entry-90 finding 1 still open.
+  Landing chop not readable at this distance, as entry 99 noted.
+- `figure_front.png` — bib "30" legible, camera correctly FRONTAL; the
+  review-95 "front camera frames the back" finding is CLOSED.
+- `pose_inrun_side.png` — **still the worst athlete frame in the set.**
+  The arms read as a fused mass with the torso (no clear forearm, hands
+  not visibly ahead of the knees at this camera), the head sinks into the
+  chest with no neck, the shoulder band smears forward over the knee —
+  even though the chain-spec hand-position gates pass. NEXT item 1's
+  `_inrunArmForward` rewrite plus a VISUAL gate is justified; this
+  silhouette would not survive comparison with `reference/frames/IMG_3768`.
+- `pose_pike_side.png` — no white shard visible at the hip join in this
+  frame; the chain.spec skinned tear gates remain the evidence; NEXT
+  item 2's real-browser endpoint gate (incl. pelvis ring) is the closure.
+- `face.png` — crown now a rounded DOME (beret plateau gone; iter-96 cap
+  held), rim at brow level, goggle band present. But **zero facial
+  features** at 0.6 m: no brows, eyes, nose relief or lips (86/92
+  face-contrast items still the gap). Background foliage behind the head
+  confirms why darkU must move inside the head silhouette (NEXT item 3).
+- `crash_rest.png` — **still a wide shot, the resting body a speck**
+  (silhouette span 0 at the shot gate, SOFT-FAIL logged in the spec run).
+  Entry-90 finding 2 / reviewer-89 refinement (b) still not implemented —
+  camera aim at rest-x is the recorded blocker.
+
+**Re-prioritised list for the next iterations:**
+1. **NEXT.md as written** (1: crouch arms FORWARD rewrite + visual gate;
+   2: pike endpoint tear gate in the real browser incl. pelvis ring;
+   3: front camera sign + silhouette-masked face gate) — skipped three
+   iterations in total now; do not skip again.
+2. **crash_rest camera** — thread rest-x into the shot camera target and
+   harden the silhouette gate (small, self-contained instrument fix).
+3. **Scene-distance suit legibility** (blue panel / bib at gameplay
+   distance) — unchanged since entry 90, reconfirmed this iteration.
+4. Then the 51–105 schedule remainder: P5 landing live deformation/spray,
+   P4 near-camera trees + understory, P10 free-look, P9 night, P12 polish.
+
+**Open questions for the reviewer:**
+1. Crash zero-span gate: it measures WALL ms while the spec header claims
+   sim time. Cleaner instrument = measure probe.t spans (sim) instead of
+   lengthening the wall leash. Want that as a follow-up?
+2. pose_inrun_side: do you want a VISUAL gate (arm-vs-torso pixel
+   separation / elbow concavity) in addition to the joint-position gates,
+   given the gates pass while the shot reads fused?
+3. Entry 96's open questions 1–3 (crown tilt instrument, goggle-proud
+   sabotage control, corridor-parity lever preference) and entry 90/91's
+   unanswered items are still pending.
+
+*Code diff this iteration: `tests/drive/crash-ragdoll.spec.js` (leash +
+comments) only. No assets, no ASSET_V change.*
 
 ### 99 — P5 slice 1: chopped landing baked (bake_landing.py) + landing
 material split + downward vertex displacement
