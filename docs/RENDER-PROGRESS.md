@@ -194,6 +194,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
 ## Status board
+| — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
 | — | Iteration 114 | **cone-peak re-land ATTEMPTED, NOT LANDED — tree reverted to HEAD; two blockers measured: back/front darkU dose–response knife edge (emissive 0.10→0.3822 back FAIL / 0.25→0.0078 front FAIL) and ridges3d contrast mask collapsing to 0 whenever peaks exist (contradictory signature, unresolved)** | unit 0 fail, golden 30/30 at reverted HEAD, ridges3d 4/4; peaks golden footprint nil (state byte-identical ×30); full evidence table in entry 114 |
 | — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
@@ -7650,3 +7651,105 @@ reverted with the tree.
 with any backdrop behind the ridges if its mask empties. 2. Then re-land
 peaks with the emissive + one of (a)–(c) above. 3. Parked polish group
 unchanged (height haze, LOD/frame time).
+
+### 115 — REVIEW-ONLY (per schedule): suite effectively green (one contention flake), shots regenerated + inspected, peaks re-land unblocked by the landed Opus merge; full critical review + re-prioritised list
+
+**Scope:** no features. `docs/NEXT.md` does not exist. Reviewer feedback acted
+on: none required beyond the standing rules — the only actionable ruling (peaks
+re-land after the Opus merge) is queued for the next work iteration; this
+iteration's job was the review. `git log -3` self-review: 114/113 landed as
+reverted-with-evidence (docs-only commits); Opus merge `3050977` verified
+`git merge-base --is-ancestor` → **already in `render-realism-glm`**, so the
+silhouette-masked instruments Opus brought into `look.spec.js`/`rig.spec.js`/
+`body.spec.js`/`bib-number.spec.js` are live here.
+
+**Suite (`./tests/run-all.sh`, 29.0 m):** unit PASS, golden 30/30 PASS,
+coverage PASS (all scenarios differentiate; the two known OPEN-002 duplicates
+unchanged), drive **91 passed / 2 skipped / 1 FAILED** — the single red is
+`quality.spec.js` "frame-time budget: 300 frames stay inside the simulation
+guard" inside the full parallel run. **Solo re-run: 6/6 green** (measured
+QUALITY frame-time ms mean=145.8 p50=136.2 p95=189.7 fps=6.9 scaling=1 — the
+same engine-guard envelope as every prior iteration). Verdict: SwiftShader
+contention flake from running heavy specs concurrently, NOT a regression at
+HEAD; the spec has no isolation guard against co-scheduled load. Recommendation
+(queued): give the frame-time spec `test.describe.configure({ mode: 'serial' })`
+or a dedicated worker via `playwright.config.js` `workers`/`fullyParallel`
+exemption, or relax the guard relative to concurrent-load p95.
+
+**`look` 1/1 (4.8 m); all shots regenerated 17:12–17:16 and inspected by eye.**
+
+**What now reads right:** layered 3D ridges with visible rock/snow banding and
+snow caps (`scene.png`, `figure.png`); mixed birch/spruce forest with varied
+scale; sky gradient + cumulus; corridor corduroy grooves read in `inrun.png`;
+red kicker edge paint present; judges' deck + blue knoll flag + 3 red coach
+figures present; B-net continuous on both edges; wands down the landing
+centreline; athlete shadow present and coherent (`inrun.png`); bib "30" and
+goggles on the eyes in `figure_front.png`/`face.png` (Opus merge improvements
+visible).
+
+**What now reads wrong (with numbers where the instruments give them):**
+1. **Entry-114 peak blockers stand, and the re-land is now the top scene
+   item** — the ruling on 113 said re-land AFTER the merge; the merge is here.
+   The dose–response knife edge (back darkU 0.3822 @ emissive 0.10 vs front
+   bloom-wash 0.0078 @ 0.25) and the ridges3d mask-collapse (maskFrac 0 with
+   peaks present despite a measured 311 k-px frame delta) are unresolved and
+   must be settled first (screenshot-diff, not readPixels inference).
+2. **Suit shard/tear artefacts at rest — CONFIRMED visible by eye** in
+   `face.png`/`figure_front.png`: grey polygonal slivers on the chest/shoulder.
+   Matches `docs/OPUS-BODY-BRIEF.md`'s top defect (Opus lane; reported, not
+   fixed).
+3. **NEW paint artefact: a red streak across the front of the neck** under the
+   chin in `face.png` — reads as bib/collar paint bleeding above the collar
+   line onto the throat. Opus lane (athlete maps); report to the brief.
+4. **`figure_side.png`: the helmet reads as a thin dark rim only — the crown
+   above it is bare skin-coloured from the profile**, while `figure.png` (3/4)
+   shows a full dark dome. Either a paint-band coverage gap on the crown
+   region or the dome material failing at grazing angles. Opus lane; ask for
+   the crown-coverage silhouette gate.
+5. **Suit still white-on-white at scene distance** and the leg stripe still
+   reads as a pinstripe, not the P7 broad panel (plan gap, Opus lane).
+6. **POSESHOT pike framing is suspicious:** `pose_pike_{front,side}` measured
+   standOff **−14.29** (tuck: +1.81, inrun: +1.00) and silhouette frac 0.024/
+   0.050 — the camera is ~14 m on the wrong side of the athlete for the pike
+   pose; the pose-shot instrument, not the athlete. GLM-lane instrument fix.
+7. **Kicker block face is blank white** in `inrun.png` — P3's "generic side
+   panels on the kicker" never landed (plan P3 item; the red edge line is
+   present, the panels are not).
+8. Carried: `crash_rest.png` composition (iter-89 refinement (b) still not
+   verified by eye this pass — not re-shot in `look`); far-ridge tint
+   variance; P5 landing chop still not readable at canonical distance.
+
+**Gaps vs plan/reference:** P6 peaks (blocked per above, unblocked to attempt);
+P3 kicker panels; P7 broad suit panels (Opus); P5 chop visibility + spray
+scale; P10 free-look and P9 night mode untouched per schedule; P12 polish
+group (height haze, LOD/frame time) parked.
+
+**Re-prioritised for the next iterations (116–120):**
+- **116:** re-land the cone peaks per rulings 110/113 — FIRST resolve the
+  ridges3d mask collapse with a screenshot-diff probe, then the shaded-flank
+  fix (geometry/lower side peaks preferred; emissive+bloom-threshold needs
+  Opus sign-off on the pipeline block).
+- **117:** fix the pike pose-shot camera standOff instrument (negative
+  standOff → wrong-side framing); re-shoot and gate.
+- **118:** polish group — height haze (parked from 54), LOD/frame-time
+  instrumentation, kicker side panels (small P3 remainder).
+- **119:** review per multiples-of-5 schedule (if 120 is the final review,
+  fold this forward per the reviewer).
+- **120:** final review + HANDOFF/ADR/branch summary per the 10:40 schedule.
+- Opus-lane reports (shards, neck red streak, profile helmet crown, pinstripe
+  panels): add items 2–5 above to `docs/OPUS-BODY-BRIEF.md` next time it is
+  touched — GLM does not edit athlete assets.
+
+**Open questions for the reviewer:**
+1. Frame-time spec de-flake: serialise it, or widen the guard under
+   contention? Preference before 117 touches the config.
+2. `figure_side.png` bare-crown read: is that a known Opus workstream item
+   already, or should I add it to the brief explicitly (it was not in the
+   brief's list when last read)?
+3. Entry-114's option (b) — lowering the side-range peaks below the back
+   close-up's upper third — changes the skyline the author twice said he
+   preferred. Confirm geometry-level suppression is acceptable vs waiting for
+   Opus's bloom-threshold sign-off.
+
+*No source or asset files changed in this iteration; the only diff is this
+entry (plus this status-board row). Scratch dir untouched/empty.*
