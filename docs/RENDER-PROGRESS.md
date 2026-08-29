@@ -198,6 +198,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
 | — | Iteration 116 | **cone-peak range RE-LANDED — entry-113/114 blockers root-caused: the PEAKS x/z/height data was never applied (all 11 cones at the world origin, occluding the ridges = bitwise-identical mask-collapse frames AND the face-back dark wall); peaks now positioned, 30 m snowline** | ridges3d 4/4 (mask 0.088 / mean 0.514 / std 0.182; fogged control discriminates 0.644/0.100), look 1/1, golden re-captured CENSUS-ONLY (5408 frames byte-identical after stripping pk_body_*), unit 78/78. See entry 116. |
@@ -7810,3 +7811,29 @@ geometry-level suppression was never needed — the peaks never left the
 ground.)
 
 
+
+### 117 — P10 free-look camera LANDED — orbit in ready state / after a stop / once the crash ragdoll rests / in replay, terrain clamp, Dvorak-aware WASD, launch keys preserved
+
+Reviewer order for 117 (Fable, 2026-08-29 17:30) followed. No `docs/NEXT.md` this
+iteration; no athlete/pipeline files touched (standing rules respected).
+
+**What changed (`game.js`, +~110 lines):**
+- `_freeLookAllowed()` (near the fpCamera block): `(readyState && readyTurnT === 0.0) || state.stopped || (state.crashed && (!crashActive || ragdoll resting)) || replayActive`. Crash case keys off `_ragdollProbe().resting` because `crashActive` deliberately stays true after the rest detector fires (it is only cleared on reset).
+- Per-frame toggle in the render loop: entering free-look unlocks wheel zoom (`lowerRadiusLimit 3`, `upperRadiusLimit 80`) and starts the one-time HUD hint; leaving restores the locked follow radius (3/80 → 10/10, `radius = 10`).
+- While free-look is active the whole camera-follow block (target y/z, C-key alpha lerp, airborne beta raise) stands down, so a user drag/zoom/pan persists indefinitely; it resumes the moment the next run starts.
+- Terrain clamp `_clampCameraAboveTerrain()` every frame on the orbit camera: eye kept ≥ 1.0 m over `terrainRootY(z) - FOOT_OFFSET` by capping beta (`acos((minY − target.y)/radius)`, clamped to the 0.05..π−0.05 limits); if the entire orbit sphere is under the clamp the target is raised first. Try/catch-guarded; runs in follow mode too (harmless there — verified golden 30/30).
+- WASD nudge, layout-aware via the existing `_keyIsLetter` convention (the key that TYPES the letter fires, matching the help text): A/D orbit alpha ±0.12 (shift ±0.04), W/S radius ×0.94/÷0.94. Separate listener gated on free-look, so no game key is shadowed — ArrowUp still starts the run mid-orbit.
+- HUD hint line appended for 5 s after the first activation: "drag to look around · wheel or W/S zoom · A/D pan".
+*Instruments:* `window._freeLookProbe()` → `{active, alpha, beta, radius, gap}` (gap = eye height above the snow surface); `window._freeLookCam()` for the specs.
+
+**Verification:**
+- New `tests/drive/freelook.spec.js` 2/2: (1) ready state — probe.active true; a 180 px drag moves alpha > 0.05 rad and the view persists byte-stable (< 0.001 rad) over 1 s (follow standing down); 'a' pans alpha down, 'w' zooms in; forcing beta/radius to their limits leaves gap ≥ 0.99 m after 250 ms; ArrowUp then flips readyState false and free-look deactivates. (2) pump-forced crash (charge full, tuck from takeoff, arm `_debugTriggerCrash` past the kicker lip, per crash-ragdoll.spec) — ragdoll rests at t = 9.1 s sim; free-look re-arms; drag −160 px moves alpha > 0.05 and persists 1 s; gap ≥ 0.99 m at the resting body.
+- `npm run test:unit` 78/78; `npm run test:golden` 30/30 (no re-capture — display-only change, physics census untouched); look + reveal-gate + hop-turn + hotkeys 11/11 (camera-adjacent specs).
+*Shots:* regenerated via `look`; `scene.png` inspected — follow view unchanged by the clamp (athlete framed as before, no terrain/backface artefacts).
+
+**Open / notes:**
+- Replay free-look is covered by the same `_freeLookAllowed` branch (`replayActive`) but has no dedicated drive test — replay playback needs a recorded run; the crash test exercises the identical gating path. Can add a replay leg to the spec if the reviewer wants it.
+- The plan's "arrow keys nudge" was deliberately NOT taken: ArrowUp/ArrowDown are the run/twist keys; WASD only, per the "must not swallow launch inputs" rule.
+- ESC-closes-help was already landed (the keydown handler closes helpModal/settingsModal/compModal/... and returns only when something closed) — verified present, no change needed.
+
+**Open questions for the reviewer:** none new.
