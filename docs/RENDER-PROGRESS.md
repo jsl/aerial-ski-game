@@ -291,11 +291,22 @@ build defines. **Verification: venue-dressing 4/4 solo (49 s); unit 78/78;
 golden 30/30 with NO re-capture** (headless stub path leaves the mode
 undefined, physics + census untouched). Visual consequence: the coach cards
 now alpha-cut — re-shot via `look` after the fix.
+`look` re-run after the fix: 1/1 in 4.1 m, all shots regenerated 14:26–14:30.
+Coaches now alpha-cut (small red figures at the knoll, no opaque rectangles).
+The regenerated `scene.png` CONFIRMS the cone-cap defect strongly: the legacy
+dark-green cone caps poke well above the textured ridge bands mid-frame and
+read as clean "volcano tops" against the sky — item 2 of the list below is
+the most visible remaining scene defect. The regenerated `kicker.png` confirms
+the deck framing regression (deck planks fill the bottom ~45 % of frame; the
+kicker block is a small white shape behind it).
+*Note: the suite's `extract-terrain.spec.js` regenerated `blender/terrain.json`
+— the only diffs are the 8 ridge meshes' fog-mix albedo multipliers (iter 106's
+tint change finally landing in the generated artifact; geometry/positions
+byte-identical). Committed as artifact cutover, same class as the entry-105
+addendum.*
 
-**Shots:** current `shots/*.png` were regenerated at 13:43–13:45 from a tree
-byte-identical to HEAD (iter 109 committed 13:47; no source change since), so
-they are valid for HEAD; `look` was not re-run (time). Measurements (new,
-this iteration): scene.png corridor 0.839 vs flankR 0.847 / flankL 0.814 →
+**Shots + measurements (regenerated, this iteration):** scene.png corridor
+0.839 vs flankR 0.847 / flankL 0.814 →
 corridor/min-flank parity **1.031** (hard gate ≥ 0.98 ✓); sky r−b −0.097 in
 the top third (cloud-dominated band; the stricter zenith gate is measured
 elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
