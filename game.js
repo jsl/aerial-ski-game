@@ -4536,6 +4536,66 @@ void main(void) {
     _ridgeMesh('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
     _ridgeMesh('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
 
+    // ── Snow-capped cone peaks BEHIND the far ridges (reviewer ruling on
+    // entry 110, 2026-08-29 14:35; re-land iter 116): the author twice
+    // preferred the old cone peaks to the bare curtains; what was wrong was
+    // only the legacy green forest caps poking above the ridges as "volcano
+    // tops". The peaks are back on the SAME `pk_body_*` node names (iter-94
+    // census predecessor), re-skinned with a ridge-band material — no
+    // separate green cap mesh: elevation-keyed UV (same RIDGE_SNOWLINE_M
+    // mapping as the ridges) gives forest low (hidden behind the ridge
+    // band), rock mid-slope, snow caps. Scene fog (the peaks sit 200+ m out)
+    // makes them read as a distant range.
+    const peakMat = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
+    peakMat.fogEnabled = true;
+    const PEAKS = [
+        // Back range, behind ridge_back (z < SLOPE_START_Z - 200)
+        { x: -60, z: SLOPE_START_Z - 260, h:  96, rb:  80 },
+        { x:  20, z: SLOPE_START_Z - 300, h: 118, rb:  95 },
+        { x: 110, z: SLOPE_START_Z - 240, h:  88, rb:  75 },
+        // Left range behind ridge_far_L
+        { x: -210, z: KICKER_END_Z - 60,  h: 104, rb:  85 },
+        { x: -235, z: OUTRUN_Z + 40,      h:  90, rb:  78 },
+        // Right range behind ridge_far_R
+        { x:  205, z: SLOPE_START_Z - 40, h:  98, rb:  82 },
+        { x:  230, z: OUTRUN_Z - 80,      h: 112, rb:  90 },
+        { x:  200, z: OUTRUN_Z + 120,     h:  86, rb:  72 },
+        // Ahead, behind ridge_ahead (z > OUTRUN_Z + 300)
+        { x: -40, z: OUTRUN_Z + 330,      h: 108, rb:  88 },
+        { x:  60, z: OUTRUN_Z + 380,      h:  94, rb:  80 },
+        { x: 150, z: OUTRUN_Z + 300,      h:  84, rb:  70 },
+    ];
+    PEAKS.forEach(function (m, i) {
+        const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
+            height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
+            tessellation: 10
+        }, scene);
+        // Cylinder is centred on its own origin: seat the base 4 m below
+        // the valley floor and stand it at (m.x, m.z). (The iter-113/114
+        // attempts never set this — all 11 cones sat unpositioned at the
+        // world origin, occluding the ridges and producing the mask
+        // collapse and the face-back dark wall.)
+        body.position.set(m.x, valleyFloorY - 4 + m.h / 2, m.z);
+        // Elevation-keyed band UV: v = height above the valley floor over a
+        // COMPRESSED 30 m snowline (the ridges use 80 m) — the peaks are
+        // higher, so they must read SNOWIER than the ridges in front of
+        // which they sit; with the ridges' own 80 m mapping the two
+        // backdrops were near-pixel-identical at the crest and the ridges3d
+        // contrast mask collapsed to 0 (entry-114 blocker; iter-116 root
+        // cause). v CLAMPS at 1 — UV wrap would loop the crown back into
+        // the dark forest band. u arcs around the cone.
+        const p = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+        const uv = [];
+        for (let k = 0; k < p.length; k += 3) {
+            uv.push(Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5,
+                    Math.min(1, Math.max(0, (p[k + 1] + body.position.y
+                                - valleyFloorY) / 30)));
+        }
+        body.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
+        body.material = peakMat;
+        body.isPickable = false;
+    });
+
     } // end mountain environment
 
     } // end !_trampolineMode terrain
@@ -6154,6 +6214,68 @@ void main(void) {
     fpCamera.fov  = 1.40;  // ~80° — wide enough for a sense of speed
     // Persistent lerped state for smooth landing transition
     let _fpPos = null, _fpFwd = null, _fpUp = null;
+
+    // ── P10 free-look camera ──────────────────────────────────────────────────
+    // In the ready state, once a run has stopped, after the crash ragdoll has
+    // settled, and during replay playback, the player may orbit the scene:
+    // mouse/touch drag (attachControl, always live) + wheel zoom + WASD nudge
+    // (layout-aware: the key that TYPES the letter, per the hotkey convention).
+    // While free-look is active the per-frame follow block stands down so the
+    // view stays where the user put it; it resumes on the next run.
+    let _freeLookActive = false;
+    let _freeLookHintT  = null;   // performance.now() when first shown; hint fades
+    function _freeLookAllowed() {
+        const _rested = state.crashed && window._ragdollProbe
+            && window._ragdollProbe() && window._ragdollProbe().resting;
+        return (readyState && readyTurnT === 0.0) || state.stopped
+            || (state.crashed && (!crashActive || _rested)) || replayActive;
+    }
+    // Terrain clamp: the eye never dips below 1 m over the snow under it
+    // (plan P10 "never see under the terrain"). Applied every frame on the
+    // orbit camera; on the steep pitch it clamps beta (camera up) rather than
+    // fighting the orbit target.
+    function _clampCameraAboveTerrain() {
+        try {
+            if (!camera || camera.mode !== BABYLON.Camera.PERSPECTIVE_CAMERA) return;
+            const cp = camera.position;
+            if (!cp || !isFinite(cp.z)) return;
+            const minY = terrainRootY(cp.z) - FOOT_OFFSET + 1.0;
+            if (cp.y >= minY) return;
+            const r  = camera.radius || 10;
+            const ty = camera.target ? camera.target.y : 0;
+            // Highest possible eye is target.y + r·cos(beta); raise the target
+            // first if even the top of the orbit sphere is under the clamp.
+            if (minY > ty + r * Math.cos(0.05) && camera.target) {
+                camera.target.y = minY - r * Math.cos(0.05);
+            }
+            const t2 = camera.target ? camera.target.y : ty;
+            const c  = Math.max(-1, Math.min(1, (minY - t2) / r));
+            // cos(beta) decreasing → cap beta at the value that clears minY.
+            camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
+        } catch (e) { /* a clamp miss must never cost a frame */ }
+    }
+    window._freeLookProbe = function () {
+        try {
+            const cp = camera.position;
+            return {
+                active: _freeLookActive,
+                alpha: camera.alpha, beta: camera.beta, radius: camera.radius,
+                gap: cp.y - (terrainRootY(cp.z) - FOOT_OFFSET),
+            };
+        } catch (e) { return null; }
+    };
+    // Test hook: the orbit camera itself (specs drive beta/radius to extremes).
+    window._freeLookCam = function () { return camera; };
+    // Layout-aware WASD nudge (only while free-look is active). Game keys
+    // (arrows, space) are untouched, so launching a run while orbiting works.
+    window.addEventListener('keydown', e => {
+        if (!_freeLookActive) return;
+        const step = e.shiftKey ? 0.04 : 0.12;
+        if (_keyIsLetter(e, 'a'))      camera.alpha -= step;
+        else if (_keyIsLetter(e, 'd')) camera.alpha += step;
+        else if (_keyIsLetter(e, 'w')) camera.radius = Math.max(camera.lowerRadiusLimit, camera.radius * 0.94);
+        else if (_keyIsLetter(e, 's')) camera.radius = Math.min(camera.upperRadiusLimit, camera.radius / 0.94);
+    });
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -8203,6 +8325,23 @@ void main(void) {
         if (firstPersonMode) _updateFpCamera(dt);
 
         // ── Camera follow — track character position; free mouse; C lerps smoothly ──
+        // P10 free-look: while active, the follow block stands down entirely so
+        // the user's orbit/zoom/pan stays put; it resumes when the next run starts.
+        const _flAllowed = _freeLookAllowed();
+        if (_flAllowed !== _freeLookActive) {
+            _freeLookActive = _flAllowed;
+            if (_flAllowed) {
+                if (_freeLookHintT === null) _freeLookHintT = performance.now();
+                camera.lowerRadiusLimit = 3;    // wheel zoom opens up
+                camera.upperRadiusLimit = 80;
+            } else {
+                camera.lowerRadiusLimit = 10;   // back to the locked follow distance
+                camera.upperRadiusLimit = 10;
+                camera.radius = 10;
+            }
+        }
+        _clampCameraAboveTerrain();
+        if (!_freeLookActive) {
         if (crashActive && ragdoll) {
             // Camera eases to the tumbling body, then rests on it (P11): lerp
             // the follow target toward the ragdoll torso instead of the frozen
@@ -8232,6 +8371,7 @@ void main(void) {
                 // Slight raise on landing
                 camera.beta += (CAM_BETA_LAND - camera.beta) * Math.min(1, 2.5 * dt);
             }
+        }
         }
 
         // ── Pool water wave animation ──────────────────────────────────────
@@ -8264,14 +8404,17 @@ void main(void) {
         // ── HUD ───────────────────────────────────────────────────────────
         hud.text = '';
         const _fpHint = firstPersonMode ? '\nV: third person' : '\nV: first person';
+        const _flHint = (_freeLookHintT !== null && performance.now() - _freeLookHintT < 5000)
+            ? '\ndrag to look around · wheel or W/S zoom · A/D pan' : '';
+        if (_freeLookHintT !== null && performance.now() - _freeLookHintT >= 5000) _freeLookHintT = 0;
         if (_poolDiveMode) {
             hint.text = readyState
-                ? '↓: charge power\n↑: dive\ndrag: orbit' + _fpHint
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit' + _fpHint;
+                ? '↓: charge power\n↑: dive\ndrag: orbit' + _fpHint + _flHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit' + _fpHint + _flHint;
         } else {
             hint.text = readyState && readyTurnT === 0.0
-                ? '↑: Start run\ndrag: orbit' + _fpHint
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit' + _fpHint;
+                ? '↑: Start run\ndrag: orbit' + _fpHint + _flHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit' + _fpHint + _flHint;
         }
     } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
 

@@ -108,6 +108,11 @@ const CONTRAST_SRC = `
         const cam = scene.activeCamera;
         engine.stopRenderLoop();
         cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;   // look.spec scene framing
+        // Ridge-ONLY mask: with the peaks in (iter 116), hiding the ridges
+        // swaps in peak pixels behind them — that backdrop-swap mask is not
+        // the ridges' texture signal and dilutes the fogged control. The
+        // peaks read snowier than the ridges (game.js peakMat UV, 30 m
+        // snowline vs 80 m), so ridge-vs-peak differ and the mask survives.
         const ridges = scene.meshes.filter(m => m.name && m.name.startsWith('ridge_'));
         const grab = async () => { scene.render(); scene.render(); return engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight()); };
         const withR = await grab();

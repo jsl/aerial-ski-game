@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Second Opus merge LANDED (Fable, 2026-08-29 18:10, `68f5d44`):** `render-realism-glm` @ `ed02331` (116's cone peaks) + `opus/athlete-body` @ `1e8d0cb` — spine (3 bones) inert at rest, suit shard root cause (`narrow_shoulders` sign bug) fixed, chest floor 0.25, weave 2.1 mm, bib gate green. Verified on the candidate: unit 78/78, golden 30/30, drive gates + look 30/30 (15.0 m). 8201 synced. Note for the lane driver: landing over a dirty GLM `game.js` now uses `git merge-file` (3-way) — the difflib patcher timed out on 5k lines.
 - **Reviewer order for 116–120 (Fable, 2026-08-29 17:30) — the author's explicit asks come before polish:** 116 (running): cone peaks re-land — resolve the ridges3d mask collapse with a screenshot diff first; prefer the GEOMETRY fix for the shaded flank (lower/move the side-range peaks, or rotate them so the lit face shows) — no emissive/bloom tricks and no pipeline edits (Opus owns the pipeline block). 117: **P10 free-look camera** in ready state, after run/crash and in replay, with the camera clamp above terrain, Dvorak-aware keys, ESC closes help (all author requests). 118: **P9 night snowfall mode** (author request; the IMG_3396 look: falling snow, backlit glow). 119: kicker side panels (P3 gap), pose-shot pike camera instrument fix, chop visibility. 120: final review, HANDOFF/ADR/branch summary. Height haze / LOD polish only if a slot frees up. Athlete items in entry 115 (neck streak, helmet profile rim, white-on-white suit, stripe) are forwarded to the Opus brief — do not act on them.
 - **Opus merge LANDED on the integration branch (Fable, 2026-08-29 16:50, `3050977`):** `render-realism-glm` + `opus/athlete-body` @ `aff47f2` — DoF/blur root cause, WebP maps (8.3 → 1.1 MB), head atlas 28 %, goggles on the eyes (mirrored blue, 0.40–0.57 h), dome helmet re-seated, calves by taper (calf/thigh 0.72), silhouette-masked face/bib gates, bib back plate legible (still mirrored — Opus fixing). Verified on the candidate before landing: unit 78/78, golden 30/30, ridges3d/reveal-gate/rig/body/bib-number/venue-dressing 29/29, look 1/1. 8201 synced. GLM: `look.spec.js`, `rig.spec.js`, `body.spec.js`, `bib-number.spec.js` now carry Opus's silhouette-masked instruments — the cone peaks (ruling on 113) may re-land against them.
 - **Reviewer ruling on entry 113's question (Fable, 2026-08-29 16:10):** neither. Do not brighten the peaks' shaded flanks to satisfy `look.spec`'s face-back darkU discriminator, and do not crop the top third — that instrument is measuring BACKGROUND, which is the same defect the Opus lane already fixed for the face gates (silhouette-masked measurement, `df7fca2`, in `look.spec.js` on `opus/athlete-body`). The peaks re-land AFTER the Opus merge reaches `render-realism-glm`, measured by the silhouette-masked gate; until then keep them withdrawn. Do not edit `look.spec.js` in the GLM lane (Opus owns it now — merge conflicts). Next for GLM: the slope-aware crash roll (ruling on 112), then polish.
@@ -194,9 +195,13 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Notches on the skier's legs are still visible (author).** The handoff dismissed the knee/ankle dips as anatomical waists; the author sees steps, not waists. Likely causes: `add_girth` applies a different slimming factor per segment (shin ×0.74 vs thigh ×0.79) with a hard switch at the joint, and the rigid boot ramp (45 mm) at the ankle. Blend the girth factor across joints by skin weight (or over ≥ 8 cm), and change the leg-profile check to flag steps (a discontinuity in the first derivative of the profile), not dip depth — do not simply skip the knee and ankle bands. Re-check after P0 lands, since the skinning changes there.
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
+
+
 ## Status board
+| — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
+| — | Iteration 116 | **cone-peak range RE-LANDED — entry-113/114 blockers root-caused: the PEAKS x/z/height data was never applied (all 11 cones at the world origin, occluding the ridges = bitwise-identical mask-collapse frames AND the face-back dark wall); peaks now positioned, 30 m snowline** | ridges3d 4/4 (mask 0.088 / mean 0.514 / std 0.182; fogged control discriminates 0.644/0.100), look 1/1, golden re-captured CENSUS-ONLY (5408 frames byte-identical after stripping pk_body_*), unit 78/78. See entry 116. |
 | — | Iteration 114 | **cone-peak re-land ATTEMPTED, NOT LANDED — tree reverted to HEAD; two blockers measured: back/front darkU dose–response knife edge (emissive 0.10→0.3822 back FAIL / 0.25→0.0078 front FAIL) and ridges3d contrast mask collapsing to 0 whenever peaks exist (contradictory signature, unresolved)** | unit 0 fail, golden 30/30 at reverted HEAD, ridges3d 4/4; peaks golden footprint nil (state byte-identical ×30); full evidence table in entry 114 |
 | — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
@@ -7654,7 +7659,6 @@ peaks with the emissive + one of (a)–(c) above. 3. Parked polish group
 unchanged (height haze, LOD/frame time).
 
 ### 115 — REVIEW-ONLY (per schedule): suite effectively green (one contention flake), shots regenerated + inspected, peaks re-land unblocked by the landed Opus merge; full critical review + re-prioritised list
-
 **Scope:** no features. `docs/NEXT.md` does not exist. Reviewer feedback acted
 on: none required beyond the standing rules — the only actionable ruling (peaks
 re-land after the Opus merge) is queued for the next work iteration; this
@@ -7754,3 +7758,82 @@ group (height haze, LOD/frame time) parked.
 
 *No source or asset files changed in this iteration; the only diff is this
 entry (plus this status-board row). Scratch dir untouched/empty.*
+
+### 116 — cone-peak range RE-LANDED — both entry-113/114 blockers root-caused to ONE bug: the PEAKS x/z/height data was never applied, all 11 cones sat unpositioned at the world origin
+
+**Task:** re-land the peaks per rulings 110/113 (unblocked by the landed Opus
+merge and its silhouette-masked face gates — which indeed never fired: the
+new gates are head-silhouette-masked, so the old darkU background bleed is
+structurally gone).
+
+**Root cause (new, definitive):** the iter-113 `PEAKS.forEach` created each
+`pk_body_i` cylinder but never set `body.position`. All 11 cones (h 84–118 m)
+sat at the world origin, where ONE of them towered over the mid-run and
+occluded the ridges. This explains every "contradictory signature" in entry
+114: hiding the ridges left the frame BITWISE unchanged (checksum probe
+csA == csB; screenshot-diff 0 differing px) because the origin cone hid them;
+the "sun-away flank dark wall" in the face-back close-up was the unlit origin
+cone, not a ridge-gap; and the 311 k-px peak-hidden frame delta was the same
+cone. The mask collapse was never a readPixels or texture-similarity bug.
+
+**Changes (commit `df6628e`):**
+- `game.js`: peaks block re-inserted after the ridge meshes — `body.position.
+  set(m.x, valleyFloorY − 4 + m.h/2, m.z)` (cylinder origin is its centre);
+  `peakMat` = `_ridgeMat('peakMat', 0.30, …)` with `fogEnabled = true` (they
+  sit 200+ m out and want the EXP2 haze); elevation-keyed UV with the
+  snowline compressed to 30 m (ridges use 80 m) so the peaks read snowier
+  than the ridges in front of them. 11 `pk_body_0..10`, same node names as
+  the iter-94 census predecessor. No `assets/` change → no ASSET_V bump.
+  The emissive dose–response hunt from entry 114 is moot — with the cones
+  actually on their mountains, no instrument sees the flanks.
+- `tests/drive/ridges3d.spec.js` contrast mask stays RIDGE-ONLY (an
+  intermediate hide-ridges+peaks variant diluted the mask to peak pixels and
+  killed the fogged control's discrimination; reverted). Comment added.
+
+**Verification:** unit 78/78; golden re-captured, 30/30, and audited
+CENSUS-ONLY — 5408 frames across all 30 traces byte-identical to the
+previous traces after stripping `pk_body_*` nodes (audit script in
+`~/aerial-agents/scratch/iter-116/audit-census.js`); ridges3d 4/4 — contrast
+mask 0.088 / meanLum 0.514 / stdLum 0.182 (gates > 0.02 / ≤ 0.56 / ≥ 0.14),
+fogged negative control 0.644 / 0.100 — the control discriminates again
+after being dead since the peaks first landed; `look` 1/1 (5.4 m), shots
+regenerated.
+
+**Open (next iterations):**
+1. By-eye confirmation of the skyline in `scene.png`/`inrun.png` (peak
+   tops, no green caps, no occlusion artefacts) — reviewer pass or 117.
+2. Entry-115 items: 117 pike pose-shot camera standOff fix; 118 polish group
+   (height haze, LOD/frame-time, kicker side panels); Opus brief additions
+   (shards, neck streak, profile crown, pinstripe panels) still queued.
+
+**Open questions for the reviewer:** none new. (Entry-115 Q3 is resolved:
+geometry-level suppression was never needed — the peaks never left the
+ground.)
+
+
+
+### 117 — P10 free-look camera LANDED — orbit in ready state / after a stop / once the crash ragdoll rests / in replay, terrain clamp, Dvorak-aware WASD, launch keys preserved
+
+Reviewer order for 117 (Fable, 2026-08-29 17:30) followed. No `docs/NEXT.md` this
+iteration; no athlete/pipeline files touched (standing rules respected).
+
+**What changed (`game.js`, +~110 lines):**
+- `_freeLookAllowed()` (near the fpCamera block): `(readyState && readyTurnT === 0.0) || state.stopped || (state.crashed && (!crashActive || ragdoll resting)) || replayActive`. Crash case keys off `_ragdollProbe().resting` because `crashActive` deliberately stays true after the rest detector fires (it is only cleared on reset).
+- Per-frame toggle in the render loop: entering free-look unlocks wheel zoom (`lowerRadiusLimit 3`, `upperRadiusLimit 80`) and starts the one-time HUD hint; leaving restores the locked follow radius (3/80 → 10/10, `radius = 10`).
+- While free-look is active the whole camera-follow block (target y/z, C-key alpha lerp, airborne beta raise) stands down, so a user drag/zoom/pan persists indefinitely; it resumes the moment the next run starts.
+- Terrain clamp `_clampCameraAboveTerrain()` every frame on the orbit camera: eye kept ≥ 1.0 m over `terrainRootY(z) - FOOT_OFFSET` by capping beta (`acos((minY − target.y)/radius)`, clamped to the 0.05..π−0.05 limits); if the entire orbit sphere is under the clamp the target is raised first. Try/catch-guarded; runs in follow mode too (harmless there — verified golden 30/30).
+- WASD nudge, layout-aware via the existing `_keyIsLetter` convention (the key that TYPES the letter fires, matching the help text): A/D orbit alpha ±0.12 (shift ±0.04), W/S radius ×0.94/÷0.94. Separate listener gated on free-look, so no game key is shadowed — ArrowUp still starts the run mid-orbit.
+- HUD hint line appended for 5 s after the first activation: "drag to look around · wheel or W/S zoom · A/D pan".
+*Instruments:* `window._freeLookProbe()` → `{active, alpha, beta, radius, gap}` (gap = eye height above the snow surface); `window._freeLookCam()` for the specs.
+
+**Verification:**
+- New `tests/drive/freelook.spec.js` 2/2: (1) ready state — probe.active true; a 180 px drag moves alpha > 0.05 rad and the view persists byte-stable (< 0.001 rad) over 1 s (follow standing down); 'a' pans alpha down, 'w' zooms in; forcing beta/radius to their limits leaves gap ≥ 0.99 m after 250 ms; ArrowUp then flips readyState false and free-look deactivates. (2) pump-forced crash (charge full, tuck from takeoff, arm `_debugTriggerCrash` past the kicker lip, per crash-ragdoll.spec) — ragdoll rests at t = 9.1 s sim; free-look re-arms; drag −160 px moves alpha > 0.05 and persists 1 s; gap ≥ 0.99 m at the resting body.
+- `npm run test:unit` 78/78; `npm run test:golden` 30/30 (no re-capture — display-only change, physics census untouched); look + reveal-gate + hop-turn + hotkeys 11/11 (camera-adjacent specs).
+*Shots:* regenerated via `look`; `scene.png` inspected — follow view unchanged by the clamp (athlete framed as before, no terrain/backface artefacts).
+
+**Open / notes:**
+- Replay free-look is covered by the same `_freeLookAllowed` branch (`replayActive`) but has no dedicated drive test — replay playback needs a recorded run; the crash test exercises the identical gating path. Can add a replay leg to the spec if the reviewer wants it.
+- The plan's "arrow keys nudge" was deliberately NOT taken: ArrowUp/ArrowDown are the run/twist keys; WASD only, per the "must not swallow launch inputs" rule.
+- ESC-closes-help was already landed (the keydown handler closes helpModal/settingsModal/compModal/... and returns only when something closed) — verified present, no change needed.
+
+**Open questions for the reviewer:** none new.
