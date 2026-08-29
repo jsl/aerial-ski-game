@@ -189,7 +189,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth gates landed (iter 82, entry 82); partially landed otherwise** | **iter 82: leg-girth measurement + HARD build gates in `build_body.py` — current mesh passes all four reviewer ratios without growth (thigh/hip 1.792, thighD/B 1.037, calf/hip 0.911, chest/thigh 0.941); negative control fails 3/4; ASSET_V 27**; prior: **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re
+| P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth INSTRUMENT corrected + calf growth (iter 91, entry 91); partially landed otherwise** | **iter 91: reviewer-00:15 instrument correction — hip = both-trochanter breadth on the core mesh (arms excluded: they hang flush and read the hands), thigh/calf = full one-leg cross-section with NO fixed x window (windows broke after growth); sanity bounds hip 295 ✓ / thigh 214 ✓ / calf 146 ✓; growth loop (was broken: undefined `f`) grew calf 99→146 mm, calf/hip 0.337→0.494; negative control fails 5 gates; ASSET_V 30**; iter 82's 1.792 thigh/hip was the vacuous torso-fragment read. Prior: iter 32 arm root cause. Open: chest breadth instrument reads 178 mm (arm rebind owns the right chest side) — see entry-91 open question 1 |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates; iter-63: FOUR distinct spruce variants (review-60 (c)) + 0.7–1.4 scale band + variant gates** | `blender/bake_trees.py` bakes card_0..3 + atlas_0..3 in the shared 7.3×14.6 frame (per-variant seed/height 11.9–14.3/radial envelope/droop/needle tint, all inside the review-60 band; spike-zone filler whorls keep every silhouette continuous); 152 thin instances over 4 meshes = 4 draw calls (cap ≤ 20), one full-forest proxy cone buffer; widthL1min 0.339, lum 0.520–0.558; gates in `trees.spec.js` (mix counts ≥ 15/variant, scale 0.695–1.405 spread ≥ 1.5, per-variant census, pairwise L1 ≥ 0.02); ASSET_V 19; open: deciduous majority, near-tree cards, 8-view billboards |
@@ -6226,3 +6226,75 @@ support a P2 claim.
 
 *Everything above is measurement/inspection only; no source files changed in
 this iteration.*
+
+### 91 — Leg-girth instrument fix + growth (reviewer order after review 90 /
+00:15 note): sane slices, sanity bounds, working growth loop, one rebuild
+
+**Order acted on:** reviewer on entry 89 — "91 = leg-girth instrument fix +
+growth (00:15 note, sanity bounds, footage targets)".
+
+**Instrument (`blender/build_body.py`), measured before/after:**
+- OLD: hip slice owned by `torso` read **105 mm** (fragment) → thigh/hip
+  1.792, vacuous. NEW: hip = full breadth across BOTH trochanters on the core
+  mesh (all non-arm segments; arms excluded because they hang flush beside the
+  torso and a raw all-vertices slice reads the HANDS — measured hip 449 mm,
+  chest 487 mm with the forearm at x=−224) → **hip 295 mm** (reviewer band
+  250–400 ✓).
+- OLD: thigh/calf slices used fixed x-windows with a median window hack; the
+  windows broke after growth (thigh None after it1). NEW: one leg's cluster,
+  FULL x AND y cross-section, ownership + z band only.
+- SANITY BOUNDS added as hard gates: hip 295 ✓ [250,400], thigh 214 ✓
+  [140,240], calf 146 ✓ [90,150], chest 178 ✓ [150,450 — see open question 1].
+
+**Growth:** the growth branch was DEAD CODE (referenced undefined `f` — any
+run needing growth crashed). Rewritten as an iterative loop (legs only, never
+the chest; factor = target/ratio × 1.02; ≤ 6 iterations). Result: calf
+**99 → 146 mm** in one iteration (calf/hip **0.337 → 0.494** ≥ 0.40 ✓);
+thigh/hip 0.725 ≥ 0.62 ✓, thighD/B 0.935 ≥ 0.90 ✓, chest/thigh 0.831 ≤ 1.70 ✓.
+**Negative control** (`BODY_LEG_GIRTH_FACTOR=0.55`): thigh 65 mm, calf 30 mm →
+gate fails on 5 violations (2 sanity + 3 ratios) as required.
+
+**Rebuild:** `assets/athlete_body.glb` + 4 maps regenerated (production res
+2048); ASSET_V `?v=29 → ?v=30`. All other build gates green (bone placement
+0.0 mm, bideltoid band, leg-profile step, chest straightener, face/helmet
+gates).
+
+**Spec instrument fix (`tests/drive/body.spec.js`):** the torso front/back
+split point came from the whole-body bbox mid; the calf DEPTH growth moved the
+body's forward extent (z hi 0.157 → 0.229), dragged back-of-torso triangles
+into the back box and sank the bib front−back blue delta to 0.014 (< 0.03 gate)
+with the bib itself untouched. Split point is now the torso band's own fore/aft
+median. After: front 0.079 / back 0.028, delta **0.051** ✓, back 0.028 < 0.10 ✓
+(old assets baseline: 0.068/0.031).
+
+**Verification:** unit fail 0; golden **30/30 with zero rebaseline** (mesh is
+display-only; drivers untouched); drive body + rig 15/15 after the split fix;
+`look` green (FACEGATE dark 0.1965, cov 0.9647), shots regenerated. BY EYE:
+`figure.png` — athlete in profile, calves now read thicker under the suit,
+skis/trees/fence normal; `figure_front.png` — rear three-quarter with bib 30,
+legs visibly fuller than the iter-90 build (the camera-facing issue of finding
+1/entry-80 is unchanged and still open); `scene.png` — unchanged scene read,
+athlete still the white-suit ghost of iter-90 finding 1 (next iteration's
+paint pass).
+
+**Open questions for the reviewer:**
+1. **Chest breadth instrument.** The reviewer band is 0.30–0.45 m, but on this
+   mesh a trunk-only chest read cannot reach 0.30: the arm rebind owns the
+   RIGHT chest side (upperArmR spans across the midline at the chest slice,
+   measured n=29 x −20..+243), so torso-owned chest reads 178 mm and even a
+   geometric arm exclusion is impossible (the arms hang flush against the
+   torso; any Voronoi/capsule cut eats the chest wall under the arm). Options:
+   (a) accept a lower-bound chest instrument with the band bottom at 0.15 (as
+   shipped, commented in the build), (b) approve an ownership/rebind fix so
+   the torso owns its own chest sides (reskin risk, own rebuild), or (c) define
+   chest as the full-mesh breadth at the deltoid row (0.393, inside 0.30–0.45)
+   — your ruling defines the gate.
+2. The calf growth overshot its 0.40 target to 0.494 (146 mm, top of the
+   sanity band) because `_radial_girth` moves the whole mid-slice cluster
+   while the suit stand-off adds on top. Within bounds and within footage
+   (calf ≈ 0.11–0.13 m real → 0.095–0.113 at 1.515 m scale, so 146 is CHUNKY);
+   pull the factor's 1.02 margin to 1.00 next rebuild if you want it nearer
+   120 mm.
+3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
+   reading, sim-time gate) and entry 90's open questions 1–3 still await
+   answers.

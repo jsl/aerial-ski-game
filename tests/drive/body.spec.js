@@ -194,7 +194,16 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
         const L = lat === 'x' ? X : Z;
         const F = fwd === 'x' ? X : Z;
         const latCentre = (L.lo + L.hi) / 2;
-        const fwdMid = (F.lo + F.hi) / 2;
+        // The front/back split point must come from the TORSO's own fore/aft
+        // median, not the whole-body bbox mid: the torso band below (fy
+        // 0.55–0.78) is defined on the same body, but the bbox mid moves when
+        // the legs' DEPTH changes (the iter-91 calf growth moved the body's
+        // fwd extent 0.157 -> 0.229) and dragged back-of-torso triangles into
+        // the back box, sinking the bib front-back delta below its gate with
+        // the bib itself untouched.
+        const torsoBand = V.filter(p => { const f = fy(p); return f > 0.55 && f < 0.78; });
+        const fwdSorted = torsoBand.map(p => p[fwd]).sort((a, b) => a - b);
+        const fwdMid = fwdSorted[Math.floor(fwdSorted.length / 2)];
 
         const pick = (test) => V.filter(test).map(p => sample(p.u, p.v));
         // MEDIAN, not mean. These regions are defined geometrically and always
@@ -234,7 +243,7 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
         // front and the other half is the plain-suit reference. That is also a
         // stronger claim than checking a side picked in advance — it fails if the
         // bib wraps all the way round.
-        const torso = V.filter(p => fy(p) > 0.55 && fy(p) < 0.78);
+        const torso = torsoBand;
         const halfA = torso.filter(p => p[fwd] < fwdMid).map(p => sample(p.u, p.v));
         const halfB = torso.filter(p => p[fwd] >= fwdMid).map(p => sample(p.u, p.v));
         const sA = stats(halfA), sB = stats(halfB);

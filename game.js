@@ -1518,7 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=29';   // 29: goggles as GEOMETRY (lens/frame/strap displaced proud of the head) + goggle-proudness hard gate
+    const ASSET_V = '?v=30';   // 30: corrected leg-girth instrument + calf growth (99->146 mm, calf/hip 0.494)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 

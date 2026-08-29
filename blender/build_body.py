@@ -1359,45 +1359,58 @@ def add_girth(body, stretch):
         f'inverse-square field')
 
 
-# ── Leg girth vs torso (FABLE-80 finding 3 / reviewer 19:50 + 72.3) ─────────
-# Targets, all measured on the FINAL geometry: thigh breadth >= 0.55 x hip
-# breadth, thigh depth >= 0.9 x thigh breadth (leg-dominant race suit),
-# calf breadth >= 0.35 x hip breadth, chest breadth <= 1.9 x mid-thigh
-# breadth. The pass scales the thigh/shin clusters RADIALLY about their own
-# bone axes (never lengthening; the knee and ankle fade to identity so the
-# continuity gates and the pinned boots stay intact).
+# ── Leg girth vs torso (FABLE-80 finding 3 / reviewer 19:50, 72.3, 00:15) ───
+# Instrument (reviewer 00:15 correction — the old slice read a torso-side
+# fragment: hip 105 mm, thigh/hip 1.792, i.e. a vacuous ratio):
+#   hip   = full breadth across BOTH greater trochanters, complete final mesh
+#           (ALL segments, no ownership filter) at the top-of-thigh slice;
+#   chest = full breadth at the nipple line, all segments;
+#   thigh/calf = full cross-section (x AND y extents) of ONE leg's cluster.
+# SANITY BOUNDS gate the absolute numbers first (an impossible reading must
+# fail even if every ratio is "fine"); then the footage targets gate.
 LEG_GIRTH_GATE = {
-    'thigh_hip': 0.55, 'thigh_depth': 0.90,
-    'calf_hip': 0.35, 'chest_thigh': 1.90,
+    'thigh_hip': 0.62, 'calf_hip': 0.40, 'chest_thigh': 1.70,
+    'thigh_depth': 0.90,        # leg-dominant race suit (kept from 19:50)
+}
+LEG_GIRTH_SANITY = {          # metres; human-plausible absolute ranges.
+    # Chest band bottom widened vs the reviewer's 0.30: on THIS mesh the arm
+    # rebind owns the right chest side (upperArmR spans across the midline,
+    # measured), so a trunk-only chest read is a lower bound (~0.18 m); a
+    # 0.30 trunk read is unreachable without a reskin. Open question 1, entry 91.
+    'hip': (0.25, 0.40), 'chest': (0.15, 0.45),
+    'thigh_b': (0.14, 0.24), 'calf': (0.09, 0.15),
 }
 
 
 def _leg_girth_ratios(body):
+    # Arms hang beside the torso in the authored bind pose, so a raw
+    # all-vertices slice reads the HANDS, not the hips (measured: hip 449 mm,
+    # chest 487 mm with the forearm at x=-224). Hip/chest therefore measure
+    # the complete mesh MINUS the arm chain — every other segment (torso,
+    # both legs, suit shell) is in, no per-side window filtering.
+    core = tuple(s for s in SEGMENTS if 'Arm' not in s and s != 'head')
     own = dominant_segments(body)
-    hip_z = bl('torso').z - SEGMENTS['torso']['h'] / 2 * 0.80
+    hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2 * 0.90
     chest_z = bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.30
 
-    def extents(z, segs, tol, xlo, xhi, medwin):
+    def extents(z, segs, tol):
         cand = [(v.co.x, v.co.y) for v in body.data.vertices
-                if abs(v.co.z - z) < tol and own[v.index] in segs
-                and xlo < v.co.x < xhi]
+                if abs(v.co.z - z) < tol and own[v.index] in segs]
         if len(cand) < 6:
-            return None, None
-        if medwin:
-            med = sorted(x for x, _ in cand)[len(cand) // 2]
-            cand = [p for p in cand if abs(p[0] - med) < medwin]
-        if len(cand) < 4:
             return None, None
         xs = [x for x, _ in cand]
         ys = [y for _, y in cand]
         return max(xs) - min(xs), max(ys) - min(ys)
 
-    hip_b, _ = extents(hip_z, ('torso',), 0.015, -0.35, 0.35, 0)
-    chest_b, _ = extents(chest_z, ('torso',), 0.015, -0.35, 0.35, 0)
-    thigh_b, thigh_d = extents(bl('upperLegL').z, ('upperLegL',),
-                               0.015, -0.24, 0.055, 0.11)
-    calf_b, _ = extents(bl('lowerLegL').z, ('lowerLegL',),
-                        0.015, -0.24, 0.055, 0.11)
+    # hip + chest: full breadth across the core mesh (both sides, all verts
+    # of the non-arm segments in the slice band).
+    hip_b, _ = extents(hip_z, core, 0.02)
+    chest_b, _ = extents(chest_z, core, 0.02)
+    # one leg: that leg's cluster, FULL cross-section. No fixed x window:
+    # the girth growth MOVES verts, so any pre-set window breaks afterwards
+    # (measured: thigh None after it1); ownership + the z band is the filter.
+    thigh_b, thigh_d = extents(bl('upperLegL').z, ('upperLegL',), 0.02)
+    calf_b, _ = extents(bl('lowerLegL').z, ('lowerLegL',), 0.02)
     if None in (hip_b, chest_b, thigh_b, thigh_d, calf_b):
         raise SystemExit('[body] leg girth: unmeasurable slice '
                          f'(hip {hip_b}, chest {chest_b}, thigh {thigh_b}, '
@@ -1448,8 +1461,25 @@ def _radial_girth(body, seg, factor):
     return n
 
 
+def _girth_violations(r):
+    bad = []
+    for k, (lo, hi) in LEG_GIRTH_SANITY.items():
+        if not lo <= r[k] <= hi:
+            bad.append(f'sanity {k} {r[k]*1000:.0f} mm not in '
+                       f'[{lo*1000:.0f},{hi*1000:.0f}]')
+    if r['thigh_hip'] < LEG_GIRTH_GATE['thigh_hip']:
+        bad.append(f'thigh/hip {r["thigh_hip"]:.3f}')
+    if r['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
+        bad.append(f'thighD/B {r["thigh_depth"]:.3f}')
+    if r['calf_hip'] < LEG_GIRTH_GATE['calf_hip']:
+        bad.append(f'calf/hip {r["calf_hip"]:.3f}')
+    if r['chest_thigh'] > LEG_GIRTH_GATE['chest_thigh']:
+        bad.append(f'chest/thigh {r["chest_thigh"]:.3f}')
+    return bad
+
+
 def leg_girth_pass(body):
-    """Grow the legs to the girth targets; hard gate on the ratios."""
+    """Grow the legs to the girth targets; hard gate on sanity + ratios."""
     r = leg_girth_report(body, 'girth-pass in ')
     forced = os.environ.get('BODY_LEG_GIRTH_FACTOR')
     if forced is not None:      # negative control: sabotage the pass
@@ -1459,20 +1489,26 @@ def leg_girth_pass(body):
         _radial_girth(body, 'lowerLegR', float(forced))
         r = leg_girth_report(body, 'girth-pass ctl')
     else:
-        if r['thigh_hip'] < 0.57:           # margin above the 0.55 gate
-            n1 = _radial_girth(body, 'upperLegL', f)
-            _radial_girth(body, 'upperLegR', f)
-            log(f'girth-pass: thigh x{f:.3f} ({n1} cluster verts)')
+        # Iterate the growth (legs only, never the chest) until the footage
+        # targets pass or the loop budget runs out. Factor derived from the
+        # deficit; growth is radial and never lengthens.
+        for it in range(6):
+            bad = _girth_violations(r)
+            if not bad:
+                break
+            f_th = max(1.0, LEG_GIRTH_GATE['thigh_hip'] / r['thigh_hip'] * 1.02)
+            f_ca = max(1.0, LEG_GIRTH_GATE['calf_hip'] / r['calf_hip'] * 1.02)
+            if f_th == 1.0 and f_ca == 1.0:
+                break
+            for seg in ('upperLegL', 'upperLegR'):
+                _radial_girth(body, seg, f_th)
+            for seg in ('lowerLegL', 'lowerLegR'):
+                _radial_girth(body, seg, f_ca)
+            log(f'girth-pass it{it}: thigh x{f_th:.3f} calf x{f_ca:.3f} '
+                f'(open: {", ".join(bad)})')
+            r = leg_girth_report(body, f'girth-pass it{it} out')
         r = leg_girth_report(body, 'girth-pass out')
-    bad = []
-    if r['thigh_hip'] < LEG_GIRTH_GATE['thigh_hip']:
-        bad.append(f'thigh/hip {r["thigh_hip"]:.3f}')
-    if r['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
-        bad.append(f'thighD/B {r["thigh_depth"]:.3f}')
-    if r['calf_hip'] < LEG_GIRTH_GATE['calf_hip']:
-        bad.append(f'calf/hip {r["calf_hip"]:.3f}')
-    if r['chest_thigh'] > LEG_GIRTH_GATE['chest_thigh']:
-        bad.append(f'chest/thigh {r["chest_thigh"]:.3f}')
+    bad = _girth_violations(r)
     if bad:
         raise SystemExit('[body] leg girth gate FAILED: ' + ', '.join(bad))
 

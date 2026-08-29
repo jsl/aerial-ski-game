@@ -6,40 +6,40 @@
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6429,
-   "belowHalf": 0.0129,
+   "mean": 0.6462,
+   "belowHalf": 0.0119,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8574,
-   "belowHalf": 0.1251,
+   "mean": 0.8658,
+   "belowHalf": 0.1166,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8617,
-   "belowHalf": 0.0626,
+   "mean": 0.8632,
+   "belowHalf": 0.0586,
    "srgb": true
   },
   "face": {
-   "nose_out": 0.0212,
+   "nose_out": 0.0214,
    "chin_relief": 0.0342,
    "rim_front": 0.0176,
    "rim_side_h": 0.5519,
    "rim_back_h": 0.5596,
    "dome_off": 0.004,
-   "turn_deg": -0.1614,
-   "goggle_proud": 0.0751
+   "turn_deg": -0.1846,
+   "goggle_proud": 0.0749
   },
   "faceForward": [
-   -0.0028,
+   -0.0032,
    0.0,
    -1.0
   ]
  },
  "faceForward": [
-  -0.0028,
+  -0.0032,
   0.0,
   -1.0
  ]
