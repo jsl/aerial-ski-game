@@ -270,7 +270,102 @@ function makeSurface(BABYLON, scene, recipe, size, opts) {
     return { normal: nrmTex, albedo: albTex };
 }
 
-const api = { makeSurface, makeDetail, macroField, RECIPES, fbm, valueNoise };
+/**
+ * Ridge-side texturing for the P6 mountains (HUMAN TESTING #4 item 3): the
+ * ridgelines regressed to flat single-colour curtains, and the author wants
+ * the rock/snow/forest banding the earlier peaks had back — as a TEXTURE, so
+ * the ridge silhouette keeps its clean layered read while the surface carries
+ * real variation.
+ *
+ * Input space: the mesh's UVs, where v is NORMALISED ELEVATION ((y − valley
+ * floor) / SNOWLINE_M, authored in game.js) and u is world distance. Bands:
+ *   v < 0.42  forest — dark green with vertical tree-line strokes
+ *   mid band  exposed rock — grey, ridged fracture noise
+ *   v > 0.60  snowfield — near-white, gentle drift
+ * Band edges jitter with fbm so the boundaries read as terrain, not contour
+ * lines. Returns { normal, albedo } or null headless, like makeSurface.
+ */
+function makeRidgeSurface(BABYLON, scene, size, opts) {
+    const o = opts || {};
+    const tex = new BABYLON.DynamicTexture('tex_ridge_a',
+        { width: size, height: size }, scene, true);
+    const ctx = tex.getContext();
+    if (!ctx || !ctx.createImageData) return null;
+
+    const H = new Float32Array(size * size);
+    const img = ctx.createImageData && ctx.createImageData(size, size);
+    if (!img || !img.data) return null;            // headless stub canvas
+    // Palette (linear 0..1, encoded to sRGB on the way out — see makeSurface).
+    const FOREST = [0.13, 0.20, 0.13], ROCK = [0.42, 0.43, 0.45],
+          SNOW = [0.93, 0.95, 0.98], DARK = [0.05, 0.08, 0.05];
+    const mix = (a, b, t) => [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t];
+    const toSRGB = v => (v <= 0.0031308
+        ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+
+    for (let y = 0; y < size; y++) {
+        // v: 0 = valley floor, 1 = well above the snowline. Canvas y grows
+        // DOWN while texture v grows UP, so sample v from the bottom.
+        const v = 1 - y / (size - 1);
+        for (let x = 0; x < size; x++) {
+            const u = x / size;
+            const j = fbm(u * 5, v * 5, 3, 2.2, 0.5);          // band jitter
+            const treeJ = fbm(u * 22, v * 22, 2, 2.1, 0.5);
+            let c, h;
+            const snowEdge = 0.60 + (j - 0.5) * 0.16;
+            const forestEdge = 0.42 + (j - 0.5) * 0.12;
+            if (v >= snowEdge) {
+                const d = fbm(u * 12, v * 12, 3, 2.3, 0.5);
+                c = mix(SNOW, ROCK, Math.max(0, d - 0.62) * 1.4);
+                h = 0.5 + d * 0.3;
+            } else if (v >= forestEdge) {
+                // Rock band: sharp fractured facets.
+                const r = 1 - Math.abs(fbm(u * 7, v * 7, 4, 2.1, 0.55) * 2 - 1);
+                c = mix(ROCK, DARK, Math.max(0, r - 0.55) * 0.9);
+                h = r * 0.8 + valueNoise(u * 60, v * 60) * 0.12;
+                // Snow clinging on near the snowline.
+                c = mix(c, SNOW, Math.max(0, (v - snowEdge + 0.10) / 0.10) * 0.5);
+            } else {
+                // Forest: clumped canopy + darker vertical strokes so the
+                // near ridges read as tree-line, not green felt.
+                const clump = fbm(u * 16, v * 16, 3, 2.6, 0.5);
+                const stroke = Math.abs(Math.sin(u * Math.PI * 2 * 90
+                    + treeJ * 6)) ** 6;
+                c = mix(FOREST, DARK, clump * 0.55 + stroke * 0.45);
+                h = clump * 0.7 + stroke * 0.3;
+            }
+            const i = y * size + x;
+            H[i] = h;
+            img.data[i * 4]     = Math.min(255, toSRGB(c[0]) * 255);
+            img.data[i * 4 + 1] = Math.min(255, toSRGB(c[1]) * 255);
+            img.data[i * 4 + 2] = Math.min(255, toSRGB(c[2]) * 255);
+            img.data[i * 4 + 3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    tex.update(false);
+
+    const ntex = new BABYLON.DynamicTexture('tex_ridge_n',
+        { width: size, height: size }, scene, true);
+    const nctx = ntex.getContext();
+    if (!nctx || !nctx.createImageData) return null;
+    const nrm = nctx.createImageData(size, size);
+    nrm.data.set(heightToNormal(H, size, o.strength || 2.2));
+    nctx.putImageData(nrm, 0, 0);
+    ntex.update(false);
+    ntex.gammaSpace = false;                        // data, not colour
+
+    for (const t of [tex, ntex]) {
+        t.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+        t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;   // v is elevation, not a tile
+        t.anisotropicFilteringLevel = 16;
+    }
+    return { albedo: tex, normal: ntex };
+}
+
+const api = { makeSurface, makeDetail, makeRidgeSurface, macroField, RECIPES, fbm, valueNoise };
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

@@ -3749,45 +3749,85 @@ void main(void) {
     // ── P6 layered forested ridgelines ─────────────────────────────────────
     // Footage (docs/REFERENCE-FOOTAGE.md, IMG_3523/3520): the horizon is low
     // forested ridgelines fading with distance — NOT snow-capped cone peaks.
-    // Each ridge is a deterministic "curtain": one vertical strip per column
-    // from below the valley floor up to the ridgeline profile, so the
-    // silhouette is clean from every camera angle and the mesh is seated on
-    // the ground everywhere (A7 look-back gate: nothing may float). Two
-    // summed sines per layer — no RNG, stable golden census. Layer colours
+    //
+    // HUMAN TESTING #4 item 3: the flat "curtains" (one vertical strip per
+    // column) read as 2D cut-outs. Each ridge is now a REAL 3D hill band: a
+    // heightfield whose crest carries the same two-sine silhouette as before
+    // and rolls away from the valley over a cross-run depth of ≥ 21% of its
+    // run (gate in tests/drive/ridges3d.spec.js), with rock/snow/forest
+    // banding from render/textures.js makeRidgeSurface keyed on ELEVATION
+    // (uv.v = (y − valley floor) / RIDGE_SNOWLINE_M) — forest + tree-line
+    // strokes low, fractured rock mid, snowfields high. Layer colours still
     // mix toward the fog colour with distance (EXP2 0.0022 barely reaches).
+    // Two summed sines per layer — no RNG, stable golden census.
     const RIDGE_STEP = 6;                                   // m between columns
     const FOG = scene.fogColor;
+    const RIDGE_SNOWLINE_M = 70;   // elevation mapped to uv v ∈ 0..~1
     const _ridgeMat = (name, mix, tint) => {
         const m = makePBR(name, scene);
-        m.albedoColor = new BABYLON.Color3(
-            tint[0] + (FOG.r - tint[0]) * mix,
-            tint[1] + (FOG.g - tint[1]) * mix,
-            tint[2] + (FOG.b - tint[2]) * mix);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
         m.metallic = 0;
         m.roughness = 0.95;
         m.backFaceCulling = false;
+        const T = AerialEngine && AerialEngine.textures;
+        const s = T && T.makeRidgeSurface
+            ? T.makeRidgeSurface(BABYLON, scene, 512, {}) : null;
+        if (s) {
+            // The map is self-coloured; albedoColor becomes the atmospheric
+            // multiplier, lifted toward the fog colour with distance.
+            m.albedoTexture = s.albedo;
+            m.bumpTexture = s.normal;
+            m.albedoColor = new BABYLON.Color3(
+                1 + (FOG.r - 1) * mix,
+                1 + (FOG.g - 1) * mix,
+                1 + (FOG.b - 1) * mix);
+        } else {
+            // Headless / no-canvas fallback: the old flat tint.
+            m.albedoColor = new BABYLON.Color3(
+                tint[0] + (FOG.r - tint[0]) * mix,
+                tint[1] + (FOG.g - tint[1]) * mix,
+                tint[2] + (FOG.b - tint[2]) * mix);
+        }
         return m;
     };
-    function _ridgeCurtain(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
-        const n = Math.max(2, Math.ceil((to - from) / RIDGE_STEP) + 1);
-        const pos = [], idx = [];
+    function _ridgeMesh(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
+        const L = to - from;
+        // Cross-run depth ≥ 21% of the run so every ridge has body under its
+        // silhouette; the crest edge sits at the old curtain plane and the
+        // hill rolls AWAY from the valley (dir = away-from-valley sign).
+        const DEPTH = Math.max(40, L * 0.21);
+        const STEPS = 12;                       // cross-run rows
+        const dir = axis === 'x'
+            ? Math.sign(fixed)
+            : (fixed < (SLOPE_START_Z + OUTRUN_Z) / 2 ? -1 : 1);
+        const n = Math.max(2, Math.ceil(L / RIDGE_STEP) + 1);
+        const pos = [], uv = [], idx = [];
         for (let i = 0; i < n; i++) {
-            const t = from + (to - from) * i / (n - 1);
-            const h = base + amp * (0.55 * Math.sin(t * f1 + p1)
-                                  + 0.45 * Math.sin(t * f2 + p2) + 0.5);
-            const y0 = valleyFloorY - 4, y1 = valleyFloorY + h;
-            if (axis === 'x') pos.push(fixed, y0, t, fixed, y1, t);
-            else              pos.push(t, y0, fixed, t, y1, fixed);
-            if (i < n - 1) {
-                const a = i * 2;
-                idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+            const t = from + L * i / (n - 1);
+            const crest = base + amp * (0.55 * Math.sin(t * f1 + p1)
+                                      + 0.45 * Math.sin(t * f2 + p2) + 0.5);
+            for (let j = 0; j <= STEPS; j++) {
+                const u = j / STEPS;            // 0 = crest edge
+                const roll = Math.pow(1 - u, 1.25);          // falloff
+                const wob = 0.82 + 0.18 * Math.sin(t * 0.05 + u * 4.1 + fixed);
+                const y = valleyFloorY - 4 + crest * roll * wob + 2.0;
+                const off = dir * u * DEPTH;
+                if (axis === 'x') pos.push(fixed + off, y, t);
+                else              pos.push(t, y, fixed + off);
+                uv.push(t / 55, Math.max(0, (y - valleyFloorY) / RIDGE_SNOWLINE_M));
+            }
+        }
+        for (let i = 0; i < n - 1; i++) {
+            for (let j = 0; j < STEPS; j++) {
+                const a = i * (STEPS + 1) + j, b = a + STEPS + 1;
+                idx.push(a, a + 1, b, a + 1, b + 1, b);
             }
         }
         const m = new BABYLON.Mesh(name, scene);
         const vd = new BABYLON.VertexData();
         vd.positions = pos;
         vd.indices = idx;
+        vd.uvs = uv;
         vd.normals = [];
         BABYLON.VertexData.ComputeNormals(pos, idx, vd.normals);
         vd.applyToMesh(m);
@@ -3800,13 +3840,13 @@ void main(void) {
     const matMid  = _ridgeMat('ridgeMatMid',  0.35, [0.24, 0.33, 0.31]);
     const matFar  = _ridgeMat('ridgeMatFar',  0.65, [0.38, 0.48, 0.55]);
     [-1, 1].forEach(function (s) {
-        _ridgeCurtain('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
-        _ridgeCurtain('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
-        _ridgeCurtain('ridge_far_'  + (s < 0 ? 'L' : 'R'), 'x', s * 150, RZ0, RZ1, 44, 22, 0.024, 0.063, 3.1, 1.2, matFar);
+        _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
+        _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
+        _ridgeMesh('ridge_far_'  + (s < 0 ? 'L' : 'R'), 'x', s * 150, RZ0, RZ1, 44, 22, 0.024, 0.063, 3.1, 1.2, matFar);
     });
     // Cross-valley closures behind the start and beyond the out-run.
-    _ridgeCurtain('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
-    _ridgeCurtain('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
+    _ridgeMesh('ridge_back',  'z', SLOPE_START_Z - 160, -170, 170, 36, 18, 0.036, 0.092, 0.4, 2.2, matMid);
+    _ridgeMesh('ridge_ahead', 'z', OUTRUN_Z + 250,      -170, 170, 40, 20, 0.030, 0.078, 2.6, 0.8, matFar);
 
     } // end mountain environment
 
