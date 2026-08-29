@@ -781,6 +781,25 @@ function buildCharacter(scene) {
         }
     }
 
+    // ── OPUS ITEM 5: spine drivers ─────────────────────────────────────────
+    // The physics torso is one rigid rod, and the skinned body used to be
+    // rigid with it: every degree of spinal flexion in a tuck had to be
+    // absorbed by the linear-blend rings where `torso` met `upperLeg*` and
+    // `head`, which is what collapsed into the sail across the back and the
+    // step at the pelvis the author reported.
+    //
+    // These three nodes carry NO geometry and NO physics. They are driver
+    // frames for the spine_01..03 bones the Blender build now puts in the
+    // armature, walked up the torso's own axis every frame by
+    // updateSpineChain. With zero bend they reproduce the rigid torso
+    // exactly, so the neutral stance is unchanged by construction.
+    for (const nm of SPINE_NAMES) {
+        const node = new BABYLON.TransformNode(nm, scene);
+        node.parent = root;
+        meshes[nm] = node;
+    }
+    updateSpineChain(meshes);
+
     // Start gating: the primitives are the FALLBACK, never the first look.
     // Hidden here at creation; revealed together by the body-link success
     // path (skinned body + skis in the same frame) or by the explicit
@@ -796,6 +815,153 @@ function buildCharacter(scene) {
 // t = 0: arm raised straight up.  t = 1: arm hanging straight down.
 // armSweep now comes from the shared engine core (engine/core/pose.js).
 const { armSweep } = AerialEngine.pose;
+
+// ── OPUS ITEM 5: the spine chain ───────────────────────────────────────────
+//
+// THE DEFECT. `torso` is a single 0.55 m bone from pelvis to neck. Nothing
+// between the hip and the shoulders could bend, so in a tuck the whole of the
+// spinal flexion landed on the two transition rings — vertices blended between
+// `torso` and `upperLeg*`, and between `torso` and `head`. Linear-blend
+// skinning averages the two bones' *matrices*, so a vertex blended 50/50
+// between rotations ninety degrees apart is pulled toward the joint axis: the
+// classic collapse. Seen from the side that reads as the back "separating" into
+// a blank sail with a step at the pelvis, which is exactly what the author
+// reported and what shots/pose_tuck_side.png shows.
+//
+// THE FIX. Three vertebrae take over the torso's skin weight with a partition
+// of unity along the torso axis (blender/build_body.py: add_spine_chain), and
+// this solver gives each one a rotation interpolated toward the neighbour the
+// torso used to blend against. The 50/50 vertex at the hip now averages two
+// rotations a few degrees apart instead of ninety, and the bend is spread over
+// three joints instead of concentrated in one ring.
+//
+// TWO PROPERTIES THIS IS BUILT TO HAVE, because they are what makes it safe:
+//
+//  1. IT IS INERT AT REST. The coupling is driven by each neighbour's
+//     DEVIATION FROM ITS OWN REST ANGLE, not by its absolute angle. At the
+//     neutral stance every deviation is zero, every vertebra takes the torso's
+//     own rotation, and the chain reproduces the rigid rod bit-for-bit. The
+//     ready-stance and bind-equals-driver gates therefore cannot move.
+//
+//  2. IT CLOSES ONTO THE TORSO'S OWN ENDS. The chain is walked from the hip
+//     anchor and then the residual to the neck anchor is redistributed along
+//     it, so the head, the shoulders and the P13 reconciliation keep the exact
+//     anchors they have today — this pass adds a spine, it does not move a
+//     single existing joint. The leftover per-joint discontinuity is reported
+//     as `step` and gated in rig.spec.js.
+const SPINE_NAMES = ['spine_01', 'spine_02', 'spine_03'];
+const TORSO_HALF  = 0.275;                       // SEGMENTS.torso.h / 2
+const SPINE_LEN   = (TORSO_HALF * 2) / SPINE_NAMES.length;
+// How much of a neighbour's deviation the end vertebra takes up, and the cap.
+// 0.35 / 0.35 rad (20 deg) was chosen so the lumbar vertebra closes most of the
+// hip's blend gap in the in-run tuck without the spine out-bending the pose.
+const SPINE_COUPLE = 0.35;
+const SPINE_MAX    = 0.35;
+
+let _spineRest = null;
+function _spineRestDeltas() {
+    if (_spineRest) return _spineRest;
+    let low = 0, high = 0;
+    try {
+        const p = AerialEngine.pose.computePose({
+            tuck: 0, armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+            armRaise: 0, grounded: false, pikeAmount: 0, pikeArmDrop: 0,
+        });
+        const t = p.torso.rx;
+        low  = (p.upperLegL.rx + p.upperLegR.rx) / 2 - t;
+        high = p.head.rx - t;
+    } catch (e) { /* leave the chain straight */ }
+    _spineRest = { low, high };
+    return _spineRest;
+}
+
+// Returns the measured chain, or null when there is no spine to drive.
+// `step` is the largest gap left between consecutive vertebrae after closure —
+// the C1 continuity number item 5 gates.
+function updateSpineChain(meshes) {
+    const torso = meshes && meshes.torso;
+    if (!torso || !meshes[SPINE_NAMES[0]]) return null;
+
+    const t   = torso.rotation.x;
+    const rz  = torso.rotation.z || 0;
+    const rest = _spineRestDeltas();
+    const ulL = meshes.upperLegL, ulR = meshes.upperLegR, head = meshes.head;
+    const thighRx = (ulL && ulR) ? (ulL.rotation.x + ulR.rotation.x) / 2 : t;
+    const headRx  = head ? head.rotation.x : t;
+    const clamp = (v, m) => (v > m ? m : (v < -m ? -m : v));
+    const dLow  = clamp(SPINE_COUPLE * ((thighRx - t) - rest.low),  SPINE_MAX);
+    const dHigh = clamp(SPINE_COUPLE * ((headRx  - t) - rest.high), SPINE_MAX);
+    // The middle vertebra takes the negated mean so the three deltas sum to
+    // zero: to first order the chain then still ends where the rigid rod ends,
+    // and the closure correction below has almost nothing left to do.
+    // The middle vertebra takes MINUS THE SUM of the other two, so the three
+    // deltas cancel: to first order the chain then ends exactly where the rigid
+    // rod ends and the closure correction below has almost nothing left to do.
+    // (Halving it here was a bug — with dLow clamped at 20 deg the residual sum
+    // was 13 deg and the closure step measured 14.7 mm against a 15 mm limit.)
+    let d = [dLow, -(dLow + dHigh), dHigh];
+    if (typeof window !== 'undefined') {
+        // Switches for spine.spec.js. _spineOff reproduces the OLD single rigid
+        // torso bone exactly; _spineForce bends the chain by a fixed amount
+        // regardless of pose, which is the negative control for the strain gate
+        // — it must break the neutral stance the shipped chain leaves untouched.
+        if (window._spineOff) d = [0, 0, 0];
+        else if (window._spineForce) {
+            const f = window._spineForce;
+            d = [f, -2 * f, f];
+        }
+    }
+
+    // Local +Y of a segment under Babylon's YXZ order is
+    // (-sin rz, cos rz cos rx, cos rz sin rx) — the same construction the arm
+    // pivot maths uses, and it degenerates to (0, cos rx, sin rx) at rz = 0,
+    // which is exactly the hip/neck anchor formula P13 already uses.
+    const crz = Math.cos(rz), srz = Math.sin(rz);
+    const dir = a => [-srz, crz * Math.cos(a), crz * Math.sin(a)];
+    const hip  = dir(t).map(c => -TORSO_HALF * c);
+    const neck = dir(t).map(c =>  TORSO_HALF * c);
+    let jx = torso.position.x + hip[0];
+    let jy = torso.position.y + hip[1];
+    let jz = torso.position.z + hip[2];
+    const cs = [], rx = [];
+    for (let k = 0; k < SPINE_NAMES.length; k++) {
+        const a = t + d[k];
+        const u = dir(a);
+        cs.push([jx + u[0] * SPINE_LEN / 2, jy + u[1] * SPINE_LEN / 2,
+                 jz + u[2] * SPINE_LEN / 2]);
+        rx.push(a);
+        jx += u[0] * SPINE_LEN; jy += u[1] * SPINE_LEN; jz += u[2] * SPINE_LEN;
+    }
+    const err = [jx - (torso.position.x + neck[0]),
+                 jy - (torso.position.y + neck[1]),
+                 jz - (torso.position.z + neck[2])];
+    const n = SPINE_NAMES.length;
+    for (let k = 0; k < n; k++) {
+        const f = (k + 0.5) / n;
+        for (let i = 0; i < 3; i++) cs[k][i] -= err[i] * f;
+    }
+    for (let k = 0; k < n; k++) {
+        const node = meshes[SPINE_NAMES[k]];
+        if (!node) continue;
+        node.position.x = cs[k][0];
+        node.position.y = cs[k][1];
+        node.position.z = cs[k][2];
+        node.rotation.x = rx[k];
+        node.rotation.z = rz;
+    }
+    // The closure redistributes the residual evenly, so the gap left at each
+    // internal joint is |err| / n in the direction perpendicular to the chain.
+    const mag = Math.hypot(err[0], err[1], err[2]);
+    return {
+        step: mag / n,
+        dLowDeg: dLow * 180 / Math.PI,
+        dHighDeg: dHigh * 180 / Math.PI,
+        rxDeg: rx.map(a => a * 180 / Math.PI),
+    };
+}
+window._spineProbe = function (meshes) {
+    return updateSpineChain(meshes || window._characterMeshes);
+};
 
 // ── Pose applicator ────────────────────────────────────────────────────────
 // tuck:       0 = fully extended, 1 = fully tucked
@@ -935,6 +1101,9 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     if (meshes.gloveR) {
         meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, tuck);
     }
+
+    // The spine reads the FINAL torso/thigh/head transforms, so it runs last.
+    updateSpineChain(meshes);
 }
 
 // ── Gamepad lateral arm correction ─────────────────────────────────────────
@@ -1587,7 +1756,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=38';   // 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
+    const ASSET_V = '?v=39';   // 39: OPUS item 5 — the armature gets a SPINE (spine_01..03 between pelvis and neck, torso weight split by a partition of unity along the torso axis); game.js drives the chain from the hip anchor, coupled to the thigh and head deviations, closing exactly onto the torso's own neck end; 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -5948,6 +6117,22 @@ void main(void) {
         scene.onBeforeRenderObservable.add(_dofFocus);
     } else if (scene.registerBeforeRender) {
         scene.registerBeforeRender(_dofFocus);       // golden-harness stub
+    }
+
+    // ── OPUS ITEM 5: keep the spine on the torso in EVERY path ──────────────
+    // applyPose drives the chain for ordinary play, but the crash ragdoll
+    // writes the segment transforms directly and never calls it. A frame hook
+    // costs three trig calls and guarantees the vertebrae can never be left
+    // behind by a torso that moved — a spine detaching mid-crash would be a
+    // worse artefact than the one this item removes.
+    const _spineFollow = () => {
+        try { if (character && character.meshes) updateSpineChain(character.meshes); }
+        catch (e) { /* never cost a frame */ }
+    };
+    if (scene.onBeforeRenderObservable && scene.onBeforeRenderObservable.add) {
+        scene.onBeforeRenderObservable.add(_spineFollow);
+    } else if (scene.registerBeforeRender) {
+        scene.registerBeforeRender(_spineFollow);
     }
 
     // ── First-person camera (V key toggles) ─────────────────────────────────

@@ -5340,6 +5340,169 @@ def add_equipment():
     return made
 
 
+# ── OPUS ITEM 5: give the armature a SPINE ─────────────────────────────────
+#
+# The tuck defect the author reported ("back separating", "the torso smears
+# into a single curved shell") is a consequence of the armature having exactly
+# ONE bone between the pelvis and the neck. A rigid rod cannot bend, so every
+# degree of the tuck's spinal flexion has to be absorbed by the linear-blend
+# transition rings where `torso` meets `upperLeg*` at the hip and `head` at the
+# neck — and LBS collapses a vertex blended between two far-apart rotations
+# toward the joint. That collapse IS the sail across the back and the step at
+# the pelvis.
+#
+# Three vertebrae, spine_01 (lumbar) .. spine_03 (upper thoracic), take over the
+# torso's weight with a partition of unity along the torso axis, so a bend is
+# distributed along the chain instead of concentrated at one ring. game.js
+# drives them (updateSpineChain) by interpolating toward the neighbours the
+# torso used to blend against.
+#
+# WHY THIS RUNS LAST, immediately before the export, and not at build_armature:
+# the string 'torso' is a dominance key for most of the 5 000 lines above —
+# settle_limb_geometry, reclaim_chest_wall, relax_suit, leg_girth_pass and
+# roughly every gate ask `dominant_segments(...) == 'torso'`. Splitting the
+# group earlier moves the dominant segment of a large fraction of the mesh and
+# silently re-aims all of them. Running after the last gate and after the bake
+# means NOTHING upstream can see the split; only the exported skin changes.
+SPINE_NAMES = ['spine_01', 'spine_02', 'spine_03']
+
+
+def _spine_partition(s):
+    """
+    Partition of unity over three vertebrae for a normalised torso height s.
+
+    Hat functions centred at 1/6, 1/2, 5/6 and clamped at the ends: C0, sums to
+    exactly 1 everywhere, and each vertex is influenced by at most two adjacent
+    vertebrae. This is the "corrective spread of weights across the chain
+    rather than a hard 50/50 at one joint" item 5 asks for — a vertex at the
+    lumbar/thoracic boundary gets 0.5/0.5 of two rotations that differ by a few
+    degrees, instead of 0.5/0.5 of torso and thigh which differ by ninety.
+    """
+    c0, c1, c2 = 1.0 / 6.0, 0.5, 5.0 / 6.0
+    if s <= c0:
+        return (1.0, 0.0, 0.0)
+    if s <= c1:
+        a = (s - c0) / (c1 - c0)
+        return (1.0 - a, a, 0.0)
+    if s <= c2:
+        a = (s - c1) / (c2 - c1)
+        return (0.0, 1.0 - a, a)
+    return (0.0, 0.0, 1.0)
+
+
+def add_spine_chain(low, arm):
+    """Add spine_01..03 to the armature and move `torso`'s weight onto them."""
+    # THE AXIS IS THE DRIVER FRAME'S, NOT THE BONE'S. By the time this runs,
+    # pose_onto_segments has shifted every bone's HEAD onto its segment CENTRE
+    # (so bind == driver) and normalize_bind_frame has replaced its rest
+    # orientation, so `torso`'s head/tail no longer bracket the torso at all —
+    # measured, projecting onto them put 2895 of 2895 torso verts in the lumbar
+    # third. The torso's real extent is what bl() and spine_matrix already
+    # agree on: the segment centre, half a torso down, running up Blender +Z.
+    centre = bl('torso')
+    up = Vector((0.0, 0.0, 1.0))
+    half = SEGMENTS['torso']['h'] / 2.0
+    root = centre - up * half
+    axis = up * (half * 2.0)
+    L2 = axis.dot(axis)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    # Each vertebra's rest is its own driver centre with the TORSO's rest
+    # orientation, matching the head-at-the-driver-centre convention every
+    # other bone was moved onto. Only the bind matrices matter to the runtime
+    # and patch_skin_binds rewrites those from spine_matrix, but a bone whose
+    # rest disagrees with its bind is a trap for the next reader.
+    tdir = (arm.data.bones['torso'].tail_local
+            - arm.data.bones['torso'].head_local).normalized()
+    tcentre = arm.data.bones['torso'].head_local.copy()
+    seg = (half * 2.0) / len(SPINE_NAMES)
+    for k, nm in enumerate(SPINE_NAMES):
+        if nm in eb:
+            eb.remove(eb[nm])
+        b = eb.new(nm)
+        b.head = tcentre + up * ((k - (len(SPINE_NAMES) - 1) / 2.0) * seg)
+        b.tail = b.head + tdir * seg
+        b.use_connect = False
+        b.inherit_scale = 'NONE'
+        # FLAT, like every other bone here: game.js drives each one absolutely
+        # through linkTransformNode, and a parent would be double-counted (see
+        # the essay in build_armature).
+        b.parent = None
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.context.view_layer.objects.active = low
+    arm.select_set(False)
+
+    vgs = low.vertex_groups
+    tg = vgs.get('torso')
+    if tg is None:
+        raise SystemExit('[body] no torso vertex group to split into a spine')
+    ti = tg.index
+    for nm in SPINE_NAMES:
+        if nm not in vgs:
+            vgs.new(name=nm)
+    hist = [0, 0, 0]
+    moved = 0
+    total_w = 0.0
+    before = {}
+    ss = []
+    for v in low.data.vertices:
+        w = 0.0
+        for g in v.groups:
+            if g.group == ti:
+                w = g.weight
+                break
+        if w <= 1e-6:
+            continue
+        before[v.index] = w
+        s = min(1.0, max(0.0, (v.co - root).dot(axis) / L2))
+        ss.append(s)
+        parts = _spine_partition(s)
+        for nm, p in zip(SPINE_NAMES, parts):
+            if p > 1e-6:
+                vgs[nm].add([v.index], w * p, 'REPLACE')
+        # Keep the group, zero the weight: the torso bone stays a skin joint
+        # (patch_skin_binds resolves every joint by name and asserts the count)
+        # but no longer moves a single vertex.
+        tg.add([v.index], 0.0, 'REPLACE')
+        moved += 1
+        total_w += w
+        hist[max(range(3), key=lambda i: parts[i])] += 1
+
+    if ss:
+        ss.sort()
+        log(f'spine axis: root {tuple(round(c, 3) for c in root)} axis '
+            f'{tuple(round(c, 3) for c in axis)}; s p0/p25/p50/p75/p100 = '
+            f'{ss[0]:.3f}/{ss[len(ss)//4]:.3f}/{ss[len(ss)//2]:.3f}/'
+            f'{ss[3*len(ss)//4]:.3f}/{ss[-1]:.3f}')
+    log(f'spine: {moved} torso-weighted verts split across {len(SPINE_NAMES)} '
+        f'vertebrae (weight {total_w:.1f}); dominant lumbar/mid/thoracic = '
+        f'{hist[0]}/{hist[1]}/{hist[2]}')
+
+    # GATE: the split must be a partition of unity — no weight created, none
+    # lost. A vertex that ends up light is a vertex that shrinks toward the
+    # origin under LBS, which is the very defect this pass exists to remove.
+    idx = {nm: vgs[nm].index for nm in SPINE_NAMES}
+    worst = 0.0
+    for v in low.data.vertices:
+        was = before.get(v.index)
+        if was is None:
+            continue
+        got = sum(g.weight for g in v.groups if g.group in idx.values())
+        worst = max(worst, abs(got - was))
+    if worst > 1e-4:
+        raise SystemExit(
+            f'[body] spine weight split is not a partition of unity: worst '
+            f'vertex is off by {worst:.2e}')
+    log(f'spine weight partition verified over {len(before)} verts: worst '
+        f'vertex error {worst:.2e}')
+    return moved
+
+
 def patch_skin_binds(path):
     """
     Rewrite the skin's inverseBindMatrices to exactly inverse(driver rest).
@@ -5390,7 +5553,24 @@ def patch_skin_binds(path):
             rot = Matrix.Rotation(math.pi, 4, 'X')
         return Matrix.Translation(Vector((lat, up, fore))) @ rot
 
+    def spine_matrix(name):
+        """
+        The spine drivers' REST local matrices. game.js builds them as a chain
+        walked up the torso's own axis from the hip anchor, so at rest (torso
+        rx = 0) vertebra k sits exactly one third of a torso above its
+        predecessor — translation only, identity rotation, same as the torso.
+        Bind == driver for the new bones is therefore the same statement it is
+        for the old ones, and rig.spec.js asserts it on all of them.
+        """
+        p = POSE.get('torso', {})
+        seg = SEGMENTS['torso']['h'] / len(SPINE_NAMES)
+        k = SPINE_NAMES.index(name)
+        up = p.get('y', 0.0) + (k - (len(SPINE_NAMES) - 1) / 2.0) * seg
+        fore = BASE_Z.get('torso', 0.0) + p.get('dz', 0.0)
+        return Matrix.Translation(Vector((p.get('x', 0.0), up, fore)))
+
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
+    want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})
 
     data = bytearray(open(path, 'rb').read())
     magic, ver, total = struct.unpack_from('<III', data, 0)
@@ -5843,6 +6023,10 @@ def main():
             'res': RES, 'stats': stats, 'delivery': packed,
             'faceForward': face['faceForward'],
         }, f, indent=1)
+
+    # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
+    # dominance query upstream can see the torso group split. See add_spine_chain.
+    add_spine_chain(low, arm)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
