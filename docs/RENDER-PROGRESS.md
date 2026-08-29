@@ -190,8 +190,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
-| — | Iteration 110 (review) | **review-only; unit/golden/browser/mutation/coverage PASS; drive RED on venue-dressing test 4 (coach figures) under full-suite load — suspected load flake, UNCONFIRMED, first item of 111** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
-| — | Iteration 100 (review) | **suite recovered from ONE load-sensitive crash gate; review recorded** | `crash-ragdoll.spec` sampler leash crashedAt+10 s→+30 s wall (spec-only; the ≥3 s zero-span gate measures WALL ms and under full-suite load the rest landed past +7 s wall → 2 s span; solo always 2/2 green; gate and game code untouched, re-run 2/2). Shots inspected: figure_front correctly FRONTAL (review-95 finding closed); crown dome holds; BUT pose_inrun_side arms read fused (gates pass — visual gate proposed), face featureless at 0.6 m, crash_rest body a speck, suit white-on-white at scene distance (corridor 0.8289 vs flankNear 0.8509). NEXT.md (crouch arms, pike gate, face mask) untouched — top priority. See entry 100. |
+| — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
@@ -259,10 +258,11 @@ rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
 Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
 
-### 110 — REVIEW-ONLY: unit/golden/browser/mutation/coverage PASS, drive RED
-on venue-dressing test 4 (coach figures) under full-suite load; review written,
-shots measured/inspected; one suspected load-flake, one real framing regression
-(kicker.png dominated by the judges' deck)
+### 110 — REVIEW-ONLY + one REAL breakage fixed: venue-dressing test 4 RED at
+HEAD (solo too) — root cause: `MATERIAL_ALPHATESTMODE` is undefined in the
+shipped Babylon build, so the coach material's alpha-cut mode was never set;
+also review written, shots measured/inspected; kicker.png framing regression
+(deck dominates the canonical kicker shot)
 
 **Scope:** review iteration, no features. `docs/NEXT.md` does not exist. Prior
 iteration self-review (`git log -3 --stat`, 109 + 108 + 109-entry commit):
@@ -272,14 +272,25 @@ commits coherent, no half-done work, tree clean at start.
 golden 30/30 PASS; browser 36/36 PASS; mutation PASS (all mutations caught);
 coverage PASS (28 distinct behaviours; the two known OPEN-002 duplicates
 unchanged); **drive FAIL — 89 passed / 2 skipped / 1 FAILED**:
-`venue-dressing.spec.js:307` "three static coach figures in red jackets"
-(landed green 4/4 in iter 108). Not re-run solo before this entry's commit
-(session time ran out) — the failure is under investigation for 111; given
-the test was green at its own commit and the spec ray-picks seated coaches
-under heavy parallel load, a load/ray-pick timing flake is plausible but
-UNCONFIRMED. 111 must: re-run the spec solo; if green, harden the seat check
-against load (retry/re-pick window like iter 102's double-seating); if red,
-fix the seating.
+`venue-dressing.spec.js:361` `alphaTest` gate.
+
+**ROOT CAUSE (found and FIXED this iteration, not a load flake):** the spec
+fails SOLO too. A browser probe measured `knollCoachMat.transparencyMode`
+=== null and `BABYLON.Material.MATERIAL_ALPHATESTMODE` === undefined in the
+shipped Babylon build (`PBRMaterial.PBRMATERIAL_ALPHATEST` === 1 exists). So
+iter 108's guarded assignment (`if (MATERIAL_ALPHATESTMODE !== undefined)`)
+never ran — the coach cards rendered OPAQUE (hasAlpha ignored, rectangles,
+not alpha-cut figures) and the gate compared null to undefined forever. The
+iter-108 "4/4 green" claim was wrong (likely asserted against a different
+Babylon snapshot). Fix (`game.js`, one statement): set
+`transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST` with a guarded
+`Material.MATERIAL_ALPHATESTMODE` fallback (fully stub-safe — the first
+attempt crashed the golden harness on `undefined.Material` and was caught by
+test:golden). Spec gate updated to accept whichever constant the running
+build defines. **Verification: venue-dressing 4/4 solo (49 s); unit 78/78;
+golden 30/30 with NO re-capture** (headless stub path leaves the mode
+undefined, physics + census untouched). Visual consequence: the coach cards
+now alpha-cut — re-shot via `look` after the fix.
 
 **Shots:** current `shots/*.png` were regenerated at 13:43–13:45 from a tree
 byte-identical to HEAD (iter 109 committed 13:47; no source change since), so
@@ -318,8 +329,7 @@ elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
 - `inrun.png` — corridor pale/lavender-tinged, B-net strands read faint at
   mid-distance; acceptable, matches entry-105 numbers.
 
-**Gaps vs plan/reference (re-prioritised for 111+):**
-1. venue-dressing test 4 failure (above) — first item of 111.
+1. ~~venue-dressing test 4~~ FIXED this iteration (see root cause above).
 2. kicker.png framing vs the iter-107 deck (camera fix, small).
 3. P6 cone caps through the ridge line (scene.png mid-frame) — last horizon
    defect; retire the legacy cone peaks now that the 3D ridges carry the
@@ -332,15 +342,18 @@ elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
    exemption question from entry 105.
 
 **Open questions for the reviewer:**
-1. venue-dressing test 4: if solo-green, may I add a load-tolerant re-pick
-   window (same pattern as iter 102's double-seating) rather than a longer
-   timeout?
-2. Kicker camera vs deck placement: prefer moving the canonical kicker
+1. Kicker camera vs deck placement: prefer moving the canonical kicker
    camera, or relocating the deck further from the corridor?
-3. Entry 109's two open questions (15 m/s roll-seed ceiling; crash-spec
+2. Entry 109's two open questions (15 m/s roll-seed ceiling; crash-spec
    state-deterministic trigger refactor) remain unanswered.
+3. iter-108's verification claim ("venue-dressing 4/4") did not hold at HEAD;
+   the same build-snapshot mismatch may affect other iter-108 claims (golden
+   audit was re-verified independently and is consistent, so exposure is
+   limited to the alpha-mode gate). Flagging for the reviewer's awareness.
 
-*No source files changed this iteration; the only diff is this entry.*
+*Source diff this iteration: `game.js` (one guarded statement) and
+`tests/drive/venue-dressing.spec.js` (gate constant). No assets, no ASSET_V
+change.*
 
 ### 109 — Crash roll momentum seeded from the athlete's measured root speed at the
 trigger (reviewer entry-89 refinement (a)); golden re-captured 30/30, audit
