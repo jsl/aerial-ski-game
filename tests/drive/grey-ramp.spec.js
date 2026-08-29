@@ -133,6 +133,12 @@ test('corridor reads at least as bright as its flanks; no sky through the seams'
     // hunts (the pre-P1 grey band) read ~0.14 absolute; the corridor floor and
     // corridor-vs-flank parity gates below are unchanged.
     expect(stats.corridor.lum).toBeGreaterThan(0.72);
+    // iter 96: HARD parity (>= darkestFlank, 0.005 noise floor) was attempted
+    // and REVERTED — snowMat albedo scaling converges at corridor/flank ~0.987
+    // under tone mapping (flanks share snowMat, so albedo cannot close the
+    // gap) and the corridor normal-map strength change measured zero effect.
+    // Re-opened as entry 96 open question; -0.02 stands until a
+    // corridor-specific lever exists.
     expect(stats.corridor.lum).toBeGreaterThanOrEqual(darkestFlank - 0.02);
     expect(stats.inrun.lum).toBeGreaterThanOrEqual(darkestFlank - 0.06);
     expect(stats.kickerFace.lum).toBeGreaterThanOrEqual(darkestFlank - 0.08);

@@ -1,19 +1,16 @@
-# NEXT — single mandated task for the next work iteration (reviewer, 2026-08-29 05:55)
+# NEXT — remaining task from the 2026-08-29 05:55 mandate (items 1-2 landed
+# in iteration 96; item 3 attempted, measured, REVERTED — see entry 96)
 
-This file overrides the plan order. Do ONLY this; delete it in the commit that completes it.
-
-## Helmet crown + chest-wall ownership + corridor parity (one Blender rebuild)
-
-1. **Hemispherical crown (slipped in 92 and 93).** The gate and negative control exist; the geometry
-   fix was undone by a later pass. Find the pass (log the crown-height metric after EVERY head-touching
-   pass: `shape_helmet`, `soften`, `relax_suit`, `narrow_shoulders`, `finish_lowpoly`) and make the
-   dome survive: either `shape_helmet` produces the sphere cap fitted to the cranium landmarks with the
-   rim plane as its base, or the hemisphere projection runs as the LAST geometry pass before
-   `finish_lowpoly`, with an assertion on the final low-poly mesh (crown height ≥ 0.45 × head width;
-   top-20% normals tilt ≥ 25° at the 80% radius). Turn the crown gate HARD.
-2. **Chest-wall ownership (APPROVED (b), entry 91 q1).** `upperArmR` owns the right chest wall; reskin
-   the chest band so the torso owns its own chest sides; re-run the arm gates (no regression); the chest
-   instrument then measures 0.30–0.45 m at the nipple line and its sanity band goes back to 0.30.
-3. **Corridor/flank parity (review-90 item 3).** Corridor luminance ≥ darkest flank in the scene view;
-   grey-ramp gate HARD again; report before/after numbers.
-4. Rebuild 2048/96, `ASSET_V` bump, describe `face.png`, `figure_side.png`, `scene.png` by eye.
+## 3. Corridor/flank parity (review-90 item 3) — NOT landed
+Corridor luminance ≥ darkest flank in the scene view; grey-ramp gate HARD.
+Measured this iteration: the gap is NOT an albedo problem. The flanking
+fields SHARE snowMat (iter-18 continuous ground), so scaling snowMat's
+albedo moves both surfaces; under tone mapping the corridor/flank ratio
+converges at ~0.987 (0.98/0.995/1.0 -> 1.03/1.04/1.05 moved corridor
+0.8289 -> 0.8386 but flanks 0.8427 -> 0.8498; gap -0.0138 -> -0.0112).
+The corridor's fine normal map (strength 1.05, the documented E[nz]<1
+bias carrier) measured ZERO effect when stepped to 0.70. Both attempts
+were reverted; the shipped numbers are the iter-95 baseline (corridor
+0.8289, darkest flank 0.8427). Next lever candidates: a corridor-only
+material clone, removing the corridor's normal map, or hemi/exposure
+incidence compensation — measure ONE, then gate HARD.

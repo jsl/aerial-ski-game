@@ -195,7 +195,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
-| P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth INSTRUMENT corrected + calf growth (iter 91, entry 91); partially landed otherwise** | **iter 91: reviewer-00:15 instrument correction — hip = both-trochanter breadth on the core mesh (arms excluded: they hang flush and read the hands), thigh/calf = full one-leg cross-section with NO fixed x window (windows broke after growth); sanity bounds hip 295 ✓ / thigh 214 ✓ / calf 146 ✓; growth loop (was broken: undefined `f`) grew calf 99→146 mm, calf/hip 0.337→0.494; negative control fails 5 gates; ASSET_V 30**; iter 82's 1.792 thigh/hip was the vacuous torso-fragment read. Prior: iter 32 arm root cause. Open: chest breadth instrument reads 178 mm (arm rebind owns the right chest side) — see entry-91 open question 1 |
+| P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth INSTRUMENT corrected + calf growth (iter 91, entry 91); chest-wall RESKIN + crown sphere-cap landed (iter 96); partially landed otherwise** | **iter 96: chest-wall ownership restored (25 verts upperArmR -> torso via normal-alignment rule; nipple-line chest 303 mm, sanity band back to 0.30-0.45) and the helmet crown is a sphere cap (95.0 mm, gate 73) applied as the LAST geometry pass; tilt p10 14.0 deg still soft (instrument question, entry 96); goggle-proud gate recalibrated 71.5 -> 68.0 for the new pipeline; ASSET_V 32**. Prior: iter 91 instrument correction (hip 295 / thigh 214 / calf 146, ASSET_V 30); iter 32 arm transport root cause. |
 | — | Iteration-23 mandatory item 2 | **SKI-DRIVER YAW LANDED (iter 28); BOOT YAW BAKED (iter 29)** | readyYaw now reaches the ski drivers: pair across the hill pre-turn (90.00°/90.00°), fall line post-turn (0.00°/0.00°), permanent terrain-plane heading gates in `ready-stance.spec.js`; iter-29 `align_boots` bakes the ~21° bind residual to **±0.4°** (hard build gate), ASSET_V 10; browser boot∥ski gate deferred (instrument note in entry 29) |
 | — | Hop turn from keypoints | **landed (iter 34 tree, recovered + audited iter 35, commit d402539)** | crouch 0.221 s → extension 0.111 s → airborne 0.184 s (peak lift 0.135 m) → absorb 0.184 s, scaled ×0.737 into the physics-locked 0.7 s turn (±30 % band per phase); yaw held until takeoff, 90° complete at touchdown; `APPROVED: hop-turn trace re-capture, provided state is identical` satisfied — state byte-identical ×30, node diffs athlete-only through f=45; gates in `tests/drive/hop-turn.spec.js` |
 | P4 | Forest | **slice 1 landed (iter 56); iter-59 invertY + seating gates; iter-62: bake re-render — real silhouette, tonality lift, hard census gates; iter-63: FOUR distinct spruce variants (review-60 (c)) + 0.7–1.4 scale band + variant gates** | `blender/bake_trees.py` bakes card_0..3 + atlas_0..3 in the shared 7.3×14.6 frame (per-variant seed/height 11.9–14.3/radial envelope/droop/needle tint, all inside the review-60 band; spike-zone filler whorls keep every silhouette continuous); 152 thin instances over 4 meshes = 4 draw calls (cap ≤ 20), one full-forest proxy cone buffer; widthL1min 0.339, lum 0.520–0.558; gates in `trees.spec.js` (mix counts ≥ 15/variant, scale 0.695–1.405 spread ≥ 1.5, per-variant census, pairwise L1 ≥ 0.02); ASSET_V 19; open: deciduous majority, near-tree cards, 8-view billboards |
@@ -6486,6 +6486,78 @@ paint pass).
 3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
    reading, sim-time gate) and entry 90's open questions 1–3 still await
    answers.
+
+### 96 — NEXT.md items 1-2: crown sphere-cap + chest-wall reskin (one Blender
+rebuild, ASSET_V 32); item 3 (corridor parity) attempted, measured, REVERTED
+
+**Reviewer order acted on:** `docs/NEXT.md` (2026-08-29 05:55) — the
+mandated single task. Items 1 (hemispherical crown) and 2 (chest-wall
+ownership) are LANDED; item 3 (corridor parity) is NOT landed — the
+attempted fixes did not close the gap and were reverted. NEXT.md rewritten
+to carry only item 3 forward.
+
+**Item 1 — crown.** The iter-94 draft `crown_cap_last()` (sphere cap,
+R = 1.02 x half-width, cranium-centred, rim-plane origin, applied as the
+LAST body-space pass before `finish_lowpoly`) is now ENABLED. Build 2048/96:
+crown **95.0 mm (gate >= 73)** by construction; the pipeline-killer
+`retune_proportions` squash (115 -> 75 mm) is re-asserted over. The plateau
+tilt gate stays SOFT: p10 tilt reads **14.0 deg (target 25)** on the final
+low-poly mesh — the band geometry is inconsistent with a true sphere cap
+(a cap of crown ~83-95 mm has no verts at both band height z' >= 0.65 dome
+AND radial >= 0.45 half-width; the 267 band verts are decimation-normal
+artefacts), so 25 deg looks unreachable on the decimated mesh regardless of
+dome quality. Negative control still fires: BODY_SABOTAGE_CROWN=1 measures
+tilt p10 **0.0** and crown 87.0 — direction is right, threshold is not.
+Open: re-derive the tilt instrument (high-poly pre-decimation, or band in
+absolute radii) before hardening.
+
+**Item 2 — chest-wall ownership.** New `reclaim_chest_wall()` runs after
+`rebind_arm_weights`: upperArmR-dominant verts below the deltoid crease
+whose SURFACE NORMAL aligns better with the torso-axis radial than the
+arm-axis radial get pure torso ownership. Geometric distance alone could
+not work (measured: 302/302 band verts are arm-axis-nearer — the arms hang
+flush, so the arm axis is always closer). 25 verts reclaimed; nipple-line
+chest read **303 mm** — `LEG_GIRTH_SANITY.chest` restored to **(0.30,
+0.45)** per the NEXT mandate. Arm gates unchanged in the build log
+(bideltoid 0.401, the same value as iter 95).
+
+**Goggle-proud gate recalibrated 71.5 -> 68.0** (reviewer pre-authorised
+this re-calibration): the cap grows the chin->crown h that the slab binning
+divides by, shifting every slab's vertex population; normal build measures
+**68.9**. The flat-skull sabotage control now measures **78.5** — sabotage
+corrupts the same h, so it no longer exercises this gate at all (logged in
+the build script; open question below).
+
+**Item 3 — corridor parity (NOT landed, reverted).** Flanks SHARE snowMat
+(iter-18 continuous ground), so albedo scaling moves both surfaces; the
+corridor/flank ratio converges at ~0.987 under tone mapping
+(0.8289 -> 0.8386 vs flank 0.8427 -> 0.8498 over a +3% step). The fine
+normal map strength 1.05 -> 0.70 measured EXACTLY zero effect. Both
+reverted; the grey-ramp HARD gate was attempted (`>= darkestFlank - 0.005`)
+and reverted with the numbers in a comment. Grey-ramp green again at the
+baseline numbers: corridor 0.8289, flanks 0.8509/0.8427, inrun 0.8278,
+face 0.7702. NEXT.md item 3 carries the lever candidates forward.
+
+**Verification:** build 2048/96 all gates green (face gate: nose 24.5,
+chin 34.2, rims in band, dome centre 6.1, proud 68.9 >= 68.0, crown 95.0);
+ASSET_V ?v=31 -> 32. unit 0 fail; golden 30/30 WITHOUT re-capture (no
+physics or node-name change); drive: look + rig + grey-ramp green
+(bg run 12 passed; face.png / figure.png inspected by eye — helmet now
+reads as a rounded dome in profile, no beret plateau; suit white-on-white
+and bib unchanged as expected).
+
+**Open questions for the reviewer:**
+1. Crown tilt instrument: on the decimated low-poly mesh the 25 deg p10
+   tilt band may be unmeasurable by construction (see the geometry note
+   above). Options: measure tilt on the HIGH-poly mesh before
+   `finish_lowpoly` (assert there), or re-derive the band. Which do you
+   want? The height gate is hard; tilt stays soft pending your answer.
+2. Goggle-proud: the sabotage control now reads 78.5 (ABOVE the normal
+   68.9) because flattening the dome corrupts the shared h used for slab
+   binning. Proposal: bin the proud slabs in absolute metres above chin
+   (chin is below the brim, cap-invariant) and recalibrate once. OK?
+3. Corridor parity lever: corridor-only material clone vs dropping the
+   corridor normal map vs incidence compensation — preference?
 
 ### 95 — Review-only: full suite ALL GREEN, shots regenerated + inspected
 by eye; helmet crown still flat, canonical front camera still frames the

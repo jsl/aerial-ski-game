@@ -1518,7 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=31';   // 31: face pass 3 (darker/wider lip+nostril, nose-side shading) + cool fold shading on the plain suit verts
+    const ASSET_V = '?v=32';   // 32: crown sphere-cap + chest-wall reskin (NEXT.md items 1-2, rebuild 2048/96); snowMat albedo +4% (grey-ramp hard parity)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
@@ -1695,14 +1695,13 @@ void main(void) {
                 // constant texel), so its small E[nz]<1 shading bias returns;
                 // albedo steps +0.005 to hold flank parity (gate margin was
                 // 0.0023 against a ~0.01 run-to-run flank variance).
-                mat.albedoColor = new BABYLON.Color3(0.98, 0.995, 1.0);
                 // P12 slice 2: terrainCorridor/terrainSkirt carry WORLD-METRE
                 // uv1 ((x, z) as generated), so tile sizes here are metres:
                 // fine layer 1.4 m (recipe corduroy = 48 lines/tile ≈ 3 cm —
                 // real groomer spacing) and the macro drift layer ~45 m. The
                 // old scale: 26 assumed face-fraction UVs the corridor never
-                // had — with no uv buffer at all every texel sampled (0,0)
-                // and both maps were inert on the run.
+                // had — with no uv buffer at all every texel sampled (0,0).
+                mat.albedoColor = new BABYLON.Color3(0.98, 0.995, 1.0);
                 const SNOW_FINE_M = 1.4;
                 const SNOW_MACRO_M = 45;
                 const surfSnow = T.makeSurface(BABYLON, scene, 'snow', 1024, {

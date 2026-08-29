@@ -6,40 +6,40 @@
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6464,
-   "belowHalf": 0.012,
+   "mean": 0.6432,
+   "belowHalf": 0.0109,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8641,
-   "belowHalf": 0.1197,
+   "mean": 0.8654,
+   "belowHalf": 0.1158,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.8565,
-   "belowHalf": 0.0572,
+   "mean": 0.8555,
+   "belowHalf": 0.0598,
    "srgb": true
   },
   "face": {
-   "nose_out": 0.0225,
+   "nose_out": 0.0245,
    "chin_relief": 0.0342,
-   "rim_front": 0.0176,
-   "rim_side_h": 0.5519,
-   "rim_back_h": 0.5596,
-   "dome_off": 0.0045,
-   "turn_deg": -0.1109,
-   "goggle_proud": 0.0743
+   "rim_front": 0.0181,
+   "rim_side_h": 0.5504,
+   "rim_back_h": 0.5504,
+   "dome_off": 0.0061,
+   "turn_deg": -0.2456,
+   "goggle_proud": 0.0689
   },
   "faceForward": [
-   -0.0019,
+   -0.0043,
    0.0,
    -1.0
   ]
  },
  "faceForward": [
-  -0.0019,
+  -0.0043,
   0.0,
   -1.0
  ]

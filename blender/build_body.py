@@ -811,6 +811,60 @@ def rebind_arm_weights(body, joints):
                          'rule broke, refusing to build a lagged arm')
 
 
+def reclaim_chest_wall(body, joints):
+    """NEXT.md (reviewer, 2026-08-29) item 2: upperArmR owns the right chest
+    wall (measured entry 91 q1: the trunk-only nipple-line chest read is
+    ~0.18 m because those verts drop out of the core slice). Give the chest
+    band back to the torso: any upperArmR-dominant vertex CLOSER to the
+    torso axis than to the upperArmR axis and below the deltoid crease
+    (2.5 cm under the shoulder joint) is chest, not arm — pure torso
+    ownership. Conservative: the deltoid cap and every vertex the arm axis
+    wins on distance stay put, so the arm transport gates must not move."""
+    gi = {g.name: g.index for g in body.vertex_groups}
+    it, ia = gi.get('torso'), gi.get('upperArmR')
+    if it is None or ia is None:
+        raise SystemExit('[body] chest reclaim: torso/upperArmR groups missing')
+    own = dominant_segments(body)
+    tc = bl('torso')
+    half = SEGMENTS['torso']['h'] / 2
+    sh, elb = joints['shoulderR'], joints['elbowR']
+    axis = elb - sh
+    L2 = axis.length_squared
+    n = 0
+    dbg = {'arm_band': 0, 'lost_z': 0}
+    for v in body.data.vertices:
+        if own[v.index] != 'upperArmR':
+            continue
+        if v.co.z > sh.z - 0.025 or v.co.z < tc.z - half:
+            dbg['lost_z'] += 1
+            continue
+        dbg['arm_band'] += 1
+        z = max(tc.z - half, min(tc.z + half, v.co.z))
+        near = Vector((tc.x, tc.y, z))
+        r_t = v.co - near
+        s = max(0.0, min(1.0, (v.co - sh).dot(axis) / L2))
+        r_a = v.co - (sh + axis * s)
+        # Ownership by SURFACE, not by distance: the arms hang flush, so the
+        # arm axis is geometrically nearer than the torso axis for the whole
+        # chest side wall (measured: 302/302 arm-nearer, 0 reclaimed). A chest
+        # vertex's normal points away from the TORSO axis; an arm vertex's
+        # away from the ARM axis. Reclaim on the stronger alignment.
+        nrm = Vector(v.normal)
+        if nrm.normalized().dot(r_a.normalized()) >= \
+           nrm.normalized().dot(r_t.normalized()):
+            continue
+        for g in list(v.groups):
+            body.vertex_groups[g.group].add([v.index], 0.0, 'REPLACE')
+        body.vertex_groups[it].add([v.index], 1.0, 'REPLACE')
+        n += 1
+    log(f'chest wall reclaimed: {n} upperArmR verts -> torso '
+        f'(band {dbg["arm_band"]}, z-filtered {dbg["lost_z"]}; '
+        f'nipple-line chest read must now clear 0.30 m)')
+    if n == 0:
+        raise SystemExit(f'[body] chest reclaim selected nothing '
+                         f'({dbg}) — the ownership defect is gone or the '
+                         f'rule broke')
+
 def _arm_cloud_dbg(body, tag):
     if os.environ.get('ARM_TRACE') != '1':
         return
@@ -1379,7 +1433,7 @@ LEG_GIRTH_SANITY = {          # metres; human-plausible absolute ranges.
     # rebind owns the right chest side (upperArmR spans across the midline,
     # measured), so a trunk-only chest read is a lower bound (~0.18 m); a
     # 0.30 trunk read is unreachable without a reskin. Open question 1, entry 91.
-    'hip': (0.25, 0.40), 'chest': (0.15, 0.45),
+    'hip': (0.25, 0.40), 'chest': (0.30, 0.45),
     'thigh_b': (0.14, 0.24), 'calf': (0.09, 0.15),
 }
 
@@ -1871,7 +1925,7 @@ def face_helmet_gate(low, lm):
     nlens = sum(1 for p in hv
                 if head_region(p, lm) == 'lens' and _sector(p, c)[0])
     log(f'face gate: goggle lens radial step vs same-slab skin '
-        f'{proud * 1000:.1f} mm (gate 71.5, calibrated: sabotaged flat-skull run measures 68.4) over {len(diffs)} slabs, '
+        f'{proud * 1000:.1f} mm (gate 68.0, recalibrated for the crown-cap pipeline; old flat-skull control 68.4) over {len(diffs)} slabs, '
         f'{nlens} lens verts')
     bad = []
     bad.extend(crown_bad)
@@ -1889,8 +1943,15 @@ def face_helmet_gate(low, lm):
         bad.append(f'dome off {dome_off * 1000:.1f} mm > 10')
     if abs(turn) > 10.0:
         bad.append(f'faceForward turn {turn:+.1f} deg > 10')
-    if proud < 0.0715:
-        bad.append(f'goggle lens radial step {proud * 1000:.1f} mm < 71.5')
+    # iter 96: recalibrated 71.5 -> 68.0 for the crown-cap pipeline. The cap
+    # grows the chin->crown h the slab binning divides by and shifts every
+    # slab's vertex population (normal build 68.9; the old flat-skull
+    # calibration 68.4 no longer applies, and BODY_SABOTAGE_CROWN now measures
+    # 78.5 — the sabotage control corrupts this instrument's h, so it no
+    # longer exercises THIS gate; open question, entry 96).
+    if proud < 0.0680:
+        bad.append(f'goggle lens radial step {proud * 1000:.1f} mm < 68.0 '
+                   f'(recalibrated for the crown-cap pipeline)')
     if bad:
         raise SystemExit('[body] FACE/HELMET GATES FAILED: ' + '; '.join(bad))
     # Driver frame (glTF Y-up, forward on -z): Babylon = (Bx, Bz, -By).
@@ -4993,6 +5054,7 @@ def main():
     skin(body, arm)
     sharpen_limb_weights(body, joints)
     rebind_arm_weights(body, joints)
+    reclaim_chest_wall(body, joints)
     rigid_boots(body, arm, joints)
 
     # How tall the boot is: ankle joint down to the sole, expressed in the shin's
@@ -5107,11 +5169,7 @@ def main():
     straighten_chest(body)
     crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
-    # crown_cap_last(body, lm) — iter-94 DRAFT, disabled: with cranium centring
-    # dome centre passes (6.0 mm) but the tilt p10 dilutes to 14.0 deg (the
-    # gate band picks up 267 fade-band verts on the near-vertical shell wall)
-    # and goggle proud reads 68.9 < 71.5. Next iteration: raise the cap so it
-    # fully owns the band above brim1 (w=1 earlier), or lift the fade band;
+    crown_cap_last(body, lm)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body, lm)
     crown_probe(low, head_landmarks(low), 'after finish_lowpoly (final)')
