@@ -796,6 +796,141 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 10 (2026-08-29, 19:0x-20:0x)
+
+### Merge with `render-realism-glm` — commit `f6a5edd`
+
+Seven commits (iter 118's night snowfall mode, iter 119's docs, the session-9
+rulings). Clean auto-merge, no conflicts — no golden trace was re-captured on
+either side this time. Unit 81/81, golden 30/30 on the merge.
+
+### Item 12 (boots) — LANDED, commit `b4ca09f`
+
+**The boot geometry has existed all along; nothing ever painted it.**
+`rigid_boots` pins it to the shin, `seat_soles` lands its sole on the ski,
+`align_boots` yaws it onto the ski axis, and `leg_taper_gate` has been
+measuring its cuff breadth for several sessions (boot/shin 1.230, gate >= 1.0
+— the leg already tapered INTO a cuff). The defect was one missing branch in
+`paint_suit`: there was no boot region at all, so SUIT white ran unbroken from
+the hip onto the topsheet. `paint_suit`'s `missing` check cannot catch that —
+it only asks whether the regions it already knows about matched something.
+
+**Measuring moved the number.** The obvious cuff step is `along` -0.74: it is
+where `LEG_TAPER_BANDS['boot']` tops out (z=-0.95) and what `SUIT_FOLDS`'
+'boot-cuff' band is documented against. Painting from it gave a **47 mm rim**,
+not a boot — because **the segment model has no foot below the ankle**:
+`seat_soles` lands the sole at z=-0.995 and the shin's own ankle end is
+z=-0.995 too. On this rig the boot has to BE the lower shin, which is also what
+a real ski boot is. `BOOT_ALONG = -0.40` puts the cuff 108 mm above the ski on
+a 360 mm shin, clear of the calf belly the taper gate measures at z
+-0.80..-0.66, so the calf still shows above the shell and tapers into it —
+half of item 11 as well, since a calf only reads as over-inflated when there is
+nothing for it to taper into.
+
+| | verts | mean luma | light frac | shell height |
+|---|---|---|---|---|
+| shipped | 34 177 below the cuff step | **0.078** (gate <= 0.20) | **0.0000** (gate <= 0.02) | **112 mm** (gate >= 90) |
+| `BODY_SABOTAGE_BOOT=1` | same band | 0.764 | **0.9073** | 112 mm |
+
+**NEGATIVE CONTROL**: `BODY_SABOTAGE_BOOT=1` skips the branch, which reproduces
+the skin this project shipped up to session 9 — and `boot_paint_gate` rejects
+it. **0.9073 of the boot band was light**: that number IS the author's white
+blob, measured.
+
+A lighter liner lip (`BOOT_CUFF`) runs along the rim so the shell has an edge
+instead of dissolving into a black sock — the same trick the glove cuff uses.
+The stripe branch is unreachable below the cuff (leg blue census 2322 -> 1926
+verts): a leg stripe runs hip to cuff on the SUIT and stops at the boot.
+
+`shots/figure_side.png` by eye: the boot reads as a dark shell from the ski up
+over the ankle, and the leg tapers into it.
+
+### THE FINDING — the "fabric folds" gate has never measured folds
+
+Moving `SUIT_FOLDS`' 'boot-cuff' crease up the shin (so cloth bunches ABOVE the
+shell instead of creasing rigid plastic) turned `rig.spec.js`'s crease-band
+variance gate red, 57159 -> 43692 against a 55000 floor. That looked like lost
+fold relief. It is not. Measured on the same window:
+
+| normal map | crease-band metric | vs shipped |
+|---|---|---|
+| shipped (folds + weave) | 43 692 | — |
+| folds OFF (`BODY_SABOTAGE_FOLDS=1`) | 43 095 | **-1.4 %** |
+| weave OFF (`BODY_SABOTAGE_WEAVE=1`) | 42 362 | **-3.0 %** |
+| band where it has always been | 57 159 | **+30.8 %** |
+
+**Everything `displace_suit` writes moves that metric by under 3 %.** The
+13 467 the original band adds comes from 62 732 texels whose mean |Laplacian|
+is ~100 000 — double any cloth band — because the boot-cuff band (-0.62±0.18)
+sits over the **ankle and boot**, and hard geometry edges are high-Laplacian
+for exactly the reason the session-7 note in `build_body.py` records the suit
+TEAR being ("long mis-shaded faces are high-Laplacian too"). This is the same
+mistake a third time.
+
+Widening the Laplacian stencil to the folds' own ~25 mm wavelength does not
+rescue it: folds-on vs folds-off separation at radii 1/2/4/6/8/12/16 texels is
+1.4 / 0.8 / 0.3 / 0.2 / 0.2 / 0.5 / 0.4 %. The folds (1.5-1.9 mm ridges over a
+~25 mm wavelength) are simply not visible in the bake beside the 2.1 mm
+peak-to-peak weave.
+
+**What I did about it**: reverted the fold-band move (it buys nothing visible
+and only blinds a gate), did **not** recalibrate the floor — a floor tuned for
+a metric that measures nothing would be worse than the red — and wrote the
+evidence into the gate's own header. The two sabotage flags and `rig.spec.js`'s
+new per-zone / multi-radius breakdown stay in the tree, so the next session
+reproduces the whole table in one build.
+
+### Verification
+
+    build   all gates green at 2048/96 (NEW boot paint, sliver, goggle band,
+            dome seating, leg taper, bib number, stripe, suit NM variance 6.36,
+            atlas share, weight seam, fold population)
+    unit    81/81
+    golden  30/30, no re-capture, no physics change
+    drive   rig 12/12 (crease-band gate included), body + chain + athlete +
+            ready-stance + bib-number + spine 31/31, look 3/3
+    wire    1 803 719 B total, budget 2.5 MB
+    shots   figure_side.png, figure_front.png, face*, pose_* regenerated
+
+`ASSET_V` 41 -> 42, `index.html` `game.js?v=` 35 -> 36, preload hrefs `?v=42`.
+
+### Open at the end of session 10
+
+- Item 12 CLOSED. Item 5's weight half CLOSED (session 9).
+- Items 3 (suit panels + separate bib + the armpit/crotch bridge faces),
+  10 (stance), 2 (helmet rim lip / chin strap / vents), 9 (collar + throat red
+  streak), 6 (in-run arms), 7 (pike hip) untouched.
+- **GLM's review-115 finding (a) is already fixed**: `shots/figure_side.png`
+  shows a full dark dome in profile, not "a thin dark rim with a bare
+  skin-coloured crown". No crown-coverage gate was added; the defect is not
+  reproducible on the current build.
+- **Item 3 (d), by eye in `figure_side.png`**: the blue leg stripe is still a
+  ragged blob wandering across the shin, not a clean ~5 cm band on the outer
+  seam. The paint's angular width is right (dphi < 0.32 rad ~= 3.8 cm of arc);
+  the raggedness is in the per-vertex azimuth, so `limb_azim`/the slice
+  centroids are where to look.
+- `pose-shots.spec.js` still frames the tuck from too far off (session 9).
+
+### For the reviewer (session 10)
+
+1. **`rig.spec.js`'s "fabric folds read at the creases" gate should be renamed
+   or replaced.** The table above is the evidence: it is a relief/smoothing
+   guard whose entire dynamic range is the boot's hard geometry, and it has
+   never been sensitive to the folds it is named for. Two follow-ups worth a
+   ruling: (a) is the gate kept as an unnamed relief guard, or replaced with a
+   metric that resolves a 25 mm ridge (a band-limited one, not a Laplacian)?
+   (b) **the folds themselves are invisible in the bake** — 1.4 % — so item 3's
+   "subtle folds at elbows, knees, groin and lower back" is NOT currently being
+   delivered at any amplitude the eye or the suite can see. That is an item 3
+   decision (deeper folds, or folds as geometry rather than normal map), and it
+   is worth knowing before item 3 starts.
+2. Carried, unchanged: the `POSE_TUCKED_INERTIA` reconciliation
+   (`NEEDS-APPROVAL:`, deferred by the 18:30 ruling); the 1.35 strain gate
+   still unset pending item 3's bridge faces (session 9 question 1);
+   `smooth_blend_rings` running after the bake (session 9 question 2).
+
+---
+
 ## Session 9 (2026-08-29, 18:2x-19:3x)
 
 ### Merge with `render-realism-glm` — commit `97bec99`
