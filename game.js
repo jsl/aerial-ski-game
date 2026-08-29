@@ -463,6 +463,8 @@ function _showAthleteFallback(scene, meshes) {
             document.body.appendChild(d);
         }
     } catch (e) { /* no DOM in a harness */ }
+    _linkAthleteShadowCasters(scene, meshes,
+        scene.getNodeByName ? scene.getNodeByName('skierRoot') : null);
 }
 
 function _hideAthleteVisuals(scene, meshes) {
@@ -477,6 +479,34 @@ function _revealSkiEquipment(scene, meshes) {
         if (!m || !m.getChildMeshes) continue;
         for (const k of m.getChildMeshes()) k.isVisible = true;
     }
+}
+
+// NEXT.md item 1 (2026-08-29): the reveal gate must cover the SHADOW. No
+// athlete/ski/boot/binding mesh may be in any shadow generator's render list
+// before the reveal frame — the author saw "the skis and the skier's shadow
+// appear before the skier". The startup caster block therefore no longer adds
+// the character at all; this helper is the ONLY path that links them, and it
+// runs in the same frame the meshes become visible (reveal poll or fallback).
+function _linkAthleteShadowCasters(scene, meshes, root) {
+    if (!scene || !scene.lights) return;
+    // shadowGen lives in the scene-builder's closure; resolve it from the
+    // scene's lights so this top-level helper can reach it.
+    const gen = scene.lights.map(l => l && l.getShadowGenerator
+        && l.getShadowGenerator()).find(Boolean);
+    if (!gen) return;
+    const sm = gen.getShadowMap && gen.getShadowMap();
+    const rl = sm && sm.renderList;
+    const add = (m) => {
+        if (!m || !m.getTotalVertices || m.getTotalVertices() === 0) return;
+        if (rl && rl.indexOf(m) !== -1) return;
+        gen.addShadowCaster(m);
+    };
+    for (const key of Object.keys(meshes)) {
+        const e = meshes[key];
+        add((e && e.mesh) ? e.mesh : e);
+    }
+    // The skinned body parts are adopted descendants of the root.
+    if (root && root.getChildMeshes) root.getChildMeshes().forEach(add);
 }
 
 function buildCharacter(scene) {
@@ -1909,6 +1939,7 @@ void main(void) {
             window._athleteRevealed = 1;
             for (const part of _pendingBodyParts) part.isVisible = true;
             _revealSkiEquipment(scene, character.meshes);
+            _linkAthleteShadowCasters(scene, character.meshes, character.root);
             for (const m of scene.meshes) {
                 if (m.name && m.name.startsWith('goggles')) m.isVisible = true;
             }
@@ -1971,25 +2002,6 @@ void main(void) {
                         part.parent = character.root;
                         part.skeleton = skel;
                         part.alwaysSelectAsActiveMesh = true;
-                    }
-
-                    // Register the body as a shadow caster HERE, not in the
-                    // caster block at the end of startup.
-                    //
-                    // That block runs synchronously; this glb resolves later, so
-                    // the body never reached the list. What did reach it were the
-                    // driver solids — which this loader then hides, and Babylon
-                    // skips invisible meshes when rendering the shadow map. The
-                    // net effect was an athlete that cast no shadow at all beyond
-                    // its skis, and it read as "the shadows are weak" rather than
-                    // as a missing caster. The drivers stay in the list on purpose:
-                    // if this load ever fails they remain visible and are once
-                    // again the thing that should cast.
-                    if (shadowGen) {
-                        const rl = shadowGen.getShadowMap() && shadowGen.getShadowMap().renderList;
-                        for (const part of bodyParts) {
-                            if (!rl || rl.indexOf(part) === -1) shadowGen.addShadowCaster(part);
-                        }
                     }
 
                     // The body exports with two material slots — suit and helmet —
@@ -7609,16 +7621,22 @@ void main(void) {
     // itself around a two-metre figure, which is what it is actually good at.
     if (shadowGen) {
         const casters = new Set();
-        for (const key of Object.keys(character.meshes)) {
-            const e = character.meshes[key];
-            const m = (e && e.mesh) ? e.mesh : e;
-            if (m && m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
-        }
-        // The skinned body arrives asynchronously and is parented to the root, so
-        // it is picked up by descendants rather than by name.
-        if (character.root && character.root.getChildMeshes) {
-            for (const m of character.root.getChildMeshes()) {
-                if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+        // NEXT.md item 1 (2026-08-29): the character — drivers, styled skis,
+        // skinned body, goggles — is linked as a caster ONLY by
+        // _linkAthleteShadowCasters, in the same frame the meshes become
+        // visible. Before that frame nothing of the athlete may cast (the
+        // author saw the skis' shadow before the skier). The fallback path
+        // re-links when the primitive figure becomes the reveal.
+        if (window._bodyLinked > 0) {
+            for (const key of Object.keys(character.meshes)) {
+                const e = character.meshes[key];
+                const m = (e && e.mesh) ? e.mesh : e;
+                if (m && m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+            }
+            if (character.root && character.root.getChildMeshes) {
+                for (const m of character.root.getChildMeshes()) {
+                    if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+                }
             }
         }
         // Trees all cast — the CSM frustum follows the camera, so only trees near

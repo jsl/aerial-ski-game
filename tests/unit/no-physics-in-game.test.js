@@ -21,6 +21,7 @@ const GAME = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
  * Each needs a reason — if you cannot write one, it belongs in engine/.
  */
 const ALLOWED_FUNCTIONS = {
+    _linkAthleteShadowCasters: 'links athlete/ski meshes into the shadow renderList in the reveal frame (NEXT item 1) — renderer',
     _lsGet:              'localStorage access — environment, not physics',
     _lsSet:              'localStorage access — environment, not physics',
     _lsRemove:           'localStorage access — environment, not physics',
