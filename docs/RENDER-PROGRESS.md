@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Reviewer ruling on entry 110 (Fable, 2026-08-29 14:35) — cone peaks: do NOT simply retire them.** The author twice said the earlier cone peaks looked better than curtains; what is wrong now is only that their legacy green forest caps poke above the textured ridges as "volcano tops". Keep peaks on the skyline: re-skin `pk_body_*` with the ridge band material (far-layer haze mix, elevation-keyed UV so they carry rock mid-slope and snow caps, no green cap), raise/reposition them so they sit BEHIND the far ridges and read as a snow-capped range, and keep the golden census unchanged (same node names). Gate: the ridge contrast test still passes, and a top-of-frame probe finds no saturated-green pixels above the ridge line in `scene.png`. If the peaks cannot be made to read well, ask the reviewer before deleting.
 - **Reviewer rulings on entry 109 (Fable, 2026-08-29 13:55):** (1) **15 m/s ceiling: keep it** as the roll's entry-speed clamp (faster than that the tumble reads cartoonish), but make the deceleration speed-scaled so rest distance still grows with entry speed (friction decel constant → distance ∝ v²; a 15 m/s roll should travel roughly 2× a 10 m/s one). Display-side only; re-capture is census-only as before. (2) **Queue the deterministic crash trigger** for iteration 111 (110 is review-only): the spec must force the crash from game state (a `window._debugTriggerCrash()` hook or a scripted seed), not wait up to 90 s for one to happen under SwiftShader; then remove the flake allowance. Bug-fix rule applies: the refactor ships with the spec that would have caught the drift in `restAt`.
 - **Reviewer pass — mountains (Fable, 2026-08-29 12:55, `2a117a5`):** after three GLM iterations (103/104/106) re-tuned the ridge band map with "verified" numbers and no visible change, the reviewer probed the live scene: the band textures were rendering fine — **scene fog on the ridge PBR materials washed them to one pale tint** far beyond what EXP2 0.0022 predicts (0.82 visibility at 200 m); halving fogDensity barely helped, `fogEnabled=false` restored rock/snow/forest banding at once. Fix: ridge materials opt out of scene fog and carry a baked per-layer haze (albedo mix 0.10/0.22/0.38 toward the fog colour). New gate `ridges3d.spec.js` "rendered ridge pixels keep contrast": ridge-only pixel mask (frame diff with ridges hidden) luminance std ≥ 0.14 and mean ≤ 0.56 — fixed 0.165/0.50, the rejected fogged state 0.123/0.63 is the negative control. Unit 78/78, golden 30/30, ridges3d 4/4. GLM: the 04/06 by-eye "acceptance" entries were wrong; do not tune `makeRidgeSurface` further without this gate's numbers moving. Follow-up (GLM, low): the flat snow field between the corridor and the ridges now reads blue-tinted against the un-fogged ridges — consider giving `terrainBase` the same treatment or a lighter fog on it.
 - **HUMAN TESTING #6 (author, 2026-08-29 10:30, viewing 8203 = Opus lane, base `fb2a748`):** helmet too FORWARD now; goggles still too low; **calves look huge**; tuck still very poor — back separating; mountains flat and kicker paint blue (both are the stale base of that worktree — fixed on `render-realism-glm` at `edcded6`/`ebf24a9`; the reviewer merges the integration branch into `opus/athlete-body` between Opus sessions so 8203 tracks scene fixes). 8201: paint fixed, other issues remain. **Crash: "the skier crumples a little too much before it slides to the bottom of the hill"** → GLM: the tumble phase must be stiffer and shorter — joint slack in the ≤1 s tumble reduced so the body stays a recognisable figure (limbs within ±35° of the layout pose, spine bend ≤ 40°), then the near-rigid roll/slide as already specified; gate on the crash spec with a negative control that a fully limp ragdoll fails.
@@ -190,8 +191,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
-| — | Iteration 110 (review) | **review-only; unit/golden/browser/mutation/coverage PASS; drive RED on venue-dressing test 4 (coach figures) under full-suite load — suspected load flake, UNCONFIRMED, first item of 111** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
-| — | Iteration 100 (review) | **suite recovered from ONE load-sensitive crash gate; review recorded** | `crash-ragdoll.spec` sampler leash crashedAt+10 s→+30 s wall (spec-only; the ≥3 s zero-span gate measures WALL ms and under full-suite load the rest landed past +7 s wall → 2 s span; solo always 2/2 green; gate and game code untouched, re-run 2/2). Shots inspected: figure_front correctly FRONTAL (review-95 finding closed); crown dome holds; BUT pose_inrun_side arms read fused (gates pass — visual gate proposed), face featureless at 0.6 m, crash_rest body a speck, suit white-on-white at scene distance (corridor 0.8289 vs flankNear 0.8509). NEXT.md (crouch arms, pike gate, face mask) untouched — top priority. See entry 100. |
+| — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
@@ -259,10 +259,11 @@ rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
 Sol blockers/majors 1, 2 (full run-all + dedicated suite), 4–9 still open.)*
 
-### 110 — REVIEW-ONLY: unit/golden/browser/mutation/coverage PASS, drive RED
-on venue-dressing test 4 (coach figures) under full-suite load; review written,
-shots measured/inspected; one suspected load-flake, one real framing regression
-(kicker.png dominated by the judges' deck)
+### 110 — REVIEW-ONLY + one REAL breakage fixed: venue-dressing test 4 RED at
+HEAD (solo too) — root cause: `MATERIAL_ALPHATESTMODE` is undefined in the
+shipped Babylon build, so the coach material's alpha-cut mode was never set;
+also review written, shots measured/inspected; kicker.png framing regression
+(deck dominates the canonical kicker shot)
 
 **Scope:** review iteration, no features. `docs/NEXT.md` does not exist. Prior
 iteration self-review (`git log -3 --stat`, 109 + 108 + 109-entry commit):
@@ -272,19 +273,41 @@ commits coherent, no half-done work, tree clean at start.
 golden 30/30 PASS; browser 36/36 PASS; mutation PASS (all mutations caught);
 coverage PASS (28 distinct behaviours; the two known OPEN-002 duplicates
 unchanged); **drive FAIL — 89 passed / 2 skipped / 1 FAILED**:
-`venue-dressing.spec.js:307` "three static coach figures in red jackets"
-(landed green 4/4 in iter 108). Not re-run solo before this entry's commit
-(session time ran out) — the failure is under investigation for 111; given
-the test was green at its own commit and the spec ray-picks seated coaches
-under heavy parallel load, a load/ray-pick timing flake is plausible but
-UNCONFIRMED. 111 must: re-run the spec solo; if green, harden the seat check
-against load (retry/re-pick window like iter 102's double-seating); if red,
-fix the seating.
+`venue-dressing.spec.js:361` `alphaTest` gate.
 
-**Shots:** current `shots/*.png` were regenerated at 13:43–13:45 from a tree
-byte-identical to HEAD (iter 109 committed 13:47; no source change since), so
-they are valid for HEAD; `look` was not re-run (time). Measurements (new,
-this iteration): scene.png corridor 0.839 vs flankR 0.847 / flankL 0.814 →
+**ROOT CAUSE (found and FIXED this iteration, not a load flake):** the spec
+fails SOLO too. A browser probe measured `knollCoachMat.transparencyMode`
+=== null and `BABYLON.Material.MATERIAL_ALPHATESTMODE` === undefined in the
+shipped Babylon build (`PBRMaterial.PBRMATERIAL_ALPHATEST` === 1 exists). So
+iter 108's guarded assignment (`if (MATERIAL_ALPHATESTMODE !== undefined)`)
+never ran — the coach cards rendered OPAQUE (hasAlpha ignored, rectangles,
+not alpha-cut figures) and the gate compared null to undefined forever. The
+iter-108 "4/4 green" claim was wrong (likely asserted against a different
+Babylon snapshot). Fix (`game.js`, one statement): set
+`transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST` with a guarded
+`Material.MATERIAL_ALPHATESTMODE` fallback (fully stub-safe — the first
+attempt crashed the golden harness on `undefined.Material` and was caught by
+test:golden). Spec gate updated to accept whichever constant the running
+build defines. **Verification: venue-dressing 4/4 solo (49 s); unit 78/78;
+golden 30/30 with NO re-capture** (headless stub path leaves the mode
+undefined, physics + census untouched). Visual consequence: the coach cards
+now alpha-cut — re-shot via `look` after the fix.
+`look` re-run after the fix: 1/1 in 4.1 m, all shots regenerated 14:26–14:30.
+Coaches now alpha-cut (small red figures at the knoll, no opaque rectangles).
+The regenerated `scene.png` CONFIRMS the cone-cap defect strongly: the legacy
+dark-green cone caps poke well above the textured ridge bands mid-frame and
+read as clean "volcano tops" against the sky — item 2 of the list below is
+the most visible remaining scene defect. The regenerated `kicker.png` confirms
+the deck framing regression (deck planks fill the bottom ~45 % of frame; the
+kicker block is a small white shape behind it).
+*Note: the suite's `extract-terrain.spec.js` regenerated `blender/terrain.json`
+— the only diffs are the 8 ridge meshes' fog-mix albedo multipliers (iter 106's
+tint change finally landing in the generated artifact; geometry/positions
+byte-identical). Committed as artifact cutover, same class as the entry-105
+addendum.*
+
+**Shots + measurements (regenerated, this iteration):** scene.png corridor
+0.839 vs flankR 0.847 / flankL 0.814 →
 corridor/min-flank parity **1.031** (hard gate ≥ 0.98 ✓); sky r−b −0.097 in
 the top third (cloud-dominated band; the stricter zenith gate is measured
 elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
@@ -318,8 +341,7 @@ elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
 - `inrun.png` — corridor pale/lavender-tinged, B-net strands read faint at
   mid-distance; acceptable, matches entry-105 numbers.
 
-**Gaps vs plan/reference (re-prioritised for 111+):**
-1. venue-dressing test 4 failure (above) — first item of 111.
+1. ~~venue-dressing test 4~~ FIXED this iteration (see root cause above).
 2. kicker.png framing vs the iter-107 deck (camera fix, small).
 3. P6 cone caps through the ridge line (scene.png mid-frame) — last horizon
    defect; retire the legacy cone peaks now that the 3D ridges carry the
@@ -332,15 +354,18 @@ elsewhere); ridge band rows 30–48 % luminance std **0.192** (ridges3d gate
    exemption question from entry 105.
 
 **Open questions for the reviewer:**
-1. venue-dressing test 4: if solo-green, may I add a load-tolerant re-pick
-   window (same pattern as iter 102's double-seating) rather than a longer
-   timeout?
-2. Kicker camera vs deck placement: prefer moving the canonical kicker
+1. Kicker camera vs deck placement: prefer moving the canonical kicker
    camera, or relocating the deck further from the corridor?
-3. Entry 109's two open questions (15 m/s roll-seed ceiling; crash-spec
+2. Entry 109's two open questions (15 m/s roll-seed ceiling; crash-spec
    state-deterministic trigger refactor) remain unanswered.
+3. iter-108's verification claim ("venue-dressing 4/4") did not hold at HEAD;
+   the same build-snapshot mismatch may affect other iter-108 claims (golden
+   audit was re-verified independently and is consistent, so exposure is
+   limited to the alpha-mode gate). Flagging for the reviewer's awareness.
 
-*No source files changed this iteration; the only diff is this entry.*
+*Source diff this iteration: `game.js` (one guarded statement) and
+`tests/drive/venue-dressing.spec.js` (gate constant). No assets, no ASSET_V
+change.*
 
 ### 109 — Crash roll momentum seeded from the athlete's measured root speed at the
 trigger (reviewer entry-89 refinement (a)); golden re-captured 30/30, audit

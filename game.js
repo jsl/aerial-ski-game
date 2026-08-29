@@ -4173,9 +4173,13 @@ void main(void) {
         coachTex.hasAlpha = true;
         const coachMat = makePBR('knollCoachMat', scene);
         coachMat.albedoTexture = coachTex;
-        if (BABYLON.Material && BABYLON.Material.MATERIAL_ALPHATESTMODE !== undefined) {
-            coachMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATESTMODE;
-        }
+        // Alpha-cut: use the PBR constant (present in every Babylon build we
+        // ship against); MATERIAL_ALPHATESTMODE is undefined in some builds and
+        // silently left the mode at null (iter-110 review found this).
+        coachMat.transparencyMode = (BABYLON.PBRMaterial && BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST !== undefined)
+            ? BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST
+            : (BABYLON.Material && BABYLON.Material.MATERIAL_ALPHATESTMODE !== undefined
+                ? BABYLON.Material.MATERIAL_ALPHATESTMODE : undefined);
         coachMat.metallic = 0;
         coachMat.roughness = 0.9;
 

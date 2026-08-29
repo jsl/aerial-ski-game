@@ -344,8 +344,13 @@ test('venue dressing: three static coach figures in red jackets at the knoll, se
             const g = pickGround(s.x, s.z);
             return { x: s.x, z: s.z, baseY: s.baseY, g };
         });
-        const alphaTest = meshes[0].material.transparencyMode ===
-            BABYLON.Material.MATERIAL_ALPHATESTMODE;
+        // game.js sets PBRMATERIAL_ALPHATEST (MATERIAL_ALPHATESTMODE is
+        // undefined in some Babylon builds — iter-110 review finding); accept
+        // whichever constant the running build defines.
+        const AT = (BABYLON.PBRMaterial && BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST !== undefined)
+            ? BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST
+            : BABYLON.Material.MATERIAL_ALPHATESTMODE;
+        const alphaTest = meshes[0].material.transparencyMode === AT;
         const sameMat = meshes.every((m) =>
             m.material.uniqueId === meshes[0].material.uniqueId);
         return {
