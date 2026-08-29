@@ -1591,11 +1591,119 @@ def _girth_violations(r):
         bad.append(f'thigh/hip {r["thigh_hip"]:.3f}')
     if r['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
         bad.append(f'thighD/B {r["thigh_depth"]:.3f}')
-    if r['calf_hip'] < LEG_GIRTH_GATE['calf_hip']:
-        bad.append(f'calf/hip {r["calf_hip"]:.3f}')
+    # calf/hip is NOT a failure condition any more — it is the cause of item 11.
+    # As a LOWER bound with no counterpart it drove the shin radially out by
+    # x1.211, landing the shipped silhouette at calf/thigh 0.937 (measured,
+    # session 4): a calf as wide as the thigh, which is what the author saw.
+    # It is also not a real proportion: an adult reads ~0.28 here (calf breadth
+    # ~95 mm over hip breadth ~340 mm) against a gate demanding >= 0.40. The
+    # constraint that replaces it is leg_taper_gate — two-sided, on the shipped
+    # silhouette, and taken from the brief. Kept below as an instrument only.
     if r['chest_thigh'] > LEG_GIRTH_GATE['chest_thigh']:
         bad.append(f'chest/thigh {r["chest_thigh"]:.3f}')
     return bad
+
+
+# ── Item 11 (author, HUMAN TESTING #6: "calves look huge") ─────────────────
+# The leg TAPER, measured on the silhouette the eye actually sees (leg_profile's
+# median-filtered per-row widths) rather than on the bone-cluster cross-section
+# _leg_girth_ratios uses. The brief's numbers, as breadth ratios:
+#
+#   calf  ~= 0.70-0.75 x thigh at mid-segment
+#   ankle ~= 0.55 x calf
+#   the boot cuff is WIDER than the shin just above it, so the leg tapers INTO
+#   the boot instead of out of it.
+#
+# Bands are the brief's targets with measurement slack: these are silhouette
+# BREADTHS off a 2 cm row scan of a suited leg, not tape-measure circumferences
+# on skin, so a couple of points either side is measurement, not anatomy.
+LEG_TAPER_GATE = {
+    'calf_thigh': (0.60, 0.80),
+    'ankle_calf': (0.42, 0.72),
+}
+
+# Row windows, in metres of Blender Z. Landmarks: hip -0.275, knee -0.635,
+# ankle -0.995. The thigh belly is upper-mid femur, the calf belly is upper-mid
+# shin (a gastrocnemius sits high), the ankle is the narrowest row just above
+# the boot, the boot cuff the widest row below it.
+# Hard ceiling on one iteration's shin growth. The pass used to apply an
+# uncapped deficit ratio; anything above this is a sign the target is wrong,
+# not that the shin is thin.
+CALF_GROW_MAX = 1.06
+
+LEG_TAPER_BANDS = {
+    'thigh': (-0.58, -0.32),
+    'calf':  (-0.80, -0.66),
+    'ankle': (-0.95, -0.87),
+    'boot':  (-1.02, -0.95),
+}
+
+
+def leg_taper_report(body, tag):
+    """Thigh / calf / ankle / boot-cuff breadths off the rendered silhouette."""
+    prof = leg_profile(body, tag)
+    zs, ws = prof['zs'], prof['widths']
+
+    def rows(band):
+        lo, hi = LEG_TAPER_BANDS[band]
+        return [(z, w) for z, w in zip(zs, ws) if lo <= z <= hi]
+
+    def widest(band):
+        r = rows(band)
+        return max((w for _, w in r), default=None)
+
+    def narrowest(band):
+        r = rows(band)
+        return min((w for _, w in r), default=None)
+
+    thigh = widest('thigh')
+    calf = widest('calf')
+    ankle = narrowest('ankle')
+    boot = widest('boot')
+    # "the shin just above the boot": the lowest measured row that is still
+    # above the boot cuff band. This is what the cuff has to beat.
+    above = None
+    for z, w in zip(zs, ws):
+        if LEG_TAPER_BANDS['boot'][1] < z <= LEG_TAPER_BANDS['ankle'][1]:
+            above = w
+    if None in (thigh, calf, ankle, boot, above):
+        raise SystemExit(f'[body] leg taper: unmeasurable ({thigh}, {calf}, '
+                         f'{ankle}, {boot}, {above})')
+    r = {'thigh': thigh, 'calf': calf, 'ankle': ankle, 'boot': boot,
+         'shin_above_boot': above,
+         'calf_thigh': calf / thigh, 'ankle_calf': ankle / calf,
+         'boot_shin': boot / above}
+    ct, ac = LEG_TAPER_GATE['calf_thigh'], LEG_TAPER_GATE['ankle_calf']
+    log(f'{tag} leg taper: thigh {thigh*1000:.0f} calf {calf*1000:.0f} '
+        f'ankle {ankle*1000:.0f} boot {boot*1000:.0f} '
+        f'(shin above cuff {above*1000:.0f}) mm | '
+        f'calf/thigh {r["calf_thigh"]:.3f} (gate {ct[0]}-{ct[1]}), '
+        f'ankle/calf {r["ankle_calf"]:.3f} (gate {ac[0]}-{ac[1]}), '
+        f'boot/shin {r["boot_shin"]:.3f} (gate >= 1.0)')
+    return r
+
+
+def leg_taper_gate(body):
+    """HARD gate on the shipped taper. Negative control: BODY_SABOTAGE_CALF."""
+    sab = os.environ.get('BODY_SABOTAGE_CALF')
+    if sab:
+        f = float(sab)
+        for seg in ('lowerLegL', 'lowerLegR'):
+            _radial_girth(body, seg, f)
+        log(f'BODY_SABOTAGE_CALF={f}: shins re-inflated (negative control)')
+    r = leg_taper_report(body, 'shipped')
+    bad = []
+    for k in ('calf_thigh', 'ankle_calf'):
+        lo, hi = LEG_TAPER_GATE[k]
+        if not lo <= r[k] <= hi:
+            bad.append(f'{k} {r[k]:.3f} not in [{lo}, {hi}]')
+    if r['boot_shin'] < 1.0:
+        bad.append(f'boot cuff {r["boot"]*1000:.0f} mm is NARROWER than the '
+                   f'shin above it ({r["shin_above_boot"]*1000:.0f} mm) — the '
+                   f'leg flares out of the boot instead of tapering into it')
+    if bad:
+        raise SystemExit('[body] leg taper gate FAILED: ' + '; '.join(bad))
+    return r
 
 
 def leg_girth_pass(body):
@@ -1617,16 +1725,30 @@ def leg_girth_pass(body):
             if not bad:
                 break
             f_th = max(1.0, LEG_GIRTH_GATE['thigh_hip'] / r['thigh_hip'] * 1.02)
-            f_ca = max(1.0, LEG_GIRTH_GATE['calf_hip'] / r['calf_hip'] * 1.02)
-            if f_th == 1.0 and f_ca == 1.0:
+            if f_th <= 1.0:
                 break
             for seg in ('upperLegL', 'upperLegR'):
                 _radial_girth(body, seg, f_th)
-            for seg in ('lowerLegL', 'lowerLegR'):
-                _radial_girth(body, seg, f_ca)
-            log(f'girth-pass it{it}: thigh x{f_th:.3f} calf x{f_ca:.3f} '
+            log(f'girth-pass it{it}: thigh x{f_th:.3f} '
                 f'(open: {", ".join(bad)})')
             r = leg_girth_report(body, f'girth-pass it{it} out')
+        # ── Item 11: the shin is sized by the TAPER, not by calf/hip ───────
+        # It runs as its own loop and AFTER the thigh, because the thigh is the
+        # denominator: growing it first and then measuring is the only order in
+        # which one shin factor is correct. Target is the mid-band of the
+        # brief's 0.70-0.75, approached at most CALF_GROW_MAX per iteration so
+        # a bad measurement cannot inflate the shin the way calf/hip did.
+        ct_target = sum(LEG_TAPER_GATE['calf_thigh']) / 2
+        for it in range(6):
+            t = leg_taper_report(body, f'shin it{it}')
+            f_ca = ct_target / max(1e-6, t['calf_thigh'])
+            if f_ca <= 1.005:
+                break
+            f_ca = min(CALF_GROW_MAX, f_ca)
+            for seg in ('lowerLegL', 'lowerLegR'):
+                _radial_girth(body, seg, f_ca)
+            log(f'shin it{it}: calf x{f_ca:.3f} '
+                f'(calf/thigh {t["calf_thigh"]:.3f} -> target {ct_target:.3f})')
         r = leg_girth_report(body, 'girth-pass out')
     bad = _girth_violations(r)
     if bad:
@@ -3649,7 +3771,8 @@ def leg_profile(body, tag):
     log(f'{tag} profile shape: worst dip {worst_dip * 1000:.1f} mm (a waist may '
         f'do this); worst SLOPE STEP {worst_step * 1000:.1f} mm per 2 cm '
         f'at z={step_z:+.3f}')
-    return {'dip': worst_dip, 'dip_z': dip_z, 'step': worst_step, 'step_z': step_z}
+    return {'dip': worst_dip, 'dip_z': dip_z, 'step': worst_step, 'step_z': step_z,
+            'zs': [z for z, _ in rows], 'widths': widths}
 
 
 def rigid_boots(body, arm, joints):
@@ -5496,6 +5619,10 @@ def main():
     straighten_chest(body)
     crown_probe(body, lm, 'after straighten_chest')
     leg_girth_pass(body)
+    # Item 11: the girth pass runs AFTER relax_suit and after the last
+    # leg_profile, so until now NOTHING measured the shipped leg. Measure and
+    # gate the taper here, on the geometry that is actually exported.
+    leg_taper_gate(body)
     crown_cap_last(body, lm)
     helmet_centre_probe(body, lm, 'after crown_cap_last')
     build_report(body, 'after girth ')
