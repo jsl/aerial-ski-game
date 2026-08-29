@@ -202,6 +202,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ## Status board
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
+| — | Iteration 119 | **119 bundle LANDED — night mode made author-reachable + visible (settings toggle w/ localStorage reload, start-plateau + kicker-backlight floods, ambient raise, dimmer/denser flakes), generic blue/white kicker side panels (P3 gap), chop displacement raised to 0.095 + bump level 1.7; pike pose-shot instrument NOT done (open)** | night.spec 1/1 (9 warm spots incl. start flood aimed at the athlete; clearColor lum 0.0039, snow region mean 0.24, lit-pool lum 0.55+ r−b>0, athlete band 0.25+); venue-dressing 5/5 (6 panel ribbons hugging the wall planes ≤ 5 mm, cornerMat red untouched); chop.spec 1/1 (worstSink 0.093 ≤ 0.101, landing p95−p5 luminance > 0.10); unit 81/81, golden 30/30 CENSUS-ONLY re-capture (verify diffs were kickerPanel0/1/2 node presence only, audit-physics-state 0 diffs ×30); look NOT re-run this iter (run-all > 30 min under SwiftShader, budget killed it) — see open items. See entry 119. |
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
 | — | Iteration 116 | **cone-peak range RE-LANDED — entry-113/114 blockers root-caused: the PEAKS x/z/height data was never applied (all 11 cones at the world origin, occluding the ridges = bitwise-identical mask-collapse frames AND the face-back dark wall); peaks now positioned, 30 m snowline** | ridges3d 4/4 (mask 0.088 / mean 0.514 / std 0.182; fogged control discriminates 0.644/0.100), look 1/1, golden re-captured CENSUS-ONLY (5408 frames byte-identical after stripping pk_body_*), unit 78/78. See entry 116. |
@@ -7894,8 +7895,82 @@ change).
   in night mode.
 - Halation around the lights (bloom) is not tuned: the pipeline block is the
   Opus lane per the standing rule, so the bloom threshold was left alone.
+
 - Pool positions are analytic from the corridor constants; poles are terrain-
   seeded like the wands (which have that gate) but verified by screenshot
   only.
 
 **Open questions for the reviewer:** none new.
+
+### 119 — night mode reachable + readable (toggle, start/back floods, ambient,
+flakes), kicker side panels, chop visibility; pike instrument open
+
+Reviewer note on 118 (18:45) + order for 119 followed. No `docs/NEXT.md`; no
+athlete/DoF/pipeline files touched.
+
+**What changed:**
+- `index.html`: new Settings row "Night / snowfall" (`#nightModeBtn`), wired
+  like the other toggles but `location.reload()` on click (the mode is
+  decided at scene build). Persisted in localStorage `aerialNight`; hotkey-free.
+- `game.js`: `_nightParam` now also reads `_lsGet('aerialNight') === '1'`
+  (stub/node-safe: `_lsGet` is the existing try/catch wrapper). Night block:
+  hemi 0.06 → 0.27 (cold blue 0.30/0.34/0.46) so snow reads blue-grey like
+  IMG_3396; two new floods — `nightFloodStart` pole on the start plateau AIMED
+  at the athlete's rest position (SLOPE_START_Z + 2; the reviewer's shot had
+  the athlete invisible against dark snow), and `nightFloodBack` high behind
+  the landing aimed up-slope so the jumper reads backlit in flight (9 spots
+  total). Snowfall: emitRate 1100 → 1600, size 0.04–0.11 → 0.06–0.12, alpha
+  0.85/0.6 → 0.55/0.40 (denser near camera but the sky still reads dark).
+- `game.js`: generic kicker side panels (P3 gap) — per side, three ribbons
+  (blue field 0–52%, white band 52–68%, blue 68–94% of wall height) hugging
+  the block wall planes at x = ±(1.7 − 0.02), sampled from the same bezier
+  `samples` as the red edge tubes; `kickerPanelBlue`/`kickerPanelWhite` PBR,
+  no marks (plan rule 3); try/catch for the golden stub. Instrument
+  `window._kickerPanels`.
+- `game.js`: chop visibility — `_chopAmp` 0.07 → 0.095 (still inside the
+  ≤ 0.10 m chopped-landing sink band) and `landingMat.bumpTexture.level = 1.7`.
+  The reviews' "landing reads smooth white" was measured true: 7 cm peak sink
+  and a level-1 normal map washed out at gameplay distance.
+- `tests/drive/night.spec.js`: spotCount 7 → 9; the "sky < 0.16" image gate
+  was measuring LIT CORRIDOR at the ready framing (the scene is intentionally
+  brighter now) — replaced by clearColor lum < 0.05 + fogColor lum < 0.05
+  (an up-looking camera probe is unusable: ArcRotate beta → π puts the eye
+  below the terrain). New reviewer gates: snow region mean 0.15–0.30 and
+  athlete band lum ≥ 0.25; settings-toggle presence check.
+- `tests/drive/venue-dressing.spec.js`: test 5 — 6 panel ribbons, 2 materials,
+  wall-plane seating ≤ 5 mm, span inside the kicker window, cornerMat still
+  red 0.85/0.07/0.05 with all six edge tubes present (author ruling intact).
+- `tests/drive/chop.spec.js` (new): `_chopStats.worstSink` in (0.05, 0.101]
+  and landing-frame luminance p95−p5 > 0.10 from a low camera over the
+  landing.
+
+**Verification:** night.spec 1/1 (clearColor 0.0039, fog dark, snow region
+mean in band, lit-pool brightest-2% lum 0.55+ warm, athlete band ≥ 0.25,
+toggle present); venue-dressing 5/5; chop.spec 1/1; unit 81/81; golden 30/30
+after a CENSUS-ONLY re-capture — the verify diffs were exactly
+`kickerPanel0/1/2: absent → present` in frame[0], no state fields; day-mode
+code paths untouched.
+
+**Open / not done:**
+- **Pike pose-shot instrument NOT done.** The ordered item "pose-shot pike
+  camera instrument fix" is ambiguous from the progress file and the current
+  `pose_pike_front/side.png` (18:33) pass their gates; my reading of the
+  shots: the front view has a large out-of-focus terrain wedge crossing the
+  frame and the instrument's dark-pixel span is dominated by the black SKIS
+  rather than the body (the pike suit is white). If the reviewer meant
+  either, say so and I'll fix it in 120; if something else, please pin it.
+- Night takeoff puff / landing cloud variants of `_spawnSnowBurst` (the other
+  half of the 18:45 note) NOT done — out of time; the two new floods and the
+  ambient raise are in.
+- `look` was not re-run after the changes (a run-all attempt exceeded 30 min
+  under SwiftShader and the 60-minute session budget killed it; targeted
+  specs + unit + golden are green). The night-mode screenshot in
+  `night.spec`'s artifacts was inspected by eye: blue-grey corridor, three+
+  warm pools with dark falloff, B-net and poles silhouetted — close to
+  IMG_3396. `scene.png` day view and ASSET_V unchanged (no `assets/` change).
+
+**Open questions for the reviewer:** (1) pin the pike pose-shot instrument
+defect (see above); (2) ok that the golden census re-capture rode in this
+commit (precedent: iters 109/116 census-only re-captures), state audited
+identical; (3) 120 should carry the night puff/cloud variants + the pike
+instrument unless re-prioritised.

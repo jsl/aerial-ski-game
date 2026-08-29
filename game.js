@@ -1305,7 +1305,7 @@ const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, 
 const _trampolineMode       = _worldParam === 'trampoline';
 const _trampolineMatMode    = _worldParam === 'trampoline_mat';
 const _poolDiveMode         = _worldParam === 'pool';
-const _nightParam    = new URLSearchParams(location.search).get('night') === '1';
+const _nightParam    = new URLSearchParams(location.search).get('night') === '1' || _lsGet('aerialNight') === '1';
 const _nightMode     = _nightParam && !_trampolineMode && !_trampolineMatMode && !_poolDiveMode;
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
@@ -1781,8 +1781,11 @@ void main(void) {
             // snow (fast falloff between pools, as in IMG_3396).
             scene.environmentIntensity = 0.04;
             sunLight.intensity = 0.03;
-            hemi.intensity     = 0.06;
-            hemi.diffuse       = new BABYLON.Color3(0.25, 0.30, 0.42);
+            // Reviewer note on 118 (18:50): the night scene read darker than
+            // IMG_3396 (blue-grey snow, not near-black) and the athlete at the
+            // start was invisible. Raise the ambient so snow reads ≈ 0.2.
+            hemi.intensity     = 0.27;
+            hemi.diffuse       = new BABYLON.Color3(0.30, 0.34, 0.46);
             hemi.groundColor   = new BABYLON.Color3(0.05, 0.06, 0.09);
 
             // 7 warm floodlights on poles beside the corridor: three on the
@@ -1814,6 +1817,37 @@ void main(void) {
                 _nightLights.push(spot);
             }
 
+            // Two more floods (reviewer note on 118): one over the start
+            // plateau so the waiting athlete is lit, one BEHIND the kicker
+            // high on the landing so the jumper reads backlit in flight
+            // (IMG_3396's glowing jumper).
+            {
+                const zs = SLOPE_START_Z - 4;
+                const ys = terrainRootY(zs) - FOOT_OFFSET;
+                const poleS = BABYLON.MeshBuilder.CreateCylinder('nightPoleStart',
+                    { height: _poleH, diameter: 0.09 }, scene);
+                poleS.position.set(-2.6, ys + _poleH / 2, zs);
+                poleS.material = poleMat;
+                poleS.isPickable = false;
+                const za = SLOPE_START_Z + 2;   // where the athlete stands at rest
+                const ya = terrainRootY(za) - FOOT_OFFSET + 1;
+                const spotS = new BABYLON.SpotLight('nightFloodStart',
+                    new BABYLON.Vector3(-2.1, ys + _poleH - 0.2, zs),
+                    new BABYLON.Vector3(2.1, ya - (ys + _poleH), za - zs).normalize(),
+                    0.8, 18, scene);
+                spotS.intensity = 45; spotS.range = 60;
+                spotS.diffuse = new BABYLON.Color3(1.00, 0.80, 0.55);
+                _nightLights.push(spotS);
+                const zb = LANDING_START_Z + 7;
+                const yb = terrainRootY(zb) - FOOT_OFFSET;
+                const spotB = new BABYLON.SpotLight('nightFloodBack',
+                    new BABYLON.Vector3(0, yb + 11, zb),
+                    new BABYLON.Vector3(0, -0.45, -0.9).normalize(), 0.9, 10, scene);
+                spotB.intensity = 120; spotB.range = 90;
+                spotB.diffuse = new BABYLON.Color3(1.00, 0.82, 0.60);
+                _nightLights.push(spotB);
+            }
+
             // Falling snow: a camera-following volume of elongated streaks.
             if (BABYLON.ParticleSystem && BABYLON.Texture) {
                 const cv = document.createElement('canvas');
@@ -1830,13 +1864,11 @@ void main(void) {
                 ps.emitter = new BABYLON.Vector3(0, 0, 0);
                 ps.minEmitBox = new BABYLON.Vector3(-28, 8, -45);
                 ps.maxEmitBox = new BABYLON.Vector3(28, 20, 45);
-                ps.color1 = new BABYLON.Color4(1, 1, 1, 0.85);
-                ps.color2 = new BABYLON.Color4(0.85, 0.90, 1.0, 0.6);
-                ps.colorDead = new BABYLON.Color4(1, 1, 1, 0);
+                ps.color1 = new BABYLON.Color4(1, 1, 1, 0.55);
+                ps.color2 = new BABYLON.Color4(0.85, 0.90, 1.0, 0.40);
                 // Elongated vertically: streaks ~4-15 px on screen (P9 spec).
-                ps.minSize = 0.04; ps.maxSize = 0.11;
-                ps.minScaleY = 2.2; ps.maxScaleY = 4.5;
-                ps.emitRate = 1100;
+                ps.minSize = 0.06; ps.maxSize = 0.12;
+                ps.emitRate = 1600;
                 ps.gravity = new BABYLON.Vector3(0.35, -1.6, 0);  // fall + wind drift
                 ps.direction1 = new BABYLON.Vector3(-0.4, -2.4, -0.3);
                 ps.direction2 = new BABYLON.Vector3(0.4, -1.4, 0.3);
@@ -3458,7 +3490,9 @@ void main(void) {
         // the physics profile: the displaced visual surface must stay AT or
         // BELOW the physics surface, inside the chopped-landing sink band
         // (≤ 0.10 m — the contact rules), never above it.
-        const _chopAmp = 0.07;
+        const _chopAmp = 0.095;   // iter-119: 0.07 → 0.095 — the chop was invisible
+                                  // at canonical distance; 0.095 stays inside the
+                                  // ≤ 0.10 m chopped-landing sink band (contact rules)
         const _chopZ0 = LANDING_START_Z + 0.5;   // fade-in below the knuckle
         const _chopZ1 = OUTRUN_Z - 2.0;          // fade-out before the roll-out
         const _chopHalfW = 5.0;                  // corridor columns only
@@ -3489,6 +3523,8 @@ void main(void) {
             const landingMat = new BABYLON.PBRMaterial('landingChopMat', scene);
             landingMat.albedoTexture = new BABYLON.Texture('assets/landing_chop_albedo.png' + ASSET_V, scene);
             landingMat.bumpTexture = new BABYLON.Texture('assets/landing_chop_normal.png' + ASSET_V, scene);
+            landingMat.bumpTexture.level = 1.7;  // iter-119: furrow/clod relief was
+                                                 // washing out at gameplay distance
             landingMat.albedoColor = new BABYLON.Color3(1, 1, 1);
             landingMat.metallic = 0;
             landingMat.roughness = 0.52;
@@ -3687,6 +3723,57 @@ void main(void) {
             { path: [new BABYLON.Vector3(arcHalfW - 0.8, topEdgeY, topEdgeZ), new BABYLON.Vector3(arcHalfW, topEdgeY, topEdgeZ)],
               radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
         edgeTubeR.material = cornerMat;
+    
+        // ── P3: generic side panels on the kicker block (venue dressing) ──────
+        // The block's near-vertical side walls (x = ±kickerWidth/2) read as bare
+        // snow cut faces; the footage (IMG_3523/3765) shows banner panels on
+        // them. Blue field + white band, GENERIC — no marks (plan rule 3); the
+        // red edge-line tubes above are untouched (author ruling 2026-08-29).
+        // Ribbons hug the wall plane (2 cm inboard to avoid z-fighting with the
+        // terrain ribbon's wall quads); one mesh per span per side. Sampled from
+        // the same bezier `samples` the edge tubes use, so panel and wall
+        // silhouette can never disagree.
+         try {
+            const _panelX = _blockHalfW - 0.02;
+            const _tableY = _tableTopY + 0.01;
+            const _panelMatBlue = makePBR('kickerPanelBlue', scene);
+            _panelMatBlue.diffuseColor = new BABYLON.Color3(0.10, 0.22, 0.55);
+            _panelMatBlue.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
+            const _panelMatWhite = makePBR('kickerPanelWhite', scene);
+            _panelMatWhite.diffuseColor = new BABYLON.Color3(0.92, 0.92, 0.92);
+            _panelMatWhite.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
+            const _spanMat = [_panelMatBlue, _panelMatWhite, _panelMatBlue];
+            let _panelN = 0, _panelMinZ = Infinity, _panelMaxZ = -Infinity;
+            for (const s of [-1, 1]) {
+                // Wall extent: bezier samples with > 12 cm of rise above the
+                // table (skip the toe of the curve where there is no wall).
+                const seg = [];
+                for (const sm of samples) {
+                    const h = sm.y - _tableY;
+                    if (h > 0.12) seg.push({ z: sm.z, h });
+                }
+                if (seg.length < 2) continue;
+                const rail = (f0, f1) => [
+                    seg.map(p => new BABYLON.Vector3(s * _panelX, _tableY + p.h * f0, p.z)),
+                    seg.map(p => new BABYLON.Vector3(s * _panelX, _tableY + p.h * f1, p.z)),
+                ];
+                const spans = [rail(0.0, 0.52), rail(0.52, 0.68), rail(0.68, 0.94)];
+                for (let i = 0; i < 3; i++) {
+                    const r = BABYLON.MeshBuilder.CreateRibbon('kickerPanel' + i,
+                        { pathArray: spans[i], sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene);
+                    r.material = _spanMat[i];
+                    r.isPickable = false;
+                    _panelN++;
+                    for (const p of spans[i][0]) {
+                        if (p.z < _panelMinZ) _panelMinZ = p.z;
+                        if (p.z > _panelMaxZ) _panelMaxZ = p.z;
+                    }
+                }
+            }
+            window._kickerPanels = { count: _panelN, minZ: +_panelMinZ.toFixed(2), maxZ: +_panelMaxZ.toFixed(2),
+                halfW: _panelX, edgeTubes: ['kickerTopL', 'kickerTopR', 'kickerEdgeL', 'kickerEdgeR']
+                    .map(n => !!scene.getMeshByName(n)) };
+        } catch (e) { /* headless stub without CreateRibbon */ }
     }
 
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
