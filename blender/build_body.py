@@ -138,6 +138,14 @@ BIB        = (0.55, 0.72, 0.88)      # powder-blue competition bib
 BIB_NUMBER = (0.95, 0.96, 0.97)      # white number patch on the bib
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
+# OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
+# short of the binding (author/reviewer, session 4 (c)) — the boot GEOMETRY has
+# existed since `rigid_boots`/`seat_soles` and is already gated by
+# `leg_taper_gate`'s cuff band, but nothing ever PAINTED it, so the suit ran
+# white all the way onto the ski. A dark shell is also half of item 11: a calf
+# only reads as over-inflated if there is no boot for it to taper into.
+BOOT       = (0.07, 0.075, 0.09)     # moulded shell: near-black plastic, darker than the glove
+BOOT_CUFF  = (0.17, 0.18, 0.21)      # the liner lip at the top of the shell, so the boot has an edge
 HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
 # OPUS ITEM 1: a MIRRORED lens. The old (0.04,0.06,0.08) was DARKER and less
@@ -164,6 +172,37 @@ GOGGLE_RIM = (0.14, 0.15, 0.17)   # dark goggle frame between the lens and the s
 # never again be moved in one pass and not the others.
 LENS_LO = float(arg('--lens-lo', '0.40'))   # band bottom (above the nose tip)
 LENS_HI = float(arg('--lens-hi', '0.57'))   # band top (just under the front rim, 0.58)
+
+# OPUS ITEM 12: where the boot starts, in the shin's own `along` coordinate
+# (segment_frame: hip +1 -> ankle -1, CLAMPED, so the whole foot below the shin
+# sits at exactly -1.0). This is not a new number — it is the cuff step the rest
+# of the pipeline already agrees on: LEG_TAPER_BANDS['boot'] tops out at
+# z = -0.95, which on the 0.36 m shin (knee -0.635, ankle -0.995) is along
+# -0.75, and SUIT_FOLDS' 'boot-cuff' crease band is documented against the same
+# step. Painting from it puts the shell exactly on the geometry that was built
+# for it, and leaves the crease bunching just above the cuff where cloth does.
+#
+# MEASURED, and it moved the number: the segment model has NO FOOT BELOW THE
+# ANKLE. `seat_soles` lands the sole at z=-0.995 and the shin's own ankle end is
+# z=-0.995 too, so the cuff step at along -0.74 leaves only 47 mm of mesh under
+# it — a dark rim, not a boot. The boot on this rig has to be the LOWER SHIN,
+# which is also what a real ski boot is: the shell runs from the ski up past the
+# ankle and the cuff closes around the calf. -0.40 puts the cuff 108 mm above
+# the ski on a 360 mm shin, clear of the calf belly the taper gate measures at
+# z -0.80..-0.66, so the calf still shows above the shell and tapers into it.
+BOOT_ALONG = -0.40          # cuff top: below this the leg is boot, not suit
+BOOT_LIP_ALONG = -0.46      # the top of the shell is the lighter liner lip (~11 mm)
+# boot_paint_gate thresholds. SUIT reads luma 0.816 and BOOT 0.075, so the
+# light/dark split at 0.45 sits in empty space between them; the 2% allowance
+# covers the handful of verts the smart-project seam and the sole/ski contact
+# leave straddling the step.
+BOOT_LIGHT_LUMA = 0.45
+BOOT_LIGHT_FRAC = 0.02
+BOOT_DARK_MAX = 0.20
+BOOT_HEIGHT_MIN = 0.09      # metres of shell from the sole to the cuff lip
+# Negative control for the boot gate: skip the boot paint and ship the white
+# blob this project shipped up to session 9.
+SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -4754,9 +4793,33 @@ SUIT_FOLDS = {
                  ('glove-cuff', -0.70, 0.18, 0.0015, 2.0, None)],
     'upperLeg': [('knee', -0.88, 0.24, 0.0019, 2.0, None),
                  ('hip', 0.86, 0.22, 0.0014, 2.0, 0.25)],
+    # OPUS ITEM 12 tried to raise 'boot-cuff' to (-0.26, 0.13) so the crease
+    # bunches ABOVE the new boot shell instead of creasing rigid plastic, and
+    # REVERTED it — not because the placement was wrong, but because measuring
+    # it showed the move is worth nothing and costs a gate. rig.spec.js's
+    # crease-band variance gate reads 57159 with this band and 43692 with the
+    # raised one, and the 13600 difference is not fold relief: a folds-OFF bake
+    # (BODY_SABOTAGE_FOLDS=1) scores 43095 and a weave-OFF bake
+    # (BODY_SABOTAGE_WEAVE=1) scores 42362, i.e. everything displace_suit
+    # writes moves that metric by under 3%. The old window's extra 62732 texels
+    # carry mean |Laplacian| ~100000, double any cloth band — they are the
+    # BOOT's hard geometry edges. So the gate's dynamic range is the boot, the
+    # fold placement is invisible either way, and moving the band only blinds
+    # the gate. Reviewer question in docs/OPUS-NOTES.md; the placement belongs
+    # with item 3's fold design, once folds are deep enough to measure.
     'lowerLeg': [('knee', 0.80, 0.22, 0.0017, 2.0, None),
                  ('boot-cuff', -0.62, 0.18, 0.0015, 2.0, None)],
 }
+
+# NEGATIVE CONTROL for rig.spec.js's crease-band variance gate ("fabric folds
+# read at the creases"): flatten every fold band, which is precisely the
+# "folds lost" failure that gate exists to catch. The weave micro-normal and
+# the joint bunching are left alone, so what this isolates is the FOLDS.
+SABOTAGE_FOLDS = os.environ.get('BODY_SABOTAGE_FOLDS') == '1'
+SABOTAGE_WEAVE = os.environ.get('BODY_SABOTAGE_WEAVE') == '1'
+if SABOTAGE_FOLDS:
+    SUIT_FOLDS = {k: [(z, a0, w, 0.0, c, fb) for (z, a0, w, _a, c, fb) in v]
+                  for k, v in SUIT_FOLDS.items()}
 
 
 def displace_suit(obj, lm):
@@ -4822,7 +4885,12 @@ def displace_suit(obj, lm):
             # cloth its weave for real (item 3's "fine woven fabric
             # micro-normal"), not to drop the floor to what the torn mesh
             # happened to score.
-            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0021
+            # NEGATIVE CONTROL for the crease-band variance gate: the weave IS
+            # the relief that gate actually measures (folds contribute 1.4% —
+            # see the gate's header in rig.spec.js), so erasing it is the
+            # "suit relief erased" failure, and the gate must reject it.
+            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) \
+                * (0.0 if SABOTAGE_WEAVE else 0.0021)
 
             # Fabric folds (task 3, folds slice): structured compression
             # ridges at the crease planes — see SUIT_FOLDS. Where a fold band
@@ -4907,12 +4975,20 @@ def displace_suit(obj, lm):
     # elbow 1612, glove-cuff 621, hip 496, knee 1806 — floored at 40% so a
     # re-placed band (or a segment rename that orphans SUIT_FOLDS keys) fails
     # the build instead of silently flattening the creases.
+    #
+    # (Item 12 briefly re-baselined boot-cuff to 1112 for a raised band; the
+    # band move was reverted, so this reference is back to the measured 3312.
+    # The gate caught that move exactly as designed, at 34% of the floor.)
     FOLD_GATE = 0.40
     fold_ref = {'armpit': 836, 'boot-cuff': 3312, 'elbow': 1612,
                 'glove-cuff': 621, 'hip': 496, 'knee': 1806}
     missing = [z for z, n in fold_ref.items()
                if fold_hit.get(z, 0) < n * FOLD_GATE]
-    if missing:
+    if missing and SABOTAGE_FOLDS:
+        log(f'BODY_SABOTAGE_FOLDS=1: fold population gate bypassed ({missing}) '
+            f'— this build exists only to be REJECTED by the crease-band '
+            f'variance gate in the browser')
+    elif missing:
         raise SystemExit(
             f'[body] fold gate FAILED: zones below {FOLD_GATE:.0%} of the '
             f'reference population: ' + ', '.join(
@@ -5023,6 +5099,17 @@ def paint_suit(obj, lm):
             # three fifths that hold the actual number. That band, not the
             # digits, was ~70% of the back face's 0.4099 navy fraction.
             col, tag = WAIST, 'waist'
+        elif name.startswith('lowerLeg') and along < BOOT_ALONG \
+                and not SABOTAGE_BOOT:
+            # OPUS ITEM 12: the ski boot. Everything below the cuff step is a
+            # dark moulded shell, with a lighter liner lip along its top edge so
+            # the boot has a visible rim instead of dissolving into a black sock
+            # — the same trick the glove cuff uses at along -0.78. The stripe is
+            # deliberately NOT reachable from here: a leg stripe runs hip to
+            # cuff on the SUIT and stops at the boot, and letting the branch
+            # below paint it would have run royal blue down the shell.
+            col, tag = ((BOOT_CUFF, 'bootlip') if along >= BOOT_LIP_ALONG
+                        else (BOOT, 'boot'))
         elif name.startswith(('upperLeg', 'lowerLeg')):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
@@ -5089,16 +5176,97 @@ def paint_suit(obj, lm):
     # condition never fires produces no error and no warning — the bake simply
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
-    missing = [t for t in ('suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
-                           'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
-                           'lip', 'noshade')
-               if counts.get(t, 0) == 0]
+    required = ['suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
+                'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
+                'lip', 'noshade']
+    if not SABOTAGE_BOOT:
+        required += ['boot', 'bootlip']
+    missing = [t for t in required if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
             f'[body] these suit regions matched no vertices: {missing}. Their '
             f'conditions are wrong for the reference pose, and the bake would '
             f'silently omit them.')
     return counts
+
+
+
+def boot_paint_gate(obj):
+    """
+    OPUS ITEM 12 hard gate: the leg must END IN A BOOT.
+
+    The reviewer's session-4 finding (c) was that the leg "ends in a white blob
+    that stops short of the binding", and the diagnosis in session 3 added why
+    it matters for item 11: a calf only reads as over-inflated when there is no
+    dark shell for it to taper into. The GEOMETRY for the boot has been there
+    since `rigid_boots`/`seat_soles`, and `leg_taper_gate` already measures its
+    cuff breadth — what was missing was paint, and a paint region that is
+    simply absent produces no error, exactly the failure mode `paint_suit`'s
+    `missing` check exists for. That check only proves the region matched SOME
+    vertices, though; this one proves it matched the RIGHT ones, on the mesh
+    the bake reads.
+
+    Three assertions, all on the painted high-poly:
+
+      dark      the shell's mean luma is boot-plastic dark, not grey suit;
+      covered   almost no shin/foot vertex below the cuff step is still light —
+                this is the white blob itself, so it is the assertion the
+                negative control trips;
+      tall      the painted band spans a boot's worth of height from the sole,
+                so a shell that collapses to a sliver at the cuff fails.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_BOOT=1 skips the boot branch in
+    `paint_suit`, which reproduces the skin this project shipped up to session 9
+    — and this gate must reject it.
+    """
+    attr = obj.data.color_attributes.get('suit')
+    if attr is None:
+        raise SystemExit('[body] boot gate: no "suit" colour attribute')
+    own = dominant_segments(obj)
+
+    def luma(c):
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    lumas, zs = [], []
+    light = 0
+    for i, v in enumerate(obj.data.vertices):
+        nm = own[i]
+        if nm not in ('lowerLegL', 'lowerLegR'):
+            continue
+        c = bl(nm)
+        half = SEGMENTS[nm]['h'] / 2
+        if v.co.z >= c.z + BOOT_ALONG * half:
+            continue                       # above the cuff step: suit, not boot
+        y = luma(attr.data[i].color)
+        lumas.append(y)
+        zs.append(v.co.z)
+        if y > BOOT_LIGHT_LUMA:
+            light += 1
+    if len(lumas) < 200:
+        raise SystemExit(
+            f'[body] boot gate: only {len(lumas)} vertices below the cuff step '
+            f'— the shin ownership or the step moved, so nothing is measured')
+    mean = sum(lumas) / len(lumas)
+    frac = light / len(lumas)
+    span = max(zs) - min(zs)
+    log(f'boot paint: {len(lumas)} verts below the cuff step, mean luma '
+        f'{mean:.3f} (gate <= {BOOT_DARK_MAX}), light {light} = {frac:.4f} '
+        f'(gate <= {BOOT_LIGHT_FRAC}), shell height {span * 1000:.0f} mm '
+        f'(gate >= {BOOT_HEIGHT_MIN * 1000:.0f})')
+    bad = []
+    if mean > BOOT_DARK_MAX:
+        bad.append(f'mean luma {mean:.3f} > {BOOT_DARK_MAX} — the shell is not '
+                   f'dark boot plastic')
+    if frac > BOOT_LIGHT_FRAC:
+        bad.append(f'{frac:.4f} of the boot band is still LIGHT (> '
+                   f'{BOOT_LIGHT_LUMA}) — that is the white blob running onto '
+                   f'the ski')
+    if span < BOOT_HEIGHT_MIN:
+        bad.append(f'shell only {span * 1000:.0f} mm tall (>= '
+                   f'{BOOT_HEIGHT_MIN * 1000:.0f} mm)')
+    if bad:
+        raise SystemExit('[body] BOOT PAINT GATE FAILED: ' + '; '.join(bad))
+    return {'mean': mean, 'light_frac': frac, 'span': span, 'n': len(lumas)}
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
@@ -5522,6 +5690,7 @@ def make_highpoly(low, lm):
 
     displace_suit(high, lm)
     paint_suit(high, lm)
+    boot_paint_gate(high)
 
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')

@@ -1175,6 +1175,11 @@ test('fabric folds read at the creases (suit normal-map variance)', async ({ pag
         // dilated 1 cell to cover triangle interiors between verts
         const GRID = 512, CELL = 4;
         const occ = new Uint8Array(GRID * GRID);
+        // OPUS: which ZONE claimed each cell, so the metric can be broken down
+        // per band. The aggregate mean alone cannot say whether a fall is
+        // "the folds got shallower" or "one band moved onto flat cloth", and
+        // item 12 moved the boot-cuff band, so it had to be able to say.
+        const cellZone = new Array(GRID * GRID).fill(null);
         for (const [nm, y, i, part] of skinned) {
             for (const [zone, re, yLo, yHi] of bands) {
                 if (y < yLo || y > yHi || !re.test(nm)) continue;
@@ -1187,8 +1192,11 @@ test('fabric folds read at the creases (suit normal-map variance)', async ({ pag
                 for (let du = -1; du <= 1; du++)
                     for (let dv = -1; dv <= 1; dv++) {
                         const uu = u + du, vv = v + dv;
-                        if (uu >= 0 && uu < GRID && vv >= 0 && vv < GRID)
+                        if (uu >= 0 && uu < GRID && vv >= 0 && vv < GRID) {
                             occ[vv * GRID + uu] = 1;
+                            if (cellZone[vv * GRID + uu] === null)
+                                cellZone[vv * GRID + uu] = zone;
+                        }
                     }
                 break;
             }
@@ -1204,26 +1212,49 @@ test('fabric folds read at the creases (suit normal-map variance)', async ({ pag
         const W = cv.width, H = cv.height;
         const R = (x, y) => px[(y * W + x) * 4];
         let sum = 0, n = 0;
+        const zSum = {}, zN = {};
+        const RADII = [1, 2, 4, 6, 8, 12, 16];
+        const radSum = {}, radN = {};
+        for (const rr of RADII) { radSum[rr] = 0; radN[rr] = 0; }
         for (let gy = 0; gy < GRID; gy++)
             for (let gx = 0; gx < GRID; gx++) {
                 if (!occ[gy * GRID + gx]) continue;
+                const zone = cellZone[gy * GRID + gx];
                 const x0 = gx * CELL, y0 = gy * CELL;
                 for (let dy = 0; dy < CELL; dy++)
                     for (let dx = 0; dx < CELL; dx++) {
                         const x = x0 + dx, y = y0 + dy;
                         if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1)
                             continue;
+                        for (const rad of RADII) {
+                            if (x < rad || y < rad || x >= W - rad
+                                || y >= H - rad) continue;
+                            const l = 4 * R(x, y) - R(x - rad, y)
+                                - R(x + rad, y) - R(x, y - rad)
+                                - R(x, y + rad);
+                            radSum[rad] += Math.abs(l);
+                            radN[rad]++;
+                        }
                         const l = 4 * R(x, y) - R(x - 1, y) - R(x + 1, y)
                             - R(x, y - 1) - R(x, y + 1);
                         sum += Math.abs(l);
                         n++;
+                        zSum[zone] = (zSum[zone] || 0) + Math.abs(l);
+                        zN[zone] = (zN[zone] || 0) + 1;
                     }
             }
         bmp.close && bmp.close();
+        const perZone = {};
+        for (const z of Object.keys(zN))
+            perZone[z] = { mean: +(zSum[z] / zN[z] * 1e4).toFixed(0),
+                           texels: zN[z] };
         return {
             metric: n ? +(sum / n * 1e4).toFixed(2) : 0,
             texels: n,
             bands: perBand,
+            perZone,
+            radii: Object.fromEntries(RADII.map(rr =>
+                [rr, +(radSum[rr] / Math.max(1, radN[rr]) * 1e4).toFixed(0)])),
         };
     });
 
@@ -1236,6 +1267,32 @@ test('fabric folds read at the creases (suit normal-map variance)', async ({ pag
     }
     // Floor = folds build − 18% (see header): the smoothing guard. A pass
     // that erases the suit's relief collapses far below it.
+    //
+    // OPUS ITEM 12 — WHAT THIS NUMBER IS ACTUALLY MADE OF, measured, because
+    // the boot paint moved the boot-cuff band and the gate went red. The
+    // metric is ~97% INSENSITIVE to everything `displace_suit` writes:
+    //
+    //   shipped (folds + weave)            43692   <- band raised onto cloth
+    //   folds OFF (BODY_SABOTAGE_FOLDS=1)  43095   -1.4%
+    //   weave OFF (BODY_SABOTAGE_WEAVE=1)  42362   -3.0%
+    //   band as shipped here               57159   +30.8%
+    //
+    // The 13467 the shipped band adds is not fold relief. It comes from 62732
+    // texels whose mean |Laplacian| is ~100000 — double any cloth band —
+    // because SUIT_FOLDS' boot-cuff band (-0.62±0.18) sits over the ANKLE AND
+    // BOOT, whose hard geometry edges are high-Laplacian for the same reason
+    // the session-7 note in build_body.py records the suit TEAR being: long
+    // mis-shaded faces score like creases. Widening the Laplacian stencil to
+    // the folds' own ~25 mm wavelength does not help either; measured at radii
+    // 1/2/4/6/8/12/16 texels the folds-on vs folds-off separation is 1.4%,
+    // 0.8%, 0.3%, 0.2%, 0.2%, 0.5%, 0.4%.
+    //
+    // So this gate is a RELIEF/smoothing guard whose dynamic range is the
+    // boot's geometry, not a fold detector. It is left exactly as it was —
+    // recalibrating a floor for a metric that measures nothing would be worse
+    // than the red — and the finding is a reviewer question in
+    // docs/OPUS-NOTES.md. The two sabotage flags above are the evidence and
+    // stay in the tree so the next session can re-run it in one build.
     expect(r.metric, `crease-band normal variance ${r.metric} — suit ` +
         `relief erased or folds lost (floor 55000)`).toBeGreaterThanOrEqual(
         55000);
