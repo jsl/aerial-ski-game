@@ -6488,6 +6488,60 @@ paint pass).
    reading, sim-time gate) and entry 90's open questions 1–3 still await
    answers.
 
+### 99 — P5 slice 1: chopped landing baked (bake_landing.py) + landing
+material split + downward vertex displacement
+
+**Order acted on:** the 07:00 block's "97" items. Entry 98's note claimed
+they were missing from the tree — re-measured this iteration: NOT true. The
+in-run crouch arms-forward gate (chain.spec "hands ahead of hips",
+handBelowShoulder), the pike tear gates (chain.spec pike endpoint ≤ TEAR_LIMIT)
+and the front/back face-camera discrimination with the sabotage control
+(look.spec FACEDISC front darkU 0.0196 > 0.015 > back 0.0140, FRONTGATE
+alignDeg 0 / navyFrac 0.0548) are all present and green (chain + look: 9
+passed). No work needed; entry 98's note was stale.
+
+**Bake (`blender/bake_landing.py`, new, ASSET_V 33→34):** procedural TILING
+chopped-snow surface modelled on IMG_7841/IMG_3396 — base chop fbm, ~0.5 m
+tiller ridges, 4 down-slope ski furrows (2 cm deep), 150 wrapped clods
+(0.10–0.30 m across, up to 5.5 cm proud). Writes
+`assets/landing_chop_{albedo,normal,height}.png` (1024, 8 m tile, snow
+albedo ≥ 0.85 linear, blue only in troughs; normal OpenGL +Y). Measured:
+amp −3.3…+10.7 cm, clod dia mean 0.206 m, tile seam error 3 mm U / 5 mm V
+(sub-texel at 7.8 mm/texel). Two bake-script bugs fixed en route (a bad
+edit placed lines inside fbm → inf; ridge period 0.55 m did not divide the
+tile → seam, now 0.5 m).
+
+**Renderer (`game.js`):** the corridor ribbon's index buffer is partitioned
+into snow vs chopped-landing triangles (centroid z in
+[LANDING_START_Z+0.5, OUTRUN_Z−0.5], |x| < 5) → ONE mesh, MultiMaterial
+`terrainMats` [snowMat, landingChopMat] via two SubMeshes (shared rings, no
+seam mesh); landingChopMat carries the baked albedo + normal (8 m tile over
+the metre UVs, roughness 0.52, double-sided). Once the height tile decodes
+(canvas), landing vertices sink DOWNWARD-ONLY by 0.07·(1−v)·fade — clod
+tops ~at the physics surface, furrows ~7 cm below — fading to zero up at
+the knoll (3.5 m), before the roll-out (1.5 m tail) and into the flanks
+(1 m). Skis still ride terrainRootY, so the visual never rises above
+physics (the sink band, contact rules). Golden-stub Babylon has no
+MultiMaterial/Image: both guarded, stub keeps plain snowMat (physics path
+untouched).
+
+**Gates:** `terrain-corridor.spec.js` — physics-match and C1 sweeps now
+exempt the chop band (gated separately); new "chopped landing" test: worst
+sink 0.0673 m ≤ 0.10, worstAbove 0 (never above physics), 1540 vertices
+displaced, material slots [snowMat, landingChopMat]. Material gate accepts
+terrainMats and asserts the double-sided contract on both submaterials.
+
+**Verification:** unit 78/78, golden 30/30 (NO re-capture — display-only,
+physics byte-identical), terrain-corridor 5/5, trees, shadows, look all
+green; shots regenerated and inspected (scene/kicker unchanged in their
+framings; the chop reads on the landing slope behind the kicker, faint at
+canonical distance — the numbers above are the evidence at surface level).
+
+**Open:** P5 rest — displacement is static (no live deformation under
+landing), smooth raked centre band not differentiated, boot prints and
+green-tinged ice absent; landing spray scale-up; a mask toward the flanks
+could vary chunk density.
+
 ### 98 — P4 tree slice 2: bare-deciduous MAJORITY (~60% birch) — two new
 Blender-baked birch impostor variants, forest re-mixed, species census gates;
 face darkU gate recalibrated for the changed close-up background

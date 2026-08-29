@@ -29,6 +29,13 @@ test('corridor ribbon matches physics surface and has no creases', async ({ page
         const down = new BABYLON.Vector3(0, -1, 0);
         const cfg0 = window._terrainCfg;
         const wallBand = (z) => z > cfg0.KICKER_END_Z - 0.85 && z < cfg0.LANDING_START_Z;
+        // P5 chopped landing: the baked chop (blender/bake_landing.py) sinks
+        // the visual surface up to ~0.07 m BELOW the physics profile by design
+        // (the loose-snow sink band, contact rules). The bare "at the physics
+        // height" and C1-crease sweeps exclude this band; the chop band has
+        // its own dedicated gates in the test below.
+        const chopBand = (z) => window._chopZone
+            && z > window._chopZone.z0 && z < window._chopZone.z1 + 1.5;   // incl. fade tail
         // Probe column deliberately OFF the ribbon's vertex columns (XC includes
         // 0, ±1.75, ...): a ray down an exact column edge sits on shared triangle
         // borders and returns degenerate interpolation.
@@ -36,10 +43,10 @@ test('corridor ribbon matches physics surface and has no creases', async ({ page
         const samples = [];
         for (let z = -39; z <= 89; z += 0.25) {
             const o = new BABYLON.Vector3(-0.13, rootY(z, cfg) + 3, z);
-            const pick = scene.pickWithRay(new BABYLON.Ray(o, down), m => m === ribbon);
+            const pick = scene.pickWithRay(new BABYLON.Ray(o, down), (m) => m === ribbon);
             if (!pick || !pick.hit) { misses++; continue; }
             samples.push({ z, y: pick.pickedPoint.y });
-            if (!wallBand(z)) {
+            if (!wallBand(z) && !chopBand(z)) {
                 // Start join / other physics-owned kinks still must be AT the
                 // physics height even if their slope jumps.
                 const err = pick.pickedPoint.y - (rootY(z, cfg) - 1.025);
@@ -59,15 +66,15 @@ test('corridor ribbon matches physics surface and has no creases', async ({ page
             }
             return t;
         };
-        const tv = turns(samples);
         const tp = turns(samples.map((s) => ({ z: s.z, y: rootY(s.z, cfg) - 1.025 })));
+        const tv = turns(samples);
         let worstCrease = 0, creaseAt = null, maxTurn = 0;
         for (let i = 1; i < tv.length - 1; i++) {
-            if (wallBand(samples[i].z)) continue;   // airborne-only span, see above
+            if (wallBand(samples[i].z) || chopBand(samples[i].z)) continue;   // gated separately, see above
             const dv = Math.abs(tv[i] - tv[i - 1]);
+            if (dv > maxTurn && !wallBand(samples[i + 1].z) && !chopBand(samples[i + 1].z)) maxTurn = dv;
             const dp = Math.abs(tp[i] - tp[i - 1]);
             const d = Math.abs(dv - dp);
-            if (dv > maxTurn && !wallBand(samples[i + 1].z)) maxTurn = dv;
             if (d > worstCrease) { worstCrease = d; creaseAt = `z=${samples[i].z.toFixed(2)} visTurn ${dv.toFixed(1)} physTurn ${dp.toFixed(1)}`; }
         }
 
@@ -131,6 +138,8 @@ test('field joins its flanks without a normal seam; ground is solid', async ({ p
         const base = scene.getMeshByName('terrainBase');
         if (!ribbon) return { fatal: 'terrainCorridor mesh missing' };
         const mat = ribbon.material;
+        const subMatNames = mat && mat.subMaterials
+            ? mat.subMaterials.map((m) => m && m.name) : null;
         const cfg = window._terrainCfg;
         const rootY = window.AerialEngine.aerialSki.terrainRootY;
 
@@ -177,7 +186,12 @@ test('field joins its flanks without a normal seam; ground is solid', async ({ p
             verts: ribbon.getTotalVertices(),
             triangles: ribbon.getTotalIndices() / 3,
             matName: mat ? mat.name : null,
-            backFaceCulling: mat ? !!mat.backFaceCulling : null,
+            subMatNames,
+            backFaceCulling: mat
+                ? (mat.subMaterials
+                    ? mat.subMaterials.every((m) => m && m.backFaceCulling === false)
+                    : !!mat.backFaceCulling)
+                : null,
             avgDihedral: n ? +(sum / n).toFixed(3) : null,
             worstDihedral: +worst.toFixed(2),
             worstAt,
@@ -191,9 +205,12 @@ test('field joins its flanks without a normal seam; ground is solid', async ({ p
     expect(res.fatal, res.fatal).toBeUndefined();
     console.log('FIELD_SEAM ' + JSON.stringify(res));
     test.info().annotations.push({ type: 'P1S2', description: JSON.stringify(res) });
-    expect(res.matName, 'corridor material').toBe('snowMat');
+    expect(['snowMat', 'terrainMats'], 'corridor material').toContain(res.matName);
+    // Double-sided contract (P1 "the ground is solid"): with the P5 MultiMaterial
+    // the res value is `every subMaterial double-sided`; otherwise snowMat itself.
     expect(res.backFaceCulling,
-        'snowMat must be double-sided (backFaceCulling false) so undersides shade as snow').toBe(false);
+        'corridor materials must be double-sided (backFaceCulling false) so undersides shade as snow')
+        .toBe(true);
     expect(res.samples).toBeGreaterThan(200);
     expect(res.worstDihedral,
         `normal seam across the corridor edge at ${res.worstAt}`)
@@ -269,4 +286,60 @@ test('kicker is a distinct 3.4 m block on the flat table', async ({ page }) => {
     }
     expect(res.rise, `block must rise clear of the table at z=${res.z}`)
         .toBeGreaterThanOrEqual(0.5);
+});
+
+// ── P5: the chopped landing (baked chop tiles + downward displacement) ──────
+// The visual landing surface must sit at or BELOW the physics profile (the
+// skis ride the physics, so the visual can never rise through them) inside
+// the loose-snow sink band: 0 at the fades, ≤ 0.10 m at the deepest. Outside
+// the band the ribbon stays exactly on the physics surface (gated above).
+test('chopped landing: sink band, fades, material', async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function'
+        && window._chopStats && !window._chopStats.error,
+    null, { timeout: 30_000 });
+
+    const res = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const ribbon = scene.getMeshByName('terrainCorridor');
+        if (!ribbon) return { fatal: 'terrainCorridor mesh missing' };
+        const cz = window._chopZone;
+        const rootY = window.AerialEngine.aerialSki.terrainRootY;
+        const cfg = window._terrainCfg;
+        const down = new BABYLON.Vector3(0, -1, 0);
+        let deepest = 0, deepestAt = null, worstAbove = 0, aboveAt = null;
+        for (let z = cz.z0 - 1; z <= cz.z1 + 1; z += 0.25) {
+            for (const x of [-3.2, 0, 3.2]) {
+                const o = new BABYLON.Vector3(x, rootY(z, cfg) + 3, z);
+                const p = scene.pickWithRay(new BABYLON.Ray(o, down), (m) => m === ribbon);
+                if (!p || !p.hit) continue;
+                const err = p.pickedPoint.y - (rootY(z, cfg) - 1.025);
+                if (err > worstAbove) { worstAbove = err; aboveAt = `z=${z.toFixed(2)} x=${x}`; }
+                const inBand = z > cz.z0 && z < cz.z1 && Math.abs(x) < cz.halfW;
+                if (inBand && -err > deepest) { deepest = -err; deepestAt = `z=${z.toFixed(2)} x=${x}`; }
+            }
+        }
+        return {
+            fatal: undefined, deepest: +deepest.toFixed(4), deepestAt,
+            worstAbove: +worstAbove.toFixed(4), aboveAt,
+            stats: window._chopStats,
+            matNames: ribbon.material.subMaterials.map((m) => m.name),
+        };
+    });
+    expect(res.fatal, res.fatal).toBeUndefined();
+    console.log('CHOP ' + JSON.stringify(res));
+    // Never ABOVE the physics surface anywhere in or near the band (5 mm tol).
+    expect(res.worstAbove, `chop rose above physics at ${res.aboveAt}`)
+        .toBeLessThanOrEqual(0.005);
+    // Sink band respected: never more than the contact-rule 0.10 m.
+    expect(res.deepest, `chop sink ${res.deepest} at ${res.deepestAt}`)
+        .toBeLessThanOrEqual(0.10);
+    // The chop actually displaced geometry (visible in silhouette, not just
+    // shading) and stays inside the band.
+    expect(res.stats.sunkVerts, 'displaced vertex count').toBeGreaterThan(200);
+    expect(res.stats.worstSink, 'worst vertex sink').toBeGreaterThan(0.01);
+    expect(res.stats.worstSink, 'worst vertex sink within band')
+        .toBeLessThanOrEqual(0.10);
+    expect(res.matNames, 'landing material slots').toEqual(['snowMat', 'landingChopMat']);
 });

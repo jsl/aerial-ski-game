@@ -1518,7 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=33';   // 33: P4 bare-deciduous bake (tree_birch_card/atlas_4..5); ASSET_V 32 crown+chest
+    const ASSET_V = '?v=34';   // 34: P5 chopped-landing bake (landing_chop_albedo/normal/height) (tree_birch_card/atlas_4..5); ASSET_V 32 crown+chest
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -3047,9 +3047,107 @@ void main(void) {
         BABYLON.VertexData.ComputeNormals(positions, indices, normals);
         vd.normals = normals;
         vd.uvs = uvs;
+        // ── P5 slice: the chopped landing (blender/bake_landing.py tiles) ───
+        // The landing zone gets its own material — the baked chop albedo +
+        // normal, 8 m tile over the ribbon's metre UVs — and, once the height
+        // tile decodes, a DOWNWARD-ONLY vertex displacement (the baked clods
+        // and furrows, ~6 cm max, fading to zero up at the knoll, before the
+        // roll-out and into the flanks). Downward only because the skis ride
+        // the physics profile: the displaced visual surface must stay AT or
+        // BELOW the physics surface, inside the chopped-landing sink band
+        // (≤ 0.10 m — the contact rules), never above it.
+        const _chopAmp = 0.07;
+        const _chopZ0 = LANDING_START_Z + 0.5;   // fade-in below the knuckle
+        const _chopZ1 = OUTRUN_Z - 2.0;          // fade-out before the roll-out
+        const _chopHalfW = 5.0;                  // corridor columns only
+        const _ss = (t) => { const c = Math.min(1, Math.max(0, t)); return c * c * (3 - 2 * c); };
+        const _chopW = (z, ax) => {
+            const a = Math.abs(ax);
+            if (a >= _chopHalfW) return 0;
+            return _ss((z - _chopZ0) / 3.5) * _ss((_chopZ1 + 1.5 - z) / 1.5)
+                * _ss((_chopHalfW - a) / 1.0);
+        };
+        // Partition the index buffer: chopped-landing triangles go last so the
+        // two zones are contiguous index ranges → two SubMeshes of ONE mesh
+        // (shared rings at the boundary, same averaged normals, no seam mesh).
+        const idxSnow = [], idxChop = [];
+        for (let t = 0; t < indices.length; t += 3) {
+            const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3;
+            const zc = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+            const xc = (positions[a] + positions[b] + positions[c]) / 3;
+            (zc > _chopZ0 && zc < _chopZ1 + 1.5 && Math.abs(xc) < _chopHalfW
+                ? idxChop : idxSnow).push(indices[t], indices[t + 1], indices[t + 2]);
+        }
+        vd.indices = idxSnow.concat(idxChop);
         vd.applyToMesh(ribbon);
-        ribbon.material = snowMat;
         ribbon.receiveShadows = true;
+        if (BABYLON.MultiMaterial && BABYLON.SubMesh) {
+            ribbon.material = new BABYLON.MultiMaterial('terrainMats', scene);
+            ribbon.material.subMaterials.push(snowMat);
+            const landingMat = new BABYLON.PBRMaterial('landingChopMat', scene);
+            landingMat.albedoTexture = new BABYLON.Texture('assets/landing_chop_albedo.png' + ASSET_V, scene);
+            landingMat.bumpTexture = new BABYLON.Texture('assets/landing_chop_normal.png' + ASSET_V, scene);
+            landingMat.albedoColor = new BABYLON.Color3(1, 1, 1);
+            landingMat.metallic = 0;
+            landingMat.roughness = 0.52;
+            landingMat.backFaceCulling = false;
+            for (const tx of [landingMat.albedoTexture, landingMat.bumpTexture]) {
+                tx.uScale = tx.vScale = 1 / 8;       // metre UVs, 8 m tile
+                tx.wrapU = tx.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+            }
+            ribbon.material.subMaterials.push(landingMat);
+            ribbon.subMeshes = [
+                new BABYLON.SubMesh(0, 0, ribbon.getTotalVertices(), 0, idxSnow.length, ribbon),
+                new BABYLON.SubMesh(1, 0, ribbon.getTotalVertices(), idxSnow.length, idxChop.length, ribbon),
+            ];
+        } else {
+            // Golden-stub Babylon has no MultiMaterial: keep the single snow
+            // material (the stub measures physics; the chop material and
+            // sub-mesh split are browser-only display work).
+            ribbon.material = snowMat;
+        }
+        window._chopZone = { amp: _chopAmp, z0: _chopZ0, z1: _chopZ1, halfW: _chopHalfW };
+
+        // Decode the baked height tile and sink the landing vertices. v=1 is a
+        // proud clod top (sinks least), v=0 a furrow trough (sinks most); the
+        // canvas row order is flipped against Babylon's V axis, hence the v
+        // mirror in the sampler.
+        const _chopImg = (typeof Image === 'function') ? new Image() : null;
+        if (_chopImg) {
+            _chopImg.onload = () => {
+            try {
+                const cv = document.createElement('canvas');
+                cv.width = cv.height = 256;
+                const cx = cv.getContext('2d', { willReadFrequently: true });
+                cx.drawImage(_chopImg, 0, 0, 256, 256);
+                const hd = cx.getImageData(0, 0, 256, 256).data;
+                const samp = (u, v) => {
+                    const uu = ((u / 8) % 1 + 1) % 1, vv = ((v / 8) % 1 + 1) % 1;
+                    const x = Math.min(255, (uu * 256) | 0), y = 255 - Math.min(255, (vv * 256) | 0);
+                    return hd[(y * 256 + x) * 4] / 255;
+                };
+                const pos = ribbon.getPositionData(true);
+                let sunk = 0, worst = 0;
+                for (let i = 0; i < pos.length / 3; i++) {
+                    const x = pos[i * 3], z = pos[i * 3 + 2];
+                    const w = _chopW(z, x);
+                    if (w <= 0) continue;
+                    const sink = _chopAmp * (1 - samp(x, z)) * w;
+                    if (sink > 0) {
+                        pos[i * 3 + 1] -= sink;
+                        sunk++;
+                        if (sink > worst) worst = sink;
+                    }
+                }
+                ribbon.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
+                const nrm = [];
+                BABYLON.VertexData.ComputeNormals(pos, ribbon.getIndices(), nrm);
+                ribbon.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
+                window._chopStats = { sunkVerts: sunk, worstSink: +worst.toFixed(4) };
+            } catch (e) { window._chopStats = { error: String(e) }; }
+            };
+            _chopImg.src = 'assets/landing_chop_height.png' + ASSET_V;
+        }
 
         // ── The ground is solid: close every open edge of the field ──────────
         // Perimeter skirt (outer columns + both end caps) extruded down to a
