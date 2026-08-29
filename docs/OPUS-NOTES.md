@@ -530,6 +530,153 @@ numbers are on different baselines and only the Blender one is the gate.
 
 ---
 
+## Session 4 (2026-08-29, 15:0x-15:4x)
+
+### Merge with `render-realism-glm` — commit `e3d54d0`
+
+Clean auto-merge, three commits ahead (`e82b3fd`, `c14e93f`, `51293a7` — GLM's
+venue-dressing alphaTest fix, the look re-run and the cone-peak ruling). No
+conflicts. Committed before any other work, per the session rule.
+
+### Item 11 — "calves look huge" — LANDED. Commit `0facc72`
+
+**The author's complaint, measured: shipped `calf/thigh = 0.937`.** A calf as
+wide as the thigh.
+
+**Root cause, and it is a gate that was never asked to look.** `leg_girth_pass`
+runs AFTER `relax_suit` and after the LAST `leg_profile` call in `main()`. So
+nothing in the build measured the leg that is actually exported — every profile
+number in the logs (including the "post-relax" one this file quoted last
+session) is from BEFORE the girth pass scales the shins. The pass's only shin
+constraint was `calf_hip >= 0.40`, a lower bound with no counterpart, and it
+applied an uncapped deficit ratio of **x1.211** radially to both lower legs on
+every build.
+
+That bound is also not a real proportion. An adult reads ~0.28 there (calf
+breadth ~95 mm over hip breadth ~340 mm) against a gate demanding >= 0.40. It
+could only ever be satisfied by inflating the shin.
+
+**Replaced, not loosened.** New `leg_taper_gate`, measured on the silhouette the
+eye sees (`leg_profile`'s median-filtered 2 cm rows, not the bone-cluster
+cross-section `_leg_girth_ratios` uses), and two-sided where the old one was
+one-sided — the brief's item-11 numbers:
+
+| | gate | brief |
+|---|---|---|
+| calf / thigh | 0.60 - 0.80 | 0.70 - 0.75 |
+| ankle / calf | 0.42 - 0.72 | 0.55 |
+| boot cuff vs shin above it | >= 1.0 | "tapers INTO the boot" |
+
+`calf_hip` is demoted to a logged instrument (it still prints; it no longer
+fails the build). Its own negative control `BODY_LEG_GIRTH_FACTOR` is untouched.
+
+The shin is now sized by a **dedicated loop that runs after the thigh** — the
+thigh is the denominator, so that is the only order in which one shin factor is
+correct — approaching the 0.70 mid-band at most `CALF_GROW_MAX = 1.06` per
+iteration. It converged in two iterations (x1.060, then x1.030 implied, stop).
+
+**Measured on the shipped 2048/96 build:**
+
+| | thigh | calf | ankle | boot | calf/thigh | ankle/calf | boot/shin |
+|---|---|---|---|---|---|---|---|
+| before | 195 | **182** | 91 | 107 | **0.937** | 0.497 | 1.122 |
+| after | 195 | **140** | 69 | 90 | **0.718** | 0.497 | 1.230 |
+
+**Negative control** `BODY_SABOTAGE_CALF=1.25` re-inflates the shins after the
+pass and FAILS the gate at `calf/thigh 1.064`
+(`scratch/opus/s4/negctl_calf.log`).
+
+Every existing build gate stayed green on the same build: bideltoid, leg
+profile slope step, dome seating, goggle band 0.400-0.568 h, face relief, hand
+ratio, bib number, suit normal variance, atlas share head+face 28.1%, delivered
+maps 1 106 556 B.
+
+`ASSET_V` 36 -> 37, `index.html` `game.js?v=` 30 -> 31, preload hrefs `?v=37`.
+
+### Verification
+
+    unit    78/78
+    golden  30/30, no re-capture, no physics change
+    drive   rig + body + chain + athlete + ready-stance: 27/27 (6.7 m)
+            look.spec.js: 1/1 (6.6 m)
+
+Wire on this build: glb 837 548 + normal 627 918 + albedo 318 452 + ao 160 186
++ maps.json 1 270 = **1 945 374 B**. `_bodyVisibleAt` 7 574 ms — five times
+session 1's 1 457-1 542 ms, but the machine was at **load average 20** with
+another agent's suite running, so this is a contention reading, not a
+regression; re-measure on an idle machine before acting on it.
+
+The full drive suite was NOT run this session (the two remaining known reds are
+`crash-ragdoll` and `bib-number`, both recorded in session 3 and neither in
+this lane; a full pass is ~29 m and the machine was contended).
+
+### Shot, looked at by eye — `shots/figure_side.png` (15:34)
+
+The calf bulge is gone: the leg now runs thigh -> knee -> a narrow ankle ->
+boot, tapering the whole way, instead of swelling below the knee. Items 1 and 2
+also read correctly in the same shot — mirrored blue goggle band across the
+eyes, dark dome centred on the skull.
+
+The same shot re-confirms what is still open: the suit is a lumpy onesie with
+shard artefacts across the chest and thigh (item 3); the blue leg stripe is a
+ragged blob wandering across the shin, not a 5 cm stripe down the outside seam
+(item 3); the leg still ends in a white blob rather than a dark ski boot; the
+pelvis still leads the ankles slightly (item 10).
+
+### Item 5 (tuck) — NOT attempted, and why
+
+Item 5 is the brief's top priority after 1/2 and it was the intended work of
+this session. It was set aside deliberately after reading the code, not
+forgotten:
+
+**The armature has no spine.** `ANATOMY` in `build_body.py` gives `torso` ONE
+bone, pelvis -> neck, and the skeleton is deliberately FLAT (every bone is
+driven absolutely by a physics node via `linkTransformNode`; parenting them
+double-counts positions — the comment at `build_armature` records the measured
+failure). The brief's "bend across >= 3 spine bones" therefore requires new
+bones AND new driver nodes in `game.js` synthesised between the pelvis and the
+chest, since `bone.linkTransformNode(character.meshes[bone.name])` finds
+nothing for a bone the physics does not name.
+
+The cost is not the idea, it is the blast radius: the string `'torso'` is a
+vertex-group and dominance key throughout all 5 672 lines of `build_body.py`
+(`settle_limb_geometry`, `reclaim_chest_wall`, `dominant_segments`,
+`_leg_girth_ratios`, `loosen_suit`, `relax_suit`, ...). Splitting or
+re-weighting it moves the dominant group of a large fraction of the mesh, which
+is the input to most of those passes and to several gates. That is a multi-hour
+change with a full rebuild and a full drive pass behind it, and a half-finished
+armature left in the tree would be worse than the current state.
+
+**Recommended shape for the next session**, so it starts from a decision rather
+than a survey: ADD `spine1`/`spine2` as extra bones and leave the `torso` bone
+and its vertex group in place, redistributing weight from `torso` to them by
+height rather than renaming anything. Every existing dominance query keeps
+answering `'torso'` for verts that stay torso-dominant. In `game.js`, build two
+plain `TransformNode`s that interpolate rotation between the pelvis frame (from
+the hip/upperLeg drivers) and the torso driver, register them in
+`character.meshes` under those names, and let the existing link loop find them.
+That is renderer-side only and needs no physics change.
+
+### For the reviewer (session 4)
+
+1. **`calf_hip >= 0.40` was demoted from a hard gate to an instrument.** This is
+   the one judgement call in the commit. My case: it is one-sided, it is
+   anatomically indefensible (~0.28 in a real adult), it is the direct
+   mechanical cause of the defect the author reported, and what replaces it is
+   STRICTER — two-sided, on the shipped silhouette, from the brief's own
+   numbers, with a negative control. If you want it kept as a hard gate it
+   cannot coexist with item 11's ratios; say which wins.
+2. **Session 3's finding generalises again.** This is the third gate in this
+   file that passed on a visibly wrong body because it measured the wrong
+   population or ran at the wrong point in the pipeline (goggle-proud: 0.5 mm
+   margin; dome centre: self-referential; leg girth: ran after the last
+   measurement). The sweep I suggested last session is worth doing.
+3. `bib-number.spec.js` is unchanged from session 3 and still needs your
+   arbitration (reframe the measured box onto the number patch, or accept a
+   higher band on a correctly-framed box).
+
+---
+
 ## What the shots now show (by eye, `shots/face.png`, `shots/face_mask.png`)
 
 With the blur gone, the remaining defects are legible for the first time — and they are exactly the
