@@ -36,7 +36,7 @@ Makefile targets; the build has its own gates that must keep passing).
    subtle blue/orange mirror tint, strap continuing round the helmet. Gate (`rig.spec.js` or the build
    gate): lens band vertical extent within 0.55–0.68 h **measured inside the head silhouette mask**;
    negative control: shifting the band down by 0.08 h must fail.
-2. **Helmet reads as a beret / skull-cap with the forehead exposed** (`face.png`, `figure_side.png`).
+2. **Helmet reads as a beret / skull-cap with the forehead exposed — and the author's 8203 check (HUMAN TESTING #6) says it now sits too FORWARD.** Centre the dome on the skull: front rim ~1.5 cm above the brow (no lower), crown apex above the ear line's midpoint, back rim at the nape. Gate: dome centroid within ±1 cm of the head centroid along the face axis; negative controls ±3 cm fore/aft fail. (`face.png`, `figure_side.png`).
    Required: a dome centred on the skull top, shell coming down to ~1.5 cm above the brow in front, over the
    ears at the sides, to the nape at the back, with a visible thickness at the rim (2–3 mm lip), a chin
    strap, and 2–4 small vents; no "hood" skirt hanging down the back. Colour: dark (near-black or navy)
@@ -73,7 +73,7 @@ Makefile targets; the build has its own gates that must keep passing).
    WebP; normal → WebP lossless or 1024 PNG; update the loader (`map('assets/athlete_*')`), `ASSET_V`, the
    `index.html ?v=` and report byte totals + first-body-visible time (`window._bodyLinked` timestamp) in
    `docs/OPUS-NOTES.md`. Add `<link rel="preload">` for the GLB and maps in `index.html`.
-5. **Tuck deformation is wrong** (`pose_tuck_side.png`): the torso smears into a single curved shell, the
+5. **Tuck deformation is wrong** (re-confirmed by the author on 8203, HUMAN TESTING #6: "tuck position still very poor - back separating as discussed before" — treat this as a top-priority item right after 1/2) (`pose_tuck_side.png`): the torso smears into a single curved shell, the
    back "separates", the arms vanish. The spine must bend across ≥ 3 spine bones with weights that
    preserve volume (Babylon is linear-blend; add corrective spread of weights across the chain rather than a
    hard 50/50 at one joint), the suit must follow the back with folds, the arms must stay visible in the
@@ -90,6 +90,7 @@ Makefile targets; the build has its own gates that must keep passing).
 9. **Face**: nose, mouth and chin must be discernible at the canonical face distance (compare with a zoomed
    footage crop); skin tone natural; the red line at the neck in `face.png` is the collar seam — make it
    the suit collar (item 3), not a red stripe.
+11. **Calves look huge** (author, HUMAN TESTING #6 on 8203). The leg-girth pass over-inflated the lower leg. Real proportions: calf circumference ≈ 0.70–0.75 × thigh circumference at mid-segment, ankle ≈ 0.55 × calf; the boot cuff must be wider than the calf above it so the leg tapers INTO the boot, not out of it. Gate on the skinned mesh in the ready stance with those ratios; negative control ×1.25 calf fails.
 10. **Neutral stance: standing straight up, perpendicular to the skis.** Author (HUMAN TESTING #5, 09:45): "skier's hips still a little more forward. should be perpendicular (standing up straight) from skis." In `figure_side.png` the pelvis leads the ankles. Gate (ready state, side view along the ski axis): hip centre within 3 cm of the ankle centre along the ski direction; ankle–hip–shoulder line within 5° of the ski-surface normal; knees ≤ 10° flex; negative control: pushing the pelvis 6 cm forward must fail. boot–ski invariant, binding-touches-boot,
     skis eject only on crash — none of these may regress (their gates are in `rig.spec.js`/`drive` specs).
 

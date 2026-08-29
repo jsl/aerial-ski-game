@@ -20,4 +20,9 @@ Do exactly these two items, in order, each committed separately. Athlete files s
    out at the corridor distance. View `scene.png`, `inrun.png`, `kicker.png` and describe honestly what the
    ridges look like now; a smooth single-colour gradient ridge is a fail.
 
+3. **Crash: too much crumple before the slide** (author, HUMAN TESTING #6). Tumble phase (≤ 1 s) must keep the
+   body a recognisable figure: joint excursions within ±35° of the layout pose, spine bend ≤ 40°, no limb folding
+   through the torso; then the near-rigid roll/slide to rest ON the snow as specified. Gate in the crash spec on
+   the peak joint excursions during the tumble; negative control: a fully limp ragdoll fails.
+
 Everything else resumes from the plan next iteration.
