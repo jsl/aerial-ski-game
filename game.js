@@ -4967,6 +4967,7 @@ void main(void) {
     let singleFlipQueued   = false; // D pressed while grounded → apply on next launch
     let crashActive        = false; // true while ragdoll animation is running
     let crashTimer         = 0;
+    let crashImpactSpeed   = 0;   // athlete's actual root speed at the crash trigger (reviewer 89a momentum seed)
     let crashFallDir       = 1;
     let crashPieces        = [];   // detached body-part physics pieces (legacy path, retired by the P11 ragdoll)
     let ragdoll            = null; // coherent crash ragdoll state (P11)
@@ -5257,6 +5258,7 @@ void main(void) {
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
             maxSpeed: 99, sprayT: 0, t: 0, phase: 'tumble', slideV: null,
+            impactSpeed: crashImpactSpeed,
             // Negative control (NEXT 2026-08-29): window._crashRollDisabled
             // (set by the spec before the crash) restores the old iter-47
             // exponential stop — the roll phase is bypassed. window._crashLimp
@@ -5586,14 +5588,20 @@ void main(void) {
             // Force the roll DOWNHILL: the tumble's mean velocity can end
             // pointing uphill (a caught edge kills vz while verlet jitter
             // leaves a small −z residue), fix the direction: downhill is +z.
-            // Momentum seed: the crash impact speed (~12–15 m/s on the
-            // landing) is the rigid mass's downhill momentum; the PBD
-            // verlet damping under-reports it, so enforce a 15 m/s floor.
-            if (R.slideV.z < 12) {
+            // Momentum seed (reviewer entry-89 refinement (a)): the rigid
+            // mass keeps the athlete's ACTUAL horizontal root speed at the
+            // crash trigger (the PBD verlet damping under-reports it), so
+            // slow landings slide proportionally less instead of always
+            // pretending 15 m/s. Bands: 6 m/s floor keeps even soft crashes
+            // rolling to the flat; 15 m/s ceiling = the verified iter-89
+            // behaviour (a full-charge impact measures ~26 m/s horizontal,
+            // and the 2–5 s motion envelope + roll-to-flat gates were tuned
+            // at 15).
+            const _seed = Math.min(Math.max(R.impactSpeed || 0, 6), 15);
+            if (R.slideV.z < _seed) {
                 R.slideV.x = 0;
-                R.slideV.z = 15;
+                R.slideV.z = _seed;
             }
-            R.phase = 'roll';
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -6076,9 +6084,9 @@ void main(void) {
             state.offAxis     = 0.0; offAxisTarget = 0.0;
             state.airTime     = 0.0;
             poolEntered   = false;
-            poolSplashAmp = 0;
             if (crashActive) {
                 crashActive = false;
+                crashImpactSpeed = 0;
                 crashTimer  = 0;
                 for (const p of crashPieces) {
                     p.mesh.parent = character.root;
@@ -7187,6 +7195,12 @@ void main(void) {
                     // preserve vz so skier glides away down the landing slope
                 } else {
                     state.crashed = true;
+                    // Capture the ACTUAL horizontal root speed before it is
+                    // zeroed — the ragdoll's rigid roll is seeded from this
+                    // (reviewer 89a), so slow and fast crashes slide
+                    // different distances. The vertical fall speed is
+                    // absorbed by the snow, not carried into the slide.
+                    crashImpactSpeed = Math.abs(state.vz);
                     state.flipDir = 1;
                     state.vz      = 0; // stop sliding on crash
                     // Crash — reset comp progression, queue new trick for next jump
