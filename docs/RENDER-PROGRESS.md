@@ -224,6 +224,13 @@ test-side, shots regenerated + measured, entry 60 below. No features.)*
 no board movement, but the canonical face/front shots frame the athlete's
 BACK and both pixel gates pass on the wrong view; entry 80 below.)*
 
+*(iter-90 review-only: suite green apart from a self-inflicted drive-port
+collision (re-run green; drive 78/2 skipped, golden 30/30, unit 0 fail);
+shots regenerated + inspected by eye. No board movement. Findings: white
+suit illegible in scene view, crash_rest.png shot unusable, grey ramp
+1.6–2.4 % under flank parity, face features still unreadable at 0.6 m —
+entry 90 below.)*
+
 *(iter-66 review order 0: post-merge golden gate restored 30/30 with zero
 rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
@@ -6135,3 +6142,86 @@ changes `frame[495+]` head/torso nodes by ~1–5 cm in those scenarios; all 30 r
 3. The 2–5 s gate is enforced in simulation time (probe clock). In a real 60 fps browser
    sim ≈ wall, so the author-visible behaviour matches; in the SwiftShader suite wall time
    stretches 2–4×. Flag if you want a wall-clock gate in a non-SwiftShader run instead.
+
+### 90 — Review-only (no features): full suite + shots + measurements; four findings
+
+**Process note (self-inflicted, fixed):** my first run-all came back SUITE RED
+because I ran the `look` spec in parallel and it held the drive webServer port
+(8099, no `reuseExistingServer`). Everything before the drive layer had already
+passed; the drive layer re-run alone is green. Do not parallelise Playwright
+runs in this repo.
+
+**Suite (measured, this iteration):** unit fail 0; golden 30/30; browser,
+mutation, coverage PASS (coverage: all scenarios differentiate; the two known
+OPEN-002 duplicates unchanged); drive 78 passed / 2 skipped (22.4 m).
+`look` green: FIGSIL span 0.904 frac 0.1772, FACEDISC front lensU 0.0563 vs
+back 0.0062, FACEGATE dark 0.1976, FRONTGATE alignDeg 0 navyFrac 0.0481.
+Shots regenerated and inspected BY EYE (scene, figure, figure_front, face,
+crash_rest).
+
+**Findings, critical first:**
+
+1. **The suit reads white-on-white; the athlete nearly disappears in the ready
+   view.** In `scene.png` the figure is a pale ghost against the snow — only
+   the dark skis and helmet separate it; the bib "30" and the broad blue panel
+   (P7) are not visible at any gameplay distance. `figure_front.png` at 2.6 m
+   shows a white suit with faint blue accents; navy is confined to the digits
+   (FRONTGATE navyFrac 0.0481). The reference suits are vivid colour blocks.
+   The paint pass (broad blue panel, enlarged bib — P7, author 2026-08-26) has
+   silently regressed or never landed in the current bake; the bib-digit gates
+   pass while the suit as a whole fails its purpose. Highest visual priority.
+2. **`crash_rest.png` is not usable inspection evidence.** It renders 320 px
+   wide, the resting athlete is a speck at frame centre, and HUD buttons
+   ("Double / Menu / Compete") overlap the frame. Entry 89's "inspected" claim
+   should not be trusted from this artefact. The camera needs the review-72
+   geometric treatment (target = body centre, radius ~2.4 m) and the HUD must
+   be hidden in shot mode.
+3. **Grey ramp slipped back under parity.** Corridor luminance 0.8265 vs near
+   flank 0.8509 and far flank 0.8427 → corridor is 1.6–2.4 % DARKER than the
+   flanks (reviewer target: run is the brightest surface in frame). Small, but
+   the direction is wrong; suspects are the iter-49/51 lighting changes (exposure
+   1.20 + beam rebalance) interacting with the corridor metre-UV detail layer.
+4. **Face features still do not read at 0.6 m** (`face.png`): goggles and
+   helmet silhouette read, but no brows, eyes, mouth or nose-side shading is
+   distinguishable by eye. This is reviewer entry-86 item (b) still open, now
+   confirmed on the current bake at the canonical camera.
+
+**Also noted (by eye, no numbers):** horizon is still bare cone peaks (P6
+untouched, prominent in `scene.png`/`figure.png`); landing shows no chop /
+track texture (P5 open — the landing reads as smooth corduroy); athlete shadow
+present in `figure.png` and trees shadow consistently — P2's shadow work holds.
+The review-measure shadow probe now reports `underAthlete 0.2801` vs ring
+0.796–0.861 (dropFrac 0.075) — the probe box appears to be sampling the dark
+ski/athlete pixels, not the shadowed snow beside them; the dedicated
+`shadows.spec` gates pass, but this instrument needs re-anchoring before it can
+support a P2 claim.
+
+**Re-prioritised list for the next iterations:**
+1. Suit/bib paint visibility pass (Blender re-bake or paint fix; ASSET_V bump;
+   gate: blue-panel + bib dark-fraction measured in `figure.png` at gameplay
+   distance, not only the 2.6 m front shot).
+2. `crash_rest.png` camera fix + HUD-hidden shot mode + a gate that the athlete
+   silhouette occupies ≥ 15 % of that frame (mirrors the review-83 figure-shot
+   gate).
+3. Grey ramp: re-measure corridor vs flank, restore corridor ≥ flank (small
+   snowMat/exposure tweak; before/after numbers).
+4. Face pass 3 per reviewer entry-86 (helmet dome curvature gate + feature
+   contrast), with dark-region gates at eye/brow/mouth.
+5. Then the reviewer 51–105 schedule resumes: A7 red marks, lighter B-net,
+   ridgelines (P6), landing chop (P5), trees slice (d)/(e), free-look (P10),
+   night mode (P9), P12 polish.
+
+**Open questions for the reviewer:**
+1. Finding 1: is the white suit the current bake's intended state (white
+   training suit from the footage) or a paint regression? If intended, the
+   scene-view legibility problem still needs an answer (contrast trim, darker
+   panels, or bib enlargement) — propose before I touch the bake.
+2. `seamWorstRow` reports y=0.475 with skyFrac 0.1747 in the ready view. The
+   old cyan-seam gate (black32 < 0.5 %) passes; is 17 % of one row reading
+   sky/fog-coloured acceptable horizon, or should I re-run the seam
+   discrimination (sky-blue dominance vs fog-grey) on that row next iteration?
+3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
+   reading, sim-time gate) still await answers.
+
+*Everything above is measurement/inspection only; no source files changed in
+this iteration.*
