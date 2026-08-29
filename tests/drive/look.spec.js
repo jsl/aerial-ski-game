@@ -140,8 +140,12 @@ test('look', async ({ page }) => {
             return { d, W: cv.width, H: cv.height };
         }, shot.toString('base64'));
         // measure navy around the projected plate point
+        // iter-79: a single 0.16x0.24 m box at the projected plate missed the
+        // digits when the ready pose shifted between runs (navyFrac 0 with the
+        // digits plainly visible in the shot). Sample 2.2x, still centred on
+        // the projected plate, clamped to the frame.
         const PX_PER_M = m.H / (2 * 2.4 * Math.tan(0.4));
-        const bw = Math.round(0.16 * PX_PER_M), bh = Math.round(0.24 * PX_PER_M);
+        const bw = Math.round(0.16 * PX_PER_M * 2.2), bh = Math.round(0.24 * PX_PER_M * 2.2);
         const X0 = Math.round(plate.sx * m.W - bw / 2), Y0 = Math.round(plate.sy * m.H - bh / 2);
         let n = 0, navy = 0;
         for (let y = Math.max(0, Y0); y < Math.min(m.H, Y0 + bh); y++) {

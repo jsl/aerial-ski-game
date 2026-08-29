@@ -885,6 +885,61 @@ forest.
 
 ## Iterations
 
+### 79 — Face pass 2 (entry-78 open item 1): goggle band + light rim moved
+below the shell brim, wider lip band, nostrils — one Blender rebuild,
+ASSET_V 26; FRONTGATE flake root-caused and hardened
+
+**Order acted on:** entry-78 "Open / next" (1) — face pass 2 against the now
+trustworthy r = 0.6 close-up; (3) partially (FRONTGATE hardening below; the
+FACEGATE cov criterion is still loose).
+
+**Root cause measured before painting:** the pass-1 goggle lens WAS in the
+bake (7214 verts, albedo texels exactly sRGB(LENS)) but invisible in the
+render — the shell's front brim reaches z = 0.52·h while the lens band sat at
+0.44–0.58·h, so ~60% of it was UNDER the shell mesh and the visible 2 cm
+strip abutted the navy dome and read as part of it (the "beret"). The pass-1
+brows (0.555–0.615·h) were entirely under the shell (235 stray verts only).
+
+**Changes (`blender/build_body.py`, ASSET_V 25→26 in `game.js`):**
+- Lens band moved to 0.34–0.50·h (top edge at the eyes), fully below the
+  brim; light `GOGGLE_RIM` (0.82, 0.85, 0.88) frame, 0.015·h, along the
+  lens's top and bottom edges; lip band widened 0.25–0.32·h → 0.20–0.295·h
+  and |x−hx| < 0.13·h → 0.15·h; small nostril patches at 0.305–0.325·h.
+  Brows removed from the paint plan (they sit under shell+goggles with this
+  helmet geometry — the reviewer's goggle ask supersedes them here).
+- Two edit-induced regressions caught by the build's own `missing regions`
+  gate during the session: the strap branch was dropped from the paint chain
+  (strap 0 → restored, 1276 verts) and a dropped `frontal` definition crashed
+  `head_region` — both fixed before any commit.
+
+**FRONTGATE flake (entry-78's shadow issue, fixed):** a rerun failed with
+navyFrac 0.0000 while the digits were plainly visible in the same-run PNG —
+the 0.16×0.24 m sample box at the projected plate missed when the ready pose
+shifted between runs (run durations 55 s vs 126 s). The box now samples 2.2×
+centred on the same projected point; navyFrac 0.0474 on the final run.
+
+**Verification:** unit fail 0; golden 30/30 (display-only); drive: body +
+bib-number + rig 16/16 on the FINAL bake; `look` GREEN — FRONTGATE align
+0.00° / navyFrac 0.0474, FACEGATE dark 0.2203 / skin 0.0365 / cov 0.9647,
+FACECAM r = 0.600 on the forward ray. Bake census: goggle 8821, rim 2339,
+lip 75, nostril 6, strap 1276, number 1582 (unchanged). Shots inspected by
+eye: face.png now reads shell → pale rim band (frame rows ~476–505 at the
+scan column) → dark lens (508–545) → skin — the eye zone separates from the
+helmet for the first time; lips/nostrils are present in the bake but do not
+read as shapes at 0.6 m yet (see open). figure_front.png bib "30" unaffected
+in position, now slightly more saturated navy (darkest digit pixel
+(9,57,152) vs (58,66,92) before — same ink table, different lighting
+incidence at the shifted ready pose).
+
+**Open / next:** (1) lips/nostrils need either more face-island texels or a
+geometric crease to read at 0.6 m; (2) the FACEGATE cov criterion still
+counts background dark (entry-78 item 3, untouched); (3) the shell still
+reads beret-ish — the front brim line vs goggle top is the next geometry
+item; (4) a rim-presence gate (light band between shell dark and lens dark
+in face.png) would lock this fix in — not yet written.
+
+**Open questions for the reviewer:** none new.
+
 ### 78 — Face camera landed for real (entry-77 open item 1): live head
 driver aim, r = 0.6 enforced, stopped render loop + one synchronous frame,
 pixel-based gate; plus a camera-convention bug of my own found and fixed

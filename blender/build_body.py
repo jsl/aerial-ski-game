@@ -124,6 +124,7 @@ HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
 LENS       = (0.04, 0.06, 0.08)      # dark glossy goggle lens across the eyes
 BROW       = (0.16, 0.12, 0.10)      # face pass 1: eyebrows
+GOGGLE_RIM = (0.82, 0.85, 0.88)   # face pass 2: light frame round the lens so it separates from the navy shell
 LIP        = (0.62, 0.34, 0.30)      # face pass 1: lip colour
 def log(m):
     print(f'[body] {m}', flush=True)
@@ -268,7 +269,10 @@ def head_region(co, lm):
     # Frontal sector: within ~66 degrees of straight-ahead (ly > 0).
     theta = math.atan2(lx, ly) if (lx or ly) else 0.0
     frontal = ly > 0 and abs(theta) < 1.15
-    if frontal and lm['chin'] + lm['h'] * 0.44 < co.z < lm['eyes'] + lm['h'] * 0.08:
+    if frontal and lm['chin'] + lm['h'] * 0.34 < co.z < lm['eyes']:
+        # Face pass 2: the band moved BELOW the shell brim (0.52h) — the old
+        # 0.44..0.58h band was ~60% under the shell mesh and read as part of
+        # the dome. Goggles sit under the helmet rim, top edge at the eyes.
         return 'lens'
     if not frontal and abs(co.z - lm['eyes']) < lm['h'] * 0.04 \
             and co.z > lm['chin'] + lm['h'] * 0.30:
@@ -3597,18 +3601,27 @@ def paint_suit(obj, lm):
             # level. Same function that splits the material slots on the low poly. that splits the material slots on the low poly.
             reg = head_region(Vector((x, y, z)), lm)
             if reg == 'lens':
-                col, tag = LENS, 'goggle'
+                # Face pass 2: light frame along the lens's top and bottom
+                # edges so the dark lens separates from the navy shell above
+                # and the skin below (face pass 1's lens merged into the
+                # shell — the whole eye zone read as one dark beret).
+                hzl = (z - lm['chin']) / lm['h']
+                lens_top = 0.50
+                lens_bot = 0.34
+                if lens_top - hzl < 0.015 or hzl - lens_bot < 0.015:
+                    col, tag = GOGGLE_RIM, 'rim'
+                else:
+                    col, tag = LENS, 'goggle'
             elif reg == 'face':
-                # Face pass 1 (author 2026-08-28 2b): brows + lip colour over
-                # the preserved skin, in head-height fractions so they track
-                # the landmark bands, not absolute metres.
+                # Face pass 2: feature bands on the skin below the goggles.
                 hz = (z - lm['chin']) / lm['h']
-                if lm['h'] * 0.555 < hz < lm['h'] * 0.615 \
-                        and abs(x - hx) < lm['h'] * 0.30:
-                    col, tag = BROW, 'brow'
-                elif lm['h'] * 0.25 < hz < lm['h'] * 0.32 \
-                        and abs(x - hx) < lm['h'] * 0.13:
+                if lm['h'] * 0.20 < hz < lm['h'] * 0.295 \
+                        and abs(x - hx) < lm['h'] * 0.15:
                     col, tag = LIP, 'lip'
+                elif lm['h'] * 0.305 < hz < lm['h'] * 0.325 \
+                        and abs(abs(x - hx) - lm['h'] * 0.055) < lm['h'] * 0.020 \
+                        and ly > lm['h'] * 0.10:
+                    col, tag = BROW, 'nostril'
                 else:
                     col, tag = SKIN, 'face'
             elif reg == 'strap':
@@ -3672,8 +3685,9 @@ def paint_suit(obj, lm):
     # condition never fires produces no error and no warning — the bake simply
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
-    missing = [t for t in ('suit', 'helmet', 'face', 'goggle', 'strap', 'waist',
-                           'bib', 'number', 'stripe', 'glove') if counts.get(t, 0) == 0]
+    missing = [t for t in ('suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
+                           'strap', 'waist', 'bib', 'number', 'stripe', 'glove')
+               if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
             f'[body] these suit regions matched no vertices: {missing}. Their '

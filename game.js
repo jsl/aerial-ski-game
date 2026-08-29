@@ -1444,7 +1444,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=25';   // 25: suit legibility (entry-75 item 2) — darker suit albedo 0.77/0.80/0.86 + stripe panel 0.26→0.32 rad
+    const ASSET_V = '?v=26';   // 26: face pass 2 — goggle light rim + wider lip band + nostrils (entry-78 face item)
                                // bake_trees.py seeds/heights/radial envelopes,
                                // card_0..3 + atlas_0..3
 
