@@ -194,9 +194,12 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Notches on the skier's legs are still visible (author).** The handoff dismissed the knee/ankle dips as anatomical waists; the author sees steps, not waists. Likely causes: `add_girth` applies a different slimming factor per segment (shin ×0.74 vs thigh ×0.79) with a hard switch at the joint, and the rigid boot ramp (45 mm) at the ankle. Blend the girth factor across joints by skin weight (or over ≥ 8 cm), and change the leg-profile check to flag steps (a discontinuity in the first derivative of the profile), not dip depth — do not simply skip the knee and ankle bands. Re-check after P0 lands, since the skinning changes there.
 - **At takeoff both arms must rise straight up together (author).** Currently one arm ends up in front and the other behind. The P0 frame bug produces exactly this (as-is, one forearm centroid sits 0.29 m behind the driver and the other 0.31 m ahead), so land P0 first, then verify at the takeoff moment that `upperArmL`/`upperArmR` (and lower arms) have identical rx and mirrored x with the same z; if any asymmetry remains and it comes from the renderer (`applyPose`, `applyGamepadLateral`, the takeoff arm phases around `game.js:77`), fix it there; if it originates in engine inputs, do not touch `engine/` — record it under Open questions. Reference silhouette for flight: arms straight overhead by the ears, skis parallel and together (`reference/frames/IMG_7841/video_skis_closeup.jpg`).
 
+
+
 ## Status board
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
+| — | Iteration 116 | **cone-peak range RE-LANDED — entry-113/114 blockers root-caused: the PEAKS x/z/height data was never applied (all 11 cones at the world origin, occluding the ridges = bitwise-identical mask-collapse frames AND the face-back dark wall); peaks now positioned, 30 m snowline** | ridges3d 4/4 (mask 0.088 / mean 0.514 / std 0.182; fogged control discriminates 0.644/0.100), look 1/1, golden re-captured CENSUS-ONLY (5408 frames byte-identical after stripping pk_body_*), unit 78/78. See entry 116. |
 | — | Iteration 114 | **cone-peak re-land ATTEMPTED, NOT LANDED — tree reverted to HEAD; two blockers measured: back/front darkU dose–response knife edge (emissive 0.10→0.3822 back FAIL / 0.25→0.0078 front FAIL) and ridges3d contrast mask collapsing to 0 whenever peaks exist (contradictory signature, unresolved)** | unit 0 fail, golden 30/30 at reverted HEAD, ridges3d 4/4; peaks golden footprint nil (state byte-identical ×30); full evidence table in entry 114 |
 | — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
@@ -7654,7 +7657,6 @@ peaks with the emissive + one of (a)–(c) above. 3. Parked polish group
 unchanged (height haze, LOD/frame time).
 
 ### 115 — REVIEW-ONLY (per schedule): suite effectively green (one contention flake), shots regenerated + inspected, peaks re-land unblocked by the landed Opus merge; full critical review + re-prioritised list
-
 **Scope:** no features. `docs/NEXT.md` does not exist. Reviewer feedback acted
 on: none required beyond the standing rules — the only actionable ruling (peaks
 re-land after the Opus merge) is queued for the next work iteration; this
@@ -7754,3 +7756,56 @@ group (height haze, LOD/frame time) parked.
 
 *No source or asset files changed in this iteration; the only diff is this
 entry (plus this status-board row). Scratch dir untouched/empty.*
+
+### 116 — cone-peak range RE-LANDED — both entry-113/114 blockers root-caused to ONE bug: the PEAKS x/z/height data was never applied, all 11 cones sat unpositioned at the world origin
+
+**Task:** re-land the peaks per rulings 110/113 (unblocked by the landed Opus
+merge and its silhouette-masked face gates — which indeed never fired: the
+new gates are head-silhouette-masked, so the old darkU background bleed is
+structurally gone).
+
+**Root cause (new, definitive):** the iter-113 `PEAKS.forEach` created each
+`pk_body_i` cylinder but never set `body.position`. All 11 cones (h 84–118 m)
+sat at the world origin, where ONE of them towered over the mid-run and
+occluded the ridges. This explains every "contradictory signature" in entry
+114: hiding the ridges left the frame BITWISE unchanged (checksum probe
+csA == csB; screenshot-diff 0 differing px) because the origin cone hid them;
+the "sun-away flank dark wall" in the face-back close-up was the unlit origin
+cone, not a ridge-gap; and the 311 k-px peak-hidden frame delta was the same
+cone. The mask collapse was never a readPixels or texture-similarity bug.
+
+**Changes (commit `df6628e`):**
+- `game.js`: peaks block re-inserted after the ridge meshes — `body.position.
+  set(m.x, valleyFloorY − 4 + m.h/2, m.z)` (cylinder origin is its centre);
+  `peakMat` = `_ridgeMat('peakMat', 0.30, …)` with `fogEnabled = true` (they
+  sit 200+ m out and want the EXP2 haze); elevation-keyed UV with the
+  snowline compressed to 30 m (ridges use 80 m) so the peaks read snowier
+  than the ridges in front of them. 11 `pk_body_0..10`, same node names as
+  the iter-94 census predecessor. No `assets/` change → no ASSET_V bump.
+  The emissive dose–response hunt from entry 114 is moot — with the cones
+  actually on their mountains, no instrument sees the flanks.
+- `tests/drive/ridges3d.spec.js` contrast mask stays RIDGE-ONLY (an
+  intermediate hide-ridges+peaks variant diluted the mask to peak pixels and
+  killed the fogged control's discrimination; reverted). Comment added.
+
+**Verification:** unit 78/78; golden re-captured, 30/30, and audited
+CENSUS-ONLY — 5408 frames across all 30 traces byte-identical to the
+previous traces after stripping `pk_body_*` nodes (audit script in
+`~/aerial-agents/scratch/iter-116/audit-census.js`); ridges3d 4/4 — contrast
+mask 0.088 / meanLum 0.514 / stdLum 0.182 (gates > 0.02 / ≤ 0.56 / ≥ 0.14),
+fogged negative control 0.644 / 0.100 — the control discriminates again
+after being dead since the peaks first landed; `look` 1/1 (5.4 m), shots
+regenerated.
+
+**Open (next iterations):**
+1. By-eye confirmation of the skyline in `scene.png`/`inrun.png` (peak
+   tops, no green caps, no occlusion artefacts) — reviewer pass or 117.
+2. Entry-115 items: 117 pike pose-shot camera standOff fix; 118 polish group
+   (height haze, LOD/frame-time, kicker side panels); Opus brief additions
+   (shards, neck streak, profile crown, pinstripe panels) still queued.
+
+**Open questions for the reviewer:** none new. (Entry-115 Q3 is resolved:
+geometry-level suppression was never needed — the peaks never left the
+ground.)
+
+
