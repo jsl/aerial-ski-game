@@ -117,6 +117,10 @@ const { computeI } = AerialEngine.inertia;
 function makePBR(name, scene) {
     const m = new BABYLON.PBRMaterial(name, scene);
     m.metallic  = 0.0;      // nothing in this scene is bare metal
+    // P9 night mode adds 7 floodlight spots to the hemi+sun pair; the default
+    // budget of 4 would silently drop the furthest pools. Day mode keeps 2
+    // lights, so this costs nothing there.
+    m.maxSimultaneousLights = 8;
     m.roughness = 0.75;     // sane default; overridden by specularPower below
 
     Object.defineProperty(m, 'diffuseColor', {
@@ -1301,6 +1305,8 @@ const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, 
 const _trampolineMode       = _worldParam === 'trampoline';
 const _trampolineMatMode    = _worldParam === 'trampoline_mat';
 const _poolDiveMode         = _worldParam === 'pool';
+const _nightParam    = new URLSearchParams(location.search).get('night') === '1';
+const _nightMode     = _nightParam && !_trampolineMode && !_trampolineMatMode && !_poolDiveMode;
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
 // ── Trampoline-mat world constants ──────────────────────────────────────────
@@ -1494,6 +1500,8 @@ function _startGame() {
         ? new BABYLON.Color4(0.88, 0.87, 0.84, 1)  // gym interior
         : _poolDiveMode
         ? new BABYLON.Color4(0.42, 0.68, 0.92, 1)  // outdoor pool sky
+        : _nightMode
+        ? new BABYLON.Color4(0.006, 0.008, 0.013, 1)  // P9 night: near-black sky
         : new BABYLON.Color4(0.53, 0.81, 0.98, 1);  // ski sky blue
 
     // ── Orbiting orthographic camera ─────────────────────────────────────────
@@ -1628,9 +1636,11 @@ function _startGame() {
     // colour exactly, so fogged terrain blends seamlessly into the dome.
     if (!_trampolineMode) {
         scene.fogMode    = BABYLON.Scene.FOGMODE_EXP2;
-        scene.fogDensity = _poolDiveMode ? 0.003 : 0.0022;  // clear air (P2); was 0.005
+        scene.fogDensity = _poolDiveMode ? 0.003 : _nightMode ? 0.0045 : 0.0022;  // night: dark falloff between light pools (P9)
         scene.fogColor   = _poolDiveMode
             ? new BABYLON.Color3(0.50, 0.72, 0.95)
+            : _nightMode
+            ? new BABYLON.Color3(0.010, 0.012, 0.020)  // near-black night air
             : new BABYLON.Color3(0.62, 0.76, 0.92);  // = skyShader horizonColor
     }
 
@@ -1639,7 +1649,9 @@ function _startGame() {
     // ShaderMaterial so the golden harness's inert stub — which deliberately
     // lacks it — skips the whole block: the dome is display-only and must not
     // enter the traces (see tests/golden/stub-extend.js design rule).
-    if (!_trampolineMode && !_poolDiveMode &&
+    // Ski mode only (pool/trampoline keep their backdrops); skipped in the P9
+    // night mode — the night block below supplies the near-black sky.
+    if (!_trampolineMode && !_poolDiveMode && !_nightMode &&
         BABYLON.ShaderMaterial && BABYLON.Effect && BABYLON.Effect.ShadersStore &&
         BABYLON.MeshBuilder) {
         BABYLON.Effect.ShadersStore.skyVertexShader = `
@@ -1751,6 +1763,107 @@ void main(void) {
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
+
+    // ── P9 night snowfall mode (?night=1) ────────────────────────────────────
+    // Modelled on reference/frames/IMG_3396 (night training session, heavy
+    // snowfall): near-black sky with no horizon detail; 7 warm floodlights on
+    // poles along the in-run crest and table with visible pools on the snow;
+    // fast dark falloff between pools; falling snow as elongated streaks in a
+    // camera-following volume. Sunny day remains the default; display-only —
+    // no physics, no trace-visible state (the golden harness never passes
+    // ?night=1, and every Babylon call below is stubbed inert there anyway).
+    const _nightLights = [];
+    if (_nightMode) {
+        try {
+            hemi.groundColor   = new BABYLON.Color3(0.05, 0.06, 0.09);
+            // The IBL is a bright DAY sky reflection — at night it washes the
+            // whole scene pale. Cut it so only the floodlight pools light the
+            // snow (fast falloff between pools, as in IMG_3396).
+            scene.environmentIntensity = 0.04;
+            sunLight.intensity = 0.03;
+            hemi.intensity     = 0.06;
+            hemi.diffuse       = new BABYLON.Color3(0.25, 0.30, 0.42);
+            hemi.groundColor   = new BABYLON.Color3(0.05, 0.06, 0.09);
+
+            // 7 warm floodlights on poles beside the corridor: three on the
+            // in-run crest (z < TRANS_START_Z), two across the table, one over
+            // the kicker, one over the knuckle. Pools read where the cones land.
+            const _poleZs = [-22, -12, -2, 8, 14, 21, LANDING_START_Z - 0.5];
+            const _poleH  = 6.5;
+            const poleMat = new BABYLON.StandardMaterial('nightPoleMat', scene);
+            poleMat.diffuseColor = new BABYLON.Color3(0.05, 0.05, 0.06);
+            for (let i = 0; i < _poleZs.length; i++) {
+                const z = _poleZs[i];
+                const x = (i % 2 === 0 ? -1 : 1) * 2.6;   // alternate sides
+                const y = terrainRootY(z) - FOOT_OFFSET;
+                const pole = BABYLON.MeshBuilder.CreateCylinder('nightPole' + i,
+                    { height: _poleH, diameter: 0.09 }, scene);
+                pole.position.set(x, y + _poleH / 2, z);
+                pole.material = poleMat;
+                pole.isPickable = false;
+                const spot = new BABYLON.SpotLight('nightFlood' + i,
+                    new BABYLON.Vector3(x * 0.8, y + _poleH - 0.2, z),
+                    new BABYLON.Vector3(-x * 0.12, -1, 0).normalize(),
+                    0.7, 18, scene);
+                // Babylon's default falloff is physical (intensity/r²); at the
+                // 6.5 m drop to the snow that divides by ~42 — the intensity
+                // is tuned for ≈ 1.0 arriving at the surface.
+                spot.intensity = 45.0;
+                spot.range = 60;
+                spot.diffuse  = new BABYLON.Color3(1.00, 0.80, 0.55); // ~2900 K
+                _nightLights.push(spot);
+            }
+
+            // Falling snow: a camera-following volume of elongated streaks.
+            if (BABYLON.ParticleSystem && BABYLON.Texture) {
+                const cv = document.createElement('canvas');
+                cv.width = cv.height = 32;
+                const cx = cv.getContext('2d');
+                const grad = cx.createRadialGradient(16, 16, 0, 16, 16, 15);
+                grad.addColorStop(0, 'rgba(255,255,255,1)');
+                grad.addColorStop(0.5, 'rgba(235,240,255,0.55)');
+                grad.addColorStop(1, 'rgba(235,240,255,0)');
+                cx.fillStyle = grad;
+                cx.fillRect(0, 0, 32, 32);
+                const ps = new BABYLON.ParticleSystem('nightSnowfall', 2600, scene);
+                ps.particleTexture = new BABYLON.Texture(cv.toDataURL(), scene);
+                ps.emitter = new BABYLON.Vector3(0, 0, 0);
+                ps.minEmitBox = new BABYLON.Vector3(-28, 8, -45);
+                ps.maxEmitBox = new BABYLON.Vector3(28, 20, 45);
+                ps.color1 = new BABYLON.Color4(1, 1, 1, 0.85);
+                ps.color2 = new BABYLON.Color4(0.85, 0.90, 1.0, 0.6);
+                ps.colorDead = new BABYLON.Color4(1, 1, 1, 0);
+                // Elongated vertically: streaks ~4-15 px on screen (P9 spec).
+                ps.minSize = 0.04; ps.maxSize = 0.11;
+                ps.minScaleY = 2.2; ps.maxScaleY = 4.5;
+                ps.emitRate = 1100;
+                ps.gravity = new BABYLON.Vector3(0.35, -1.6, 0);  // fall + wind drift
+                ps.direction1 = new BABYLON.Vector3(-0.4, -2.4, -0.3);
+                ps.direction2 = new BABYLON.Vector3(0.4, -1.4, 0.3);
+                ps.minEmitPower = 0.4; ps.maxEmitPower = 1.0;
+                ps.minLifeTime = 4.0; ps.maxLifeTime = 8.0;
+                ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+                ps.start();
+                // Keep the volume centred on the camera every frame.
+                const follow = () => {
+                    if (ps.emitter && camera && camera.position) {
+                        ps.emitter.copyFrom(camera.position);
+                    }
+                };
+                if (scene.onBeforeRenderObservable && scene.onBeforeRenderObservable.add) {
+                    scene.onBeforeRenderObservable.add(follow);
+                } else if (scene.registerBeforeRender) {
+                    scene.registerBeforeRender(follow);
+                }
+                window._nightSnowPs = ps;
+            }
+        } catch (e) { /* night mode is display-only — never break the game */ }
+    }
+    window._nightProbe = () => ({
+        active: _nightMode,
+        lights: _nightLights.length,
+        snow: !!(window._nightSnowPs && window._nightSnowPs.isStarted && window._nightSnowPs.isStarted()),
+    });
 
     // Asset cache-busting. The scripts in index.html carry ?v=; the binary
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
