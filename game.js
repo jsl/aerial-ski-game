@@ -3811,6 +3811,145 @@ void main(void) {
         }
     }
 
+    // ── Venue dressing slice 2: landing centreline wands + knoll crest flag ──
+    // Footage deltas (RENDER-PROGRESS P3, IMG_3520/7841): two rows of orange/
+    // red wands with small pennants marking the landing centreline, and ONE
+    // plain blue flag on a pole at the knoll crest (no roundel — no marks).
+    // Display-only scenery: thin-instanced poles/pennants (2 draw calls) plus
+    // one flag (2 meshes), seeded from the physics profile and re-seated once
+    // after the first rendered frame, exactly like the B-net above.
+    {
+        const WAND_X      = 1.3;   // rows either side of the landing centreline
+        const WAND_H      = 1.60;
+        const WAND_SPACING = 5.0;
+        const WAND_Z0     = LANDING_START_Z + 2.0;
+        const WAND_Z1     = OUTRUN_Z - 2.0;
+        const FLAG_X      = 3.6;   // beside the corridor, on the knoll table
+        const FLAG_Z      = KICKER_END_Z;  // the knoll crest
+        const FLAG_POLE_H = 3.0;
+        const RAY_Y2      = 80;
+
+        const wandGroundAt = (x, z) => {
+            if (typeof scene.pickWithRay === 'function' && !!BABYLON.Ray) {
+                try {
+                    const hit = scene.pickWithRay(
+                        new BABYLON.Ray(new BABYLON.Vector3(x, RAY_Y2, z),
+                                        new BABYLON.Vector3(0, -1, 0), 150),
+                        (m) => !!(m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name)));
+                    if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                } catch (e) { /* fall through to the physics surface */ }
+            }
+            return terrainRootY(z) - FOOT_OFFSET;
+        };
+
+        // Wand rows: [-1, +1] × z from WAND_Z0 to WAND_Z1 every WAND_SPACING.
+        const wandStations = [];
+        for (const s of [-1, 1]) {
+            for (let z = WAND_Z0; z <= WAND_Z1 + 1e-6; z += WAND_SPACING) {
+                wandStations.push({ x: s * WAND_X, z });
+            }
+        }
+
+        // Column-major identity+position matrices (same pattern as the B-net).
+        const wandMtx = (pts, lift) => {
+            const mtx = new Float32Array(pts.length * 16);
+            pts.forEach((p, i) => {
+                const o = i * 16;
+                mtx[o] = 1; mtx[o + 5] = 1; mtx[o + 10] = 1; mtx[o + 15] = 1;
+                mtx[o + 12] = p.x;
+                mtx[o + 13] = p.y + lift;
+                mtx[o + 14] = p.z;
+            });
+            return mtx;
+        };
+
+        const wandMat = makePBR('wandPoleMat', scene);
+        wandMat.albedoColor = new BABYLON.Color3(0.85, 0.22, 0.04);  // orange/red
+        wandMat.metallic = 0;
+        wandMat.roughness = 0.7;
+        const pennantMat = makePBR('wandPennantMat', scene);
+        pennantMat.albedoColor = new BABYLON.Color3(0.85, 0.22, 0.04);
+        pennantMat.backFaceCulling = false;
+        pennantMat.metallic = 0;
+        pennantMat.roughness = 0.8;
+
+        const wandSrc = BABYLON.MeshBuilder.CreateCylinder('wandPole',
+            { height: WAND_H, diameterBottom: 0.035, diameterTop: 0.025, tessellation: 6 }, scene);
+        wandSrc.material = wandMat;
+        const pennantSrc = BABYLON.MeshBuilder.CreatePlane('wandPennant',
+            { width: 0.22, height: 0.16 }, scene);
+        pennantSrc.material = pennantMat;
+
+        const seatWands = (picker) => {
+            // Wands are PLANTED: base 6 cm below the picked visual surface so
+            // the landing chop's async downward displacement (≤ 7 cm, decodes
+            // after the first render) can never leave a wand floating.
+            const seated = wandStations.map((s) => ({ x: s.x, z: s.z, y: picker(s.x, s.z) - 0.06 }));
+            try {
+                wandSrc.thinInstanceSetBuffer('matrix', wandMtx(seated, WAND_H / 2), 16, true);
+                wandSrc.thinInstanceRefreshBoundingInfo(true);
+                // Pennants fly just under each pole top, offset to the +x side.
+                const penn = seated.map((p) => ({ x: p.x + 0.12, z: p.z, y: p.y + WAND_H - 0.14 }));
+                pennantSrc.thinInstanceSetBuffer('matrix', wandMtx(penn, 0), 16, true);
+                pennantSrc.thinInstanceRefreshBoundingInfo(true);
+            } catch (e) { /* headless: sources stay put */ }
+            window._wandsDebug = {
+                stations: seated,
+                rows: 2,
+                poles: seated.length,
+                planted: 0.06,
+                seated: !!picker.seated,
+            };
+        };
+
+        seatWands((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
+
+        // Knoll crest flag: pole + plain blue pennant (no roundel, no marks).
+        const flagPole = BABYLON.MeshBuilder.CreateCylinder('knollFlagPole',
+            { height: FLAG_POLE_H, diameterBottom: 0.05, diameterTop: 0.035, tessellation: 8 }, scene);
+        flagPole.material = wandMat;
+        const flagMat = makePBR('knollFlagMat', scene);
+        flagMat.albedoColor = new BABYLON.Color3(0.10, 0.28, 0.75);  // plain blue
+        flagMat.backFaceCulling = false;
+        flagMat.metallic = 0;
+        flagMat.roughness = 0.8;
+        const flagCloth = BABYLON.MeshBuilder.CreatePlane('knollFlagCloth',
+            { width: 0.85, height: 0.50 }, scene);
+        flagCloth.material = flagMat;
+        flagCloth.position.x = 0.44;   // cloth hangs on the pole's +x side
+
+        const seatFlag = (picker) => {
+            const y = picker(FLAG_X, FLAG_Z);
+            flagPole.position.set(FLAG_X, y + FLAG_POLE_H / 2, FLAG_Z);
+            flagCloth.position.set(FLAG_X + 0.44, y + FLAG_POLE_H - 0.35, FLAG_Z);
+            window._knollFlagDebug = { x: FLAG_X, z: FLAG_Z, baseY: y, seated: !!picker.seated };
+        };
+        seatFlag((x, z) => terrainRootY(z) - FOOT_OFFSET);
+
+        // Re-seat after the first COMPLETED render — same contract as B-net.
+        if (typeof scene.onAfterRenderObservable !== 'undefined' &&
+            scene.onAfterRenderObservable &&
+            typeof BABYLON.Ray !== 'undefined' &&
+            typeof scene.pickWithRay === 'function') {
+            const reseatWands = () => {
+                const picker = (x, z) => wandGroundAt(x, z);
+                picker.seated = true;
+                seatWands(picker);
+                seatFlag(picker);
+            };
+            scene.onAfterRenderObservable.addOnce(reseatWands);
+            // Second pass after the chop height tile has had a chance to
+            // decode and displace the landing — the final seating.
+            setTimeout(() => {
+                reseatWands();
+                window._wandsSeated = true;
+            }, 1500);
+        } else {
+            window._wandsSeated = false;   // headless: keep the seed seating
+        }
+    }
+
+
 
 
     // ── P6 layered forested ridgelines ─────────────────────────────────────

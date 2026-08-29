@@ -6938,3 +6938,42 @@ actually arrive (risk: a hung CDN path never reveals)? (2) The preload `?v=`
 is hand-pinned to ASSET_V 34 — want a unit gate asserting the two stay in
 sync? (3) Ridge depth is uniformly 21% of run — acceptable, or should the far
 layer taper for a more distant feel?
+
+### 102 — P3 venue dressing slice 2: landing centreline wands + knoll crest
+flag LANDED; pose shots regenerated (iter-101 open item 1).
+
+**What changed.** New block after the B-net in `game.js` (display-only
+scenery, no new top-level functions → unit allowlist untouched): two rows of
+orange/red wands (x = ±1.3 m, z from LANDING_START_Z+2 to OUTRUN_Z−2 every
+5 m, 14 poles) with small pennants — thin-instanced poles + thin-instanced
+pennants = 2 draw calls; one plain blue flag (0.85×0.50 cloth, no roundel) on
+a 3 m pole at the knoll crest (x 3.6, z = KICKER_END_Z). Seeded from the
+physics profile, re-seated after the first rendered frame AND again at +1.5 s
+— the second pass is required because the landing chop's height tile decodes
+async and displaces the corridor down ≤ 7 cm after the first render (first
+spec run measured a 5.7 cm float). Wands are PLANTED 6 cm below the picked
+surface so the chop can never leave one floating.
+
+**Gates** (`tests/drive/venue-dressing.spec.js`, second test): 2 rows × ≥ 8
+poles (14), one x per side, thinInstanceCount == poles (14/14 pennants),
+burial 1–13 cm below the visual surface and never floating, rows inside
+(LANDING_START_Z, OUTRUN_Z); flag present, seated (baseErr < 2 cm), plain
+blue cloth (r 0.10 / b 0.75), z at KICKER_END_Z. 2/2 green.
+
+**Verification:** unit 0 fail; golden initially 8/30 — the four new node
+names (wandPole/wandPennant/knollFlagPole/knollFlagCloth) enter the trace
+node census; re-captured, and a field-by-field diff vs the HEAD traces shows
+exactly those 4 absent→present entries with physics (non-node) state
+byte-identical; golden 30/30. `look` green (one flaked run — pose-shot
+timeout under process contention, the same failure as iter-101's open item;
+clean rerun passed, ALL shots incl. the six pose shots regenerated 10:29–
+10:31). BY EYE: `kicker.png` shows the blue flag clearly beside the block and
+orange wand dots down the landing centreline; the red kicker edge paint is
+untouched; `scene.png`/`figure.png` read as before (figure frontal, skis
+seated, ridge volumes unchanged).
+
+**Open / next:** P3 remainder (judges'/start deck on containers, coach
+figures in red jackets); P4 tree leftovers (8-view billboards, understory,
+near-camera cards).
+
+**Open questions for the reviewer:** none new.
