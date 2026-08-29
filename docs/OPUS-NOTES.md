@@ -796,6 +796,138 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 7 (2026-08-29, 17:0x-17:5x)
+
+### Merge with `render-realism-glm` — commit `b7c52c5` (docs only)
+
+`docs/RENDER-PROGRESS.md` only (iter 114's withdrawn cone-peak re-land). Clean
+auto-merge, no code, so unit+golden were not re-run over the merge alone.
+
+### THE SHARDS — reviewer's top visible defect — commit `a620b48`
+
+**Root cause: `narrow_shoulders` compared a magnitude against a SIGNED plane.**
+
+The pass pulls verts OUTBOARD of each shoulder's bone plane back onto the
+anatomical cap. Its test read `s * v.co.x <= x_b + 0.001`. But `s * v.co.x` is
+already folded to a magnitude (the `s` is there precisely to make both sides
+positive), while `x_b = s * 0.175` still carries the side's sign. On the right
+(`s=+1`, `x_b=+0.175`) the two conventions agree by accident. On the left
+(`s=-1`, `x_b=-0.175`) the test passes for everything outboard of **-0.174** —
+the entire trunk and most of the opposite arm — and every one of those verts
+was then rescaled about the LEFT bone plane.
+
+Measured, same build, instrumented per side:
+
+| side | verts moved | worst move |
+|---|---|---|
+| L (broken) | **279** | **226.8 mm**, x +0.172 -> -0.055 |
+| R (correct) | 42 | 37.1 mm, x +0.237 -> +0.200 |
+| L (fixed) | 43 | 39.9 mm, x -0.240 -> -0.201 |
+
+A vertex at x=+0.172 is the FAR shoulder. It was being dragged to -0.055,
+through the chest. The faces bridging moved and unmoved verts stretched to
+240 mm on a mesh whose median edge is 11 mm, and shaded wherever their normals
+ended up. **That is the silvery shard.** Bideltoid is 0.401 m before and after,
+so the pass still does the job it was written for.
+
+### The instrument that found it
+
+`sliver_report(obj, tag)` counts faces that are BOTH longer than 60 mm AND off
+their own vertex normals by more than 60 deg — the shard signature, needing no
+reference mesh — and now runs after every geometry pass. That is what turned
+"root-cause it" into an answer instead of a guess:
+
+| after | shard faces | worst edge |
+|---|---|---|
+| soften | **0**/10590 | 57 mm  (the base mesh is clean) |
+| shape_helmet | 41 | 119 mm |
+| settle_limb_geometry | 49 | 131 mm |
+| **narrow_shoulders** | **149** | **240 mm** |
+| loosen_suit | 161 | 240 mm |
+| straighten_chest | 119 | 240 mm |
+| finish_lowpoly (shipped) | **157**/9558 = 1.64% | 240 mm |
+| **finish_lowpoly, fixed** | **50**/9509 = **0.53%** | **139 mm** |
+
+`sliver_gate` ships at **0.60% / 160 mm** — 2.7x under the defect, 1.7x over
+the repaired build. Two negative controls: `BODY_SABOTAGE_SLIVER=1` reproduces
+the sign bug's smear and fails the gate, and the gate independently **rejects
+the mesh HEAD was shipping** (1.64%, 240 mm) — a historical control that costs
+nothing to keep.
+
+### Two gates moved, both because the TEAR was satisfying them
+
+This is the part for the reviewer. Neither is a loosening-to-pass; both are
+gates whose calibration turned out to be contaminated by the defect.
+
+1. **Chest sanity floor 0.30 -> 0.25 m.** The bug pushed the left chest wall
+   outboard (a trunk vert at x=-0.100 landed at -0.149), inflating this very
+   breadth. Same slice, same build: **303 mm with the bug, 275 mm without**.
+   28 mm of the margin over the 300 mm floor was smear. Widening the trunk by
+   28 mm to meet a number calibrated on torn geometry would be shaping the body
+   to fit the defect, and it runs against item 3's "straight torso, chest does
+   not protrude". `chest/thigh` 1.415 -> 1.285 (gate <= 1.70); hip unchanged at
+   295 mm.
+2. **Suit weave 1.1 -> 2.1 mm peak-to-peak.** With the shards gone the suit's
+   NM variance fell **8.24 -> 5.96** against a 6.30 floor: roughly a quarter of
+   the "fabric relief" that gate was measuring was the tear, because long
+   mis-shaded faces are high-Laplacian too. Here the floor STAYS and the cloth
+   gets its weave for real (item 3's woven micro-normal). 1.7 mm gave 6.19,
+   2.1 mm gives **6.36**. The gate was right and the suit was under-relieved.
+
+### What the shot shows
+
+`shots/figure_front.png` (regenerated, ASSET_V 40): the diagonal fan of shards
+across the chest and the flaps over the bib are **gone**, the suit reads as one
+surface, and the bib "30" reads correctly left-to-right.
+
+**Still there, and it is the next thing to fix:** a flap-shaped tear at the
+CROTCH and smaller notches at both armpits (`scratch/opus/after_groin.png`).
+Those are the surviving 50 faces. They are the arm-torso and leg-torso bridge
+faces, which are long by construction because they span a real gap — but they
+are still shading as shards. `shape_helmet` (41 faces, worst at
+(+0.132,+0.099,+0.013)) and `settle_limb_geometry` (+6, worst at
+(+0.125,-0.032,-0.034)) are the two passes that create them, per the table
+above. Start there.
+
+### Verification
+
+    build   all gates green at 2048/96 (sliver, goggle band, dome seating, leg
+            taper, bib number + aspect, stripe, suit NM variance 6.36, atlas
+            share); delivery maps 976 690 B total
+    unit    78/78
+    golden  30/30, no re-capture, no physics change
+    drive   rig + body + chain + athlete + ready-stance + bib-number +
+            athlete-wired + spine: 40 passed (8.6 m), 0 failed
+    shots   look.spec regenerated figure_front/figure_side/face/face_back
+
+`ASSET_V` 39 -> 40, `index.html` `game.js?v=` 33 -> 34, preload hrefs `?v=40`.
+
+One process note: port 8399 was held by an orphaned `http.server` from this
+worktree left by a killed run; `ss -ltnp` identifies the owner and it is safe
+to kill when the `--directory` is this worktree.
+
+### Open at the end of session 7
+
+- **The crotch/armpit shards** (50 faces) — described above, with the passes
+  that make them already named.
+- **Item 5 half closed**, unchanged: the spine is in and inert at rest; the
+  tuck tear still needs the `POSE_TUCKED` hip-gap ruling (session 6, question 1
+  below — still the highest-value ruling available).
+- Item 2's rim lip / chin strap / vents / gloss.
+- Items 3 (suit panels + separate bib garment), 6 (in-run arms), 7 (pike hip),
+  9 (face), 10 (stance), 12 (boots) untouched.
+
+### For the reviewer (session 7)
+
+1. **The two gate recalibrations above** are the judgement calls in `a620b48`.
+   Both are cases of a gate that the defect had been satisfying; I moved the
+   chest floor and did NOT move the NM floor, and the reasoning for treating
+   them differently is in the code comments.
+2. **The `POSE_TUCKED` hip gap still needs `NEEDS-APPROVAL:`** — carried from
+   session 6, unchanged and still blocking item 5's strain gate.
+
+---
+
 ## Session 6 (2026-08-29, 16:2x-17:0x)
 
 ### Merge with `render-realism-glm` — commit `1f7f0a5` (docs only)
