@@ -188,6 +188,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 100 (review) | **suite recovered from ONE load-sensitive crash gate; review recorded** | `crash-ragdoll.spec` sampler leash crashedAt+10 s→+30 s wall (spec-only; the ≥3 s zero-span gate measures WALL ms and under full-suite load the rest landed past +7 s wall → 2 s span; solo always 2/2 green; gate and game code untouched, re-run 2/2). Shots inspected: figure_front correctly FRONTAL (review-95 finding closed); crown dome holds; BUT pose_inrun_side arms read fused (gates pass — visual gate proposed), face featureless at 0.6 m, crash_rest body a speck, suit white-on-white at scene distance (corridor 0.8289 vs flankNear 0.8509). NEXT.md (crouch arms, pike gate, face mask) untouched — top priority. See entry 100. |
+| — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
 | — | Iteration 92 | **face pass 3 paint + suit legibility LANDED; crown-gate instrument built (SOFT — geometry blocked by pipeline, open)** | lip/nostril strokes darker+wider, NEW nose-side shadow band (69 verts), nose-side tint; suit plain verts get a cool grey-blue fold-shade multiplier (max −18 % r / −10 % b, smoothstep over the SUIT_FOLDS bands) — bib/waist/number/stripe/glove tags untouched, bib gates green; suit-vs-snow ready-view luminance gap measured 0.142 (gate ≥ 0.06; suit 0.710 vs snow 0.852); crown gates written (height ≥ 0.45×width: 91.6 vs 73 PASS hard; band-edge normal tilt ≥ 25°: 13.1 SOFT-FAIL with negative control BODY_SABOTAGE_CROWN=1 → 0.0) — the hemispherical re-projection is exact in `shape_helmet` (929 verts on an r=101.3 mm sphere, residual mean 101.3 mm) but the tilt read stays 13–15° after retune/decimate/unwrap — root-cause trail in entry 92; ASSET_V 31; unit 0 fail, golden 30/30, drive body+bib-number+look 6/6. See entry 92. |
@@ -7092,3 +7093,74 @@ actually on-camera in these framings.
 
 Verification summary: unit 78/78, golden 30/30, ridges3d 2/2, look 1/1
 (4.1 m), shots regenerated 11:29–11:33 and inspected.
+
+### 105 — REVIEW-ONLY (per schedule): full suite ALL GREEN; ridge texture
+improved but still weak; NEXT.md carried to 106
+
+No features. Ran the full pipeline, regenerated and inspected shots, wrote
+this critical review. No outright breakage found — nothing fixed beyond docs.
+
+Verification: `./tests/run-all.sh` **ALL GREEN** (unit 78/78, golden 30/30,
+browser suite, mutation-check, coverage, drive 88 passed / 2 skipped in
+22.2 m); `look` 1/1 in 3.5 m (within the 420 s config); shots regenerated
+11:39–11:42 and inspected.
+
+**Critical review — what reads wrong now (with measurements):**
+
+1. **Ridge texture: present but still weak; NEXT.md's u-space question is
+   now ANSWERED by the framings.** `scene.png` ridge band (rows 5–30 %)
+   meanLum 0.641, gradP90 **25 → 37.9/255** vs entry 104 — the 104 snowline
+   remap measurably helped and faint rock/tree-line mottling is visible on
+   the mid ridge by eye. BUT `inrun.png` rows 5–30 % gradP90 is **1.7/255**
+   — that framing contains **no ridges at all** (horizon is trees + sky),
+   which resolves 104's open question 2: the near ridges (x = ±68) are
+   simply off-camera in `inrun`/`figure` framings, so their forest band
+   being "unreadable" there was expected, not a bug. The real residual
+   defect is on the **far/mid ridges in `scene.png`**: they read as pale,
+   washed-out, low-contrast cut-outs (meanLum 0.64 against a 0.7+ sky) —
+   the fog-mix tint still dominates the band texture. NEXT.md stays, with
+   the priority flipped: the u-space band re-keying matters less than
+   **reducing the per-layer fog-mix multiplier further and/or raising band
+   contrast on mid/far layers** so the texture survives distance tinting.
+2. **`figure.png` athlete is heavily DoF-blurred.** The figure camera lands
+   inside the DefaultRenderingPipeline DoF focus range such that the athlete
+   reads soft at the canonical inspection distance (bib "30" in
+   `figure_front.png` is legible but fuzzy). DoF is Opus-lane per standing
+   rule 2026-08-29 10:40 — **reported, not fixed.** The reviewer should
+   either exempt the figure/face cameras from DoF or set focus to the
+   athlete distance.
+3. **Suit-vs-snow separation regressed visually at scene distance.** In
+   `figure.png`/`scene.png` the suited athlete is white-on-white; the entry
+   92 fold-shade gate (gap 0.142 at the ready view) passes, but at scene
+   distance with the current exposure the suit still melts into the run.
+   Opus lane (paint) — noted for the reviewer.
+4. **Kicker red edge paint: present** in `kicker.png`/`scene.png` ✓ (the
+   09:20 ruling holds).
+5. **`scene.png` centre: a tall pale ridge wall rises directly behind the
+   tree line mid-frame** and reads as a flat slab intersecting the trees —
+   the mid-ridge mesh placement/height relative to the forest band needs an
+   eye pass in 106's mountains work.
+
+**Gaps vs plan/reference:** P2 shadows acceptable (athlete + tree shadows
+present in scene.png); P3 dressing remainder (wands landed iter 102; judges'
+deck, coach figures, knoll flag still open); P5 landing chop texture not yet
+visible at gameplay distance in these framings; P6 mountains per item 1.
+
+**Re-prioritised for 106+ (within the 106–120 schedule):**
+- 106: NEXT.md mountains slice, re-aimed — reduce far/mid ridge fog-mix
+  tint, raise band contrast, seat the mid-ridge wall behind the tree line;
+  delete NEXT.md when it lands.
+- 107+: P3 remainder (judges' deck/containers, knoll flag, coach figures),
+  then polish group (crash velocity seed from trigger, height haze,
+  LOD/frame time).
+
+**Open questions for the reviewer:**
+1. DoF: may the GLM lane exempt the figure/face/pose cameras from the
+   DefaultRenderingPipeline DoF (camera-conditional), or will Opus retune
+   the block? (Standing rule blocks me from touching it.)
+2. Confirm by eye that the scene.png mid-ridge slab behind the trees is the
+   placement defect I describe in item 5.
+
+Verification summary: run-all ALL GREEN (drive 88/2skip, 22.2 m); unit
+78/78; golden 30/30; look 1/1 (3.5 m); shots regenerated 11:39–11:42 and
+inspected (scene, figure, figure_front, inrun, kicker).
