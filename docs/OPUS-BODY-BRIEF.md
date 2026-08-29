@@ -42,7 +42,18 @@ Makefile targets; the build has its own gates that must keep passing).
    strap, and 2–4 small vents; no "hood" skirt hanging down the back. Colour: dark (near-black or navy)
    glossy shell. Keep `crown_cap_last` as the last geometry pass (an earlier fix was undone by
    `retune_proportions`).
-3. **The suit is a onesie.** It is a flat white skin with blue leg stripes and the number painted straight
+3. **The suit is a onesie.** **Primary design reference (author-supplied, 2026-08-29): `reference/images/aerial_suit.png`
+   (a 1206×2622 still of a real aerialist standing on the flat, arms overhead) and every frame of
+   `reference/frames/IMG_3770/f_001..f_099.jpg` (1920×1080, 30 fps, 3.3 s) — crop and zoom them before modelling.**
+   What that suit actually is: a **light-grey / off-white** (not pure white) relaxed-fit one-piece with a **single
+   royal-blue stripe ~5 cm wide down the OUTSIDE seam of each arm (shoulder → cuff) and each leg (hip → ankle)**,
+   nothing else on the body panels; straight-cut trouser legs with soft folds at the knee and bunching at the
+   ankle over dark ski boots; fitted-but-not-tight sleeves; a small dark logo on the left thigh; a dark fly
+   seam. Over it a **separate loose bib** — light-blue yoke over the shoulders, white middle carrying the number,
+   a magenta/pink band with a sponsor mark at the waist; it hangs 1–2 cm off the suit. At the neck a
+   **multicoloured neck gaiter** filling the gap between collar and helmet. Helmet dark grey/black dome, goggles
+   with a **mirrored blue lens** sitting right under the helmet rim. Use this design; treat the older footage
+   descriptions only as secondary. It is a flat white skin with blue leg stripes and the number painted straight
    on the chest. A real aerials suit (see footage): **two-tone panel design** — white base, royal-blue side
    panels from armpit to ankle and a contrasting shoulder yoke; a **centre-front zip line** (dark seam, neck
    to hip); a **stand-up collar** (~3 cm); **sleeve and ankle cuffs** (slightly darker, elastic ribbing);
