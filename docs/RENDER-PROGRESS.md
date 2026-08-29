@@ -7527,3 +7527,58 @@ from the trigger (reviewer 89a), height haze (parked), LOD/frame-time; far-ridge
 tint variance and the camera-coverage probe carried from 106.
 
 **Open questions for the reviewer:** none new.
+
+### 113 — cone-peak range (ruling on 110) ATTEMPTED AND WITHDRAWN — implementation blocked by the look.spec face-back darkU gate; full A/B evidence recorded
+
+**Task:** reviewer ruling on entry 110 (`51293a7`): keep the old cone peaks on
+the skyline, re-skinned with the ridge band material (no green caps), behind
+the far ridges. The peaks were fully removed in iter 94 (`f9b2b60`), so this
+meant re-introducing the 11 `pk_body_*` cylinders.
+
+**What was built (now reverted — tree is back at `a9731e0` state, all suites
+green; the implementation is preserved in
+`~/aerial-agents/scratch/iter-113/game.peaks.js`):**
+- 11 `pk_body_0..10` cylinders (tessellation 10, 11 draw calls), positioned
+  behind `ridge_back`/`ridge_far_*`/`ridge_ahead` (back range z <
+  SLOPE_START_Z−200, side ranges x ±200–235, ahead z > OUTRUN_Z+300), heights
+  84–118 m, bases seated at `valleyFloorY − 4`.
+- `peakMat` from `_ridgeMat('peakMat', 0.30, …)` — ridge band texture,
+  elevation-keyed UV (v = height above valley floor, u arcing around the
+  cone), no separate cap mesh.
+- New gates in `ridges3d.spec.js` (also reverted): "no saturated green above
+  the ridgeline" (top-half-of-frame probe at the look framing, fixed state
+  measured 0.000 vs gate 0.005) + negative control (peakMat painted green →
+  fracTop 0.0985, i.e. the probe also proves the peaks render top-of-frame).
+  Both new tests PASSED with the peaks in.
+
+**The blocker:** with the peaks in, `look.spec` fails its face-back gate —
+"face BACK close-up shows lens pixels (darkU 0.3926, limit 0.015)". A/B
+verified: peaks disabled → look 1/1 PASSED (4.3 m); peaks enabled → FAIL.
+Measurements across four variants: /80 UV → 0.0951; /55 UV → 0.3926; /55 +
+v-clamp → 0.3926; /55 + v-clamp + `peakMat.fogEnabled = true` → 0.3926;
+/30 + v-clamp + fog → 0.3926. The value is bit-identical across band/fog
+changes → the dark region is NOT the band map: it is the peaks'
+SUN-AWAY FLANK SILHOUETTE rising above the far-ridge two-sine dips, rendered
+dark (shaded snow + mix-0.30 albedo lift ≈ 0.3 luminance) in the back
+close-up's upper third. `shots/face_back.png` from the failing run shows a
+dark wall filling the top half where HEAD shows bright sky. Fog opt-out (the
+ridges' fix) is the wrong tool here; enabling scene fog on peakMat changed
+nothing measurable (EXP2 0.0022 at ~210 m is only ~19% blend).
+- Golden traces were re-captured with the peaks in (census-only: audit
+  script confirms node ADDITIONS only, `state` byte-identical across all 22
+  changed traces ×48 frames) — those trace changes are ALSO reverted.
+
+**Verification at the committed (reverted) state:** unit 0 fail; golden
+30/30; ridges3d 6/6 (HEAD state); look 1/1 at HEAD (run twice to confirm);
+A/B spec run with peaks off: 1 passed.
+
+**Open (next iteration, in order):**
+1. Re-land the peaks with the shaded-flank fix. Candidates, cheapest first:
+   (a) raise `peakMat`'s albedoColor multiplier above 1 (e.g. 1.25) or use
+   mix 0.0 + strong emissive lift so the shaded flank clears lum 0.30;
+   (b) lower the side-range peak heights so no flank rises above the ridge
+   dips in the back-close-up cone (needs a framing-angle calc from the head
+   position at 7.3 m); (c) ask the reviewer whether the face-back gate may
+   exclude the sky/background region (it is a goggle-paint discriminator, not
+   a background gate). Scratch file `game.peaks.js` is the /30+clamp variant.
+2. Then the parked polish group (height haze, LOD/frame time).
