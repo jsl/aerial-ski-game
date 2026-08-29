@@ -208,6 +208,11 @@ since the iter-56 caster swap, never re-run full-suite until now; repaired
 test-side, shots regenerated + measured, entry 60 below. No features.)*
 
 
+*(iter-80 review-only: run-all ALL GREEN (unit fail 0, golden 30/30, drive
+72 passed / 2 skipped, 20.7 m); shots regenerated and inspected by eye —
+no board movement, but the canonical face/front shots frame the athlete's
+BACK and both pixel gates pass on the wrong view; entry 80 below.)*
+
 *(iter-66 review order 0: post-merge golden gate restored 30/30 with zero
 rebaseline by reverting HY4's rejected A7 `wUpperMtn` tweak; boot-ski probe
 wrist fix (Sol major 3) green; Sol major 8 root-caused, open — entry 66.
@@ -885,6 +890,75 @@ forest.
   Add as a new low priority (e.g. P10) or fold into P3? No work done on this.
 
 ## Iterations
+
+### 80 — Review-only: full run-all ALL GREEN; shots regenerated and inspected
+by eye — **the face/front cameras frame the athlete's BACK again**, and both
+pixel gates pass on the wrong view
+
+**Suites:** `./tests/run-all.sh` ALL GREEN — unit fail 0, golden 30/30
+(no recapture, physics untouched), browser PASS, mutation PASS, coverage
+PASS, drive 72 passed / 2 skipped (20.7 m). `look` GREEN on the fresh run
+(23:18–23:19): LOOK w 0.591 / h 1.343 / verts 13499, FRONTGATE align 0.00°
+navy 0.0474, FACECAM r = 0.600 (campos exactly head + fwd·0.6), FACEGATE
+dark 0.2203 / skin 0.0365 / cov 0.9647, sky zenith lum 0.5744 / r−b −0.309,
+sky-band r−b −0.319, sun 0.9785, snow 0.8269 vs sky 0.5662 (margin 0.173).
+
+**What now reads wrong (with evidence):**
+1. **`face.png` and `figure_front.png` show the athlete's BACK** — this run
+   and the entry-79 shots (22:48) both do. `face.png`: rear of the navy
+   shell, nape, shoulders; no face, no goggle lens, no light rim visible
+   anywhere in the frame. `figure_front.png`: back of the body with the bib
+   "30" (digits legible on the BACK side only). Yet FRONTGATE and FACEGATE
+   both pass: FACEGATE's dark/skin fractions are satisfied by helmet-back +
+   neck skin, and FRONTGATE's navy box hits the back bib. **The gates cannot
+   discriminate front from back**, so entry 77–79's "look GREEN" says nothing
+   about face visibility. FACECAM's own numbers pinpoint it: fwd = [1,0,0],
+   campos = head + fwd·0.6 — the driver "forward" is opposite to the side of
+   the head that renders the face. Also suspicious: FRONTALPHA a = 2.2e-16
+   (≈ 0) — the bib-blue frontal selector degenerated instead of picking a
+   yaw. Entry-79's by-eye claim ("reads shell → rim → lens → skin") is
+   contradicted by the shipped PNGs; either that run's framing differed or
+   the scan-column band was the goggle STRAP ring at the nape.
+2. **Suit blue panel (P7) not readable:** figure.png/figure_side.png show a
+   near-white suit; blue reads only as pinstripes down the legs and small
+   patches. The footage athlete reads as a white suit with broad blue panels.
+3. **Red junction marks still on the kicker** (ordered → thin dark edge
+   line): kicker.png shows red stripes at the block base AND red corner
+   marks on the take-off face lip; inrun.png shows a red-cornered white slab
+   (start structure) at the top of the in-run.
+4. **Corridor dirt:** inrun.png shows grey footprints/streak patches on the
+   in-run surface; the footage run is near-pure white.
+5. **Horizon:** cone peaks remain in scene.png (P6), and a flat grey
+   untextured ridge/fill sits behind the tree line in kicker.png/inrun.png.
+6. B-net reads saturated blue and visually dominant from every camera
+   (the "lighter B-net" item is still open).
+
+**Regressions:** none in suites; the entry-79 FACEGATE/verification claim is
+the regression — green gates on a back-facing view.
+
+**Re-prioritised for the next iterations:**
+1. Camera forward convention + front-discriminating gates (flip or re-derive
+   forward from the visually front-facing axis; FACEGATE must require goggle
+   lens-dark pixels in the central face region, FRONTGATE must require the
+   digit plate on the visually front side). Without this, all face work is
+   unverifiable.
+2. Red marks → dark edge line + start-slab corner marks (venue dressing).
+3. Suit blue broad panel legibility at figure distance.
+4. Corridor dirt/streak source (albedo detail or SSAO streaks) on the in-run.
+5. P6 ridgelines + grey fill texturing; lighter B-net.
+6. Lips/nostril readability and the beret-ish brim (deprioritised until 1
+   makes the face camera trustworthy).
+
+**Open questions for the reviewer:** (1) can you confirm whether entry 79's
+by-eye face.png actually showed the front — i.e. is the ready-state yaw
+run-dependent (run durations differed 55 s vs 126 s), or was the front read
+wrong? (2) is FRONTALPHA a ≈ 0 expected, or is the bib-blue selector
+degenerate? (3) carry-overs: entry-71 blue-gate placement (all-sky band vs
+scene top third), entry-70 items (A7 slab, tear-detector hard gate, engine
+kinematics stub removal — the APPROVED stub removal has not landed).
+
+*No code changed in this iteration (review-only); assets untouched,
+ASSET_V unchanged at 26.*
 
 ### 79 — Face pass 2 (entry-78 open item 1): goggle band + light rim moved
 below the shell brim, wider lip band, nostrils — one Blender rebuild,
