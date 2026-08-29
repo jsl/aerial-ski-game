@@ -225,6 +225,73 @@ def build_spruce(cfg):
             _add_cone(0.16, 0.02, br_len, mat_needle, centre, quat, seg=6)
 
 
+
+# ── Bare deciduous (P4 slice 2, iter 98) ─────────────────────────────────────
+# The plan's mixed-woodland delta: MOSTLY bare deciduous with a spruce
+# minority. Two birch-like variants: one tapered pale trunk per variant, a
+# stack of main scaffold whorls over the crown zone, each main branch forked
+# twice (fine bare twigs). No foliage cones — the crown reads as a
+# grey-brown haze (plan P4). Snow only on steeply up-facing surfaces.
+
+DECIDUOUS_VARIANTS = [
+    dict(tag='4', seed=61231, top_z=11.2),
+    dict(tag='5', seed=88477, top_z=12.1),
+]
+
+
+def build_deciduous(cfg):
+    rng = random.Random(cfg['seed'])
+    top = cfg['top_z']
+    mat_bark = _mat_snow('bark', (0.36, 0.31, 0.26), 0.40, 0.95, 0.35)
+
+    _add_cone(0.24, 0.05, top, mat_bark, (0, 0, top / 2), seg=10)
+
+    def _branch(start, d, length, r0, depth):
+        quat = d.to_track_quat('Z', 'Y')
+        centre = start + d * (length / 2)
+        _add_cone(r0, r0 * 0.4, length, mat_bark, centre, quat, seg=5)
+        if depth >= 2:
+            return
+        end = start + d * length
+        n_kids = 2
+        for k in range(n_kids):
+            phi = rng.uniform(0, 2 * math.pi)
+            perp = Vector((math.cos(phi), math.sin(phi), 0)).cross(d)
+            if perp.length < 1e-4:
+                perp = Vector((1, 0, 0))
+            perp.normalize()
+            nd = (d + perp * math.tan(rng.uniform(0.45, 0.95))).normalized()
+            # slight upward bias in the twigs (crowns reach for the light)
+            nd = Vector((nd.x, nd.y, nd.z * rng.uniform(0.7, 1.25))).normalized()
+            _branch(end - d * length * 0.12, nd,
+                    length * rng.uniform(0.50, 0.72), r0 * 0.55, depth + 1)
+
+    golden = math.pi * (3 - math.sqrt(5))
+    n_whorls = 8
+    for i in range(n_whorls):
+        t = i / (n_whorls - 1)          # 0 = crown base, 1 = top
+        z = top * (0.42 + 0.55 * t)
+        n_br = 5 if t < 0.85 else 3
+        for j in range(n_br):
+            phi = j * (2 * math.pi / n_br) + golden * i + rng.uniform(-0.2, 0.2)
+            elev = math.radians(rng.uniform(22, 55))
+            d = Vector((math.cos(phi) * math.cos(elev),
+                        math.sin(phi) * math.cos(elev),
+                        math.sin(elev)))
+            length = top * 0.26 * (1.0 - 0.45 * t) * rng.uniform(0.80, 1.15)
+            r0 = 0.10 * (1.0 - 0.5 * t)
+            _branch(Vector((math.cos(phi) * 0.06, math.sin(phi) * 0.06, z)),
+                    d, length, r0, 0)
+
+    # a few upright crown twigs so the top band is not bare trunk only
+    for k in range(4):
+        phi = rng.uniform(0, 2 * math.pi)
+        elev = math.radians(rng.uniform(55, 80))
+        d = Vector((math.cos(phi) * math.cos(elev), math.sin(phi) * math.cos(elev),
+                    math.sin(elev)))
+        _branch(Vector((0, 0, top * rng.uniform(0.86, 0.96))), d,
+                top * rng.uniform(0.07, 0.12), 0.05, 0)
+
 # ── Lighting / camera ─────────────────────────────────────────────────────────
 
 def setup_world_and_sun():
@@ -353,9 +420,17 @@ def main():
     report = {'views': args.views, 'frame': [round(ortho_w, 3), round(frame_h, 3)],
               'variants': []}
 
-    for cfg in VARIANTS:
+    SPECIES = [
+        # (configs, builder, output prefix, tile/card coverage band)
+        (VARIANTS, build_spruce, 'tree_spruce', 0.05, 0.60),
+        # bare deciduous: thin bare geometry legitimately has far less
+        # opaque area than a layered conifer skirt
+        (DECIDUOUS_VARIANTS, build_deciduous, 'tree_birch', 0.010, 0.60),
+    ]
+    for cfgs, builder, prefix, cov_lo, cov_hi in SPECIES:
+      for cfg in cfgs:
         _clear()          # also removes the previous iteration's camera
-        build_spruce(cfg)
+        builder(cfg)
         setup_world_and_sun()
         bpy.ops.object.camera_add(location=(0, -30, frame_h / 2))
         scn.camera = bpy.context.active_object
@@ -365,7 +440,7 @@ def main():
         card_p = os.path.join(tmp, 'card_%s.png' % cfg['tag'])
         render_view(card_p, cw, ch, 0.0, ortho_w, frame_h)
         card = load_rgba(card_p)
-        save_rgba(card, os.path.join(args.out, 'tree_spruce_card_%s.png' % cfg['tag']))
+        save_rgba(card, os.path.join(args.out, '%s_card_%s.png' % (prefix, cfg['tag'])))
         vrep['card'] = dict(size=[cw, ch], **stats(card))
         vrep['widths16'] = _card_widths16(card)
 
@@ -377,12 +452,12 @@ def main():
             tile = load_rgba(p)
             atlas[:, k * tw:(k + 1) * tw] = tile
             vrep['tiles'].append({'view': int(yaw), **stats(tile)})
-        save_rgba(atlas, os.path.join(args.out, 'tree_spruce_atlas_%s.png' % cfg['tag']))
+        save_rgba(atlas, os.path.join(args.out, '%s_atlas_%s.png' % (prefix, cfg['tag'])))
 
         for t in vrep['tiles']:
-            assert 0.05 <= t['coverage'] <= 0.60, 'tree tile coverage out of band: %s' % t
+            assert cov_lo <= t['coverage'] <= cov_hi, 'tree tile coverage out of band: %s' % t
             assert 0.05 <= t['lum'] <= 0.98, 'tree tile luminance out of band: %s' % t
-        assert 0.05 <= vrep['card']['coverage'] <= 0.60, 'card coverage out of band'
+        assert cov_lo <= vrep['card']['coverage'] <= cov_hi, 'card coverage out of band'
         covs = [t['coverage'] for t in vrep['tiles']]
         vrep['coverageSpread'] = round(max(covs) - min(covs), 4)
         report['variants'].append(vrep)

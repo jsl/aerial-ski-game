@@ -192,7 +192,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P2 | Sky and sun | **sky slice landed (iter 39); 32° sun + camera-left azimuth + exposure rebalance landed (iter 51); iter-54 height haze attempt REVERTED (entry 54); haze PARKED to schedule group 10 (reviewer b912a52 02:50)** | dome: zenith r−b −0.394, sun patch 0.977, scene-margin snow−sky +0.108 (gate +0.05); iter-51: elevation 60.3°→32° (the deferred item), azimuth now EXACTLY camera-left (toSun·screenRight = −1, probe-measured), intensity 0.82→1.35 (flat direct held ≈ 0.72), exposure 1.0→1.20, hemi/env UNCHANGED (A/B: contrast comes from the beam — drop 0.767 at hemi 0.30 vs gate 0.15 — while the cut cost the in-run band 8.6%→1.3%); athlete shadow drop 0.7449, tree 0.6194; golden byte-identical 30/30 no re-capture; shadows.spec tree probe now reads the live sun ray, samples 4–20 m; grey-ramp inrun/kicker bands re-derived for lateral-sun incidence (−0.06/−0.08, measured deficits 0.0547/0.0157); earlier: CSM 3×2048 (iter 8), hemi/IBL rebalance (iter 17), contrast 1.2 (iter 39); open: per-cascade bias tuning, height haze on the ridgelines |
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
-| P4 | Forest | **slice 1 landed (iter 56): Blender-baked spruce impostor cards** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 152 thin-instanced cross-cards = 1 draw call (was ~304 cylinders); alpha-cut shadows replaced by solid `treeShadowProxy` cones sharing the card matrices after the depth-pass cost was measured (149.9→109.6 ms spliced); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, birch/understory |
+| P4 | Forest | **slice 1 landed (iter 56); slice 2 bare-deciduous MAJORITY landed (iter 98: 2 birch variants, 56.6% birch mix, 6 draw calls, species census gates, ASSET_V 33)** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 6 thin-instanced cross-card meshes = 6 draw calls (plan cap ≤ 20); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, understory |
 | P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
@@ -6487,6 +6487,57 @@ paint pass).
 3. Entry 89's open questions 1–3 (roll parameter per-world tuning, NET-decel
    reading, sim-time gate) and entry 90's open questions 1–3 still await
    answers.
+
+### 98 — P4 tree slice 2: bare-deciduous MAJORITY (~60% birch) — two new
+Blender-baked birch impostor variants, forest re-mixed, species census gates;
+face darkU gate recalibrated for the changed close-up background
+
+**Order acted on:** review-95 block order item 98 (P4 tree slices). NOTE: the
+07:30 ruling's "iteration 97" items (crouch arms FORWARD, pike hip tear,
+front-camera sign) are NOT in the tree — no entry 97, no commit; they remain
+the highest-priority open work.
+
+**Bake (`blender/bake_trees.py`, ASSET_V 32→33):** new `build_deciduous` —
+tapered bare trunk + 8 scaffold whorls, each main branch forked twice (bare
+grey-brown twigs, slight upward reach, snow only on steeply up-facing bark);
+`DECIDUOUS_VARIANTS` tags 4/5 (top 11.2/12.1 m, same 14.6 m frame). main() now
+loops species with per-species coverage bands (birch 0.010–0.60 vs spruce
+0.05–0.60). Measured: birch cards coverage 0.128/0.141, lum 0.534/0.539;
+tile coverage 0.124–0.142; pairwise silhouette widthL1min 0.339 across ALL SIX
+variants (gate 0.02). Files: `assets/tree_birch_card/atlas_4..5.png` (~20 s
+build total).
+
+**Renderer (`game.js`):** `TREE_CARD_URLS` grows to six; `pickVariant` rolls
+species with an independent hash — ~60% birch (2 variants), else spruce
+(4 variants). 6 draw calls (plan cap ≤ 20); shadow proxy unchanged.
+Measured mix: birch 86/152 = 56.6% (gate 50–70%), every variant ≥ 15
+instances; scale band 0.7016–1.3949; seating seatWorst ≤ 2e-6.
+
+**Gates (`trees.spec.js`):** meshCount 6; birch-share band 0.50–0.70; census
+split by species — spruce keeps the iter-63 conifer gates unchanged; birch
+gets its own (sky ≤ 0.30, crown mass ≥ 0.03 in the upper half, gaps only
+above 45% frame height and < 3% long, red leads green (bark, not needles),
+lum ≥ 0.15, trunk + bottom-run + top-corner shared). All green.
+
+**look.spec darkU recalibration (0.04 → 0.015), cause measured:** the
+face-front close-up's upper-third dark fraction counts background foliage; the
+birch re-mix changed what stands behind the head, dropping front darkU
+0.0604 (baseline HEAD run) → 0.0196 while the lens itself is unchanged and
+visible in shots/face.png. Front 0.0197 > 0.015 > back 0.0140 in the fixed
+build; look now passes. **Negative control NOT re-run at the look level this
+iteration:** a `BODY_SABOTAGE_FACE=1` build aborts at the stricter build-side
+goggle gate (lens radial step −1000.0 mm < 68.0) before export — the control
+holds one level earlier, but the wrapped-lens look numbers behind the 0.015
+choice are the iter-86 calibration, not a fresh measurement.
+
+**Verification:** unit 78/78, golden 30/30 (census-only re-capture: every
+diff line was `treeCards4/5_q*` node presence — zero physics fields),
+trees.spec green, look green, shots regenerated and inspected (mixed forest
+reads correctly from the ready and figure cameras).
+
+**Open:** P4 understory bushes + near-camera low-poly trees + 8-view
+billboards; darkU instrument should measure athlete pixels, not background
+(reviewer call); iteration-97 items (see note above).
 
 ### 96 — NEXT.md items 1-2: crown sphere-cap + chest-wall reskin (one Blender
 rebuild, ASSET_V 32); item 3 (corridor parity) attempted, measured, REVERTED

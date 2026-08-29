@@ -1,9 +1,10 @@
 'use strict';
-// P4 forest slices 1+3: the forest is thin-instanced cross-card impostors
-// sampling FOUR distinct Blender-baked spruce variants
-// (blender/bake_trees.py → assets/tree_spruce_card_0..3.png + 8-view atlases).
+// P4 forest slices 1+2: the forest is thin-instanced cross-card impostors
+// sampling SIX distinct Blender-baked variants (blender/bake_trees.py →
+// assets/tree_spruce_card_0..3.png + assets/tree_birch_card_4..5.png + the
+// 8-view atlases), mixed ~60% bare deciduous / 40% spruce (iter 98).
 // Gates the plan's P4 acceptance: instance count, ≤ 20 draw calls for the whole
-// forest (4 shipped: one per variant mesh), alpha-cut materials wired to the
+// forest (6 shipped: one per variant mesh), alpha-cut materials wired to the
 // baked cards, planted on the terrain with the corridor kept clear.
 //
 // Iter 59: orientation + seating gates (reviewer URGENT after iter 56 —
@@ -221,8 +222,15 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
     // ── Scene-side gates ────────────────────────────────────────────────────
     expect(s.legacy, 'legacy per-tree trunk/foliage cylinders must be gone').toBe(0);
     expect(s.hasCards, 'treeCards impostor meshes exist').toBe(true);
-    expect(s.meshCount, 'FOUR spruce variant meshes (review-60 (c))').toBe(4);
+    expect(s.meshCount, 'SIX variant meshes: 4 spruce + 2 birch (iter 98)')
+        .toBe(6);
     expect(s.total, 'a real forest, not a token row').toBeGreaterThan(150);
+    const birchInstances = s.variants[4].instances + s.variants[5].instances;
+    const birchShare = birchInstances / s.total;
+    expect(birchShare, 'bare deciduous is the forest majority (~60%, iter 98): got ' +
+        (birchShare * 100).toFixed(1) + '%').toBeGreaterThanOrEqual(0.50);
+    expect(birchShare, 'birch share does not crowd out the conifers')
+        .toBeLessThanOrEqual(0.70);
     for (const v of s.variants) {
         expect(v.isActive, v.name + ' enabled and visible').toBe(true);
         expect(v.instances, v.name + ' carries a real share of the forest (mix count)')
@@ -253,8 +261,8 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
         expect(v.tex.url, v.name + ' samples its OWN variant card, not another’s')
             .toContain('_' + v.name.slice(-1) + '.png');
     }
-    expect(s.forestActive, 'whole forest renders in ≤ 4 draw calls (plan cap 20)')
-        .toBeLessThanOrEqual(4);
+    expect(s.forestActive, 'whole forest renders in ≤ 6 draw calls (plan cap 20)')
+        .toBeLessThanOrEqual(6);
 
     // Review-60 (c) scale band + spread: per-instance 0.7–1.4, not a clone row.
     expect(s.minScale, 'instance scale ≥ 0.7 (review-60 (c))').toBeGreaterThanOrEqual(0.695);
@@ -270,50 +278,81 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
         expect(card.error, tag + ' sampled without error').toBeUndefined();
 
         // Iter-62 gates re-derived for the camera-orbit bake. Bands index 0 =
-        // the file's TOP rows (canvas py=0).
+        // the file's TOP rows (canvas py=0). Species split (iter 98):
+        // cards 0-3 spruce, 4-5 bare deciduous birch.
         expect(card.runs[0].vis, tag + ' starts with an empty sky margin').toBe(false);
-        // Sky margin above the tip must EXIST (tip not cropped by the frame
-        // top) but stay < 25%: every variant shares the 14.6 m card frame, so
-        // the shortest variant (11.9 m) legitimately carries ~20% sky while
-        // still dominating its card. The iter-62 bound (≤ 12%) described the
-        // one 13.6 m tree and is meaningless across heights.
-        expect(card.runs[0].bot, tag + ' tip not cropped, tree fills its card')
-            .toBeLessThanOrEqual(0.25);
-        const interiorGaps = card.runs.filter(
-            (r, i) => i > 0 && i < card.runs.length - 1 && !r.vis);
-        expect(interiorGaps.length, tag + ' no empty row-run inside the canopy body')
-            .toBe(0);
         expect(card.runs[card.runs.length - 1].vis,
-            tag + ' canopy runs through the file bottom (trunk seated)').toBe(true);
-
-        // Conifer taper: widest band in the lower third, monotone toward the
-        // tip, top band ≤ 25% of the widest (review-60 (a)).
-        const wMax = Math.max(...card.widths);
-        const wMaxBand = card.widths.indexOf(wMax);
-        expect(wMaxBand, tag + ' widest whorl in the lower third')
-            .toBeGreaterThanOrEqual(10);
-        for (let i = 1; i <= wMaxBand; i++) {
-            expect(card.widths[i - 1] <= card.widths[i] * 1.12 + 0.004,
-                tag + ' width shrinks monotonically toward the tip below band ' + i)
-                .toBe(true);
-        }
-        expect(card.widths[0], tag + ' top band ≤ 25% of the widest whorl (spire)')
-            .toBeLessThanOrEqual(0.25 * wMax);
-
-        // Colour (review-60 (b)): not a black silhouette; green leads.
-        expect(card.lum, tag + ' mean impostor luminance ≥ 0.18, got ' + card.lum)
-            .toBeGreaterThanOrEqual(0.18);
-        expect(card.meanRGB[1], tag + ' green channel leads the canopy mean')
-            .toBeGreaterThan(card.meanRGB[0]);
-        expect(card.meanRGB[1]).toBeGreaterThan(card.meanRGB[2]);
-
-        // Trunk visible over the bottom ~15%.
-        expect(card.trunkCentre, tag + ' trunk column present at the base')
-            .toBeGreaterThan(0.05);
-        expect(card.trunkSides, tag + ' no canopy at the base sides (bare trunk)')
-            .toBeLessThan(0.01);
+            tag + ' tree runs through the file bottom (trunk seated)').toBe(true);
         expect(card.topCornerMaxAlpha, tag + ' top corners are transparent sky')
             .toBeLessThan(0.02);
+        expect(card.trunkCentre, tag + ' trunk column present at the base')
+            .toBeGreaterThan(0.05);
+
+        if (vi < 4) {
+            // ── Spruce (conifer) gates, as since iter 63 ──
+            // Sky margin above the tip must EXIST (tip not cropped by the
+            // frame top) but stay < 25%: every variant shares the 14.6 m
+            // card frame, so the shortest variant (11.9 m) legitimately
+            // carries ~20% sky while still dominating its card.
+            expect(card.runs[0].bot, tag + ' tip not cropped, tree fills its card')
+                .toBeLessThanOrEqual(0.25);
+            const interiorGaps = card.runs.filter(
+                (r, i) => i > 0 && i < card.runs.length - 1 && !r.vis);
+            expect(interiorGaps.length, tag + ' no empty row-run inside the canopy body')
+                .toBe(0);
+
+            // Conifer taper: widest band in the lower third, monotone toward
+            // the tip, top band ≤ 25% of the widest (review-60 (a)).
+            const wMax = Math.max(...card.widths);
+            const wMaxBand = card.widths.indexOf(wMax);
+            expect(wMaxBand, tag + ' widest whorl in the lower third')
+                .toBeGreaterThanOrEqual(10);
+            for (let i = 1; i <= wMaxBand; i++) {
+                expect(card.widths[i - 1] <= card.widths[i] * 1.12 + 0.004,
+                    tag + ' width shrinks monotonically toward the tip below band ' + i)
+                    .toBe(true);
+            }
+            expect(card.widths[0], tag + ' top band ≤ 25% of the widest whorl (spire)')
+                .toBeLessThanOrEqual(0.25 * wMax);
+
+            // Colour (review-60 (b)): not a black silhouette; green leads.
+            expect(card.lum, tag + ' mean impostor luminance ≥ 0.18, got ' + card.lum)
+                .toBeGreaterThanOrEqual(0.18);
+            expect(card.meanRGB[1], tag + ' green channel leads the canopy mean')
+                .toBeGreaterThan(card.meanRGB[0]);
+            expect(card.meanRGB[1]).toBeGreaterThan(card.meanRGB[2]);
+
+            expect(card.trunkSides, tag + ' no canopy at the base sides (bare trunk)')
+                .toBeLessThan(0.01);
+        } else {
+            // ── Bare-deciduous gates (iter 98). A bare crown legitimately
+            // has transparent row-gaps (you see sky through the branches)
+            // and a far lower opaque fraction than a conifer skirt — the
+            // conifer continuity/taper/colour gates do not apply.
+            expect(card.runs[0].bot, tag + ' tip not cropped, tree fills its card')
+                .toBeLessThanOrEqual(0.30);
+            // Crown mass must actually exist in the upper half (bands 0-7):
+            // not just a bare pole in the frame.
+            const crownMax = Math.max(...card.widths.slice(0, 8));
+            expect(crownMax, tag + ' bare crown reads in the upper half')
+                .toBeGreaterThanOrEqual(0.03);
+            // Gaps allowed, but no gap BELOW 45% of the frame (the lower
+            // crown/trunk zone stays continuous) and no gap longer than 3%
+            // of the frame.
+            for (let ri = 1; ri < card.runs.length - 1; ri++) {
+                const r = card.runs[ri];
+                if (r.vis) continue;
+                expect(r.top, tag + ' no gap below the crown zone (gap at ' +
+                    r.top.toFixed(3) + ')').toBeLessThan(0.45);
+                expect(r.bot - r.top, tag + ' gaps stay short').toBeLessThan(0.03);
+            }
+            // Bark, not needle-green: the red channel leads a bare birch.
+            expect(card.lum, tag + ' mean impostor luminance ≥ 0.15, got ' + card.lum)
+                .toBeGreaterThanOrEqual(0.15);
+            expect(card.meanRGB[0], tag + ' bare-branch red leads green (deciduous, not conifer)')
+                .toBeGreaterThan(card.meanRGB[1]);
+        }
+        // (trunkCentre + bottom-run + top-corner gates are shared above)
     }
 
     // Variants must be measurably DIFFERENT trees (review-60 (c): "no two

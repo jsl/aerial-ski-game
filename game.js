@@ -1518,9 +1518,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=32';   // 32: crown sphere-cap + chest-wall reskin (NEXT.md items 1-2, rebuild 2048/96); snowMat albedo +4% (grey-ramp hard parity)
-                               // bake_trees.py seeds/heights/radial envelopes,
-                               // card_0..3 + atlas_0..3
+    const ASSET_V = '?v=33';   // 33: P4 bare-deciduous bake (tree_birch_card/atlas_4..5); ASSET_V 32 crown+chest
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -3192,13 +3190,13 @@ void main(void) {
     }
 
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
-    // P4 slices 1+3: every tree is a cross-card impostor — two crossed alpha-cut
-    // quads sampling one of FOUR distinct Blender-baked snow-loaded spruce
-    // variants (review-60 (c): assets/tree_spruce_card_0..3.png from
-    // blender/bake_trees.py; the per-variant 8-view atlases ship alongside for
-    // the later camera-facing billboard slice). One cloned mesh + matrix buffer
-    // per variant (4 draw calls, plan cap ≤ 20); the shadow proxy cone stays a
-    // single full-forest mesh. The alpha-cut shadow path is the B-net strip's,
+    // P4 slices 1+2: every tree is a crossed alpha-cut impostor card sampling
+    // one of SIX distinct Blender-baked variants (review-60 (c) spruce 0..3 +
+    // iter-98 bare-deciduous birch 4..5, the plan's mixed-woodland delta);
+    // the per-variant 8-view atlases ship alongside for the later
+    // camera-facing billboard slice. One mesh + matrix buffer per variant
+    // (6 draw calls, plan cap ≤ 20); the shadow proxy cone stays a single
+    // full-forest mesh. The alpha-cut shadow path is the B-net strip's,
     // proven in venue-dressing.spec. Low-poly near trees for parallax are a
     // later slice.
     {
@@ -3219,13 +3217,29 @@ void main(void) {
     // every variant is baked at the SAME frame (14.6 m tall, 7.3 m wide), so
     // one quad size serves all variants; per-instance scale does the rest.
     const CARD_W = 7.3, CARD_H = 14.6;
-    // The four spruce variants baked by blender/bake_trees.py (review-60 (c)).
+    // The six baked variants (blender/bake_trees.py): four snow-loaded
+    // spruce (review-60 (c)) + two bare-deciduous birch (iter 98, P4 slice
+    // 2 — the plan's mixed-woodland delta). All six share the 14.6 m frame.
     const TREE_CARD_URLS = [
         'assets/tree_spruce_card_0.png',
         'assets/tree_spruce_card_1.png',
         'assets/tree_spruce_card_2.png',
         'assets/tree_spruce_card_3.png',
+        'assets/tree_birch_card_4.png',
+        'assets/tree_birch_card_5.png',
     ];
+    const TREE_BIRCH_START = 4;
+    // Species mix: ~60% bare deciduous (footage: mostly bare deciduous
+    // forest wall, conifer minority). An independent hash for the species
+    // roll so it is uncorrelated with the within-species variant pick.
+    const TREE_BIRCH_SHARE = 0.60;
+    const pickVariant = (gx, gz) => {
+        const sub = _tRng(gx * 29 + 3, gz * 31 + 5);
+        if (_tRng(gx * 53 + 7, gz * 59 + 11) < TREE_BIRCH_SHARE) {
+            return TREE_BIRCH_START + Math.floor(sub * (TREE_CARD_URLS.length - TREE_BIRCH_START));
+        }
+        return Math.floor(sub * TREE_BIRCH_START);
+    };
     const spots = [];
     for (let gx = -xCells; gx <= xCells; gx++) {
         for (let gz = 0; gz < zCells; gz++) {
@@ -3250,7 +3264,7 @@ void main(void) {
 
             // Review-60 (c) scale band 0.7–1.4 (was 0.85–1.75): total height
             // 10.2–20.4 m for the 14.6 m card. Per-tree variety comes from
-            // scale × yaw × one of FOUR distinct baked spruce variants.
+            // scale × yaw × species/variant (pickVariant, ~60% birch).
             const s = 0.70 + rs * 0.70;
 
             // Plant against the SAME field function the terrain mesh samples:
@@ -3259,8 +3273,7 @@ void main(void) {
             spots.push({
                 x: tx, y: _fieldTopY(tx, tz), z: tz, s: s,
                 yaw: _tRng(gx * 13, gz * 17) * Math.PI,  // per-tree variety
-                v: Math.floor(_tRng(gx * 29 + 3, gz * 31 + 5)
-                    * TREE_CARD_URLS.length),            // which spruce variant
+                v: pickVariant(gx, gz),                  // species + variant
             });
         }
     }
@@ -3272,8 +3285,8 @@ void main(void) {
     if (spots.length) {
         // ONE cross-card shape, built once per variant (fresh planes each
         // time — Mesh.clone is not in the golden harness's BABYLON stub and
-        // 4 quads cost nothing): a merged mesh + material + thin-instance
-        // matrix buffer per spruce variant = 4 draw calls for the whole
+        // 6 quads cost nothing): a merged mesh + material + thin-instance
+        // matrix buffer per variant = 6 draw calls for the whole
         // forest (the plan's P4 cap is ≤ 20).
         const buildCardMesh = (name) => {
             const q1 = BABYLON.MeshBuilder.CreatePlane(name + '_q1',
