@@ -94,3 +94,74 @@ test('negative control: a flat curtain fails the depth+texture gate', async ({ p
     const fails = res.depthRatio < 0.20 || !res.hasAlbedoMap || res.pxVar <= 0.02;
     expect(fails).toBe(true);
 });
+
+// ── Rendered contrast: the ridges must survive the atmosphere ─────────────
+// HUMAN TESTING #4/#6: three GLM passes tuned the band map while the RENDERED
+// ridges stayed pale felt, because scene fog on those materials flattened
+// everything toward the fog colour. This gate measures the actual frame, on a
+// ridge-only pixel mask built by differencing the scene shot with the ridge
+// meshes hidden (whatever changes is ridge). Negative control: the fogged state.
+const CONTRAST_SRC = `
+    window._ridgeContrast = async function () {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const engine = scene.getEngine();
+        const cam = scene.activeCamera;
+        engine.stopRenderLoop();
+        cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;   // look.spec scene framing
+        const ridges = scene.meshes.filter(m => m.name && m.name.startsWith('ridge_'));
+        const grab = async () => { scene.render(); scene.render(); return engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight()); };
+        const withR = await grab();
+        ridges.forEach(m => m.setEnabled(false));
+        const without = await grab();
+        ridges.forEach(m => m.setEnabled(true));
+        let n = 0, sum = 0, sum2 = 0;
+        const total = withR.length / 4;
+        for (let i = 0; i < withR.length; i += 4) {
+            const d = Math.abs(withR[i] - without[i]) + Math.abs(withR[i+1] - without[i+1]) + Math.abs(withR[i+2] - without[i+2]);
+            if (d < 12) continue;                       // not a ridge pixel
+            const lum = (0.2126 * withR[i] + 0.7152 * withR[i+1] + 0.0722 * withR[i+2]) / 255;
+            n++; sum += lum; sum2 += lum * lum;
+        }
+        const mean = n ? sum / n : 0, std = n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0;
+        return { maskFrac: n / total, meanLum: mean, stdLum: std };
+    };
+`;
+// Measured 2026-08-29 (swiftshader, look.spec framing): fixed state mean 0.50 / std 0.165;
+// fogged (rejected) state mean 0.63 / std 0.123 — thresholds sit between with margin.
+const CONTRAST_MIN_STD = 0.14, CONTRAST_MAX_MEAN = 0.56, MASK_MIN = 0.02;
+
+async function contrastProbe(page) {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForTimeout(1500);
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    await page.evaluate(CONTRAST_SRC);
+}
+
+test('rendered ridge pixels keep contrast (not washed to the fog colour)', async ({ page }) => {
+    await contrastProbe(page);
+    const r = await page.evaluate(() => window._ridgeContrast());
+    console.log('ridge contrast', JSON.stringify(r));
+    expect(r.maskFrac).toBeGreaterThan(MASK_MIN);              // the ridges are actually in frame
+    expect(r.stdLum).toBeGreaterThanOrEqual(CONTRAST_MIN_STD); // rock/snow/forest read as bands
+    expect(r.meanLum).toBeLessThanOrEqual(CONTRAST_MAX_MEAN);  // not pale felt
+});
+
+test('negative control: fogged ridge materials fail the contrast gate', async ({ page }) => {
+    await contrastProbe(page);
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        for (const n of ['ridgeMatNear', 'ridgeMatMid', 'ridgeMatFar']) {
+            const m = scene.getMaterialByName(n); m.fogEnabled = true;
+            // the pre-fix mixes, so this is exactly the state the author rejected
+            const F = scene.fogColor, mix = { ridgeMatNear: 0.04, ridgeMatMid: 0.07, ridgeMatFar: 0.15 }[n];
+            m.albedoColor = new BABYLON.Color3(1 + (F.r - 1) * mix, 1 + (F.g - 1) * mix, 1 + (F.b - 1) * mix);
+        }
+        return window._ridgeContrast();
+    });
+    console.log('ridge contrast (fogged)', JSON.stringify(r));
+    expect(r.maskFrac).toBeGreaterThan(MASK_MIN);
+    expect(r.stdLum < CONTRAST_MIN_STD || r.meanLum > CONTRAST_MAX_MEAN).toBe(true);
+});

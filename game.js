@@ -4000,6 +4000,18 @@ void main(void) {
         const T = AerialEngine && AerialEngine.textures;
         const s = T && T.makeRidgeSurface
             ? T.makeRidgeSurface(BABYLON, scene, 512, { strength: 3.5 }) : null;
+        // Reviewer fix (Fable, 2026-08-29, HUMAN TESTING #4/#6 "mountains
+        // flat / lost texture"): with scene fog ON, the ridge materials wash
+        // to a single pale fog tint far harder than the EXP2 curve predicts
+        // (measured: exp2 visibility 0.82 at 200 m, yet the band map was
+        // invisible; halving fogDensity to 0.0012 barely changed it, while
+        // fogEnabled=false restored rock/snow/forest banding at once — see
+        // docs/RENDER-PROGRESS.md entry "mountains, reviewer pass"). So the
+        // ridges opt out of scene fog and carry their own distance haze as a
+        // per-layer albedo lift toward the fog colour (mix below). Gate:
+        // tests/drive/ridges3d.spec.js "rendered ridge pixels keep contrast",
+        // whose negative control is exactly the fogged state.
+        m.fogEnabled = false;
         if (s) {
             // The map is self-coloured; albedoColor becomes the atmospheric
             // multiplier, lifted toward the fog colour with distance.
@@ -4067,9 +4079,11 @@ void main(void) {
     // Fog-mix pulls the self-coloured band map toward the fog colour; the
     // 2026-08-29 look showed mid/far washed to pale felt at 0.12/0.22 — the
     // global EXP2 fog (0.0022) already supplies distance haze.
-    const matNear = _ridgeMat('ridgeMatNear', 0.04, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.07, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.15, [0.38, 0.48, 0.55]);
+    // Baked haze per layer (scene fog is off on these materials — see
+    // _ridgeMat): near hills stay saturated, far ridges recede.
+    const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
+    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31]);
+    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55]);
     [-1, 1].forEach(function (s) {
         _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 28, 16, 0.033, 0.087, 1.9, 4.2, matMid);
