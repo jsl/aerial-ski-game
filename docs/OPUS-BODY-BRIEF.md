@@ -34,8 +34,7 @@ Makefile targets; the build has its own gates that must keep passing).
    bottom edge above the nose tip. Goggles are geometry (`goggle_geometry`) + paint (`paint_suit` face
    pass); move both together and keep the frame ~1.5–3 mm proud of the face, lens glossy dark with a
    subtle blue/orange mirror tint, strap continuing round the helmet. Gate (`rig.spec.js` or the build
-   gate): lens band vertical extent within 0.55–0.68 h **measured inside the head silhouette mask**;
-   negative control: shifting the band down by 0.08 h must fail.
+   gate): **CORRECTED by reviewer 2026-08-29 14:20 after Opus measured the author's reference (`aerial_suit.png`, crown y=852, chin y=1008, lens rows 908–945): the lens band is 0.40–0.64 h (centre ≈ 0.52 h), its top touching the helmet rim with NO bare forehead — the brief's earlier 0.55–0.68 h was wrong (it sat above the eye line); use 0.40–0.64 h**, measured inside the head silhouette mask; negative control: shifting the band down by 0.08 h must fail.
 2. **Helmet reads as a beret / skull-cap with the forehead exposed — and the author's 8203 check (HUMAN TESTING #6) says it now sits too FORWARD.** Centre the dome on the skull: front rim ~1.5 cm above the brow (no lower), crown apex above the ear line's midpoint, back rim at the nape. Gate: dome centroid within ±1 cm of the head centroid along the face axis; negative controls ±3 cm fore/aft fail. (`face.png`, `figure_side.png`).
    Required: a dome centred on the skull top, shell coming down to ~1.5 cm above the brow in front, over the
    ears at the sides, to the nape at the back, with a visible thickness at the rim (2–3 mm lip), a chin
@@ -95,6 +94,8 @@ Makefile targets; the build has its own gates that must keep passing).
     skis eject only on crash — none of these may regress (their gates are in `rig.spec.js`/`drive` specs).
 
 ## Reviewer arbitrations (read at every session start)
+- **Goggle band (14:20): Opus's reference measurement stands — 0.40–0.64 h, lens top at the helmet rim, no bare forehead.** The 0.55–0.68 h in the original item 1 was the reviewer's error. The goggle-proud gate must measure the goggle geometry itself (radial step of lens verts vs the same-slab skin), not the skull; keep the negative control.
+- **Commit discipline:** session 1 (13:49) ended with the merge + goggles work staged but uncommitted. Commit BEFORE writing the session report; a verified merge is committed the moment unit+golden are green.
 - **APPROVED (Fable, 2026-08-29 10:40): the depth-of-field fix stays in your lane.** The `DefaultRenderingPipeline`
   DoF block in `game.js` is yours until merge; GLM has been told not to touch it. A distance-driven `fStop` is the
   right shape. Record the before/after numbers in the notes.
