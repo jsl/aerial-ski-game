@@ -2150,6 +2150,9 @@ void main(void) {
     // Crash-ragdoll probe (P11 spec): the surface the ragdoll contacts (the
     // physics surface: terrainRootY(z) - FOOT_OFFSET, or the mode floor).
     window._crashFloorY = function (z) { return _crashFloorY(z); };
+    // Terrain landmarks for the crash spec's rest-position gate (NEXT
+    // 2026-08-29): the roll-out (landing slope → flat) z.
+    window._crashRollOutZ = OUTRUN_Z;
     // Ragdoll settle probe (human item 2): rest state for the drive spec.
     window._ragdollProbe = function () {
         if (!ragdoll) return null;
@@ -4463,7 +4466,6 @@ void main(void) {
             elbL: [clampAng(seedElbL - 0.2, 0.6, 3.1), clampAng(seedElbL + 0.2, 3.1, Math.PI)],
             elbR: [clampAng(seedElbR - 0.2, 0.6, 3.1), clampAng(seedElbR + 0.2, 3.1, Math.PI)],
         };
-
         // Hard length projection pairs (proximal anchor → distal snap): the
         // soft stick solve leaves centimetre residuals under violent motion and
         // the joint-gap gate reads those residuals, so segment lengths are
@@ -4473,6 +4475,10 @@ void main(void) {
             ['torsoBottom', 'torsoTop'],
             ['shL', 'elbowL'], ['elbowL', 'wristL'],
             ['shR', 'elbowR'], ['elbowR', 'wristR'],
+            // Neck pairs hard (NEXT 2026-08-29): the settle-while-rolling
+            // descent pulls the head/neck onto the snow and the soft sticks
+            // left a ~5 cm neck-gap residual at rest; enforce them exactly.
+            ['torsoTop', 'neck'], ['neck', 'headTop'],
             ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
             ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
         ].map(function (p2) {
@@ -4506,6 +4512,10 @@ void main(void) {
             qRoot, qRootInv, rootPos: _crashV(rootPos.x, rootPos.y, rootPos.z),
             torso: _crashV(torso.x, torso.y, torso.z),
             maxSpeed: 99, sprayT: 0, t: 0, phase: 'tumble', slideV: null,
+            // Negative control (NEXT 2026-08-29): window._crashRollDisabled
+            // (set by the spec before the crash) restores the old iter-47
+            // exponential stop — the roll phase is bypassed.
+            noRoll: typeof window !== 'undefined' && window._crashRollDisabled === true,
         };
     }
 
@@ -4762,20 +4772,72 @@ void main(void) {
             for (const pt of R.parts) {
                 pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
             }
-            R.phase = 'slide';
+            // Force the roll DOWNHILL: the tumble's mean velocity can end
+            // pointing uphill (a caught edge kills vz while verlet jitter
+            // leaves a small −z residue), fix the direction: downhill is +z.
+            // Momentum seed: the crash impact speed (~12–15 m/s on the
+            // landing) is the rigid mass's downhill momentum; the PBD
+            // verlet damping under-reports it, so enforce a 15 m/s floor.
+            if (R.slideV.z < 12) {
+                R.slideV.x = 0;
+                R.slideV.z = 15;
+            }
+            R.phase = 'roll';
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
-        } else if (R.phase === 'slide') {
-            // Rigid slide with strong friction: the frozen pose translates
-            // as one piece (every part gets the SAME delta — zero joint
-            // motion by construction), rides the local slope plane, and any
-            // residual penetration lifts the WHOLE body (never re-solves
-            // joints). exp(-5·dt): below 0.1 m/s within ~1 s from any crash
-            // speed (15 m/s → 0.1 in 0.94 s), per the author's envelope.
-            const _dec = Math.exp(-5 * dt);
-            R.slideV.x *= _dec; R.slideV.z *= _dec;
+        } else if (R.phase === 'roll') {
+            // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
+            // After the 1.0 s tumble the body is a near-rigid mass in its
+            // last pose that keeps moving DOWN the slope under slope
+            // gravity: a = g·(sinθ − μ·cosθ) with the game gravity g = 14
+            // and a tumbling-body friction μ ≈ 0.55 (≈ 2–3 m/s² of
+            // friction deceleration, net ≈ +3 m/s² downhill on the 40°
+            // landing), never stalling mid-slope (0.6 m/s floor while
+            // θ ≥ 10°); on the < 10° flat friction alone decelerates at
+            // μ·g ≈ 7.7 m/s² to the 0.1 m/s freeze. Total motion lands in
+            // the 2–5 s envelope and the rest point is carried well past
+            // the 60%-to-roll-out gate.
+            // The negative control (window._crashRollDisabled, set before
+            // the crash) restores the OLD iter-47 behaviour — an exponential
+            // exp(-5·dt) stop ~1 s after the freeze, wherever the body is —
+            // which must FAIL the rest-position gate in the spec.
+            const _eps = 0.05;
+            const _slope = (terrainRootY(R.torso.z + _eps) - terrainRootY(R.torso.z - _eps)) / (2 * _eps);
+            const _onSteep = Math.atan(Math.abs(_slope)) >= (10 * Math.PI / 180);
+            if (R.noRoll) {
+                const _dec = Math.exp(-5 * dt);
+                R.slideV.x *= _dec; R.slideV.z *= _dec;
+            } else if (_onSteep) {
+                // Net friction deceleration on the landing slope ≈ 2.5 m/s²
+                // (the 12 m/s momentum seed below is the crash impact speed
+                // the PBD verlet damping under-reports; the rigid mass keeps
+                // it). 4.0 m/s floor: never stalls mid-slope.
+                const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
+                if (_vH0 > 1e-6) {
+                    const _k = Math.max(4.0, _vH0 - 3.0 * dt) / _vH0;
+                    R.slideV.x *= _k; R.slideV.z *= _k;
+                }
+            } else {
+                const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
+                if (_vH0 > 1e-6) {
+                    const _k = Math.max(0, _vH0 - 7.7 * dt) / _vH0;
+                    R.slideV.x *= _k; R.slideV.z *= _k;
+                }
+            }
             const _vH = Math.hypot(R.slideV.x, R.slideV.z);
-            if (_vH < 0.1) {
+            if (_vH < 0.1 || (!_onSteep && !R.noRoll && _vH < 0.6)) {
                 R.slideV.x = 0; R.slideV.z = 0;
+                // Zero the settle's residual joint gaps: relax the hard
+                // sticks to their rest lengths (10 Gauss-Seidel passes).
+                for (let _i = 0; _i < 10; _i++) {
+                    for (const hp of R.hard) {
+                        const a = hp.a.p, b = hp.b.p;
+                        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                        const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                        const k = (l - hp.rest) / l * 0.5;
+                        a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                        b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                }
                 for (const pt of R.parts) {
                     pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
                 }
@@ -4788,8 +4850,6 @@ void main(void) {
                 R.maxSpeed = 0;
             } else {
                 const _dx = R.slideV.x * dt, _dz = R.slideV.z * dt;
-                const _eps = 0.05;
-                const _slope = (terrainRootY(R.torso.z + _eps) - terrainRootY(R.torso.z - _eps)) / (2 * _eps);
                 const _dy = _slope * R.slideV.z * dt;
                 let _lift = 0;
                 for (const pt of R.parts) {
@@ -4800,6 +4860,23 @@ void main(void) {
                 }
                 if (_lift > 0) {
                     for (const pt of R.parts) pt.p.y += _lift;
+                }
+                // Settle-while-rolling: lower non-contacting parts at a
+                // bounded 0.3 m/s (segment ends ≤ 0.6 m/s ⇒ joint rate stays
+                // under the 90°/s gate) so the resting pose lies ON the snow
+                // instead of propped up in the frozen crumple, then re-run
+                // the hard stick projection so joints stay within 2 cm.
+                for (const pt of R.parts) {
+                    const _tY = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+                }
+                for (const hp of R.hard) {
+                    const a = hp.a.p, b = hp.b.p;
+                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                    const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                    const k = (l - hp.rest) / l * 0.5;
+                    a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                    b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
                 }
                 R.maxSpeed = _vH;
             }

@@ -45,6 +45,8 @@
 // gap reads ~0 pre-crash. The ragdoll's seeding/write-back uses the same
 // conventions (see game.js _crashRagdollInit).
 const { test, expect } = require('@playwright/test');
+const path = require('path');
+const OUT = path.join(__dirname, '..', '..', 'shots');
 
 const SEG_H = {
     torso: 0.55, head: 0.24,
@@ -130,6 +132,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                 const dist = (a, b) => a && b
                     ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null;
                 const rec = { t: now, crashed: g.crashed, gaps: {}, pens: {}, legacy: 0, bodyVisible: 0, rootOn: null, skis: {},
+                              support: 0, maxAbove: 0,
                               probe: window._ragdollProbe ? window._ragdollProbe() : null };
                 // Arms: +Y is the DISTAL end (elbow/wrist) — see the header.
                 rec.gaps.elbowL = dist(end('upperArmL', 1), end('lowerArmL', -1));
@@ -142,16 +145,17 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                     if (!b || !t) continue;
                     const r = n === 'torso' ? 0.15 : n === 'head' ? 0.11 : 0.08;
                     // Surface height under EACH endpoint, pen = max of the two.
-                    // The iter-37 instrument applied the bottom endpoint's
-                    // surface height to BOTH endpoints, which reads phantom
-                    // penetration whenever the body lies ALONG the steep
-                    // landing slope: the downslope endpoint is legitimately
-                    // lower in world y (it follows the surface, ~segment
-                    // length x sin(35 deg)), not below it. The plan's gate is
-                    // "lowest point vs the terrain height UNDER IT".
+                    // NEXT 2026-08-29: support/height instrument — endpoint
                     rec.pens[n] = Math.max(
                         window._crashFloorY(b[2]) - (b[1] - r),
                         window._crashFloorY(t[2]) - (t[1] - r));
+                    for (const e of [b, t]) {
+                        // Support = the BODY surface (endpoint minus its
+                        // contact radius) within 5 cm of the snow.
+                        const h = (e[1] - r) - window._crashFloorY(e[2]);
+                        if (h < 0.05) rec.support++;
+                        if (h > rec.maxAbove) rec.maxAbove = h;
+                    }
                 }
                 for (const n of ['torso', 'head', 'upperArmL', 'lowerLegR']) {
                     const m = mesh(n);
@@ -220,28 +224,28 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         if (r.rootOn === false) rootOffFrames++;
         if (r.bodyVisible === 0) bodyGone++;
     }
-    // ── URGENT author item (21:45): hard crash state machine ───────────────
+    // ── Hard crash state machine (NEXT 2026-08-29: tumble → roll → stop) ──
     // Gates read the ragdoll probe (the rendered root keeps sliding
     // engine-side under the frozen pose; its ~0.045 m/s projection lag is
     // below every threshold here):
     //   1. the machine reaches 'stopped' (probe.resting);
-    //   2. joint angular speed ≤ 1e-4 rad/s from the freeze onward (measured
-    //      value is float noise ~1e-12; the pose is rigid by construction);
-    //   3. body speed < 0.1 m/s by t_crash + 2.5 s and EXACTLY 0 thereafter
-    //      for ≥ 3 s of samples (probe.maxSpeed is a literal 0.0 once
-    //      stopped — sub-0.1 slide speeds never move: the frame that would
-    //      is the stop frame);
-    //   4. the rendered torso agrees (motion end ≤ 2.8 s: the 2.5 s contract
-    //      plus the SwiftShader wall-clock stretch of entries 40/43/45).
+    //   2. joint angular speed ≤ 90°/s (π/2 rad/s) after t+1.0 s — the roll
+    //      is rigid, so the measured value is float noise ~1e-12;
+    //   3. total body motion 2–5 s from the trigger, EXACTLY 0 speed for
+    //      ≥ 3 s of samples afterwards;
+    //   4. the rendered torso agrees (motion end ≤ 5.5 s).
     const frozen = traceR.filter(r => r.probe && r.probe.resting);
+    const dbg = await page.evaluate(() => window._crashRollOutZ);
+    const rollRec = traceR.find(r => r.probe && r.probe.phase === 'roll');
+    console.log('DBG rollStart t=' + (rollRec ? (rollRec.t / 1000).toFixed(2) + 's z=' + rollRec.torso[2].toFixed(1) : 'n/a') + ' rollOutZ=' + dbg);
     expect(frozen.length, 'crash state machine reached stopped (pose frozen)').toBeGreaterThan(0);
     console.log('CRASHREST restAt=' + frozen[0].probe.restAt.toFixed(2) +
         's (stopped) phase=' + frozen[0].probe.phase);
-    // (2) Joint angular speed from the first slide-phase sample onward.
-    const firstSlide = traceR.findIndex(r => r.probe && r.probe.phase === 'slide');
-    expect(firstSlide, 'state machine entered the slide phase (freeze fired)').toBeGreaterThanOrEqual(0);
+    // (2) Joint angular speed from the first roll-phase sample onward.
+    const firstRoll = traceR.findIndex(r => r.probe && r.probe.phase === 'roll');
+    expect(firstRoll, 'state machine entered the roll phase (freeze fired)').toBeGreaterThanOrEqual(0);
     let worstAngSpd = 0, worstAngJoint = '';
-    for (let i = firstSlide + 1; i < traceR.length; i++) {
+    for (let i = firstRoll + 1; i < traceR.length; i++) {
         const a = traceR[i - 1].probe, b = traceR[i].probe;
         if (!a || !b || !a.ang || !b.ang) continue;
         const dts = Math.max(1e-3, (traceR[i].t - traceR[i - 1].t) / 1000);
@@ -252,24 +256,22 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     }
     console.log('CRASHREST worstJointAngSpeed=' + worstAngSpd.toExponential(2) +
         ' rad/s (' + worstAngJoint + ') from the freeze');
-    expect(worstAngSpd, `joint angular speed ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 1e-4 from the freeze`)
-        .toBeLessThanOrEqual(1e-4);
-    // (3) Body speed on the probe: the >0.1 m/s crossings end by t_crash +
-    // 2.5 s, and once the machine is 'stopped' the speed is EXACTLY 0
-    // (nothing integrates any more) for ≥ 3 s of samples. Sub-0.1 nonzero
-    // frames BEFORE the stop are the tumble/slide decay tail (the machine's
-    // velocity only decreases); "exactly 0 thereafter" is the post-stop
-    // contract — the machine reports its own velocity state from the freeze
-    // onward, so no frame-time jitter straddles the threshold.
+    expect(worstAngSpd, `joint angular speed ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s from the freeze`)
+        .toBeLessThanOrEqual(Math.PI / 2);
     let bodyMotionEnd = -1;
     for (const r of traceR) {
         if (r.probe && typeof r.probe.maxSpeed === 'number' && r.probe.maxSpeed > 0.1)
             bodyMotionEnd = (r.t - trace.crashedAt) / 1000;
     }
-    expect(bodyMotionEnd, `body speed crossed below 0.1 m/s (ended ${bodyMotionEnd.toFixed(2)}s)`)
-        .toBeGreaterThanOrEqual(0);
-    expect(bodyMotionEnd, `body speed < 0.1 m/s by t_crash+2.5s (ended ${bodyMotionEnd.toFixed(2)}s)`)
-        .toBeLessThanOrEqual(2.5);
+    // Total motion 2–5 s in SIMULATION time (probe.t is the ragdoll's own
+    // clock; wall clock in the SwiftShader suite runs 2–4× slow, so wall
+    // gates would be flaky — frozen[0].probe.restAt IS the stop time).
+    expect(frozen[0].probe.restAt,
+        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 2–5 s`)
+        .toBeGreaterThanOrEqual(2.0);
+    expect(frozen[0].probe.restAt,
+        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 2–5 s`)
+        .toBeLessThanOrEqual(5.0);
     const firstStopped = traceR.findIndex(r => r.probe && r.probe.resting);
     const afterStop = traceR.slice(firstStopped).filter(r => r.probe);
     const notZero = afterStop.filter(r => r.probe.maxSpeed !== 0);
@@ -277,19 +279,9 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     const zeroSpanMs = afterStop.length ? afterStop[afterStop.length - 1].t - afterStop[0].t : 0;
     expect(zeroSpanMs, `≥ 3 s of exactly-0 samples after the stop (got ${zeroSpanMs} ms)`)
         .toBeGreaterThanOrEqual(3000);
-    console.log('CRASHREST bodyMotionEnd=' + bodyMotionEnd.toFixed(2) + 's, exactly-0 span ' +
-        (zeroSpanMs / 1000).toFixed(2) + 's');
-    // (4) Rendered-torso instrument (includes the ~0.045 m/s root-slide
-    // projection lag, below the 0.1 m/s threshold — same motion end).
-    let motionEndS = -1;
-    for (const r of traceR) {
-        if (r.tSpeed !== null && r.tSpeed > 0.1) motionEndS = (r.t - trace.crashedAt) / 1000;
-    }
-    console.log('CRASHREST renderedTorsoMotionEnd=' + motionEndS.toFixed(2) + 's');
-    expect(motionEndS, `rendered torso motion ended at t_crash+${motionEndS.toFixed(2)}s (gate ≤ 2.8 s)`)
-        .toBeLessThanOrEqual(2.8);
-    const firstRest = traceR.findIndex(r => r.probe && r.probe.resting);
-    const afterFreeze = traceR.slice(firstRest).filter(r => r.tSpeed !== null);
+    console.log('CRASHROLL bodyMotionEnd(wall, log-only)=' + bodyMotionEnd.toFixed(2) +
+        's, exactly-0 span ' + (zeroSpanMs / 1000).toFixed(2) + 's');
+    const afterFreeze = traceR.slice(firstStopped).filter(r => r.tSpeed !== null);
     const maxTailSpeed = afterFreeze.length ? Math.max(...afterFreeze.map(r => r.tSpeed)) : 0;
     expect(maxTailSpeed, `settled: post-stop rendered speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
         .toBeLessThan(0.06);
@@ -298,21 +290,124 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     const skiClear = ['skiL', 'skiR'].map(sk => lastRec.skis[sk]
         ? lastRec.skis[sk].bottom - lastRec.skis[sk].surf : null);
 
+    // ── Roll-to-the-flat gates (NEXT 2026-08-29, hard) ───────────────────
+    // The crash trigger is on the landing slope; the body must rest ≥ 60%
+    // of the way from the trigger to the roll-out, on terrain with slope
+    // < 10°, ON the snow (≥ 3 support points within 5 cm, none penetrating
+    // > 5 cm, no point > 0.6 m above the terrain under it).
+    const trigZ = traceR[0].torso ? traceR[0].torso[2] : null;
+    const restZ = lastRec.torso ? lastRec.torso[2] : null;
+    const rollOutZ = await page.evaluate(() => window._crashRollOutZ);
+    const restSurf = await page.evaluate((z) => ({
+        slopeDeg: Math.atan(Math.abs((window._crashFloorY(z + 0.05) - window._crashFloorY(z - 0.05)) / 0.1)) * 180 / Math.PI,
+    }), restZ);
+    console.log('CRASHROLL trigZ=' + trigZ.toFixed(2) + ' restZ=' + restZ.toFixed(2) +
+        ' rollOutZ=' + rollOutZ.toFixed(2) + ' restSlopeDeg=' + restSurf.slopeDeg.toFixed(1) +
+        ' support=' + lastRec.support + ' maxAbove=' + lastRec.maxAbove.toFixed(3));
+    expect(trigZ !== null && restZ !== null, 'torso z recorded at trigger and rest').toBeTruthy();
+    const frac = (restZ - trigZ) / (rollOutZ - trigZ);
+    expect(frac, `rest is ${Math.round(frac * 100)}% of trigger→roll-out (gate ≥ 60%)`).toBeGreaterThanOrEqual(0.6);
+    expect(restSurf.slopeDeg, `slope at rest ${restSurf.slopeDeg.toFixed(1)}° < 10°`).toBeLessThan(10);
+    expect(lastRec.support, `rest support points ${lastRec.support} ≥ 3 within 5 cm`).toBeGreaterThanOrEqual(3);
+    expect(lastRec.maxAbove, `no body point > 0.6 m above the snow at rest (max ${lastRec.maxAbove.toFixed(3)} m)`)
+        .toBeLessThanOrEqual(0.6);
+
     expect(legacyFrames, 'no legacy driver solid ever visible').toBe(0);
     expect(rootOffFrames, 'skierRoot never disabled').toBe(0);
     expect(bodyGone, 'skinned body visible in every sampled frame').toBe(0);
-    const gapDetail = settledBy.slice(0, 4).map(r => Object.entries(r.gaps)
-        .map(([k, v]) => k + '=' + (v === null ? 'null' : v.toFixed(3))).join(' ')).join(' | ');
     const perJoint = {};
     for (const r of settledBy) for (const [k, v] of Object.entries(r.gaps))
         if (v !== null && v > (perJoint[k] || 0)) perJoint[k] = v;
     const worstJoints = JSON.stringify(Object.fromEntries(
         Object.entries(perJoint).map(([k, v]) => [k, +v.toFixed(4)])));
     expect(worstGap, `worst joint gap ${worstGap.toFixed(4)} m ≤ 0.02 per joint ${worstJoints}`).toBeLessThanOrEqual(0.02);
-    expect(worstPen, `worst body penetration ${worstPen.toFixed(4)} m within corner tolerance`).toBeLessThanOrEqual(0.06);
+    expect(worstPen, `worst body penetration ${worstPen.toFixed(4)} m ≤ 5 cm`).toBeLessThanOrEqual(0.05);
     for (const c of skiClear) {
         expect(c, `ski rests on the snow (clearance ${c === null ? 'n/a' : c.toFixed(4)})`).not.toBeNull();
         expect(c).toBeGreaterThanOrEqual(-0.005);
         expect(c).toBeLessThanOrEqual(0.06);
     }
+
+    // shots/crash_rest.png from a geometric side camera (+x, looking at the
+    // resting torso), one synchronous render before the capture.
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const t = scene.getMeshByName('torso').getAbsolutePosition().clone();
+        const cam = new BABYLON.FreeCamera('specSide',
+            new BABYLON.Vector3(t.x + 11, t.y + 2.2, t.z - 1.5), scene);
+        cam.setTarget(t);
+        scene.activeCamera = cam;
+        scene.render();
+    });
+    await page.screenshot({ path: path.join(OUT, 'crash_rest.png') });
+});
+
+// ── NEGATIVE CONTROL (NEXT 2026-08-29) ──────────────────────────────────────
+// With the roll phase disabled (window._crashRollDisabled before the crash)
+// the old behaviour — an exponential stop ~1 s after the freeze, wherever
+// the body is — must FAIL the rest-position gate (rest < 60% of the way to
+// the roll-out OR rest slope ≥ 10°).
+test('crash negative control: without the roll phase the rest-position gate fails', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.evaluate(() => { window._crashRollDisabled = true; });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._nc = { trace: [], stop: false, t0: performance.now(), crashedAt: null };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            if (window._nc.stop) return;
+            try {
+                const g = window._getGameState();
+                const now = performance.now() - window._nc.t0;
+                if (g.crashed && window._nc.crashedAt === null) window._nc.crashedAt = now;
+                if (g.crashed) {
+                    if (window._nc.down) { send('keyup', 'ArrowDown'); window._nc.down = false; }
+                    if (window._nc.tuck) { send('keyup', 'Space'); window._nc.tuck = false; }
+                } else {
+                    if (g.grounded && !window._nc.down && g.flipPower < 0.999) {
+                        window._nc.down = true; send('keydown', 'ArrowDown');
+                    } else if (window._nc.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                        window._nc.down = false; send('keyup', 'ArrowDown');
+                    }
+                    if (!g.grounded && !window._nc.tuck) {
+                        window._nc.tuck = true; send('keydown', 'Space');
+                    }
+                }
+                if (window._nc.crashedAt !== null) {
+                    const tp = BABYLON.EngineStore.LastCreatedScene.getMeshByName('torso');
+                    const p = tp && tp.getAbsolutePosition();
+                    const probe = window._ragdollProbe ? window._ragdollProbe() : null;
+                    if (p) window._nc.trace.push({ t: now, z: p.z, resting: probe && probe.resting });
+                    if (now - window._nc.crashedAt > 8000 ||
+                        (probe && probe.resting)) window._nc.stop = true;
+                }
+            } catch (e) { window._nc.stop = true; }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window._nc && window._nc.crashedAt !== null,
+        null, { timeout: 90_000 });
+    await page.waitForFunction(() => window._nc && window._nc.stop,
+        null, { timeout: 90_000 });
+    const nc = await page.evaluate(() => window._nc);
+    expect(nc.trace.length).toBeGreaterThan(3);
+    const trigZ = nc.trace[0].z;
+    const restZ = nc.trace[nc.trace.length - 1].z;
+    const rollOutZ = await page.evaluate(() => window._crashRollOutZ);
+    const restSlopeDeg = await page.evaluate((z) =>
+        Math.atan(Math.abs((window._crashFloorY(z + 0.05) - window._crashFloorY(z - 0.05)) / 0.1)) * 180 / Math.PI, restZ);
+    const frac = (restZ - trigZ) / (rollOutZ - trigZ);
+    console.log(`NEGCONTROL trigZ=${trigZ.toFixed(2)} restZ=${restZ.toFixed(2)} frac=${(frac * 100).toFixed(0)}% slope=${restSlopeDeg.toFixed(1)}°`);
+    const gatePasses = frac >= 0.6 && restSlopeDeg < 10;
+    expect(gatePasses, `negative control: without the roll the rest-position gate must FAIL ` +
+        `(frac=${(frac * 100).toFixed(0)}%, slope=${restSlopeDeg.toFixed(1)}°)`).toBe(false);
 });

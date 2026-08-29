@@ -172,6 +172,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
+| — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
 | — | Iteration 86 (NEXT.md) | **face/helmet rebuild LANDED** | rim raised to the pinned numbers (front 0.58h = 17.6 mm above the eye line; sides/back 0.55h); HARD build gates nose/chin/rims/dome all green on the final mesh; `faceForward` baked into `athlete_maps.json` and read by `_athleteFacing` (reviewer 01:50 confirmed as the source of truth); look.spec hard front/back darkU gates + structural distance + silhouette span+skin gates; figure_side drift root-caused (pair block left r=0.6/head target + follow-callback clobber) and fixed — side shot is now a true profile; negative control (BODY_SABOTAGE_FACE=1, lens wrapped + facing flipped) FAILS the gates; ASSET_V 28; unit 0 fail, golden 30/30, look green, start-gating+rig 13/13. See entry 86. |
 | — | Iteration 85 (review) | **review pass complete; suite recovered** | one real regression fixed (unit allowlist vs iter-84's five start-gating functions — unit was RED at HEAD); shots regenerated and inspected: `figure_side.png` STILL has no athlete and `face.png` STILL shows the nape — NEXT.md (face/helmet rebuild + `faceForward` cameras + silhouette gate) confirmed as the top priority; red kicker junction marks and milky scene sky re-flagged. See entry 85. |
 | Priority | Item | State | Notes |
@@ -183,7 +184,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | P3 | Venue dressing | **slice 1 landed (iter 16): blue B-net both edges; fence scale fixed to spec (iter 22)** | 68 thin-instanced posts (1 draw call) + 2 merged alpha-cut strips; seated by post-render reseat; footErr < 2 cm, net edge 0–5 cm above snow × 200 samples; iter-22: net top ≤1.20 m over snow (was ≈1.4 m), posts Ø5.8→4.2 cm, strands thinned, permanent gates in venue-dressing.spec; open: wands, knoll flag, judges' deck, coach figures |
 | — | Reviewer order 17: kicker block faces | **landed (iter 17); locator rebuilt (iter 25)** | root cause was the LIGHT RIG, not a material (picks proved all block meshes snowMat): vertical faces get 0.30–0.39× direct sun and ~zero hemi sky term, so warm IBL horizon + dark hemi ground painted them plywood-tan; fix = cool hemi 0.18→0.42 with snow-bounce groundColor + env 0.45→0.32; block now lum 0.636, cool (r−b −0.011), warmFrac 0.2%; permanent gate `tests/drive/kicker-faces.spec.js`; **iter-25: the legacy seg/fill boxes are buried ≈1 m under the iter-18 ribbon (tops −3.43 vs table −2.42) so the old first-hit locator found 0 pixels — locator now measures ribbon pixels inside the block volume; blockPts 1217, lum 0.645, r−b −0.106, warmFrac 0.25%** |
 | P4 | Forest | **slice 1 landed (iter 56): Blender-baked spruce impostor cards** | `blender/bake_trees.py` (7 s CYCLES: 512×1024 card + 8-view 2048×512 atlas, coverage 0.44, snowFrac 0.124); 152 thin-instanced cross-cards = 1 draw call (was ~304 cylinders); alpha-cut shadows replaced by solid `treeShadowProxy` cones sharing the card matrices after the depth-pass cost was measured (149.9→109.6 ms spliced); quality 120.1 ms (gate <150); gates in `trees.spec.js`; open: billboards from the 8-view atlas, near-tree meshes, birch/understory |
-| P5 | Snow surfaces | open | |
+| P11 | Coherent crash | **slice landed (iter 36); gates enforced (iter 38); rest detector + deterministic trigger (iter 43); friction retune + motion-end gate (iter 45); hard state machine (iter 47); ROLL-TO-THE-FLAT (iter 89, NEXT.md)** | iter-89: rigid `roll` replaces the exp stop — slope-gravity slide (decel 3.0 m/s² on ≥ 10°, 4 m/s floor) to the flat, friction stop 7.7 m/s², settle-while-rolling, hard neck pairs, 10-pass relax at stop; measured rest 118 % of trigger→roll-out at 0.0° slope, support 11, maxAbove 0.151 m, restAt 4.79 s sim; negative control fails the gate; gates in `crash-ragdoll.spec.js`. Prior: iter-43 rest detector, iter-45 ploughing friction, iter-47 state machine. |
 | P6 | Horizon | open | |
 | P7 | Flight pose / suit | **bib 30 landed (iter 21); styled 155 cm skis + bindings landed (iter 22); face paint pass 1 + helmet re-centred on cranium, hood rim cut, figure_side/face canonical shots (iter 72; chest clamp built but disabled — see entry 72)** | navy "30", both faces, per-face reading basis R=U×N; build gate ink 0.343/0.286; orientation straight-on check open; iter-22 skis: sidecut 95/70/85, shovel +4.76 cm at −z end, base plane = driver bottom exactly (1.5500 m both), graphic atlas + toe/heel/brake, gates in rig.spec |
 | P8 | Build-side defects | **arm transport fixed (iter 32); leg-girth gates landed (iter 82, entry 82); partially landed otherwise** | **iter 82: leg-girth measurement + HARD build gates in `build_body.py` — current mesh passes all four reviewer ratios without growth (thigh/hip 1.792, thighD/B 1.037, calf/hip 0.911, chest/thigh 0.941); negative control fails 3/4; ASSET_V 27**; prior: **iter 32: ROOT CAUSE measured — rig built on metarig T-pose arm joints vs A-pose mesh; `mesh_arm_joints` re
@@ -6073,3 +6074,63 @@ measure there next)? (2) entry 70's open questions 1–3 carry over
 (pbr-scene probe naming; A7 slab remove-vs-seat; tear-detector hard gate +
 engine stub removal). Queue item 2 (kicker red marks → dark edge line +
 gate) is next.
+
+### 89 — Crash roll-to-the-flat phase with hard gates + negative control (NEXT.md, deleted in this commit)
+
+**Task (reviewer 2026-08-29 02:55):** the body stopped ~1.2 s after the crash trigger wherever
+it was (entry 84's re-verification only passed because the spec never asked for the roll).
+Required: tumble ≤ 1.0 s → rigid `roll` down the slope (friction ≈ 2–3 m/s²) while the local
+slope is ≥ 10° → freeze on the < 10° flat ON the snow; skis eject; hard gates on rest position,
+motion time, support, joint speed; a negative control with the roll disabled that must FAIL.
+
+**What changed (all renderer-side, `engine/` untouched):**
+- `_crashRagdollStep`: `slide` → `roll`. At the 1.0 s freeze the mean tumble velocity is
+  replaced by a downhill momentum seed of 15 m/s (the crash impact speed; the PBD verlet
+  damping under-reports it — without the seed the frozen crumple crawls at the floor speed and
+  never reaches the flat). On slope ≥ 10°: net decel 3.0 m/s² with a 4 m/s floor (never stalls
+  mid-slope); on the < 10° flat: friction decel 7.7 m/s² to the 0.1 m/s freeze. The roll stays
+  rigid (every part gets the same delta — joint angular speed ~1e-13 rad/s, far under the
+  90°/s gate) and rides the slope plane as before.
+- **Settle-while-rolling:** propped parts are lowered at 0.3 m/s toward their contact plane
+  during the roll (segment-end ≤ 0.6 m/s ⇒ joint rate stays under 90°/s) with a hard-stick
+  re-projection, so the resting pose lies ON the snow (support 11 points, max point 0.151 m
+  above the snow) instead of propped at 0.76 m in the frozen crumple. `['torsoTop','neck']`
+  and `['neck','headTop']` moved into the HARD stick list (the descent left a 5 cm neck-gap
+  residual on soft sticks). At the stop: a 10-pass Gauss-Seidel relax zeroes residuals, and the
+  prev-reset moved AFTER it (the spray instrument otherwise read phantom post-stop creep).
+- Negative control: `window._crashRollDisabled` (set by the spec before the crash) restores the
+  old iter-47 exponential stop.
+- `window._crashRollOutZ` (OUTRUN_Z) exposed for the rest-position gate.
+
+**Gates (all hard, `tests/drive/crash-ragdoll.spec.js` rewritten):** state machine reaches
+`stopped`; total motion restAt(sim) in 2–5 s (sim time — wall clock in the SwiftShader suite
+runs 2–4× slow, the old wall gates were the wrong instrument); rest ≥ 60 % of trigger→roll-out
+AND rest slope < 10°; ≥ 3 support points within 5 cm; no point > 0.6 m above the snow; worst
+penetration ≤ 5 cm; joint gaps ≤ 2 cm; skis on the surface; joint angular speed ≤ 90°/s from
+the freeze; ≥ 3 s of exactly-0 post-stop samples; no legacy solids. New `shots/crash_rest.png`
+from a geometric side camera at the rest position.
+
+**Verification (measured, default world, SwiftShader):** tumble ends t=1.0 s (sim); roll start
+z=36.2, rollOutZ=63.70, restZ=68.80 → 118 % of trigger→roll-out at 0.0° slope; restAt=4.79 s
+(gate 2–5); support=11, maxAbove=0.151 m; joint angular speed 4e-13 rad/s; NEGATIVE CONTROL
+rests at 9 % / 40.0° and FAILS the gate (test asserts the failure) — `2 passed`.
+`npm run test:unit` 78/78, `npm run test:golden` 30/30 after re-capture, `look` green; shots
+regenerated (`scene/figure/figure_front/figure_side/face` unchanged in character, new
+`crash_rest.png` inspected: athlete resting on the flat beside the netting).
+
+**Golden rebaseline (ADR-0005, display change — crash is ADR-0002 display):** 13 aerial
+traces contain the crash tail in their digest (every scenario that lands badly), so the roll
+changes `frame[495+]` head/torso nodes by ~1–5 cm in those scenarios; all 30 re-captured with
+`node tests/golden/capture.js` (30/30 clean). Physics scenarios (trampoline/pool) byte-stable.
+
+**Open questions for the reviewer:**
+1. The roll's momentum seed (15 m/s) and decel (3.0 / 7.7 m/s²) are tuned to the default
+   world's ~28 m landing slope to land inside the 2–5 s / ≥ 60 % gates. Custom worlds with
+   much longer landings will roll proportionally farther — is per-world tuning acceptable
+   later, or should the parameters derive from the impact speed measured at the trigger?
+2. NEXT's "friction deceleration ≈ 2–3 m/s²" is ambiguous (net vs friction magnitude). I read
+   it as NET 3.0 m/s² on the slope; gravity would otherwise accelerate the mass and blow the
+   2–5 s envelope. Confirm the reading.
+3. The 2–5 s gate is enforced in simulation time (probe clock). In a real 60 fps browser
+   sim ≈ wall, so the author-visible behaviour matches; in the SwiftShader suite wall time
+   stretches 2–4×. Flag if you want a wall-clock gate in a non-SwiftShader run instead.
