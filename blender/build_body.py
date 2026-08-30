@@ -130,9 +130,9 @@ SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
 # Negative control for the weight-LOCALITY gate: skip localise_weights, so the
 # gate measures the skin that put upperLeg weight on the ribcage.
 SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
-# Companion switch to BODY_LOCALITY_CAP (see LOCALITY_REACH_CAP): forces the
-# old self-certifying reach even when the cap is on, so the two can be measured
-# against each other in one session. Numbers in docs/OPUS-NOTES.md.
+# NEGATIVE CONTROL for the reach ceiling (see LOCALITY_REACH_CAP): forces the
+# old self-certifying reach, where the skin a bone wrongly grabbed sets the
+# reach that then declares the grab local. Numbers in docs/OPUS-NOTES.md.
 LOCALITY_NOCAP = os.environ.get('BODY_LOCALITY_NOCAP') == '1'
 # Negative control for the bib-number ORIENTATION gate: mirrors the BACK
 # plate's reading direction. The gate must reject it.
@@ -961,8 +961,23 @@ BLEND_RING_RATE = 0.5
 BLEND_RING_FALLOFF = (1.00, 0.78, 0.52, 0.28, 0.10)
 
 
-def smooth_blend_rings(obj):
-    """Spread each ownership seam across >= 4 rings of vertices."""
+def smooth_blend_rings(obj, locality=None):
+    """
+    Spread each ownership seam across >= 4 rings of vertices.
+
+    With `locality` (the field from `_locality_factors`) the smoothing is
+    PROJECTED: every iteration is relax-then-ramp rather than eight relaxes
+    followed by one ramp. That ordering is the whole fix for the residual
+    hinge. Run in sequence the two passes undo each other — the relax diffuses
+    weight back out past a bone's reach and the localise cuts it off again in
+    one edge, so the last cut always lands unsmoothed, and the transition from
+    full weight to none has to happen inside a single ~25 mm low-poly edge
+    (measured: 12 hot edges at the left armpit, all of them both-ramped, none
+    straddling the rescue branch). Interleaved, the ramp is a constraint the
+    diffusion equilibrates against instead of a cut applied after it, and the
+    fixed point is a field that is smooth ACROSS the boundary and still zero
+    beyond it.
+    """
     ng = len(obj.vertex_groups)
     names = {g.index: g.name for g in obj.vertex_groups}
     W = _vertex_weights(obj, cap=ng)          # full vectors while smoothing
@@ -1033,6 +1048,35 @@ def smooth_blend_rings(obj):
                 val = (1.0 - a) * cur.get(k, 0.0) + a * (acc.get(k, 0.0) / n)
                 if val > 1e-6:
                     new[k] = val
+            if locality is not None:
+                # ONLY the bone block. The mesh also carries mask groups that
+                # are not bones — `reduce` drives the Decimate modifier — and
+                # the first cut of this projection ran the rescue over the
+                # whole vector, which DROPPED that mask and put a 1.58 hinge at
+                # [reduce|lowerLegR]. The ramp changes how a vertex's bone
+                # weight is DISTRIBUTED, never how much of it there is (the
+                # write-back renormalises regardless), so the block keeps its
+                # own mass and everything else is left alone.
+                fev = locality[v]
+                jw = {k: w for k, w in new.items() if k in fev}
+                s_in = sum(jw.values())
+                if s_in > 1e-9:
+                    # NORMALISE the bone block before ramping it. Inside the
+                    # relax the vector carries the mask groups too and is
+                    # normalised as a whole, so a vertex whose `reduce` mask
+                    # holds 0.4 has a bone block summing to 0.6 — and the
+                    # rescue's `tot < RESCUE_TOT_LO` test, which is calibrated
+                    # on a block that sums to 1, then fires on skin the ramp
+                    # barely touched. That is what put the projected relax
+                    # BEHIND the sequenced order on its first build (seam max
+                    # 1.438 against 1.382) while the same algebra replayed on
+                    # raw Blender weights read 0.883.
+                    jn = {k: w / s_in for k, w in jw.items()}
+                    jw2, _, _ = _apply_locality(jn, fev)
+                    s_out = sum(jw2.values())
+                    if s_out > 1e-9:
+                        new = {k: w for k, w in new.items() if k not in fev}
+                        new.update({k: w * s_in / s_out for k, w in jw2.items()})
             tot = sum(new.values())
             nxtW[v] = {k: w / tot for k, w in new.items()} if tot > 1e-9 else cur
         for v in range(nv):
@@ -1163,19 +1207,125 @@ def _segment_halfdiag(name):
 # 1.09x upperLeg, 1.09x spine and 0.81x head — the arms are the outliers and
 # they are the bones whose swing tears the tuck.
 #
-# It does NOT ship yet, and the reason is measured too: capping reach pushes
-# 1100+ vertices through `localise_weights`'s `tot < 0.20` rescue branch, which
-# assigns a HARD weight of 1.0 to one bone. That is a rigid island beside
-# blended skin, i.e. exactly the hinge `weight_seam_gate` exists to catch, and
-# it fails it at max 1.632 / 1.643 (limit 1.10) whether the ramp starts at 1.25
-# or 0.90. The rescue branch has to become a soft renormalisation before the
-# ceiling can land. Set BODY_LOCALITY_CAP=1 to reproduce the red.
+# IT SHIPS AS OF SESSION 24, at 1.40 x the cross-section, and what unblocked it
+# was three measured corrections rather than a looser gate:
+#
+#   1. The residual hinge was NOT the rescue branch. `_rescue_boundary_report`
+#      says 0 of the 12 hot edges straddled it — all 12 were both-ramped, at
+#      the left armpit. What cut them was running the relax and the ramp in
+#      SEQUENCE: the relax diffuses weight back out past a bone's reach and the
+#      localise cuts it off again inside one ~25 mm edge, with nothing after it
+#      to smooth the cut. Passing the ramp into the relax as a constraint
+#      (`smooth_blend_rings(locality=...)`) takes the both-ramped hot edges to 0.
+#   2. The rescue kept the FAR bones. Only 2 of 8995 vertices have no bone
+#      within 1.70 x reach, so the near bone nearly always exists and simply is
+#      not in the vertex's weight list; rebuilding from the near bones instead
+#      is local by construction, which is what lets the locality gate read a
+#      true zero rather than a zero of its own metric.
+#   3. 1.00 x the cross-section was below what the model's own geometry allows.
+#      Calf skin weighted 0.94 to `lowerLegL` measured e = 1.61-1.76 with
+#      `upperLegL` tied at the same distance, both straddling the 1.70 cutoff.
+#      That is the suit and boot girth passes, not mis-weighting.
+#
 RESCUE_P = 4.0                  # nearness exponent in the soft rescue above
-LOCALITY_REACH_CAP = 1.00       # x the segment's own cross-section half-diagonal
-LOCALITY_CAP_ON = os.environ.get('BODY_LOCALITY_CAP') == '1'
+RESCUE_TOT_LO = 0.20            # ramped weight below which the soft rescue takes over
+
+# {vertex index: (ramped total before any rescue, went through the rescue)} —
+# filled by the last `localise_weights` run so the boundary report can ask
+# whether the hot seam edges are the rescue BRANCH rather than the ramp.
+_LOCALISE_TRACE = {}
 
 
-def _locality_frame(obj, arm):
+def _weight_probe_dump(obj, arm):
+    """
+    Dump the whole weight problem to JSON when BODY_WEIGHT_DUMP is set.
+
+    The locality and relax passes are pure functions of (vertex positions,
+    edges, weights, segment frames), but they run AFTER the bake, so every
+    experiment on them otherwise costs a full build. With this dump the same
+    algebra can be replayed in seconds outside Blender, and only the chosen
+    variant is paid for at build resolution. Diagnostic only — off unless the
+    environment variable is set, and nothing downstream reads it.
+    """
+    path = os.environ.get('BODY_WEIGHT_DUMP')
+    if not path:
+        return
+    import json
+    bones = {b.name for b in arm.data.bones}
+    names = {g.index: g.name for g in obj.vertex_groups}
+    segs = _locality_frame(obj, arm)
+    data = {
+        'names': {str(k): v for k, v in names.items()},
+        'joints': sorted(g.index for g in obj.vertex_groups if g.name in bones),
+        'segs': {str(gi): [nm, list(a), list(b), reach]
+                 for gi, (nm, a, b, reach) in segs.items()},
+        'helpers': {k: list(v) for k, v in JOINT_HELPERS.items()},
+        'co': [list(v.co) for v in obj.data.vertices],
+        'edges': [list(e.vertices) for e in obj.data.edges],
+        'W': [{str(g.group): g.weight for g in v.groups if g.weight > 1e-6}
+              for v in obj.data.vertices],
+    }
+    with open(path, 'w') as fh:
+        json.dump(data, fh)
+    log(f'weight probe dumped to {path}: {len(data["co"])} verts, '
+        f'{len(data["edges"])} edges, {len(data["joints"])} joints')
+
+
+def _rescue_boundary_report(obj, tag):
+    """
+    Do the hot seam edges straddle the rescue branch?
+
+    `localise_weights` switches a vertex between two entirely different weight
+    vectors at `tot == RESCUE_TOT_LO`. Both are continuous in position on their
+    own side, but the SWITCH is a step: a vertex at tot 0.199 is renormalised
+    by nearness and its neighbour at 0.201 by the ramp, and the two disagree by
+    whatever the two rules disagree by. If the residual hinge is that branch,
+    the hot edges will sit on the boundary rather than being scattered.
+    """
+    W = _vertex_weights(obj)
+    names = {g.index: g.name for g in obj.vertex_groups}
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W = [_collapse_helpers(w, names) for w in W]
+    straddle = same_resc = same_ramp = 0
+    hot = []
+    for e in obj.data.edges:
+        i, j = e.vertices
+        a, b = W[i], W[j]
+        d = sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in set(a) | set(b))
+        if d <= WEIGHT_SEAM_HOT:
+            continue
+        ri = _LOCALISE_TRACE.get(i, (1.0, False))[1]
+        rj = _LOCALISE_TRACE.get(j, (1.0, False))[1]
+        hot.append(d)
+        if ri != rj:
+            straddle += 1
+        elif ri:
+            same_resc += 1
+        else:
+            same_ramp += 1
+    n = len(hot)
+    log(f'RESCUEBOUNDARY {tag}: {n} hot edges — {straddle} straddle the '
+        f'rescue branch, {same_resc} both-rescued, {same_ramp} both-ramped; '
+        f'{sum(1 for _, r in _LOCALISE_TRACE.values() if r)} verts rescued of '
+        f'{len(_LOCALISE_TRACE)} rewritten')
+    return {'hot': n, 'straddle': straddle, 'resc': same_resc, 'ramp': same_ramp}
+
+# Calibrated, not chosen: at 1.00 the CALF fails. Measured on the capped build,
+# ordinary calf skin weighted 0.94 to `lowerLegL` sits at e = 1.61-1.76 of a
+# 92 mm reach with `upperLegL` tied at the same distance — both straddling the
+# 1.70 cutoff, so a millimetre of position decides whether a vertex keeps its
+# own bone, and neighbours land on opposite sides. That is not mis-weighting;
+# it says the cross-section half-diagonal of the shin BOX understates the girth
+# the suit and boot passes gave the calf. The min-over-bones excess reads p99
+# 1.508 and p100 1.713 at cap 1.00, so the ceiling has to clear ~1.71/1.25 to
+# put legitimate skin inside the full-weight zone.
+LOCALITY_REACH_CAP = float(os.environ.get('BODY_LOCALITY_CAP_K', '1.40'))
+# ON by default since session 24. BODY_LOCALITY_NOCAP=1 restores the old
+# self-certifying reach, and is the negative control for the ceiling.
+LOCALITY_CAP_ON = True
+
+
+def _locality_frame(obj, arm, honest=False):
     """{group index: (name, head, tail, reach)} for every skin joint with a segment."""
     bones = {b.name for b in arm.data.bones}
     segs = {}
@@ -1198,8 +1348,18 @@ def _locality_frame(obj, arm):
         ds.sort()
         owned = max(0.03, ds[int(0.98 * (len(ds) - 1))])
         hd = _segment_halfdiag(segs[gi][0])
-        cap = LOCALITY_REACH_CAP * hd if hd else None
-        segs[gi][3] = min(owned, cap) if (cap and LOCALITY_CAP_ON and not LOCALITY_NOCAP) else owned
+        # The cross-section bounds the reach from BOTH sides, and for the same
+        # reason. Above, because skin a bone wrongly grabbed must not be
+        # allowed to certify the grab. Below, because a bone that dominates
+        # almost nothing gets an artificially TINY p98 and then fails its own
+        # legitimate skin: `spine_01` self-certifies at 78 mm against a 175 mm
+        # torso cross-section, and pelvis skin 143 mm out reads 1.84 x reach.
+        # Skin within one cross-section of a segment is that segment's by
+        # definition, whoever else happens to dominate it.
+        if hd and LOCALITY_CAP_ON and (honest or not LOCALITY_NOCAP):
+            segs[gi][3] = min(max(owned, hd), LOCALITY_REACH_CAP * hd)
+        else:
+            segs[gi][3] = owned
         out[gi] = tuple(segs[gi])
     return out
 
@@ -1218,8 +1378,17 @@ def _locality_reach_log(obj, arm):
 
 
 def weight_locality_report(obj, arm, tag, verbose=True):
-    """How far each weight sits from its own bone, in units of that bone's reach."""
-    segs = _locality_frame(obj, arm)
+    """
+    How far each weight sits from its own bone, in units of that bone's reach.
+
+    The reference is ALWAYS the clamped reach, whatever the repair was allowed
+    to use. That is what makes `BODY_LOCALITY_NOCAP=1` a real negative control
+    rather than a second opinion from the same witness: sabotaging the repair
+    back to the self-certifying reach leaves a skin the honest reference
+    rejects, where before both sides of the argument moved together and the
+    gate read zero on skin carrying 0.68 of a belly vertex on `upperArmR`.
+    """
+    segs = _locality_frame(obj, arm, honest=True)
     ds = []
     worst = []
     per_group = {}
@@ -1253,6 +1422,92 @@ def weight_locality_report(obj, arm, tag, verbose=True):
     return r
 
 
+def _locality_factors(obj, arm):
+    """
+    Per-vertex {group index: (ramp factor in [0,1], excess d/reach)} — the
+    attenuation `localise_weights` applies, as a field, so other passes can
+    respect it.
+
+    Separated out because the ramp is the only part of the locality repair that
+    is a function of POSITION alone. That makes it a constraint the relax can
+    be projected onto, rather than a cut the relax has to be followed by.
+    """
+    bones = {b.name for b in arm.data.bones}
+    segs = _locality_frame(obj, arm)
+    joints = {g.index for g in obj.vertex_groups if g.name in bones}
+    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    out = []
+    for v in obj.data.vertices:
+        f = {}
+        for gi in joints:
+            if gi not in segs:
+                f[gi] = (1.0, None)    # boots and anything without a segment
+                continue
+            _, a, b, reach = segs[gi]
+            e = _seg_dist(v.co, a, b) / reach
+            if e <= d0:
+                f[gi] = (1.0, e)
+            elif e >= d1:
+                f[gi] = (0.0, e)
+            else:
+                t = (e - d0) / (d1 - d0)
+                f[gi] = (1.0 - t * t * (3.0 - 2.0 * t), e)
+        out.append(f)
+    return out
+
+
+def _apply_locality(cur, fe):
+    """
+    One vertex's weights put through the locality ramp, rescued if the ramp
+    took nearly everything, renormalised. Returns (vector, removed, rescued).
+
+    Shared by `localise_weights` and by the projected relax, so the constraint
+    the relax is projected onto is the SAME ramp the gate measures — if the two
+    ever drifted apart, the relax would be smoothing toward a field the gate
+    does not accept.
+    """
+    new_w = {}
+    excess = {}
+    removed = 0.0
+    for gi, w in cur.items():
+        fac = fe.get(gi)
+        if fac is None:
+            new_w[gi] = w
+            continue
+        f, e = fac
+        if e is not None:
+            excess[gi] = e
+        if f < 1.0:
+            removed += w * (1.0 - f)
+        if w * f > 1e-6:
+            new_w[gi] = w * f
+    tot = sum(new_w.values())
+    if tot >= RESCUE_TOT_LO or not excess:
+        return new_w, removed, False
+    # Everything this vertex was weighted to is far away — which says the BIND
+    # put this skin on the wrong bones, not that the ramp is too tight. Measured
+    # on the capped build: only 2 of 8995 vertices have no bone within
+    # 1.70 x reach, yet 935 land here, so the near bone almost always exists and
+    # simply is not in `cur`.
+    #
+    # So the vertex is rebuilt from the bones that are NEAR it rather than from
+    # the ones it happened to have. The kernel is the ramp factor itself over
+    # e^RESCUE_P: it vanishes exactly where the ramp does, so a bone entering or
+    # leaving the candidate set does so continuously and no ordering can step,
+    # and it falls off steeply enough that the nearest bone still dominates.
+    #
+    # Both predecessors kept the far bones: the first handed the vertex WHOLLY
+    # to the nearest of them (a rigid 1.0 beside blended skin — the hinge
+    # `weight_seam_gate` exists to catch, seam max 1.632), the second shared
+    # them out by nearness (1.382, and still every weight beyond reach, so the
+    # locality gate could never read zero). This one is local by construction.
+    soft = {gi: f / max(e, 1e-6) ** RESCUE_P
+            for gi, (f, e) in fe.items() if e is not None and f > 0.0}
+    if sum(soft.values()) <= 1e-9:
+        return new_w, removed, False
+    return soft, removed, True
+
+
 def localise_weights(obj, arm):
     """
     Take each bone's influence off skin that does not belong to it.
@@ -1271,10 +1526,9 @@ def localise_weights(obj, arm):
     # the bone weights rewrites a mask, which the first cut of this pass did:
     # it cut a 1.52 hinge at [reduce|upperLegR] and the seam gate caught it.
     bones = {b.name for b in arm.data.bones}
-    segs = _locality_frame(obj, arm)
     joints = {g.index for g in obj.vertex_groups if g.name in bones}
     groups = [g for g in obj.vertex_groups if g.name in bones]
-    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    fe = _locality_factors(obj, arm)
     changed = 0
     removed = 0.0
     rescued = 0
@@ -1283,54 +1537,14 @@ def localise_weights(obj, arm):
                if g.weight > 1e-6 and g.group in joints}
         if not cur:
             continue
-        new_w = {}
-        excess = {}
-        for gi, w in cur.items():
-            if gi not in segs:
-                new_w[gi] = w          # boots and anything without a segment
-                continue
-            nm, a, b, reach = segs[gi]
-            e = _seg_dist(v.co, a, b) / reach
-            excess[gi] = e
-            if e <= d0:
-                f = 1.0
-            elif e >= d1:
-                f = 0.0
-            else:
-                t = (e - d0) / (d1 - d0)
-                f = 1.0 - t * t * (3.0 - 2.0 * t)     # smoothstep
-            if f < 1.0:
-                removed += w * (1.0 - f)
-            if w * f > 1e-6:
-                new_w[gi] = w * f
+        new_w, took, was_rescued = _apply_locality(cur, fe[v.index])
+        removed += took
         tot = sum(new_w.values())
-        if tot < 0.20:
-            # Everything this vertex was weighted to is far away. Divide it
-            # among the bones it HAD by nearness rather than by the ramp.
-            #
-            # This used to hand the vertex WHOLLY to the nearest segment. That
-            # is a hard 1.0 next to blended skin — a rigid island, which is
-            # precisely the hinge `weight_seam_gate` exists to catch, and it is
-            # what stopped the reach ceiling landing in session 23 (1105
-            # rescues, seam max 1.632 against a 1.10 limit). Worse, the winner
-            # is chosen by a `min`, so two neighbouring vertices whose excesses
-            # cross swap bones outright and the hinge lands between them.
-            #
-            # The replacement is continuous in position: each bone keeps its
-            # original weight scaled by (e_min / e)^RESCUE_P, so the nearest
-            # bone still dominates, a bone twice as far contributes 2^-P, and
-            # nothing steps as the ordering changes — at a crossing the two
-            # terms are equal and the blend passes through smoothly.
-            if not excess:
-                continue
-            e_min = min(excess.values())
-            soft = {gi: cur[gi] * (e_min / max(e, 1e-6)) ** RESCUE_P
-                    for gi, e in excess.items() if cur.get(gi, 0.0) > 0.0}
-            tot = sum(soft.values())
-            if tot <= 1e-9:
-                continue
-            new_w = soft
+        if tot <= 1e-9:
+            continue
+        if was_rescued:
             rescued += 1
+        _LOCALISE_TRACE[v.index] = (tot, was_rescued)
         if abs(tot - 1.0) < 1e-9 and len(new_w) == len(cur):
             continue
         ws = sorted(new_w.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
@@ -9377,9 +9591,17 @@ def main():
         # second pass is small by construction and the two gates below are what
         # say so.
         _locality_reach_log(low, arm)
+        _weight_probe_dump(low, arm)
         localise_weights(low, arm)
-        smooth_blend_rings(low)
-        localise_weights(low, arm)
+        # The second half used to be `smooth_blend_rings(low)` followed by
+        # another `localise_weights(low, arm)`, and that ORDER was the residual
+        # hinge: the relax diffused weight back past each bone's reach and the
+        # second localise cut it off again in a single edge, with nothing after
+        # it to smooth the cut. Passing the ramp INTO the relax makes it a
+        # constraint the diffusion equilibrates against, so the two stop
+        # undoing each other and the boundary is smooth by construction.
+        smooth_blend_rings(low, locality=_locality_factors(low, arm))
+        _rescue_boundary_report(low, 'after the projected relax')
     weight_seam_gate(low, 'shipped skin')
     weight_locality_gate(low, arm, 'shipped skin')
 
