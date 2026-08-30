@@ -143,3 +143,67 @@ test('free-look: on load the camera frames the athlete from behind, not from the
     const bad = await page.evaluate(() => { const c = window._freeLookCam(); c.target.z = 0; c.target.y = 0; return window._freeLookProbe(); });
     expect(Math.abs(bad.targetZ - bad.rootZ) < 0.5 && bad.camZ < bad.rootZ - 3).toBe(false);
 });
+
+// HUMAN TESTING #10 (author, 2026-08-30): "Reset to top of slope with R doesn't
+// seem to work". The state reset always worked; the free-look camera stayed
+// parked at the crash site. Gate: after a crash + orbit, R re-frames the
+// athlete from behind.
+test('free-look: after a crash and an orbit, R re-frames the athlete from behind', async ({ page }) => {
+    test.setTimeout(240_000);
+    await loadGame(page);
+    await page.waitForTimeout(800);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false, null, { timeout: 90_000 });
+    // Same deterministic pump-forced crash as the test above.
+    await page.evaluate(() => {
+        window._pump = { down: false, tuck: false, armed: false, stop: false };
+        const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            if (window._pump.stop) return;
+            const g = window._getGameState();
+            if (g.crashed) { if (window._pump.down) send('keyup', 'ArrowDown'); if (window._pump.tuck) send('keyup', 'Space'); window._pump.stop = true; return; }
+            if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._pump.armed) { window._pump.armed = true; window._debugTriggerCrash(); }
+            if (g.grounded && !window._pump.down && g.flipPower < 0.999) { window._pump.down = true; send('keydown', 'ArrowDown'); }
+            else if (window._pump.down && (g.flipPower >= 0.999 || !g.grounded)) { window._pump.down = false; send('keyup', 'ArrowDown'); }
+            if (!g.grounded && !window._pump.tuck) { window._pump.tuck = true; send('keydown', 'Space'); }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => { const p = window._freeLookProbe(); return window._getGameState().crashed && p && p.active; }, null, { timeout: 120_000 });
+    await page.waitForTimeout(500);
+    await drag(page, 220);                       // the user orbits at the crash site…
+    const before = await page.evaluate(() => window._freeLookProbe());
+    await page.keyboard.press('r');              // …then resets to the top
+    await page.waitForTimeout(800);
+    const p = await page.evaluate(() => window._freeLookProbe());
+    console.log('R re-frame', JSON.stringify({ before: { targetZ: before.targetZ, rootZ: before.rootZ }, after: { targetZ: p.targetZ, rootZ: p.rootZ, camZ: p.camZ } }));
+    expect(Math.abs(p.targetZ - p.rootZ)).toBeLessThan(0.5);   // camera target is the athlete again
+    expect(p.camZ).toBeLessThan(p.rootZ - 3);                   // and the eye is behind (uphill of) it
+});
+
+// "a hard lock on camera rotation below the surface of the earth at all points
+// of game": drive the orbit to its lowest possible beta at four headings and a
+// long radius (toward the flanks and the knoll) and require the eye to stay
+// ≥ 0.99 m above the ray-picked ground under it, every time.
+test('camera hard lock: the eye never goes under the picked ground at any heading', async ({ page }) => {
+    await loadGame(page);
+    await page.waitForTimeout(500);
+    const res = await page.evaluate(async () => {
+        const c = window._freeLookCam(); const scene = BABYLON.EngineStore.LastCreatedScene;
+        c.lowerRadiusLimit = 3; c.upperRadiusLimit = 80;
+        const out = [];
+        for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5, Math.PI * 0.25, Math.PI * 1.25]) {
+            for (const r of [10, 30, 60]) {
+                c.alpha = a; c.radius = r; c.beta = Math.PI - 0.05;   // as low as the orbit allows
+                scene.render(); scene.render();
+                const g = window._camGroundUnder();
+                out.push({ a: +a.toFixed(2), r, gap: +(g.camY - g.ground).toFixed(3) });
+            }
+        }
+        return out;
+    });
+    const worst = Math.min(...res.map(o => o.gap));
+    console.log('camera hard lock', JSON.stringify({ worst, samples: res.length }));
+    expect(worst).toBeGreaterThanOrEqual(0.99);
+});

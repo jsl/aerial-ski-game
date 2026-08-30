@@ -6771,12 +6771,30 @@ void main(void) {
     // (plan P10 "never see under the terrain"). Applied every frame on the
     // orbit camera; on the steep pitch it clamps beta (camera up) rather than
     // fighting the orbit target.
+    // HUMAN TESTING #10 (author): "a hard lock on camera rotation below the
+    // surface of the earth at all points of game". The clamp now (1) samples
+    // the REAL ground under the eye with a ray against the terrain meshes
+    // (corridor, skirt, backdrop) — the corridor centreline profile ignored
+    // the flanks and the knoll — and (2) runs on every rendered frame via
+    // onBeforeRender, so paused/replay/menu states are covered too.
+    const _camGroundRe = /^(terrainCorridor|wUpperMtn|terrainSkirt)/;
+    function _groundUnderCamera(cp) {
+        try {
+            if (typeof scene.pickWithRay === 'function' && BABYLON.Ray) {
+                const hit = scene.pickWithRay(
+                    new BABYLON.Ray(new BABYLON.Vector3(cp.x, 200, cp.z), new BABYLON.Vector3(0, -1, 0), 400),
+                    (m) => !!(m.name && _camGroundRe.test(m.name)));
+                if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+            }
+        } catch (e) { /* fall through */ }
+        return terrainRootY(cp.z) - FOOT_OFFSET;
+    }
     function _clampCameraAboveTerrain() {
         try {
             if (!camera || camera.mode !== BABYLON.Camera.PERSPECTIVE_CAMERA) return;
             const cp = camera.position;
             if (!cp || !isFinite(cp.z)) return;
-            const minY = terrainRootY(cp.z) - FOOT_OFFSET + 1.0;
+            const minY = _groundUnderCamera(cp) + 1.0;
             if (cp.y >= minY) return;
             const r  = camera.radius || 10;
             const ty = camera.target ? camera.target.y : 0;
@@ -6791,6 +6809,10 @@ void main(void) {
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
+    // Every rendered frame, in every state (the update-loop call below still
+    // runs first when the sim is active; this catches paused/replay/menus).
+    if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(_clampCameraAboveTerrain);
+    window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
     window._freeLookProbe = function () {
         try {
             const cp = camera.position;
@@ -7020,6 +7042,18 @@ void main(void) {
             matLanded = false; matLandSpringY = 0; matLandSpringVY = 0;
             state.crashAngle  = 0.0;
             state.stopped     = false;
+            // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
+            // doesn't seem to work". The state DID reset — but free-look was
+            // active after the crash, so the follow block stood down and the
+            // camera stayed parked at the crash site looking at empty snow.
+            // Re-frame behind the athlete once the reset has finished.
+            setTimeout(() => {
+                try {
+                    camera.target.set(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0, state.rootY, state.posZ);
+                    camera.alpha = Math.PI * 1.5; camera.beta = CAM_BETA_BACK; camera.radius = 10;
+                    _camTargetAlpha = null;
+                } catch (err) { /* never let a camera nicety break the reset */ }
+            }, 0);
             state.perFlipTwists   = [];
             state.lastFlipInt     = 0;
             state.spinAtFlipStart = 0.0;
