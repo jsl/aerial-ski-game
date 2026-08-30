@@ -796,6 +796,102 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 19 (2026-08-30, 02:3x-03:4x)
+
+### The merge first (commit 964c7fc)
+
+Twelve commits from `render-realism-glm`. One conflict, the `ASSET_V` line:
+GLM's tip had bumped it to 49 as a merge marker, this lane's 48 carries the
+changelog. Resolved to 49 keeping the changelog; `index.html`'s five preload
+hrefs moved 48 -> 50 with it (a mismatch downloads every athlete file twice,
+and `rig.spec.js`'s wire-byte gate catches it). Unit 81/81, golden 30/30 on the
+merge before committing it.
+
+### The bib "30": BOTH previous readings were wrong, and it is not a mirror
+
+The reviewer's 16:30 ruling says to flip U on the back panel, on the premise
+that the back plate is a mirror of the front. GLM's review 125 says the FRONT
+is the mirrored face. `number_uv`'s docstring records two earlier attempts,
+both settled by looking at a render. **All three are eyeball readings of a
+60-px numeral on a curved, shaded, perspective-projected torso, and at least
+two of them are demonstrably wrong.**
+
+The measurement they were missing: bin each face's plate ink by that face's
+**own viewer-right axis** R = Z x N, N being the outward normal of the triangle
+the ink sits on. Binning by patch `u` would be circular (u is the mapping under
+test) and assuming a world axis re-imports the frame convention that has now
+been misread twice. `bib_orientation_report` does this inside the existing
+`bib_number_gate` sampler, on the saved albedo.
+
+The instrument is sound before it is believed: `rhat.x > 0` is **0 % of front
+samples and 100 % of back samples**, so the axis is unmixed — no triangle is
+voting the wrong way.
+
+| ink by world x (10 buckets across the plate) | | |
+|---|---|---|
+| front             | `0.00 0.10 0.16 0.43 -- -- 0.24 0.13 0.07 0.00` |
+| back              | `0.08 0.11 0.11 0.05 -- -- 0.08 0.11 0.21 0.16` |
+| front REVERSED    | `0.00 0.07 0.14 0.24 -- -- 0.43 0.16 0.10 0.00` |
+
+**The front is the face that is CORRECT.** Its profile is structured exactly as
+the glyph table draws it: one peak in the first cell (the `3`'s single right
+stem, `_GLYPH_RECTS['3']` u 0.74..0.90), a gap at the inter-cell margin
+(u 0.47..0.53), then the `0`'s pair. That kills GLM review 125.
+
+**The back matches NEITHER the front nor its mirror** — L1 1.022 vs 1.066, a
+lead of +0.021 against a 0.10 margin, i.e. a coin flip between two bad fits.
+Three independent signs that it is a degraded plate rather than a mirrored one:
+
+- it is nearly **flat** where the front is peaked — no stem structure at all;
+- it runs ink **hard onto both plate edges** (buckets 0 and 9) where the front
+  has the clean margins the glyph rects define, so the glyphs are clipped
+  horizontally;
+- under `BODY_SABOTAGE_BIBMIRROR=1`, which makes the two faces run the SAME way
+  in `lx`, the back profile **barely moves** (`0.057 0.178 0.196 0.104 -- --
+  0.020 0.126 0.160 0.158`). A genuine mirror comes back reversed. No sign of
+  `lx` fixes this plate, which is what the old docstring concluded from the
+  other direction and is now measured rather than eyeballed.
+
+Ink along patch `v` is the same on both faces (`0.00 0.00 0.38 0.11 0.04 0.15
+0.21 0.26 0.00 0.00` front vs `0.00 0.00 0.32 0.06 0.06 0.08 0.13 0.25 0.00
+0.00` back), so the ink band is landing and the defect is purely horizontal.
+The back's x span is also off-centre and short: `-0.0717..+0.0671` against the
+front's symmetric `-0.0716..+0.0718`.
+
+**REVIEWER, this needs an arbitration.** The 16:30 ruling's gate would pass a
+back plate that still reads wrong, because it gates for a mirror and the defect
+is not a mirror. So the comparison ships as a **report, not a gate** — it logs
+the numbers and a `DEFECT` line, and it becomes a gate together with the fix,
+with `BODY_SABOTAGE_BIBMIRROR=1` already in the tree as its negative control.
+I did not want to ship a red build, and I did not want to invent a gate the
+defect can slip past; loosening was never on the table since this gate has
+never passed. What remains open is the horizontal clipping's root cause — the
+back plate's `lx` span is narrower than the front's, so the suspect is the back
+panel's surface extent under `in_number_patch`, not `number_uv`.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96; the bib report logs
+            DEFECT as above. glb 8995 verts / 13 bones.
+    unit    81/81      golden 30/30 (no display node changed)
+    drive   see the fixup commit below
+
+`ASSET_V` 49 -> 50, `game.js?v=` 45 -> 46, preload hrefs `?v=50` (the rebuild
+moves bake-noise bytes in the glb, maps.json and normal.webp; albedo and AO are
+byte-identical because no paint changed).
+
+### Open at the end of session 19
+
+- **The knee/armpit candy wrapper — helper bones at knees and hips.** Approved
+  in the 02:40 ruling, untouched this session, and still the top item: session
+  18's numbers (knee rest 22.1 mm -> posed 1.28 mm, strain 17.2, weights
+  0.648/0.352 across a joint closing 98 deg) are a linear-blend limit no weight
+  edit can reach.
+- **The bib back plate's horizontal clipping**, with the arbitration above.
+- Carried: the THUMB as its own finger group; the flight-tuck re-check; the
+  smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV unwrap + arm
+  stripe last.
+
 ## Session 18 (2026-08-30, 01:4x-02:4x)
 
 ### The merge first (commit 93389f8)

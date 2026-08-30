@@ -130,6 +130,9 @@ SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
 # Negative control for the weight-LOCALITY gate: skip localise_weights, so the
 # gate measures the skin that put upperLeg weight on the ribcage.
 SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
+# Negative control for the bib-number ORIENTATION gate: mirrors the BACK
+# plate's reading direction. The gate must reject it.
+SABOTAGE_BIBMIRROR = os.environ.get('BODY_SABOTAGE_BIBMIRROR') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -5438,29 +5441,30 @@ def in_number_patch(name, along, front, lx):
 
 
 def number_uv(front, lx, along):
-    """Patch-local (u, v) with the per-face reading direction above.
+    """Patch-local (u, v), u running the way THAT face's viewer reads.
 
-    Iteration 61: measured MIRRORED digits from BOTH sides at the look
-    camera (scratch probes at alpha 0 and pi, "0E" in both captures) — the
-    torso frame's +Y axis points at the figure's physical BACK at rest, so
-    the mapping that encodes the +Y reading rule was landing on the chest
-    and vice versa. Swapping the branches puts each rule on the side its
-    normal actually faces; both plates now read left-to-right to their own
-    viewer (verified in the rebuilt assets at the look camera).
+    The two earlier attempts on this line were both settled by looking at a
+    render, and both got it wrong: GLM's review 125 called the FRONT plate
+    mirrored, and `bib_orientation_gate` below measures the front as the face
+    that is CORRECT. Reading a 60-px numeral off a curved, shaded,
+    perspective-projected torso is not a measurement.
 
-    STILL OPEN (session 5, 2026-08-29). Paused close-ups taken down
-    _athleteFacing().forward (scratch s5/plate*_{front,back}_z.png) show the
-    CHEST reading a clean "30" and the BACK reading a mirrored glyph pair.
-    Both branch values were built and photographed: with `- lx` the back
-    reads "E0" (cell order right, each glyph mirrored); with `+ lx` it reads
-    "0E" (cell order reversed, glyphs still mirrored). No choice of sign in
-    THIS function produces a correct back, because flipping u flips the cell
-    order and the within-cell orientation together — so whatever mirrors the
-    back plate is upstream of the u mapping, not in it. `- lx` is kept: it is
-    the shipped mapping and it is the one that gets the digit ORDER right.
-    Do not "fix" this by flipping the sign again; it has been measured.
+    The mapping is deliberately antisymmetric — the two faces' outward normals
+    point opposite ways, so their viewers' right-hand directions are opposite
+    world directions and the two plates must run opposite ways in `lx` for both
+    to read left-to-right. That is self-consistent, which is why the old note
+    here concluded the mirror is upstream of this function. The gate below is
+    what can tell the two apart, because it bins ink by each face's OWN
+    viewer-right axis rather than by the patch u this function defines.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_BIBMIRROR=1 makes the two faces run the
+    SAME way in lx, which mirrors the back plate to its viewer.
     """
-    u = (NUM_W + lx) / (2 * NUM_W) if front > 0 else (NUM_W - lx) / (2 * NUM_W)
+    if front > 0:
+        u = (NUM_W + lx) / (2 * NUM_W)
+    else:
+        u = ((NUM_W - lx) if not SABOTAGE_BIBMIRROR
+             else (NUM_W + lx)) / (2 * NUM_W)
     return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
 
 
@@ -6314,6 +6318,108 @@ def _bin_blobs(on_bins):
 BIB_ASPECT = (0.45, 0.75)        # digit cell width / height
 
 
+# Ruling 16:30: "the glyph pair's horizontal ink profile on the back must
+# match the front's, not its mirror". BIB_MIRROR_MARGIN is how much better the
+# un-mirrored match has to be before the plate counts as correctly oriented,
+# as a fraction of the two distances' sum. 0 would pass on a coin flip.
+BIB_MIRROR_MARGIN = 0.10
+
+
+def _viewer_profile(samples, nbuckets=10):
+    """Ink fraction per bucket along the face's own viewer-right axis.
+
+    Buckets span the PLATE (every sample), not the ink, so the two faces'
+    profiles are on a common footing even when one carries less ink.
+    """
+    rs = [r for r, _ in samples]
+    lo, hi = min(rs), max(rs)
+    span = hi - lo
+    if span < 1e-9:
+        return None
+    tot = [0] * nbuckets
+    ink = [0] * nbuckets
+    for r, dark in samples:
+        i = min(nbuckets - 1, int((r - lo) / span * nbuckets))
+        tot[i] += 1
+        ink[i] += 1 if dark else 0
+    if sum(ink) == 0:
+        return None
+    # Normalised so the profile is a shape, not an amount: the faces carry
+    # different sample counts and (measured) different ink fractions.
+    prof = [ink[i] / tot[i] if tot[i] else 0.0 for i in range(nbuckets)]
+    tot_p = sum(prof)
+    return [x / tot_p for x in prof] if tot_p > 0 else None
+
+
+def bib_orientation_report(viewer):
+    """Do both plates read the SAME way to their own viewers?
+
+    Each face's samples are binned along that face's viewer-right axis
+    R = Z x N, so a plate that reads left-to-right to the person looking at it
+    produces the same profile whichever face it is on. The back is then scored
+    against the front and against the front REVERSED.
+
+    REPORT, NOT A GATE, and deliberately so (session 19). The 16:30 ruling
+    asked for a gate on exactly this comparison, on the premise that the back
+    plate is a MIRROR of the front and the fix is to flip U on the back panel.
+    This instrument says the premise is wrong, so a gate built on it would be
+    gating the wrong defect:
+
+      front ink by world x   0.00 0.10 0.16 0.43  --  0.24 0.14 0.07 0.00
+      back  ink by world x   0.08 0.11 0.11 0.05  --  0.08 0.11 0.21 0.16
+      front reversed         0.00 0.07 0.14 0.24  --  0.43 0.16 0.10 0.00
+
+    The back matches neither. It is nearly FLAT where the front is structured
+    (the front's one peak is the '3' stem, the pair after the gap the '0'), and
+    it carries ink hard against both plate edges where the front has the clean
+    margins the glyph rects define (u 0.08..0.92 within each cell). Flipping
+    the sign of lx confirms it from the other side: under
+    BODY_SABOTAGE_BIBMIRROR=1 the back profile barely moves
+    (0.057 0.178 0.196 0.104 -- 0.020 0.126 0.160 0.158), where a genuine
+    mirror would come back reversed. The ink's distribution along patch v is
+    the same on both faces, so the band is landing; the defect is horizontal.
+
+    So the back plate is not mirrored — it is a DEGRADED, edge-clipped render
+    of the same glyphs, and every previous read of it ("mirrored", session 5
+    and the 15:35 note) was an eyeball judgement of a 60-px numeral on a
+    curved, shaded, perspective-projected torso. GLM's review 125 made the
+    same class of error in the other direction, calling the FRONT mirrored;
+    this instrument measures the front as the face that is correct.
+
+    REVIEWER: the 16:30 "flip U on the back panel" ruling cannot fix this, and
+    the gate it specifies would pass on a back plate that still reads wrong.
+    The comparison lands as an instrument now, with the numbers above; it
+    becomes a gate (with BODY_SABOTAGE_BIBMIRROR=1 as its negative control)
+    together with the fix, once the horizontal clipping is root-caused.
+    """
+    pf = _viewer_profile(viewer.get('front', []))
+    pb = _viewer_profile(viewer.get('back', []))
+    if pf is None or pb is None:
+        raise SystemExit(
+            '[body] bib orientation report: no viewer-relative ink on '
+            f'{"front" if pf is None else "back"} — the plate sampler found '
+            'no triangles, so the measurement cannot run')
+    d_same = sum(abs(a - b) for a, b in zip(pb, pf))
+    d_mirr = sum(abs(a - b) for a, b in zip(pb, pf[::-1]))
+    tot = d_same + d_mirr
+    lead = (d_mirr - d_same) / tot if tot > 1e-9 else 0.0
+    log('bib orientation: front profile ' +
+        ' '.join(f'{x:.3f}' for x in pf))
+    log('bib orientation: back  profile ' +
+        ' '.join(f'{x:.3f}' for x in pb))
+    log(f'bib orientation: L1 back-vs-front {d_same:.3f}, '
+        f'back-vs-mirrored-front {d_mirr:.3f}, lead {lead:+.3f} '
+        f'(margin {BIB_MIRROR_MARGIN}; negative control '
+        f'BODY_SABOTAGE_BIBMIRROR=1)')
+    if lead < BIB_MIRROR_MARGIN:
+        log(f'bib orientation: DEFECT — the back plate matches neither the '
+            f'front (L1 {d_same:.3f}) nor its mirror (L1 {d_mirr:.3f}) at the '
+            f'{BIB_MIRROR_MARGIN} margin. Reported, not gated: see the '
+            f'docstring — the back number is edge-clipped, not mirrored, so '
+            f'the 16:30 flip-U ruling does not address it.')
+    return lead
+
+
 def bib_number_gate(low, out_dir):
     """
     The P7 acceptance question, asked of the SAVED albedo at build time: do
@@ -6345,6 +6451,7 @@ def bib_number_gate(low, out_dir):
         u, v = number_uv(front, lx, along)
         return front, (u, v)
 
+    import mathutils
     GRID_U, GRID_V = 16, 18
     skipped = 0
 
@@ -6354,6 +6461,14 @@ def bib_number_gate(low, out_dir):
         return lum < 0.45 and abs(px[o] - NUM_INK[0]) < 0.30
 
     report = {}
+    # Viewer-relative ink, for bib_orientation_gate: (r, dark) per sample,
+    # where r is the sample's world position along THAT face's own
+    # viewer-right axis R = Z x N (N = the outward normal of the triangle the
+    # sample sits on). Binning by patch u instead would be circular — u is the
+    # very mapping under test — and assuming a world axis would re-import the
+    # frame convention that has now been misread twice.
+    viewer = {'front': [], 'back': []}
+    _diag = {'front': [], 'back': []}
     for fname, fsign in (('front', 1.0), ('back', -1.0)):
         bins = {}
         nsamp = nink = 0
@@ -6385,6 +6500,14 @@ def bib_number_gate(low, out_dir):
             if not ok or len(vids) < 3:
                 skipped += 1
                 continue
+            # Viewer-right for THIS triangle's face: R = Z x N, normalised.
+            # Degenerate only if the normal is vertical, which a chest or back
+            # panel never is; such a triangle is skipped rather than guessed.
+            rhat = mathutils.Vector((0.0, 0.0, 1.0)).cross(poly.normal)
+            if rhat.length < 1e-6:
+                skipped += 1
+                continue
+            rhat.normalize()
             tris = [(0, k, k + 1) for k in range(1, len(vids) - 1)]
             for (a, b, c3) in tris:
                 pa, pb, pc = vis[a][1], vis[b][1], vis[c3][1]
@@ -6400,6 +6523,11 @@ def bib_number_gate(low, out_dir):
                         tv = (sw*ua[1] + su*ub[1] + sv*uc[1]) % 1.0
                         ptr = min(h - 1, int(tv * h)) * w + min(w - 1, int(tu * w))
                         dark = classify(ptr)
+                        wpos = (sw * low.data.vertices[vids[a]].co
+                                + su * low.data.vertices[vids[b]].co
+                                + sv * low.data.vertices[vids[c3]].co)
+                        viewer[fname].append((wpos.dot(rhat), dark))
+                        _diag[fname].append((rhat.x, wpos.x, dark, vv))
                         key = (min(GRID_U - 1, int(uu * GRID_U)),
                                min(GRID_V - 1, int(vv * GRID_V)))
                         e = bins.setdefault(key, [0, 0])
@@ -6438,6 +6566,40 @@ def bib_number_gate(low, out_dir):
     fr, bk = report['front'][1], report['back'][1]
     log(f'bib number faces: front {fr:.3f} / back {bk:.3f} '
         f'= ratio {max(fr, bk) / max(1e-6, min(fr, bk)):.2f} (instrument)')
+
+    for _f in ('front', 'back'):
+        d = _diag[_f]
+        pos = sum(1 for rx, _x, _k, _v in d if rx > 0)
+        xs = [x for _r, x, _k, _v in d]
+        ink = [x for _r, x, k, _v in d if k]
+        log(f'bib diag [{_f}]: samples {len(d)}, rhat.x>0 {pos} '
+            f'({100.0 * pos / max(1, len(d)):.0f}%), x span '
+            f'{min(xs):+.4f}..{max(xs):+.4f}, ink x mean '
+            f'{sum(ink) / max(1, len(ink)):+.4f}')
+        lo, hi = min(xs), max(xs)
+        bk = [0] * 10
+        tt = [0] * 10
+        for _r, x, k, _v in d:
+            i = min(9, int((x - lo) / max(1e-9, hi - lo) * 10))
+            tt[i] += 1
+            bk[i] += 1 if k else 0
+        log(f'bib diag [{_f}]: ink-by-world-x ' + ' '.join(
+            f'{(bk[i] / tt[i] if tt[i] else 0):.2f}' for i in range(10)))
+
+    for _f in ('front', 'back'):
+        d = _diag[_f]
+        vb = [0] * 10
+        vt = [0] * 10
+        for _r, _x, k, v in d:
+            i = min(9, max(0, int(v * 10)))
+            vt[i] += 1
+            vb[i] += 1 if k else 0
+        log(f'bib diag [{_f}]: ink-by-patch-v (low->high) ' + ' '.join(
+            f'{(vb[i] / vt[i] if vt[i] else 0):.2f}' for i in range(10)))
+        log(f'bib diag [{_f}]: samples-per-v ' + ' '.join(
+            str(vt[i]) for i in range(10)))
+
+    bib_orientation_report(viewer)
 
     # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
     # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
