@@ -6818,7 +6818,14 @@ void main(void) {
     }
     // Every rendered frame, in every state (the update-loop call below still
     // runs first when the sim is active; this catches paused/replay/menus).
-    if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(_clampCameraAboveTerrain);
+    // Only while the engine's own render loop is running: every real game
+    // state (play, pause, replay, menus) has it running; shot harnesses that
+    // stop the loop and drive the camera by hand for a still are left alone.
+    if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(() => {
+        const eng = scene.getEngine();
+        if (eng && eng.activeRenderLoops && eng.activeRenderLoops.length === 0) return;
+        _clampCameraAboveTerrain();
+    });
     window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
     window._freeLookProbe = function () {
         try {
