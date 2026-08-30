@@ -34,6 +34,20 @@ async function boot(page) {
     await page.waitForTimeout(800);
 }
 
+// TRAP, measured session 25, for anyone who adds BONE NAMES to a probe here.
+// `skeleton.bones` is NOT the joint list the vertex buffer indexes. On this
+// asset it is 22 entries long and starts with `AthleteRig`, the armature root
+// node, whose `getIndex()` is -1 — the glTF loader keeps it as a bone but it
+// is not a skinning joint. `getTransformMatrices()` returns 23 matrices, and
+// MatricesIndices runs over the 21 real joints, so `skeleton.bones[mi[k]].name`
+// is off by one for EVERY vertex and reports each weight under the name of the
+// bone alphabetically before its own. The skinning below is unaffected — it
+// only ever indexes the matrix array, which is what the shader does — but a
+// session-25 probe that printed names concluded from it that a lumbar vertex
+// carried 0.51 on `hlpKneeR`, and the build's own per-helper locality report
+// (0 of 12524 weights over 1.70 x reach, every helper's max d/reach 1.03-1.21)
+// says no such weight exists. Resolve indices with `bone.getIndex()`, not with
+// the array position.
 // Measure the skinned strain of every mesh edge, bucketed by where the edge
 // sits along the body. Returns percentiles rather than a bare maximum: one
 // stray vertex from one bad weight and a whole collapsed ring produce the same

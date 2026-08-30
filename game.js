@@ -1438,7 +1438,11 @@ function _inrunArmForward(meshes, tuck, armRaise) {
 // pose tables place the ski and the shin independently, so in the in-run tuck
 // the boot sole sat 11 mm THROUGH the ski top and 12 cm behind the binding
 // centre (measured), and the hop-turn fold lifted the boots up to 0.24 m off
-const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015 };
+const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015,
+                    // Sole band (m above the lowest boot vertex) and the
+                    // overlap a binding takes onto the boot lug — see
+                    // _calibrateBootFit.
+                    soleBand: 0.05, clamp: 0.004 };
 // Boot-cuff forward lean (reviewer ruling 00:15 item (b)). The pin used to set
 // the shin along the ski's NORMAL, i.e. a shin exactly perpendicular to the
 // ski. A shin is never perpendicular to the ski in a crouch: a ski boot's cuff
@@ -1458,6 +1462,140 @@ const _BOOT_CUFF_LEAN = 0.5000;   // 28.6 deg — see POSE_INRUN_TUCK: the rulin
                                   // 15-20 cannot reach the pre-existing hip-over-heel
                                   // gate (min 0.1718 m vs 0.12); 28.6 is inside the
                                   // footage band chain.spec.js already gates (15-35).
+// ── AUTHOR, HUMAN TESTING #12 item 3 (2026-08-30) ─────────────────────────
+// `reference/shots/author_binding_top_2026-08-30.png`, top view: the boots do
+// not stand on their skis and the binding blocks clamp nothing. Both faults
+// measured on the shipped asset (`rig.spec.js` BOOTBIND, ready stance, each
+// ski's own frame):
+//
+//   soleX  L -0.0183  R -0.0194   (the ski, the shin driver and the thigh
+//                                  driver all read x = -0.075 / +0.075
+//                                  EXACTLY, so the pin is placing the bone
+//                                  where it means to — it is the mesh's feet
+//                                  that hang ~19 mm to -x of the shin they
+//                                  are weighted to, the same way on both
+//                                  sides, so the left boot reads outboard and
+//                                  the right one inboard, "between the skis")
+//   sole   -0.101 .. 0.132        233 mm of boot
+//   slot   -0.140 .. 0.1875       328 mm between the toe and heel blocks
+//                                  -> 37-39 mm of daylight at EACH end
+//
+// Both are corrected from a single calibration taken once off the linked
+// skinned mesh, not from constants: the athlete asset is rebuilt in this lane
+// most sessions, and a hard-coded 19 mm would silently become wrong the next
+// time the boot geometry moves. The calibration shifts each leg laterally so
+// its SOLE (not its bone) centres on the ski, and slides that ski's toe and
+// heel blocks in until they touch the sole's ends.
+var _bootFit = null;
+function _calibrateBootFit(meshes) {
+    const skiL = meshes.skiL, skiR = meshes.skiR;
+    if (!skiL || !skiR || !skiL.getScene) return null;
+    const scene = skiL.getScene();
+    if (!scene) return null;
+    const parts = scene.meshes.filter(m =>
+        m.name && m.name.indexOf('athleteBody') === 0 && m.skeleton);
+    if (!parts.length) return null;
+
+    // Skin the mesh by hand into each ski's own frame; a vertex belongs to the
+    // ski it is laterally nearest. Runs ONCE, in the ready stance.
+    const frames = { L: BABYLON.Matrix.Invert(skiL.computeWorldMatrix(true)),
+                     R: BABYLON.Matrix.Invert(skiR.computeWorldMatrix(true)) };
+    const pts = { L: [], R: [] };
+    const acc = new BABYLON.Matrix(), bm = new BABYLON.Matrix();
+    const w3 = new BABYLON.Vector3(), lo = new BABYLON.Vector3(), ro = new BABYLON.Vector3();
+    for (const mesh of parts) {
+        const pos = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+        const mi = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+        const mw = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+        if (!pos || !mi || !mw) continue;
+        const world = mesh.computeWorldMatrix(true);
+        // `getTransformMatrices` hands back the LAST RENDERED frame (the
+        // session-6 finding). Without this the calibration reads the glb's
+        // bind pose, measures a 35 mm "sole" somewhere up the shin and slides
+        // the binding blocks to it.
+        if (mesh.skeleton.prepare) mesh.skeleton.prepare(true);
+        const bones = mesh.skeleton.getTransformMatrices(mesh);
+        if (!bones) continue;
+        for (let i = 0; i < pos.length / 3; i++) {
+            acc.copyFrom(BABYLON.Matrix.Zero());
+            for (let k = 0; k < 4; k++) {
+                const w = mw[i * 4 + k];
+                if (w <= 0) continue;
+                BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+            }
+            acc.markAsUpdated();
+            const fin = acc.multiply(world);
+            BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], fin, w3);
+            BABYLON.Vector3.TransformCoordinatesToRef(w3, frames.L, lo);
+            BABYLON.Vector3.TransformCoordinatesToRef(w3, frames.R, ro);
+            const side = Math.abs(lo.x) <= Math.abs(ro.x) ? 'L' : 'R';
+            const q = side === 'L' ? lo : ro;
+            pts[side].push(q.x, q.y, q.z);
+        }
+    }
+
+    const fit = {};
+    for (const side of ['L', 'R']) {
+        const a = pts[side];
+        if (a.length < 3 * 200) return null;      // not the skinned athlete
+        let minY = Infinity;
+        for (let i = 1; i < a.length; i += 3) if (a[i] < minY) minY = a[i];
+        // The SOLE, sole to just above the welt: what a binding clamps. Taking
+        // the whole boot instead pulls the calf into the fore/aft extents and
+        // reads a 253 mm "boot" that is 20 mm of shin.
+        const cut = minY + _BOOT_SKI.soleBand;
+        let n = 0, sx = 0, zLo = Infinity, zHi = -Infinity;
+        for (let i = 0; i < a.length; i += 3) {
+            if (a[i + 1] >= cut) continue;
+            n++; sx += a[i];
+            if (a[i + 2] < zLo) zLo = a[i + 2];
+            if (a[i + 2] > zHi) zHi = a[i + 2];
+        }
+        if (n < 50) return null;
+        // Reject an implausible read rather than bake it in: a boot sole is
+        // 15-35 cm long and cannot be more than 6 cm off the ski it is pinned
+        // to. Returning null simply means the next frame tries again.
+        const len = zHi - zLo, dx = sx / n;
+        if (!(len > 0.15 && len < 0.35) || Math.abs(dx) > 0.06) return null;
+        fit[side] = { dx: dx, toeZ: zLo, heelZ: zHi };
+    }
+
+    // Apply both corrections to the VISIBLE ski, never to a bone. The first
+    // shape of this fix moved the shin drivers instead, and `rig.spec.js` >
+    // "bind equals driver and the figure faces -z" caught it at once:
+    // lowerLegL's bind-to-driver residual went to 0.0183 m, i.e. the rest pose
+    // stopped reproducing the bind mesh and the hips started the session
+    // pre-deformed. Nothing about the fault requires that — the two feet are
+    // 148.9 mm apart against the skis' 150.0 mm, so the pair is not splayed,
+    // it is SHIFTED, and sliding the ski the athlete is standing on is exactly
+    // what a binding does. The physics driver is untouched; only its child
+    // geometry moves.
+    for (const side of ['L', 'R']) {
+        const ski = meshes['ski' + side];
+        const scn = ski && ski.getScene();
+        if (!scn) continue;
+        const vis = scn.getMeshByName('ski' + side + '_vis');
+        const toe = scn.getMeshByName('ski' + side + '_toe');
+        const heel = scn.getMeshByName('ski' + side + '_heel');
+        const brake = scn.getMeshByName('ski' + side + '_brake');
+        for (const m of [vis, toe, heel, brake]) if (m) m.position.x = fit[side].dx;
+        // Forward on a ski is -z, so the toe block's REAR face meets the sole's
+        // toe and the heel block's FRONT face meets its heel; _BOOT_SKI.clamp
+        // is the overlap a real binding has onto the boot's lugs.
+        if (toe) {
+            const hd = toe.getBoundingInfo().boundingBox.extendSize.z;
+            toe.position.z = fit[side].toeZ + _BOOT_SKI.clamp - hd;
+        }
+        if (heel) {
+            const hd = heel.getBoundingInfo().boundingBox.extendSize.z;
+            heel.position.z = fit[side].heelZ - _BOOT_SKI.clamp + hd;
+        }
+    }
+    return fit;
+}
+
 function _pinBootsToSkis(meshes, tuck, armRaise) {
     if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
     // Same weight as _seatTorsoOnHips / _inrunArmForward: exactly 0 at rest and
@@ -1502,6 +1640,16 @@ function _pinBootsToSkis(meshes, tuck, armRaise) {
         ul.position.x = ax;
         ul.position.y = ay + 2 * _BOOT_SKI.hl * cL + _BOOT_SKI.hl * cU;
         ul.position.z = az + 2 * _BOOT_SKI.hl * sL + _BOOT_SKI.hl * sU;
+    }
+    // Calibrate once, AFTER the seating above and only from the ready stance:
+    // the residual to measure is what is left when the pin has already put the
+    // shin where it means to, and the cuff lean swings the boot about the
+    // ankle, so a sole measured mid-crouch is not the sole the binding holds.
+    // `window._bootFitOff` is the negative control: it leaves the boots where
+    // the author photographed them (rig.spec.js).
+    if (_bootFit === null && w <= 0 && window._bodyLinked > 0 && !window._bootFitOff) {
+        _bootFit = _calibrateBootFit(meshes) || null;
+        if (_bootFit) window._bootFit = _bootFit;
     }
 }
 
@@ -2237,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=58';   // 58: iter-143 — understory bush variant added to the tree bake
+    const ASSET_V = '?v=64';   // 64: merge — GLM 139-145 (P0 corridor unbake) + fable/peaks + Opus 27-32 (bindings, bib garment, unwrap, arm stripe ships)
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what

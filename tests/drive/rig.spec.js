@@ -1129,8 +1129,16 @@ test('styled skis: shaped geometry replaces the slats, boot line carries a bindi
                 tipRise: +(maxY - waistTop).toFixed(4),
                 tipZ: maxZatY === null ? null : +maxZatY.toFixed(4),
                 contactFwd: fwd === Infinity ? null : +fwd.toFixed(4),
-                toeX: toe ? +toe.position.x.toFixed(4) : null,
-                heelX: heel ? +heel.position.x.toFixed(4) : null,
+                // Relative to the SKI, not to the physics driver. Author
+                // HUMAN TESTING #12 item 3 slides the whole visible ski —
+                // deck, binding and brake together — laterally under the boot
+                // (see _calibrateBootFit), so the driver's x stopped being the
+                // ski's centreline. "The binding is centred on the ski" is the
+                // statement this gate was always making; it just used to be
+                // able to read it off the driver.
+                visX: +vis.position.x.toFixed(4),
+                toeX: toe ? +(toe.position.x - vis.position.x).toFixed(4) : null,
+                heelX: heel ? +(heel.position.x - vis.position.x).toFixed(4) : null,
                 toeZ: toe ? +toe.position.z.toFixed(4) : null,
                 heelZ: heel ? +heel.position.z.toFixed(4) : null,
             };
@@ -1255,4 +1263,242 @@ test('the athlete arrives inside its load budget (bytes on the wire, and sharp)'
     // The instrument the notes report; also proves the reveal ran once.
     expect(s.visibleAt, 'window._bodyVisibleAt was never stamped — the body ' +
         'reveal path did not run').toBeGreaterThan(0);
+});
+
+// ── AUTHOR, HUMAN TESTING #12 item 3 (2026-08-30) ──────────────────────────
+// `reference/shots/author_binding_top_2026-08-30.png`, a TOP view: the boots
+// sit laterally off their skis (the left boot reads about half a ski width
+// inboard, between the two skis) and the toe/heel binding blocks stand ~10 cm
+// fore and aft of the boot they are supposed to clamp. The existing
+// "both SOLES rest on their skis" test above cannot see either fault: it
+// measures a single LOWEST vertex against a 0.12 m lateral bound, and it never
+// looks at the binding pieces at all.
+//
+// This measures the boot as a BODY — every vertex of the skinned mesh below
+// the cuff — in each SKI's own frame, so the ski's yaw/pitch is divided out
+// and lateral/fore-aft are the ski's own axes.
+async function bootBindingGeometry(page) {
+    return await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        const root = scene.getMeshByName('skierRoot') || (parts[0] && parts[0].parent);
+        root.computeWorldMatrix(true);
+        const toRootLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+
+        // Skin every vertex once, keeping BOTH frames: root-local decides which
+        // side of the body a vertex belongs to (the rig yaws, world X does not
+        // mean left), ski-local is where the answer is measured.
+        const skinned = [];
+        for (const mesh of parts) {
+            const pos = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const mi = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+            const mw = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+            const skel = mesh.skeleton;
+            if (!pos || !mi || !mw || !skel) continue;
+            mesh.computeWorldMatrix(true);
+            const world = mesh.getWorldMatrix();
+            const bones = skel.getTransformMatrices(mesh);
+            const acc = new BABYLON.Matrix(), bm = new BABYLON.Matrix();
+            const w3 = new BABYLON.Vector3();
+            for (let i = 0; i < pos.length / 3; i++) {
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                const fin = acc.multiply(world);
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], fin, w3);
+                skinned.push(w3.clone());
+            }
+        }
+        const rl = new BABYLON.Vector3();
+        const sides = { L: [], R: [] };
+        for (const p of skinned) {
+            BABYLON.Vector3.TransformCoordinatesToRef(p, toRootLocal, rl);
+            sides[rl.x < 0 ? 'L' : 'R'].push(p);
+        }
+
+        const out = {};
+        // Diagnostics: is the whole mesh off-centre, or only the feet?
+        let sxAll = 0, minAll = Infinity, maxAll = -Infinity;
+        for (const p of skinned) {
+            BABYLON.Vector3.TransformCoordinatesToRef(p, toRootLocal, rl);
+            sxAll += rl.x;
+            if (rl.x < minAll) minAll = rl.x;
+            if (rl.x > maxAll) maxAll = rl.x;
+        }
+        out.body = { meanX: +(sxAll / skinned.length).toFixed(4),
+                     midX: +((minAll + maxAll) / 2).toFixed(4),
+                     n: skinned.length };
+        out.drivers = {};
+        for (const nm of ['skiL', 'skiR', 'lowerLegL', 'lowerLegR', 'upperLegL', 'upperLegR']) {
+            const m = scene.getMeshByName(nm);
+            if (m) out.drivers[nm] = +m.position.x.toFixed(4);
+        }
+        for (const side of ['L', 'R']) {
+            // The VISIBLE ski, not the physics driver: the lateral
+            // correction moves the ski geometry under the boot (see
+            // _calibrateBootFit), and "standing on the ski" is a question
+            // about the ski you can see.
+            const ski = scene.getMeshByName('ski' + side + '_vis')
+                || scene.getMeshByName('ski' + side);
+            if (!ski || !sides[side].length) { out[side] = null; continue; }
+            ski.computeWorldMatrix(true);
+            const toSki = BABYLON.Matrix.Invert(ski.getWorldMatrix());
+            const sl = new BABYLON.Vector3();
+            const pts = [];
+            for (const p of sides[side]) {
+                BABYLON.Vector3.TransformCoordinatesToRef(p, toSki, sl);
+                pts.push({ x: sl.x, y: sl.y, z: sl.z });
+            }
+            // The BOOT is everything within 15 cm of the sole along the ski
+            // normal — sole to cuff on a ski boot. Taking the lowest 2% instead
+            // would measure a sole patch, which is what hid the lateral offset.
+            let minY = Infinity;
+            for (const q of pts) if (q.y < minY) minY = q.y;
+            const bootPts = pts.filter(q => q.y < minY + 0.15);
+            const solePts = pts.filter(q => q.y < minY + 0.05);
+            let ssx = 0, sMinZ = Infinity, sMaxZ = -Infinity;
+            for (const q of solePts) {
+                ssx += q.x;
+                if (q.z < sMinZ) sMinZ = q.z;
+                if (q.z > sMaxZ) sMaxZ = q.z;
+            }
+            let sx = 0, minZ = Infinity, maxZ = -Infinity, minX = Infinity, maxX = -Infinity;
+            for (const q of bootPts) {
+                sx += q.x;
+                if (q.z < minZ) minZ = q.z;
+                if (q.z > maxZ) maxZ = q.z;
+                if (q.x < minX) minX = q.x;
+                if (q.x > maxX) maxX = q.x;
+            }
+            const cx = sx / bootPts.length;
+
+            // The binding pieces are children of the ski driver, so their own
+            // local extents already ARE ski-frame.
+            const piece = (suffix) => {
+                const m = scene.getMeshByName('ski' + side + suffix);
+                if (!m) return null;
+                const bb = m.getBoundingInfo().boundingBox;
+                return {
+                    // Local position + extent, in the ski's frame.
+                    zLo: m.position.z - bb.extendSize.z,
+                    zHi: m.position.z + bb.extendSize.z,
+                    x: m.position.x,
+                };
+            };
+            const toe = piece('_toe'), heel = piece('_heel');
+            out[side] = {
+                n: bootPts.length,
+                // Forward on a ski is -z (the nose cap points -z), so the boot
+                // TOE is its most negative z and the HEEL its most positive.
+                bootToeZ: +minZ.toFixed(4),
+                bootHeelZ: +maxZ.toFixed(4),
+                bootCentreX: +cx.toFixed(4),
+                bootWidth: +(maxX - minX).toFixed(4),
+                toe, heel,
+                // Gap from the toe piece's REAR face to the boot toe, and from
+                // the boot heel to the heel piece's FRONT face. Negative = the
+                // pieces overlap the boot, which a binding does.
+                toeGap: toe ? +(minZ - toe.zHi).toFixed(4) : null,
+                heelGap: heel ? +(heel.zLo - maxZ).toFixed(4) : null,
+                lateral: +Math.abs(cx).toFixed(4),
+                // The binding clamps the SOLE, so the gates below read the
+                // sole band; the whole-boot band above is kept because it is
+                // what reads as "standing on the ski" from the top view.
+                soleLateral: +Math.abs(ssx / solePts.length).toFixed(4),
+                soleToeGap: toe ? +(sMinZ - toe.zHi).toFixed(4) : null,
+                soleHeelGap: heel ? +(heel.zLo - sMaxZ).toFixed(4) : null,
+                soleN: solePts.length,
+                soleX: +(ssx / solePts.length).toFixed(4),
+                soleToeZ: +sMinZ.toFixed(4),
+                soleHeelZ: +sMaxZ.toFixed(4),
+            };
+        }
+        return out;
+    });
+}
+
+test('the boots stand ON their skis, clamped at toe and heel by the bindings', async ({ page }) => {
+    await boot(page);
+    const r = await bootBindingGeometry(page);
+    console.log('BOOTBIND ' + JSON.stringify(r));
+
+    // The author's evidence was a TOP view, so the fix reports in the same
+    // view. Pause first and render once by hand — the follow camera rewrites
+    // target/radius during any settle wait (look.spec's iter-85 defect).
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.keyboard.press('p');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        const ski = scene.getMeshByName('skiL');
+        ski.computeWorldMatrix(true);
+        const skiR = scene.getMeshByName('skiR');
+        skiR.computeWorldMatrix(true);
+        const mid = ski.getAbsolutePosition().add(skiR.getAbsolutePosition()).scale(0.5);
+        cam.setTarget(mid);
+        cam.radius = 2.0; cam.fov = 0.8;
+        cam.beta = 0.18;                    // all but straight down
+        scene.getEngine().stopRenderLoop();
+        scene.render();
+    });
+    await page.screenshot({ path: require('node:path').join(
+        __dirname, '..', '..', 'shots', 'boot_binding_top.png') });
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        scene.getEngine().runRenderLoop(() => scene.render());
+    });
+    await page.keyboard.press('p');
+
+    for (const side of ['L', 'R']) {
+        const m = r[side];
+        expect(m, `could not measure the ${side} boot`).not.toBeNull();
+        expect(m.toe, `ski${side} has no toe piece`).not.toBeNull();
+        expect(m.heel, `ski${side} has no heel piece`).not.toBeNull();
+        // (a) The athlete stands ON the ski, not beside it.
+        expect(m.soleLateral, `the ${side} boot's SOLE is ${m.soleLateral} m ` +
+            `off ski${side}'s centreline — the athlete is not standing on the ski`)
+            .toBeLessThanOrEqual(0.010);
+        expect(m.lateral, `the ${side} boot's body is ${m.lateral} m off ` +
+            `ski${side}'s centreline`).toBeLessThanOrEqual(0.020);
+        // (b) The binding touches the boot at both ends. A real binding clamps,
+        // so a small NEGATIVE gap (the piece overlapping the boot shell) is
+        // correct; what is wrong is daylight.
+        expect(m.soleToeGap, `the toe piece stands ${m.soleToeGap} m ahead of ` +
+            `the ${side} boot's toe — it clamps nothing`).toBeLessThanOrEqual(0.005);
+        expect(m.soleHeelGap, `the heel piece stands ${m.soleHeelGap} m behind ` +
+            `the ${side} boot's heel — it clamps nothing`).toBeLessThanOrEqual(0.005);
+        // ...and not so far through it that the boot swallows the binding.
+        expect(m.soleToeGap, `the toe piece is ${-m.soleToeGap} m INSIDE the ${side} boot`)
+            .toBeGreaterThan(-0.06);
+        expect(m.soleHeelGap, `the heel piece is ${-m.soleHeelGap} m INSIDE the ${side} boot`)
+            .toBeGreaterThan(-0.06);
+    }
+});
+
+test('NEGATIVE CONTROL: without the boot-fit calibration the author\'s shot comes back', async ({ page }) => {
+    // `window._bootFitOff` skips _calibrateBootFit, so the shins are pinned to
+    // their bones and the binding blocks stay at their authored stations —
+    // exactly the state in author_binding_top_2026-08-30.png. If this passed
+    // the gates above, they would not be reading the fix.
+    await page.addInitScript(() => { window._bootFitOff = true; });
+    await boot(page);
+    const r = await bootBindingGeometry(page);
+    console.log('BOOTBIND-OFF ' + JSON.stringify({ L: r.L, R: r.R }));
+    const offences = [];
+    for (const side of ['L', 'R']) {
+        const m = r[side];
+        if (m.soleLateral > 0.010) offences.push(`${side} sole ${m.soleLateral} m off the ski`);
+        if (m.soleToeGap > 0.005) offences.push(`${side} toe gap ${m.soleToeGap} m`);
+        if (m.soleHeelGap > 0.005) offences.push(`${side} heel gap ${m.soleHeelGap} m`);
+    }
+    expect(offences.length, 'the uncalibrated rig passed the boot–binding ' +
+        'gates, so those gates are not measuring the calibration').toBeGreaterThan(0);
+    console.log('BOOTBIND-OFF offences: ' + offences.join('; '));
 });

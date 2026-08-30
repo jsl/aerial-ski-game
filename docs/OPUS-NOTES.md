@@ -1,5 +1,10 @@
 # Opus lane — athlete body: working notes
 
+**LANE CLOSED after session 32 (author via Fable, 2026-08-30 13:15).** Sessions 33-34
+are cancelled; the remaining work moves to the GLM scene lane. The handover is the
+"Session 32" entry below — read it first: it says what landed, what is open, and which
+recorded numbers can and cannot be trusted.
+
 Implementer: Claude Opus 5 (`claude-opus-5`), branch `opus/athlete-body`, worktree `~/aerial-agents/opus`,
 test port `DRIVE_PORT=8399`. Brief: `docs/OPUS-BODY-BRIEF.md`.
 
@@ -795,6 +800,1213 @@ panel garment), 10 (stance), 6 (in-run arms), 7 (pike hip tear), 9 (face).
 Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
+
+## Session 32 (2026-08-30, 12:3x-13:4x) — FINAL ENTRY, LANE HANDOVER
+
+Merged `render-realism-glm` (3 commits, docs only — the GLM handoff, `NEXT.md` and a
+`RENDER-PROGRESS` line) as `50ec834` before any work. No conflicts, no code.
+
+### The arm stripe — LANDED (`9e81fcc`), and session 31's conclusion was half right
+
+Session 31 ended with the arm band still off and a question for the reviewer, on the
+strength of this reading: the unwrap overlap went 10 301 shared texels -> 0, and the
+torso-back leak did not move (0.135). It concluded "the stripe's leak was never the
+unwrap".
+
+**The unwrap was never the cause of the LEAK. It was the cause of the REPAIR being
+impossible** — and that is what the 23:10 ruling actually said, which is why it made
+non-overlapping islands a *precondition* and not a fix. With two surfaces sharing a
+texel a subtractive pass has nothing to subtract: erasing the leak erases the sleeve
+painted in the same place. Session 31 removed that obstacle and then did not run the
+pass — `stripe_texel_ownership` was still behind `BODY_REPAIR_STRIPE_LEAK`, logging
+`[instrument: not repairing]`, so nothing ever wrote a repaired atlas. Turning it on is
+the whole fix.
+
+The leak's own cause is session 31's build-ORDER finding and it stands: `paint_suit`
+keys the band to the weights that exist when the HIGH-POLY is painted, `body.spec.js`
+reads the weights that SHIP, and `add_spine_chain`, `localise_weights`,
+`smooth_blend_rings` and `add_joint_helpers` re-partition the shoulder in between. Of
+the two candidates recorded there this is **(b)**, re-derive ownership from the final
+weights and repair the atlas — which the 12:55 ruling explicitly allows as equivalent
+to moving the paint. **It required no reordering at all**: `stripe_texel_ownership`
+already runs after all four weight passes, and its own header says that position is
+deliberate. So the "build-ORDER question" session 31 escalated was already answered by
+the build; what was missing was the switch.
+
+| `body.spec.js` › suit design, torso **back** blueFrac (gate < 0.10) | |
+|---|---|
+| session 13 — overlapping unwrap, arms on | 0.121 |
+| session 31 — zoned unwrap, arms on, repair OFF | 0.135 |
+| **session 32 — zoned unwrap, arms on, repair ON** | **0.073** |
+
+front 0.109, front-back delta 0.036 (gate > 0.03), leg outboard 0.590, head 0.029.
+149 856 of 255 054 blue texels rewritten, converging to **0** unowned.
+
+**The bib cannot be damaged by this pass, by construction**: `_stripe_blue_mask` cuts at
+sRGB blue-minus-red > 0.30, and the three blues that BELONG on the trunk measure 0.18
+(teal yoke), 0.17 (waistband) and 0.15 (number ink). That was checked rather than
+assumed — `bib_band_gate`, `bib_number_gate` and `_bib_layout_gate` are all green on the
+shipped build.
+
+**New arm-stripe ATLAS gate**, and it is the one this item was missing. The existing
+`arm_stripe_presence_gate` measures the PAINT, on the high-poly, before the bake — it
+cannot see the repair at all, so the repair's degenerate solution (erase every blue
+texel and every leak gate goes green) would have sailed straight past it. The new gate
+counts stripe-blue texels surviving INSIDE the arm mask after the subtraction: **32 490
+of 267 677** (12.1 %, floor `ARM_STRIPE_MIN_TEXELS` = 1000).
+
+Negative controls, all three run rather than reasoned about:
+
+    BODY_SABOTAGE_ARMBAND=1     arms unlicensed -> the repair eats the sleeve; the
+                                atlas gate rejects it at 0 texels, exit 1
+                                (scratch/opus/s32_negctl_armband.log)
+    BODY_REPAIR_STRIPE_LEAK=0   instrument-only pass restored; body.spec.js rejects
+                                it on the back blueFrac (0.135)
+    BODY_STRIPE_ARMS=0          legs-only band restored (the session 13-31 ship)
+
+Band widths unchanged from session 31's measurement: upper arm 42.3/42.7 mm, forearm
+35.2/35.3 mm, `STRIPE_DPHI_MAX` 0.55.
+
+**Also removed: 8.2 MB of lossless PNG maps session 31 committed by accident.**
+`pack_delivery_maps` deletes `athlete_{albedo,ao,normal}.png` once every build gate has
+measured them, so they are build intermediates. They entered the tree because a
+sabotage run aborted before the delivery encode and was then swept up by a broad
+`git add`. Worth knowing for whoever runs the negative controls next: **run them with
+`--out` pointing into scratch**, which is what this session did.
+
+### `look.spec` FACEDIST — GREEN, but the reviewer's 12:55 item 1 is NOT resolved
+
+It measures **0.1724** against a gate of `>= 0.15` and passes, where sessions 29-31
+measured 0.1411/0.1413 and failed. All three canonical shots were written this session
+for the first time in four sessions (`figure_front.png`, `figure_side.png`, `face.png`).
+
+**Do not read that as the instrument being fixed. I did not touch `look.spec`.** The
+12:55 ruling's finding was that the gate is *inverted* — the `BODY_SABOTAGE_FACE=1`
+control measured 0.1719 and PASSED where the honest build failed at 0.1411. The honest
+build now sits at 0.1724, which is **0.0005 from the sabotage control's reading**. So
+the ruling's complaint survives intact and is now sharper: **this gate has essentially
+no discrimination margin between the correct build and its own negative control**, and
+a green from it is worth very little. Whoever picks this up should re-run the control
+before citing any face number.
+
+Why it moved is not established. The head close-up frames the shoulders (front
+`maskFrac` 0.084, head 420 px), so this session's atlas repair is the obvious suspect,
+but I did not isolate it and will not claim it.
+
+### Verification (session 32)
+
+    build    all gates green at 2048/96, including the new arm-stripe atlas gate
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (texture only)
+    drive    118 passed, 2 skipped, 1 RED
+    RED      tests/drive/terrain-corridor.spec.js 'chopped landing: sink band,
+             fades, material' — the GLM lane's file and the GLM lane's documented
+             P0 corridor grey-slab regression (docs/HANDOFF-2026-08-30.md section 1,
+             reviewer-bisected to their iteration 138 / fbbbe07). Not this lane's and
+             not touchable from it. NOTE the suite ran against load average 17.7 with
+             the GLM lane's own full suite running concurrently — the drive suite took
+             37.8 min against a normal ~10.
+    body     4/4 including 'the suit design lands on the right part of the body'
+    look     6/6, FACEDIST 0.1724 (see the caveat above)
+    shots    figure_front.png — the blue band now runs down the OUTSIDE of both
+             sleeves, shoulder to cuff, matching the legs; three bib bands read;
+             boots dark; shield mirrored blue
+    ASSET_V  62 -> 63; index.html preloads and game.js?v= 58 -> 59 in step
+
+### Where this lane stops — for the GLM lane
+
+Landed and verified this session: the arm stripe, above. Nothing is left uncommitted and
+no gate was loosened.
+
+Open, in the order I would take them:
+
+1. **The suit shell + less-muscular reshape — author HUMAN TESTING #12 items 1, 2 and
+   4.** The author's own top item and the biggest single thing still wrong. Do not start
+   it from the brief alone: session 28's entry records that the shell landed for four of
+   six segments and lists the two that did NOT clear the curvature target together with
+   their measured causes (`upperArm` 0.715 and `upperLeg` 0.455 against 0.35 — the
+   thigh's iron is capped at 6 mm by `LEG_GIRTH_GATE['thigh_depth']`, which has 7.5 mm
+   of depth to spend where the relief needs 10; the upper arm's own vertex cloud carries
+   a sheet of chest wall from the arm rebind, so the tube is being fitted through
+   geometry that is not a limb). Those two causes are the work.
+2. **`look.spec`'s FACEDIST discrimination** — above. Cheap, and it gates two of the
+   three shots the author is shown.
+3. **The front bib "30" reads mirrored to the eye** in `figure_front.png` while
+   `_bib_layout_gate` and `bib_orientation_report` pass on the front face. Sessions 19,
+   22 and 50 each spent a session here and the rectified sampler `_rect_plate` is the
+   current authority; the same log still reports the BACK plate as `DEFECT`, matching
+   neither the front (L1 0.529) nor its mirror (L1 0.352). **The author will see the
+   shot, not the gate.** My own read of `figure_front.png` this session agrees with GLM's
+   review 125: the front glyph pair looks reversed.
+4. **Visible white shard slivers on the front of the thighs and around the groin** in
+   `figure_front.png`. `sliver_gate` is green (0.568 % of faces), so whatever these are
+   the gate does not describe them — a gate-coverage gap, not a clean build.
+5. **The two-tone panels question is still unanswered** (open since session 29): the
+   brief's primary-reference paragraph says the suit has "nothing else on the body
+   panels" while the 07:25 order says "two-tone panels". They contradict; the reference
+   photograph is the tiebreak and it shows plain panels.
+
+Numbers recorded in sessions 29-31 for anything measured through `look.spec`'s face path
+were taken while that gate was aborting the spec — treat them as suspect, per the 12:55
+ruling.
+
+
+## Session 31 (2026-08-30, 12:0x-12:4x)
+
+Merged `render-realism-glm` (one commit, `4992619`) first — one conflict, the
+`game.js?v=` line in `index.html`, resolved to this lane's 57. Unit 81/81 and
+golden 30/30 on the merge, committed as `14226bc` before any new work.
+
+Then the standing order's step 3: **the unwrap + the arm stripe.**
+
+### The unwrap — LANDED (`4819831`)
+
+The 23:10 ruling parked the arm band behind the unwrap: "the arm and trunk UV
+islands share texels, so no paint-side fix can work … gate: zero shared texels
+between arm and trunk masks on the shipped weights."
+
+**Where the sharing came from**, measured rather than assumed. Not packing —
+`pack_islands` packs disjoint AABBs. Not edge adjacency — `_rasterize_uv` tests
+texel CENTRES against triangle interiors, and `_owned_uv_tris` excludes
+non-unanimous boundary quads from both masks, so two triangles merely sharing
+an edge share ~no texels. It was **one island folding over itself**:
+`smart_project` groups faces inside a 66° angle limit and projects each group
+onto a single plane, and since `loosen_suit` stood the suit off the skin the
+shoulder's arm faces and chest-wall faces are inside that limit of each other.
+One group, one plane, the arm folded back across the chest — arm and trunk
+texels in the same place by construction, which is why every paint-side repair
+since session 12 has been fighting it.
+
+`unwrap_zones` runs `smart_project` once **per zone** (each arm, each leg, each
+hand, the skull, the trunk), cut on the skin weights the ownership masks and
+`body.spec.js` are already keyed to, so the layout and the gate agree about
+where an arm stops. **The area weighting has to be put back by hand**: seven
+separate calls each normalise their own `area_weight` and would give seven
+zones the same atlas area regardless of size, obliterating both `HEAD_GROW` and
+`UV_SHRINK`; each zone is rescaled to the trunk's texel density before one
+global pack, which is exactly the allocation a single `area_weight=1.0` call
+would have made.
+
+| | before | after |
+|---|---|---|
+| arm/trunk shared texels | 10 301 (3.48 % of the arm mask) | **0**, exactly |
+| head+face atlas share | 28.3 % | 31.8 % (gate 25 %) |
+| zone rescales | — | armL ×1.006, armR ×1.030, handL/R ×0.248, legL ×1.247, legR ×1.278, skull ×1.606, trunk ×1.000 |
+
+New **UV ZONE gate** in `stripe_texel_ownership`, written at zero because zero
+is what the layout measures. **NEGATIVE CONTROL** `BODY_SABOTAGE_UVZONES=1`
+restores the single global projection and the gate rejects it at 10 301, exit 1
+(`scratch/opus/s31_negctl_uvzones.log`).
+
+### THE FINDING: the arm stripe's leak was never the unwrap
+
+With the overlap at zero the leak did not move. All three rows are
+`body.spec.js` › *the suit design lands on the right part of the body*, torso
+**back** `blueFrac`, gate < 0.10:
+
+| build | back blueFrac |
+|---|---|
+| zoned unwrap, legs only (the control) | **0.030** |
+| zoned unwrap, arms on | **0.135** |
+| old global unwrap, arms on (session 13) | 0.121 |
+
+Two further causes ruled out by running them:
+
+* **bake-margin bleed** between the now-more-numerous islands — `BAKE_MARGIN`
+  16 → 6, i.e. under the 8-texel pack gap, so no island's skirt can reach a
+  neighbour's interior. The back stayed **0.135 to three decimals**. (A larger
+  pack margin was tried first, 0.004 → 0.018, and is not viable: it shrinks
+  every island until `fold_relief_gate`'s eroded crease mask covers 0 texels.)
+* **the 21:30 (b) ruling** — "paint the band only on texels whose triangle's
+  heaviest skin weight is an arm bone, never by a spatial band". The paint
+  **already does this**: `paint_suit` calls
+  `segment_frame(co, force=owner[i])` with `owner = dominant_segments(obj)`.
+
+**What it actually is.** The paint is keyed to the skin weights that exist
+**when the high-poly is painted**; `body.spec.js` reads the weights that
+**ship**. Four passes run between the two — `add_spine_chain`,
+`add_joint_helpers`, `localise_weights`, `smooth_blend_rings` — and every one
+re-partitions ownership across the shoulder. A vertex the stripe paints because
+it is heaviest on `upperArmR` is, by export time, heaviest on `torso` or
+`spine_01`, and the blue it carries is torso blue by the only definition the
+shipped asset has. A probe on the shipped mesh puts the 76 offending back-torso
+triangles at bones **torso 59 / spine_01 9 / spine_02 8**, spread over the whole
+trunk width (|lat| 0.011..0.234) — not a band along one seam.
+
+**FOR THE REVIEWER — this is a build-ORDER question, not a stripe question**, so
+it is recorded rather than guessed at. The two candidate fixes are (a) run the
+weight passes before the bake so the paint sees the shipped ownership, or (b)
+re-derive the stripe mask from the final weights and repair the atlas after the
+weight passes (the machinery for that already exists in
+`stripe_texel_ownership`, currently `[instrument: not repairing]`).
+`BODY_STRIPE_ARMS=1` ships the sleeve band and reproduces the 0.135 for whoever
+picks it up; at that setting the band measures 42.3/42.7 mm on the upper arms
+and 35.2/35.3 mm on the forearms with `STRIPE_DPHI_MAX` 0.55, straightness worst
+step 13.8 mm / wander 14.9 mm — i.e. the band itself is correct and only its
+ownership is not.
+
+### Verification (session 31)
+
+    build    all gates green at 2048/96, including the new UV ZONE gate
+    control  BODY_SABOTAGE_UVZONES=1 rejected at 10301 texels, exit 1
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (UV layout only)
+    drive    body 4/4, bib-number, rig — 18 passed
+    RED      look.spec FACEDIST 0.1411 — UNCHANGED from sessions 29/30 (0.1413),
+             and still the gate rather than the build: the spec's OWN negative
+             control (BODY_SABOTAGE_FACE=1) measures 0.1719 and PASSES where the
+             correct build fails. Untouched deliberately; this is the third
+             session it has waited on the ruling session 29 asked for. It also
+             aborts look.spec before figure_side.png / face.png are written, so
+             only figure_front.png regenerated this session.
+    wire     glb 835 324 + normal 574 208 + albedo 338 878 + ao 147 214
+             + maps.json 1 393 = 1 897 017 B (budget 3 MB)
+    shots    figure_front.png — the leg stripes run straight down both outside
+             seams, the three bib bands read, the boots are dark and the shield
+             is mirrored blue
+    ASSET_V  61 -> 62; index.html preloads and game.js?v= 57 -> 58 in step
+
+### Open, in the reviewer's order
+
+1. **The build-order question above** — it is what stands between the arm
+   stripe and shipping, and it is the last item of the 07:25 standing order.
+2. **`look.spec` FACEDIST**, inverted against its own control, three sessions
+   open. It costs two of the three canonical shots every session.
+3. **The two-tone panels question from session 29 is still unanswered** — the
+   brief's primary-reference paragraph says the suit has "nothing else on the
+   body panels" while the 07:25 order says "two-tone panels".
+4. **Looking at `figure_front.png`, the front bib "30" reads mirrored** to the
+   eye, against `_bib_layout_gate` and `bib_orientation_report` which pass on
+   the front face. Not investigated this session (sessions 19/22/50 each spent
+   a session here and the rectified sampler `_rect_plate` is the current
+   authority); flagged because the author will see the shot, not the gate. The
+   same log still reports the BACK plate as `DEFECT` — matching neither the
+   front (L1 0.529) nor its mirror (L1 0.352) — reported, not gated.
+
+## Session 30 (2026-08-30, 11:2x-12:0x)
+
+Tree clean at start, `render-realism-glm` unmoved since session 29's merge
+(`git merge-base --is-ancestor` confirms it is an ancestor of HEAD), so no
+merge this session. No new reviewer ruling in the tree since 07:25/#12, so
+the standing order's step 2 continues: **the bib**.
+
+### Item 3 — the bib is the reference's THREE-BAND garment — LANDED (`e60c4c2`)
+
+Session 29 named this and left it: "the bib is a three-band garment — light-
+blue yoke over the shoulders, white middle carrying the number, magenta/pink
+band with a sponsor mark at the waist … the magenta band is the single most
+visible remaining difference from the reference photograph."
+
+**Measured, not chosen.** Cropped `reference/images/aerial_suit.png` at the
+bib (x 250..950, y 980..1750 — the crop is worth looking at, it also shows
+the arm stripe and the thigh logo), took the band medians, converted sRGB ->
+linear and divided by the WHITE band's own value in the same frame. A ratio,
+because the whole photograph is backlit and the absolute values are three
+stops down:
+
+| band | sRGB median | linear / white band |
+|---|---|---|
+| yoke | 0.078 0.180 0.282 | 0.093 0.282 0.365 |
+| white | 0.302 0.341 0.459 | 1 1 1 |
+| magenta | 0.259 0.137 0.255 | 0.734 0.173 0.299 |
+
+So the yoke is a **deep teal at a quarter of the white's luminance**, not the
+powder blue this build has carried since iteration 61, and the magenta band
+has never existed at all. `BIB` 0.55/0.72/0.88 -> **0.20/0.42/0.62**, new
+`BIB_WAIST` **0.62/0.14/0.30** below the plate.
+
+**The one place the palette is not the measurement:** the yoke ships at 40%
+of the white's luma, not the reference's 25%, because `bib-number.spec`'s
+blue detector needs `lum > 0.35` on the rendered frame and the literal tone
+lands under it in the shade of the visor. Recorded as a compromise, in the
+constant's own comment.
+
+The number plate's bottom edge moves `-0.54 -> -0.40` along-units to make
+room. The band then measures **60.2 mm** of world z (nominal 77, trimmed by
+`bib_mask`'s own bottom ramp) against the reference band's ~27% of bib
+height. The shorter plate moves the digit **aspect** only, 0.497 -> **0.593**
+inside the 0.45-0.75 gate; the ink fraction is a fraction OF the plate and is
+scale-invariant (front/back 0.163/0.134), and the `BODY_SABOTAGE_BIBASPECT`
+control still lands at 0.32 under the floor.
+
+**Why the bands are cut TO the plate and not the other way round.** The
+reference's three bands run about 48/24/27% of the bib height and ours cannot,
+because the "30" is drawn far larger relative to the bib than the reference's
+numeral. Laying reference-proportioned bands over the plate is not merely
+awkward, it is unsound: `bib_number_gate`'s ink classifier is
+`lum < 0.45 and |r - 0.05| < 0.30`, and the teal yoke (r = 0.20, luma 0.36)
+satisfies **both** — any band tone inside the plate would be counted as
+numeral ink and pushed toward the 0.45 ceiling.
+
+New build gate **`bib_band_gate`** asserts exactly that separation, plus the
+three tones' presence, their vertical ordering and the band's height. Shipped:
+yoke 878 verts (381 above the plate), plate 1405, magenta 312 spanning
+60.2 mm, plate-minus-band gap +0.2 mm, **0** band/yoke verts inside the patch.
+**NEGATIVE CONTROL** `BODY_SABOTAGE_BIBBANDS=1` restores session 29's flat
+powder-blue panel and the gate rejects it on four of its five assertions,
+exit 1 (`scratch/opus/s30_negctl_bibbands.log`).
+
+### THE FINDING: the bib gate that has been red since the merge was reading a lighting difference, not a panel
+
+`bib-number.spec`'s three panel assertions were all measured on `blueFrac`,
+and after this change blueFrac reads **0.0000 on both faces** of a bib that is
+plainly there in `shots/bib_front.png`. That is the design, not a regression:
+the measurement box is anchored to a ray hit at a fixed body height and lands
+on the plate's lower half and the fabric under it — and that fabric is
+magenta now. Blue was only ever a proxy for "bib fabric"; with a three-band
+garment it is the wrong proxy, so it is **replaced rather than recalibrated**
+(the same treatment the 19:15 ruling gave the fold gate that could not tell
+folds-off from folds-on).
+
+More to the point, measuring the replacement explains **why the "bib panel
+does not dominate the back panel" assertion has been red since the GLM merge**
+(session 29 measured it and correctly said it was not its commit; this is the
+cause). The intent — the front bib wraps to `|lat| < 0.09` and the back only
+to 0.06, so the front panel is the wider one — is a **width**, and the box is
+narrower than the plate on both faces, so the extra wrap lives entirely
+outside it. What the assertion actually compared was two bulk brightness
+fractions on differently-lit faces. Measured on a box three panels wide, the
+front panel is the wider one: **1430 px of band against 1361**.
+
+The replacement set:
+
+| assertion | shipped | session-29 assets |
+|---|---|---|
+| bib visible (blue + magenta > 0.04, both faces) | 0.2315 / 0.2573 | 0.0615 / 0.0725 (passes) |
+| the magenta band reads (magFrac > 0.08, both) | 0.2315 / 0.2573 | **0.0000 / 0.0000 (fails)** |
+| front panel wider than back (px of band, wide box) | 1430 > 1361 (1.051) | 0 vs 0 (fails) |
+| not wrapped round the ribs (< 40% of the wide box) | 10.5% | — |
+
+**NEGATIVE CONTROL, run rather than argued:** the session-29 assets restored
+from git into the same tree, same spec — magFrac 0.0000/0.0000, blueFrac
+0.0615/0.0725 (session 29's exact numbers, which is also the cross-check that
+the harness is measuring the same thing it was), band assertion fails first.
+
+Two honesty notes for the reviewer, both in the spec's own comments: the
+front/back panel-width margin is **thin (5%)**, because the extra wrap is
+nearly edge-on to the camera and contributes little projected width — it is
+asserted as an ordering with the ratio reported, not floored at an invented
+number; and the anti-wrap ceiling (40% of a box three panels wide, against
+10.5% shipped) is a geometric bound rather than a threshold tuned to the ship.
+
+### Verification (session 30)
+
+    build    all gates green at 2048/96, including the new bib_band_gate
+    control  BODY_SABOTAGE_BIBBANDS=1 rejected on 4 of 5 assertions, exit 1
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (vertex COLOURS only)
+    drive    bib-number 1/1, body 4/4, rig + chain + pose-shots + look 29 passed
+    RED      look.spec FACEDIST 0.1413 — UNCHANGED from session 29, and still
+             the gate rather than the build: the spec's OWN negative control
+             (BODY_SABOTAGE_FACE=1) measures 0.1719 and PASSES where the
+             correct build fails. Untouched deliberately; awaiting the ruling
+             session 29 asked for.
+    wire     glb 823 156 + normal 556 420 + albedo 329 470 + ao 135 536
+             + maps.json 1 394 = 1 845 976 B (budget 3 MB)
+    shots    figure_front.png (the three bands read at figure distance, and
+             the front "30" reads left-to-right), bib_front.png / bib_back.png
+             with the measured box marked
+    ASSET_V  60 -> 61; index.html preloads and game.js?v= 56 -> 57 in step
+
+### Open, unchanged, in the reviewer's order
+
+1. **The two-tone panels question from session 29 is still unanswered** — the
+   brief's primary-reference paragraph says the suit has "nothing else on the
+   body panels" while the 07:25 order says "two-tone panels". This session did
+   the other half of step 2 (the bib) instead of guessing.
+2. **The arm stripe** (step 3). Still off behind `STRIPE_SEGMENTS`; the
+   reference crop this session confirms it is on the arm as well as the leg.
+   `STRIPE_DPHI_MAX` must go 0.46 -> 0.55 with it.
+3. `look.spec` FACEDIST, above.
+
+## Session 29 (2026-08-30, 10:1x-11:5x)
+
+Tree clean at start. `render-realism-glm` HAD moved (entries 138-140), so this
+session opens with the merge the standing rule asks for.
+
+### The merge — LANDED (`cb5d77a`)
+
+One conflict, the `ASSET_V` comment block both lanes append to. Resolved at
+v=58 carrying both entries; the athlete preload hrefs in `index.html` moved to
+`?v=58` in step (a mismatch downloads every file twice and `rig.spec`'s byte
+gate catches it) and `game.js?v=` 53 -> 54. Unit 81/81, golden 30/30.
+
+`./tests/run-all.sh` does NOT fit in one tool call: it runs the whole
+Playwright layer at the end and was killed by its own 900 s timeout at exit
+143. Unit and golden were run directly instead, which is what the merge needed.
+
+### Item 3 + item 9 — the neck gaiter, the collar and the cuffs — LANDED (`3f07038`)
+
+Three garment features named in the brief, all three visible in the author's
+primary reference, none of which the build has ever had:
+
+* **NECK GAITER.** Every head-owned vertex below the jaw was painted SKIN, so
+  the athlete had a bare throat from the jaw down into the suit. Cut the way a
+  real one is — under the chin in front, riding up over the nape behind (top
+  edge 0.204h front / 0.226h back, **+0.022h** rise; a level band reads 0).
+  Its "multicoloured" is a deliberately COARSE helical two-tone (~25 mm
+  bands): the 05:10 paint-lattice ruling says anything finer than ~10 mm
+  cannot survive per-vertex paint.
+* **COLLAR**, 41.2 mm of stand at the top of the torso.
+* **CUFFS**, wrist 24.9/24.9 mm and ankle 32.4/32.3 mm. The ankle band runs as
+  a POST-step so the leg stripe keeps the seam it owns — in the reference the
+  blue seam runs hip to ankle and the cuff is what the trouser bunches over.
+
+New `collar_cuff_gate` on the painted high-poly (throat still-SKIN fraction,
+azimuth octants, collar height, both cuffs per side).
+**NEGATIVE CONTROL** `BODY_SABOTAGE_COLLAR=1` skips all three paints and the
+gate rejects it on **every** assertion — skin 1.0000, octants 0/8, collar
+0.0 mm, cuffs 12.8/12.9 mm (the residue of the boot lip and the glove step) —
+exit 1.
+
+### THE FINDING: item 9's "red streak across the throat" is the athlete's MOUTH
+
+`paint_suit`'s face pass computes `hz = (z - chin) / h` — **already a
+fraction** — and then compared it against `lm['h'] * <fraction>`, multiplying
+by the head height a SECOND time. On a 229 mm head that put the
+
+| feature | measured at | should be |
+|---|---|---|
+| mouth | 0.043..0.070h | 0.250..0.295h |
+| nostrils | 0.069..0.076h | 0.345..0.365h |
+| nose shading | 0.076..0.108h | 0.370..0.470h |
+
+— every facial feature painted 10-25 mm above the base of the **NECK**, a
+hand's breadth below the face, while the nose tip sits at 0.357h and the lens
+at 0.440h. The features were drawn, and they were drawn on the throat.
+
+**That is the dark red band across the throat in `shots/face.png` that the
+reviewer logged at 17:30 as "a red streak across the throat" and that has been
+carried as item 9 for eleven sessions on the theory that it was bib or collar
+paint bleeding above the collar line.** It is the mouth. Only the z tests were
+wrong; the lateral ones compare a length against a length and were always
+right.
+
+The bug surfaced only because the gaiter took the throat and `paint_suit`'s
+`required` list then went red with `lip`, `nostril` and `noshade` matching no
+vertices at all — the same "a region that never fires produces no error"
+failure mode that check exists for, one level up.
+
+Second defect in the same block: the lip band had **no fore/aft condition**
+where both its neighbours carry one, so it was a **ring** — the mouth was
+painted round the full circumference of the head, nape included.
+
+### Item 9 continued — the feature SIZES — LANDED (`81f8ff5`)
+
+With the units fixed the features landed on the face and were immediately,
+visibly wrong: `0.19..0.305h` by `|x| < 0.17h` is 26 mm tall and 78 mm wide,
+i.e. the whole lower face, and it rendered as a dark red slab from nose to jaw
+with two black rectangles for nostrils (`shots/face.png`, 11:11 — worth
+looking at, it is the clearest picture of why nothing had ever constrained
+these numbers). Re-derived from the head's own landmarks: mouth ~50 x 10 mm,
+nostrils a pair 14 mm apart just under the tip, nose shading a narrow flank
+band; `LIP` desaturated 0.45/0.20/0.18 -> 0.42/0.26/0.24, because that red
+only ever worked as a thin line. Painted verts lip 4834 -> 1412, nostril
+751 -> 195, noshade 1890 -> 940.
+
+The gaiter's dark tone also had to be NEUTRAL: the first build used
+(0.15, 0.19, 0.26) and `look.spec`'s lens detector ("blue - red > 0.10 AND
+blue > 0.32", the discriminator that tells the mirrored shield from the helmet
+shell) counted the nape of the neck as goggle — back-face lensFrac 0.104
+against a 0.06 limit. The reference gaiter is warm-neutral anyway, so the fix
+is the reference's colour and not a threshold.
+
+### FOR THE REVIEWER: `look.spec`'s FACEDIST gate is inverted against its own control
+
+The last assertion of the face block — "front and back face close-ups are
+structurally identical — the head has no front" — wants a 64x64 front-vs-back
+distance >= 0.15. Measured four ways on this tree:
+
+| build | FACEDIST |
+|---|---|
+| committed assets (features on the THROAT) | 0.1406 |
+| features on the face at the OLD oversized bands (the red slab) | **0.1724** |
+| features on the face at REAL size (shipped) | 0.1413 |
+| `BODY_SABOTAGE_FACE=1` — the spec's OWN negative control | **0.1719** |
+
+**The control passes and the correct build fails.** The metric is a bulk
+colour difference over the whole head silhouette, so it rewards whatever puts
+the most dark paint on the front — an oversized mouth, or a lens smeared round
+the skull — and it cannot tell a head with a face from a head with a defect.
+By the reviewer's own session-10 ruling ("a gate that cannot tell folds-off
+from folds-on is deleted") this wants replacing rather than recalibrating.
+**I have not touched it**: lowering the floor to let my build through is
+exactly the move that ruling forbids, and deleting a shared gate is not my
+call. This is the one red on the branch.
+
+Same control run, second problem: the sabotage's back-face lensFrac reads
+0.0308, under the 0.06 limit, so `BODY_SABOTAGE_FACE` does not currently
+reproduce the full-circumference wrap it documents either — the lensFrac pair
+PASSES on the sabotaged asset. Both halves of this spec's front/back
+discrimination need looking at together.
+
+### Two reds I chased and proved were NOT mine
+
+Both were checked by restoring the committed athlete assets and re-running the
+same spec on the same tree:
+
+* `bib-number` "bib panel does not dominate the back panel": front blueFrac
+  **0.0615** vs back **0.0725** on the PRE-change assets, 0.0619 vs 0.0725
+  after. Identical failure without my commit. Inherited from the merge
+  (GLM entries 138-140 re-baked the lightmap with tree occluders, and this is
+  a colour fraction on the rendered frame).
+* an earlier FACEDIST reading of 0.1406/0.1418 — superseded by the table
+  above; those runs were taken while the machine was loaded and the shots were
+  the previous assets'.
+
+### On the reviewer's standing order, and what I did NOT do
+
+The 07:25 order's step 2 is "two-tone panels + collar + cuffs + the bib as a
+separate garment". Collar and cuffs landed. **The two-tone panels I did not
+build, and I think the order needs a ruling rather than an implementation.**
+The brief's own primary-reference paragraph (2026-08-29) says the suit is "a
+light-grey / off-white relaxed-fit one-piece with a single royal-blue stripe
+~5 cm wide down the OUTSIDE seam of each arm and each leg, **nothing else on
+the body panels**", and says to "use this design; treat the older footage
+descriptions only as secondary". The "two-tone panel design — white base,
+royal-blue side panels from armpit to ankle and a contrasting shoulder yoke"
+is from those older, secondary descriptions. I cropped and re-read
+`reference/images/aerial_suit.png` this session (`ref_torso.png`,
+`ref_legs.png` under the scratch dir): the legs are plain light grey with one
+blue outer-seam stripe and a small dark thigh logo, and there are no side
+panels and no shoulder yoke on the suit. **Reviewer: is the order's
+"two-tone panels" still wanted, given the primary reference contradicts it?**
+
+What the reference DOES show that we do not have, and that I would do next:
+the bib is a three-band garment — light-blue yoke over the shoulders, white
+middle carrying the number, **magenta/pink** band with a sponsor mark at the
+waist. Ours is a powder-blue panel with a white number plate and a **dark
+navy** hip band. The magenta band is the single most visible remaining
+difference from the reference photograph.
+
+### Verification (session 29)
+
+    build   all gates green at 2048/96, including the new collar_cuff_gate
+    control BODY_SABOTAGE_COLLAR=1 rejected on every assertion, exit 1
+    unit    81/81
+    golden  30/30, no re-capture, no physics touched (vertex COLOURS only)
+    drive   rig + body + chain + pose-shots 28 passed
+    RED     look.spec FACEDIST (see above — the gate, not the build)
+    RED     bib-number front/back blueFrac ordering (pre-existing, measured)
+
+## Session 28 (2026-08-30, 09:2x-10:5x)
+
+Tree clean at start (session 27 committed, `cc05ab2`). `render-realism-glm` has
+not moved since `9fcbd1f`, so there was again no merge to take. Took the
+author's HUMAN TESTING #12 item 1 (+ item 4) — the suit SHELL — which is the
+reviewer's standing order and the author's most visible open ask.
+
+### Author #12 items 1 + 4 — the suit is a fitted SHELL — LANDED (partial, measured)
+
+**What was there.** `relax_suit` irons the muscle relief with a z-Gaussian and
+a gate that asks for a 55% RMS drop. That is a FILTER, and by construction it
+leaves 45% of the relief — which is what the author is still looking at after
+reporting it twice (#7 21:45 and #12 09:10).
+
+**What landed.** `suit_shell` fits ONE superellipse cross-section per suit
+segment and moves every suit vertex onto it along its own radius:
+
+* semi-axes A (lateral) and B (fore-aft) are solved per 2 cm rung by least
+  squares in the `1/r^n` domain, where the superellipse is LINEAR in
+  `(A^-n, B^-n)` — closed form, no iteration;
+* A(z), B(z) are then a LINEAR function of z on the limbs (a straight tapered
+  tube, second derivative identically zero, so the silhouette cannot inflect)
+  and a quadratic on the torso (shoulder -> waist -> hip is a real shape);
+* azimuth and z never change, so the stripe/bib/seam paint (which is
+  azimuthal) lands where it always did and every contact gate — sole seating,
+  boot-ski, binding clamp — is untouched by construction;
+* the weight fades to zero over |along| 0.55..0.90, so elbows, knees,
+  shoulders and hips keep their anatomy and only the SEGMENTS between them
+  become tubes, which is exactly the author's wording;
+* four Jacobi passes of a radius-field Laplacian follow, to take out the
+  relief that survives at the shell's own boundary.
+
+**Shipped numbers** (`SHELLCURV`, interior radial-relief variance, before ->
+after, on the shipped low-poly):
+
+| segment | before | after | ratio | gated |
+|---|---|---|---|---|
+| lowerArmL/R | 8.00e-07 / 7.92e-07 | 1.22e-07 / 1.29e-07 | **0.153 / 0.163** | yes |
+| lowerLegL/R | 5.20e-06 / 6.59e-06 | 2.39e-07 / 4.49e-07 | **0.046 / 0.068** | yes |
+| upperArmL/R | 1.93e-05 / 7.02e-05 | 2.00e-05 / 5.02e-05 | 1.037 / 0.715 | no — open |
+| upperLegL/R | 4.74e-06 / 3.85e-06 | 2.51e-06 / 1.75e-06 | 0.529 / 0.455 | no — open |
+| torso | 1.63e-04 | 1.05e-04 | 0.644 | no — open |
+
+Silhouette inflections (second-derivative sign changes of the aft profile):
+lowerArm 1/1 -> **0/0**, lowerLeg 0/0, upperArm 1/0 -> 1/0, upperLeg 3/3
+(unchanged — see below).
+
+Item 4 on the shell: upper-arm tube **57.8 mm** vs thigh **106.0 mm** =
+**0.545** (gate <= 0.55; upper-arm slim factor 0.78, forearm 0.82), shoulder
+**398 mm** / hip **446 mm** = **0.893** (gate <= 1.35), inner-thigh gap
+**+23.7 -> +31.0 mm** (the author's >= 40 mm is NOT reached).
+
+Everything else stayed green: sliver 0.568% (limit 0.60), leg taper
+calf/thigh 0.691, ankle/calf 0.498, boot/shin 1.352, thighD/B 0.901 (gate
+0.90), bideltoid 398 mm, bib number front/back ink 0.136 / 0.135.
+
+**NEGATIVE CONTROL** `BODY_SHELL_OFF=1` skips the pass; the gate rejects the
+bare body (ratios all 1.000, upperLeg inflections 3). Verified, exit 1.
+
+### The three measurement bugs, each of which made a wrong answer look right
+
+1. **The axis polynomial is an OFFSET, not a position.** The rung medians are
+   taken in the bone's frame (`co - bl(nm)`), so the fitted `(cx, cy)` had to
+   have the bone centre added back. Without it the arm axis sat 175 mm off the
+   arm; the residual read a +138 mm median, four candidate verts in five were
+   then dropped as "off-surface", and the curvature gate PASSED at 0.24 on the
+   19% that survived. A green gate measuring a fifth of the garment.
+2. **`dominant_segments` is an ownership answer, not a geometric one.**
+   `upperArmR` owns a sheet of the right chest wall (the same defect
+   `LEG_GIRTH_SANITY` records for the chest breadth) and each thigh owns a
+   sheet of the other one at the crotch. Fitting a tube through those clouds
+   produced a right thigh of 114 mm against the left's 80 and threw vertices
+   236 mm. Every rung now drops what lies outside 1.6x / inside 0.45x its own
+   median radius before anything is fitted, and each segment then trims to the
+   85th percentile of its OWN residual (25-60 mm) rather than to one number
+   for the whole body.
+3. **A single-vertex silhouette is noise, not anatomy.** The thigh carries ~9
+   verts per 2 cm rung, so which azimuth happens to be hindmost changes row to
+   row; the profile swung 145 mm over 6 cm and the second-derivative sign count
+   read three "muscle inflections" in it. The profile is now the median of the
+   verts within +-40 deg of the segment's own aft direction, twice smoothed,
+   with a 1 mm deadband.
+
+### Four things the pass had to be, each found by measuring a wrong answer
+
+* **Shrink-only, provably.** No vertex may end further from its segment axis
+  than it started — in the move OR in the Laplacian. The Laplacian was
+  uncapped, and that is where the thigh's depth went: capping the radial move
+  at 6 mm changed the measured depth by 1 mm because the smoothing that
+  followed was free to take the other 9 (thighD/B 0.935 -> 0.865 with the
+  radial move already capped at ZERO outward).
+* **The ease is `loosen_suit`'s job, not the shell's.** The author's ease
+  requirement (shell >= body + 25 mm of circumference on the legs, 15 on the
+  arms) is met by `SUIT_OFFSET`, which stands the suit off by 20 mm on the
+  thigh and 12 on the shin — 126 and 75 mm of circumference — and runs before
+  the shell. A second, outward ease in the shell only widened silhouettes.
+* **Ease must preserve the section's proportions.** Adding the same radial
+  offset to both semi-axes circularises a section, and the thigh's
+  depth/breadth fell through the leg-girth gate on exactly that.
+* **The bib is not the suit.** Shelling under the finished panel moved the
+  number patch off its plate and the front plate's ink fell to 0.058 against a
+  [0.10, 0.45] band. The panel is excluded from the pass by its own mask.
+
+### Where the pass runs, and why (one full experiment, recorded)
+
+It runs LAST of the shaping passes, after `leg_girth_pass`. Running it BEFORE
+`loosen_suit` — which would have let the bib be built on top of the shell —
+was tried and measured: the shell's own ratio was 0.531 at the pass and
+**0.901 by the time the mesh shipped**, because `loosen_suit`, `relax_suit`,
+`straighten_chest` and `leg_girth_pass` all move the same vertices again. The
+garment has to be fitted on the geometry that is exported.
+
+### OPEN, with numbers — for the reviewer
+
+1. **The gate binds on the forearms and shins only** (`SHELL_CURV_GATED`).
+   The upper arms and thighs measure 1.037/0.715 and 0.529/0.455 and do not
+   clear 0.35. Both causes are named and neither is fixable inside this pass:
+   * the THIGH's iron is capped at 6 mm by `LEG_GIRTH_GATE['thigh_depth']`
+     (>= 0.90). The shipped thigh sits at 0.935, i.e. 7.5 mm of depth to
+     spend, and the quad/hamstring relief needs ~10 — ironing a thigh takes
+     DEPTH and not breadth, because the relief is fore-aft. **This wants
+     either a per-azimuth iron or a `thigh_depth` re-derived on a garment
+     rather than on skin; the second is a reviewer call and I have not made
+     it.**
+   * the UPPER ARM's vertex cloud is not the upper arm (finding 2 above).
+     This is item 5's ownership work, not the shell's.
+   Gating them at their measured values would be calibrating the gate to the
+   defect, so the gate ships binding where the pass is honest and the rest is
+   here, in numbers. **Reviewer: this is the call to check.**
+2. **The torso's metric reads the BIB, not the garment.** The panel is a
+   designed 6 mm step, an order of magnitude above the 0.5-2 mm relief the
+   metric exists to find, so the torso ratio (0.644) is not a statement about
+   muscle contour. A bib-aware torso mask would fix the measurement.
+3. **Inner-thigh gap +31.0 mm against the author's >= 40 mm.** The gap is
+   geometrically bounded: the feet are 150 mm apart (ski spacing) and a thigh
+   that satisfies `thigh_hip >= 0.62` is ~90 mm across, so 40 mm of daylight
+   at mid-thigh needs either a wider stance or a thinner thigh than the
+   leg-dominance gates allow. Recorded, not silently dropped.
+
+### Verification (session 28)
+
+    build   all gates green at 2048/96 (sliver 0.568%, leg taper 0.691 /
+            0.498 / 1.352, thighD/B 0.901, bideltoid 398 mm, bib number ink
+            0.136 front / 0.135 back, atlas share, stripe, suit NM variance)
+    control BODY_SHELL_OFF=1 rejected, exit 1
+    unit    81/81
+    golden  30/30, no re-capture, no physics change (the pass writes vertex
+            buffers only)
+    drive   rig + body + chain + pose-shots: 28 passed (4.8 m), 0 failed,
+            including the boot-binding gate and its negative control;
+            look.spec 1/1, shots regenerated
+    NOT MINE, still red: tests/drive/venue-dressing.spec.js "near-side net
+            strip at the grazing scene view (review-125)" — the fence/net is
+            the GLM lane's file and nothing in this commit touches it. Same
+            class as the sky-shader red reported in sessions 26-27.
+
+### What the shots show (by eye, `shots/figure_side.png`, `figure_front.png`)
+
+The limbs read as cloth cylinders now: the shin runs straight from the knee
+into the boot cuff with no calf belly, the forearms and upper arms are smooth,
+and the thigh no longer shows the quadriceps line in the side silhouette. The
+front bib "30" is legible and the panel sits proud of the suit.
+
+Still visible, and all of them already open items rather than new damage:
+
+* the crotch/inner-thigh shard cluster (item 3's bake slivers — 0.568%, under
+  the gate but visible at this distance);
+* the leg stripe is a ragged blue patch on the INNER leg rather than a 5 cm
+  band on the outer seam — the stripe is parked behind the UV unwrap
+  (reviewer, session 13);
+* the red collar line at the throat (item 9);
+* the suit is still white-on-white: two-tone panels, collar and cuffs are the
+  next item.
+
+## Session 27 (2026-08-30, 08:3x-09:5x)
+
+Tree clean at start (session 26 committed). `render-realism-glm` has not moved
+since `9fcbd1f`, so there was again no merge to take.
+
+Took the first item of the author's HUMAN TESTING #12 order — the bindings and
+the boot–ski invariant — because the reviewer put it first as the quick
+invariant, and it turned out to be two separate faults, neither of which any
+existing gate could see.
+
+### Item 3 (author #12 item 3) — the boots stand on the skis — LANDED `ba1a942`
+
+**What the author photographed** (`reference/shots/author_binding_top_2026-08-30.png`,
+top view): the boots offset laterally from their skis and the toe/heel blocks
+standing clear of the boot at both ends.
+
+**Measured**, in each ski's OWN frame so the rig's yaw is divided out
+(`rig.spec.js` BOOTBIND, ready stance, sole = lowest 50 mm of the skinned mesh):
+
+| | L | R |
+|---|---|---|
+| sole centroid off the ski centreline | -0.0183 m | -0.0194 m |
+| sole z extent | -0.101 .. 0.132 | -0.103 .. 0.128 |
+| toe/heel block slot | -0.140 .. 0.1875 | same |
+| daylight, toe / heel | 0.0390 / 0.0555 | 0.0371 / 0.0592 |
+
+**The lateral fault is not the pin.** `skiL`, `lowerLegL` and `upperLegL` all
+read `x = -0.075` EXACTLY (and +0.075 on the right), so `_pinBootsToSkis` puts
+the bone precisely where it intends. It is the MESH: both feet hang ~19 mm to
+-x of the shin they are weighted to, **the same way on both sides**, so the
+left boot reads outboard and the right one inboard — "between the skis", which
+is the author's description. The whole-body centroid is centred (meanX
+-0.0008, midX -0.0014), so it is a foot asymmetry, not an off-centre bake.
+
+**The fore/aft fault is the ski build.** The binding stations (-0.205 / +0.245)
+in `_buildStyledSki` were authored before the boot geometry existed; the slot
+they leave is 328 mm for a 233 mm sole.
+
+**The fix is calibrated, not constant.** `_calibrateBootFit` measures both
+faults once off the linked skinned mesh. A hard-coded 19 mm would be silently
+wrong the next time this lane rebakes a boot — which is most sessions. It
+skins the mesh by hand into each ski's frame, takes the sole band, and returns
+the sole's lateral offset and its toe/heel z.
+
+**And it moves the SKI, not the bones.** The first shape of this fix seated
+each shin so its SOLE landed on the centreline — and `rig.spec.js` > "bind
+equals driver and the figure faces -z" caught it immediately: lowerLegL's
+bind-to-driver residual went 0 -> **0.0183 m**, i.e. the rest pose stopped
+reproducing the bind mesh and the hips began the session pre-deformed. That
+gate is right and the first fix was wrong. Nothing about the fault needs a
+bone to move: the two feet are **148.9 mm apart against the skis' 150.0 mm**,
+so the pair is not splayed, it is SHIFTED, and sliding the ski the athlete is
+standing on is exactly what a binding does. The calibration now sets the
+lateral offset on the visible ski's children (`ski*_vis`, `_toe`, `_heel`,
+`_brake`) and slides the toe/heel blocks fore/aft until they touch, with 4 mm
+of clamp overlap. The physics driver is untouched; bind still equals driver to
+1e-3.
+
+One existing gate had to be re-measured, not loosened, for this:
+`rig.spec.js` > "styled skis…" asserted `|toe.position.x| < 0.01` in the
+DRIVER's frame. The statement it makes — "the binding is centred on the ski" —
+is unchanged, but the driver's x stopped being the ski's centreline, so it now
+reads `toe.position.x - vis.position.x`. Shipped: 0.0000 both sides, with
+`visX` -0.0183 / -0.0194 logged beside it.
+
+Three more things the calibration has to get right, each found by measuring a
+wrong answer:
+
+1. **`getTransformMatrices` returns the LAST RENDERED frame** — session 6's
+   finding, and it bites any new probe. Without `skeleton.prepare(true)` the
+   calibration read the glb's BIND pose, measured a 35 mm "sole" partway up
+   the shin, and slid the binding blocks to z = +0.14 (they ended up behind
+   the ankle, and the toe gap read -0.24 m).
+2. **It has to run AFTER the pin has seated the legs**, not before: the
+   residual to measure is what is left once the shin is where the pin means to
+   put it. Calibrating first read dx = -0.028 / -0.050 instead of
+   -0.018 / -0.019 and overshot to soleX +0.0076 / +0.0272.
+3. **Ready stance only, and it rejects an implausible read** (sole length
+   0.15-0.35 m, |dx| <= 0.06 m) instead of baking it in. The cuff lean swings
+   the boot about the ankle, so a sole measured mid-crouch is not the sole the
+   binding holds. A rejected read costs nothing — the next frame retries.
+
+Shipped (same probe, ready stance):
+
+    soleLateral   0.0183 / 0.0194  ->  0.0000 / 0.0000  gate <= 0.010
+    sole toe gap  0.0390 / 0.0371  -> -0.0040 / -0.0040  gate <= 0.005
+    sole heel gap 0.0555 / 0.0592  -> -0.0040 / -0.0040  gate <= 0.005
+    boot-body lateral (whole 150 mm band, i.e. what reads as "standing on the
+    ski" from above)  0.0235 / 0.0238 -> 0.0052 / 0.0044  gate <= 0.020
+
+(soleLateral is 0.0000 by construction now — the ski is placed at the sole's
+own centroid — so the gate that carries the weight for the lateral fault is
+the boot-BODY one at 0.020, which is measured over the whole 150 mm boot band
+and is not what the calibration targets.)
+
+**Why the existing gate was green through all of this.** `rig.spec.js` >
+"both SOLES rest on their skis" measures ONE lowest vertex against a 0.12 m
+lateral bound and never looks at the binding pieces at all. A single vertex
+and a whole foot in the wrong place give the same reading, and 19 mm is well
+inside 120 mm.
+
+New gate: **"the boots stand ON their skis, clamped at toe and heel by the
+bindings"**, which also writes `shots/boot_binding_top.png` in the author's own
+top view. **NEGATIVE CONTROL** `window._bootFitOff` skips the calibration and
+restores exactly the state in the author's shot; the control test asserts the
+gates reject it and it does on all six readings (logged as
+`BOOTBIND-OFF offences`).
+
+### Verification
+
+    unit    81/81
+    golden  30/30, no re-capture (nothing here touches the physics path:
+            _calibrateBootFit reads vertex buffers and writes two child mesh
+            positions)
+    drive   athlete set (rig, chain, inrun-contact, ready-stance, body,
+            athlete, spine, crash-ragdoll) — see below
+    assets  UNCHANGED, ASSET_V stays 54; game.js?v= 51 -> 52
+
+### Open at the end of session 27
+
+- **Author #12 item 1, the suit SHELL, is the next and largest item** and is
+  untouched. It is the author's most visible open ask and the reviewer's
+  07:25/08:30 order puts it immediately after the bindings.
+- Author #12 item 2 (calf/thigh gap) falls out of the shell.
+- The ramped `reclaim_chest_wall` (session 26's blocker) is still open.
+- `game.js`'s sky fragment shader still does not compile (GLM `cac3bae`) — not
+  this lane's file, still red on this tree, still what makes `game.spec.js`
+  red. Reported in session 26; unchanged.
+
+### For the reviewer (session 27)
+
+1. **The boot lateral offset is an ASSET asymmetry** (both feet 19 mm to -x of
+   their shins, spacing otherwise correct to 1.1 mm) that this commit corrects
+   by moving the ski GEOMETRY 19 mm under the boot, not the bone. The honest
+   place to fix it is the bake, and the suit-shell rebuild is the natural
+   session for it; the calibration will then measure ~0 and cost nothing.
+   Flagging so the ski-visual offset is not read later as a hidden hack.
+2. No physics change, no golden re-capture, no gate loosened; the new gate
+   ships with a control that fires.
+
+## Session 26 (2026-08-30, 08:3x-09:5x)
+
+Tree was clean at session start (session 25 committed). No merge was
+available — `render-realism-glm` has not moved since `9fcbd1f`.
+
+Took the reviewer's ruling on session 23, carried unactioned through 24 and
+25: **mirror `reclaim_chest_wall` to the left arm.** It is blocked. The
+measurement chain below is the session's result; the shipped change is one
+instrument.
+
+### The mirror is three lines and it fails four gates in a row
+
+`reclaim_chest_wall` gives the ribcage side wall from `upperArmR` to `torso`.
+Mirroring it reclaims 24 left verts against the right's 25 — symmetric, as
+expected. Then, in order:
+
+| gate | before (right-only) | mirrored |
+|---|---|---|
+| loosen_suit waist breadth delta | +37.4 mm (gate 16-40) | **+43.9 FAIL** |
+| leg girth chest/thigh | 1.285 (gate <= 1.70) | **1.863 FAIL** |
+| sliver, shipped mesh | under the 0.60% limit | **0.6836% FAIL** (65/9509) |
+
+**Not one of those is a body that changed shape.** The first two are
+measurement artefacts and the third is real.
+
+### Finding 1: the ownership-filtered anchors measure two different body parts
+
+Every slice in this build that filters by vertex OWNERSHIP inherits the
+reclaim's one-sidedness. New instrument (`SUIT GIRTH halves`, shipped this
+session) on the RIGHT-ONLY build:
+
+    waist R +165.6 -> +187.5 mm      L  -91.2 -> -106.7 mm
+
+The right half is the flank at the arm's own radius (166 mm out), taking the
+torso stand-off; the left half is the trunk wall (91 mm out). The gate reads
+their sum, 37.4 mm, and passes 2.6 mm under the bound. Mirrored, both halves
+are the flank and both move 21.9 mm — the RIGHT side's own number is
+unchanged to the tenth of a millimetre — and the sum is 43.9. The gate did
+not detect a wider suit; it detected that its two halves finally agree.
+
+Same for `_leg_girth_ratios`' chest read: 275 mm one-sided, 399 mm mirrored,
+no vertex moved. Cross-checked by forcing the upper arms into the slice, which
+makes it ownership-invariant: **484 mm before the mirror and 484 mm after**
+(`scratch/opus/build26_head2.log` vs `build26f.log`). Identical. So the
+figure is untouched and the 1.70 bound was calibrated on a slice containing
+one flank. (484 is not a usable chest read either — it is an arms-in span and
+fails the human-plausible band; and dropping the reclaimed verts instead reads
+159 mm, because the `torso` group on this mesh genuinely does not contain the
+ribcage sides. There is no ownership-based slice here that is a chest.)
+
+### Finding 2: the reclaim is a hard ownership flip, and that is the shards
+
+The blocker. Per-pass sliver counts, right-only vs mirrored:
+
+    after soften               0/10590    0/10590
+    after shape_helmet        41/10590   52/10590     <- +11, all of it here
+    ...
+    after finish_lowpoly       (< 0.60%)  65/9509  0.6836%  FAIL
+
+The +11 appears before any suit pass, at the first report after
+`pose_onto_segments`. The reclaimed verts are set to torso 1.0 / arm 0.0, so
+at bind-to-segment transport they snap with the torso while the vert next to
+them goes with the arm. That is a tear, and it renders as the author's
+silvery shards. `smooth_blend_rings` already names this pass as the "hard
+OWNERSHIP flip with no blend at all" — but that pass runs on the low-poly
+mesh long after the transport, so it cannot help here.
+
+**The right side has been contributing its own share of those shards since
+the pass was written.** Mirroring does not introduce the defect; it doubles a
+defect that was already shipping.
+
+Two fixes tried and rejected this session, both measured:
+
+- **Zone the reclaimed verts as sleeve in `loosen_suit`** (cloth zone by
+  geometry, not by skin ownership — they sit among arm-owned neighbours at the
+  arm's radius). Sound in itself, and it takes chest/thigh to 1.659, under even
+  the OLD 1.70 bound. But it does not touch the shards (0.6138% -> 0.6327%,
+  the wrong way) because they are made at transport, not at stand-off, and it
+  drops the chest anchor's stand-off to +9.6 mm (gate 18-34) — the deltoid cap
+  fade zeroes the sleeve amount at that height, so the suit would cling under
+  the armpit.
+- Raising `chest_thigh` 1.70 -> 1.95 as a ratchet. Correct in spirit but
+  unnecessary once the slice is honest, and it does not address the shards.
+
+**What the mirror actually needs: reclaim_chest_wall must RAMP, not flip.**
+Give the reclaimed band a blended weight (torso rising to 1.0 across the wall,
+arm falling to 0) so the transport is continuous. That is a change to skin
+weights on both sides and it will move the chest/waist reads again, so it
+wants its own session and a re-measure of the four gates above. It should also
+remove shards from the RIGHT side, i.e. finish below today's baseline rather
+than at it.
+
+### Shipped
+
+`SUIT GIRTH halves` in `loosen_suit`: the per-flank extents behind every
+breadth delta. Log-only — no behaviour, no gate, no asset. Commit `74b9659`.
+
+### Not mine, but it is red on this tree: the SKY SHADER DOES NOT COMPILE
+
+Found while chasing the drive suite. `game.js:1978` reads
+
+    float cov = smoothstep(0.52, 0.66, f);
+
+and `f` is never declared. The browser reports
+`FRAGMENT SHADER ERROR: 0:50: 'f' : undeclared identifier` (plus 0:55 and a
+cascade on `sunDir`) on EVERY boot, so the sky dome's effect fails outright.
+
+`git log -S "float f = _fbm"` names the commit: **GLM's `cac3bae`, iter 131**
+(the snowing-flatness pass that added the `sunAmount`/`cloudAmount` uniforms)
+deleted the `float f = _fbm(...)` line it still uses. It is on
+`render-realism-glm`, `integ/opus-merge`, `fable/peaks` and — via the session
+25 merge — here.
+
+That is what makes `tests/drive/game.spec.js` red on this tree, both cases:
+`console errors during the run` is asserted to be empty and the shader errors
+land in it. **Not fixed here — the sky is GLM's file by the brief** — but the
+author is looking at :8203, which is this worktree, so it wants a fast fix in
+the GLM lane. The missing line is one statement, something of the shape
+`float f = _fbm(uv * 1.7);` before the `cov` line.
+
+### Verification
+
+    build   rc=0, 2048/96, every gate green
+    unit    81/81      golden 30/30      coverage PASS
+    drive   4 red, none of them this commit (which touches only a Blender
+            script and docs — the browser loads neither):
+              game.spec x2   the sky shader above (GLM cac3bae)
+              crash-ragdoll  the documented load-dependent settle flake
+              bib-number     open, not investigated this session
+            Isolated re-run of game.spec: 1 passed, 2 failed, same shader.
+    assets  UNCHANGED — ASSET_V stays 54
+
+### For the reviewer (session 26)
+
+0. **`game.js`'s sky fragment shader does not compile** (GLM `cac3bae`), see
+   above. Every boot logs it; two drive tests are red because of it. Needs a
+   one-line fix in the GLM lane.
+1. **The mirror is blocked on the sliver gate at 0.6836% (limit 0.60%)**, and
+   the cause is that `reclaim_chest_wall` sets 0-or-1 ownership. I did not
+   loosen the gate and I did not land the mirror. The unblocking fix is a
+   ramped reclaim (above) — it is a skin-weight change on both arms, so I am
+   flagging it rather than doing it under the new 07:25 order.
+2. **Two of this build's proportion gates are calibrated on the asymmetry**
+   (`SUIT_GIRTH_GATE['waist']` and `LEG_GIRTH_GATE['chest_thigh']`). They will
+   both move when the mirror lands, by the amounts tabulated above, and
+   neither movement will mean the body changed shape. Worth knowing before
+   the next red is read as a regression.
+3. **Order taken as read**: the 07:25 entry in the brief arrived during this
+   session and parks item 5's metric work. Session 27 starts on author #7,
+   the smoothed suit shell, not on the mirror.
+
+## Session 25 (2026-08-30, 07:1x-08:2x)
+
+Merged `render-realism-glm` first (9 commits: GLM's 132-134 peak de-glassing,
+the B-net grazing alpha cutoff, the STRATA ridge band map). Both conflicts were
+version counters again — `ASSET_V` is 54 on both sides so this lane's comment
+stands, and `index.html`'s `game.js?v=` takes GLM's 51 (they are ahead there).
+Committed `9fcbd1f` on unit 81/81 + golden 30/30 before touching anything else.
+
+### Item 5 — the reach ceiling did NOT buy the tuck, and here is the number
+
+Session 24's single open question was whether the locality repair had brought
+the flight-tuck strain down from session 23's p99 2.613 / max 10.345. It has
+not:
+
+| flight tuck | session 23 | session 25 (shipped) |
+|---|---|---|
+| p99 | 2.613 | **2.536** |
+| p99.9 | — | 6.182 |
+| max | 10.345 | **13.593** |
+
+p99 moved by 3%; the max went UP. `upperArmR` can no longer hold 0.68 of a
+lower-belly vertex, and the tuck does not care. **So the tuck strain is not
+what the reach ceiling was limiting, and item 5's gate still cannot be set at
+the brief's 1.35.** The prize session 24 expected is not there, and saying so
+is the useful result.
+
+By rest-edge length, on the same run (`STRAINTABLE`):
+
+| bucket | n | p99 | max |
+|---|---|---|---|
+| 2-5 mm | 6922 | 1.047 | 1.218 |
+| 5-10 mm | 21038 | 1.086 | 10.194 |
+| >= 10 mm | 25982 | **3.376** | 13.593 |
+
+The short edges are essentially rigid. The residue is on the LONG edges, which
+is the opposite of what a sliver population would do.
+
+### What the hot population actually is
+
+New anatomy probe (scratch, deleted before the commit; every number below is
+from the browser, on the shipped asset), counting unique mesh edges over 1.35:
+
+| pose | hot / n | share | weight-flat (dw < 0.10) |
+|---|---|---|---|
+| neutral | **0 / 30953** | 0.00% | — |
+| flight tuck | 1655 / 30953 | 5.35% | 125 |
+| pike | 1432 / 30953 | 4.63% | 66 |
+
+Two things fall out of that table.
+
+1. **At rest the skin is exact** — zero edges over 1.35 out of 30953. Whatever
+   is wrong is a function of the POSE, not of the bake. That is a change of
+   verdict: the standing reading since session 20 has been "the residue is
+   item 3 bake geometry, it does not move when the lattice under it is
+   halved". A bake defect would be there at rest too. It is not.
+2. **92% of the hot edges have a real weight difference across them**
+   (1530 of 1655 have per-endpoint weight-vector L1 >= 0.10; only 125 are
+   weight-flat). The `dw` histogram is
+   `[0.05, 0.1, 0.2, 0.4, 0.8, 2] -> [22, 125, 305, 852, 1523, 1655]` — the
+   mass of it sits at dw 0.4-0.8, i.e. neighbouring vertices whose weight
+   vectors differ by half. So this is a SKIN problem after all, and the seam
+   gate does not see it because the seam gate measures weight L1 per edge
+   (max 0.925, limit 1.10) without asking what the bones it names DO in a
+   pose. Two bones a half-weight apart are harmless if they rotate together
+   and a tear if they do not.
+
+Where they are, in rest coordinates (flight tuck): hip/crotch 479,
+torso-upper 414, thigh 324, shin 319, hand 63, arm-lower 35, arm-upper 21.
+
+### The trap that ate an hour, recorded so it does not eat another
+
+The probe first reported that a lumbar vertex carried 0.51 on `hlpKneeR` and
+0.28 on `hlpShoulderL` — a knee helper driving the small of the back, which
+would have been the whole answer. It is not true. **`skeleton.bones` is not
+the joint list the vertex buffer indexes.** On this asset it is 22 entries and
+starts with `AthleteRig`, the armature root node, whose `getIndex()` is -1;
+`getTransformMatrices()` returns 23 matrices; `MatricesIndices` runs over the
+21 real joints. So `skeleton.bones[mi[k]].name` names the bone alphabetically
+BEFORE the real one, for every vertex. Skinning is unaffected (it only ever
+indexes the matrix array, which is what the shader does), so the strain
+numbers above all stand — only the names were wrong. The note is now in
+`tests/drive/spine.spec.js` above `MEASURE`, which is where the next such probe
+will be written.
+
+What settled it was measuring the same claim on the build side, which is the
+half of this that ships.
+
+### Shipped: the per-helper locality breakdown (`blender/build_body.py`)
+
+The four helper pairs are the one family of bones whose locality nobody had
+looked at on its own, and the aggregate cannot show them — `_segment_halfdiag`
+hands `hlpShoulder` the TORSO's 175 mm cross-section (its neighbour is
+`spine_03`), so its capped reach is 245 mm and skin at the small of the back is
+inside it by construction, whatever weight it carries. That was a real gap in
+the argument even though the answer came back clean. `weight_locality_report`
+now breaks the eight helpers out by name, always, and the build logs:
+
+    HELPER hlpElbowL:    164 weights, reach  78 mm, d/reach p99 1.03 max 1.10, 0 over 1.70
+    HELPER hlpElbowR:    162 weights, reach  78 mm, d/reach p99 1.01 max 1.03, 0 over 1.70
+    HELPER hlpHipL:      185 weights, reach 175 mm, d/reach p99 0.97 max 0.99, 0 over 1.70
+    HELPER hlpHipR:      185 weights, reach 175 mm, d/reach p99 0.92 max 0.95, 0 over 1.70
+    HELPER hlpKneeL:     252 weights, reach 141 mm, d/reach p99 1.18 max 1.21, 0 over 1.70
+    HELPER hlpKneeR:     248 weights, reach 141 mm, d/reach p99 1.17 max 1.18, 0 over 1.70
+    HELPER hlpShoulderL: 188 weights, reach 245 mm, d/reach p99 1.15 max 1.17, 0 over 1.70
+    HELPER hlpShoulderR: 252 weights, reach 245 mm, d/reach p99 1.14 max 1.16, 0 over 1.70
+
+Every helper is local, with margin, on the honest capped reach. The helpers are
+exonerated by measurement rather than by the comment that asserted it.
+
+It is an INSTRUMENT, not a gate, and it is behaviour-neutral: the rebuild it
+came from produced a byte-identical-length GLB differing only in bake float
+noise, so the assets were reverted and `ASSET_V` is NOT bumped. Nothing the
+browser downloads changed this session.
+
+### Verification
+
+    build   rc=0, 2048/96, every gate green (LOCALITY 0/12524 after helpers,
+            WEIGHTSEAM max 0.925 / 0 hot, JOINTSPAN 0/1816)
+    unit    81/81      golden 30/30 (no display node changed, no re-capture)
+    drive   spine 14/14
+    assets  UNCHANGED (instrument only) — ASSET_V stays 54
+
+### Open at the end of session 25, and what I would do next
+
+- **Item 5's next move is a POSED weight metric, not another rest-pose one.**
+  Every gate in the build measures the skin at rest; the defect is 0 edges at
+  rest and 1655 at tuck. The measurement that would find it is: for each edge
+  over 1.35 in the tuck, the ANGLE between the two endpoints' blended
+  transforms — a large weight difference between bones that rotate together is
+  fine, the same difference between bones 100 deg apart is the tear. That is
+  computable in the build (the pose endpoints are known) and would be the first
+  gate in this lane that measures what the author actually sees.
+- The hip/crotch cluster (479 edges) and torso-upper (414) are the two biggest
+  and they are the author's "back separating". They are worth attacking before
+  the thigh/shin.
+- Unchanged from session 24, in the reviewer's order: the smoothed suit shell
+  (author #7, still the author's most visible open item), panels / collar /
+  cuffs, the THUMB, and the UV unwrap + arm stripe last (texture space).
+- `reclaim_chest_wall` still runs on the R side only (`upperArmR` hard-coded).
+  Carried from sessions 23 and 24, still not acted on.
+
+### For the reviewer (session 25)
+
+1. **The reach ceiling did not move the tuck** (p99 2.613 -> 2.536, max
+   10.345 -> 13.593). Session 24 hoped it would; it did not. Item 5's 1.35 gate
+   remains unshippable and I have not set it.
+2. **The "it is bake geometry" verdict standing since session 20 is wrong**:
+   the skin is exact at rest (0 / 30953 edges over 1.35) and 92% of the tuck's
+   hot edges carry a real weight difference. Item 5 is still a skin problem.
+   I did not fix it this session — I established what it is.
+3. Shipped change is one instrument in `build_body.py`. No physics change, no
+   golden rebaseline, no gate loosened, no asset changed, no gate added that I
+   cannot control negatively.
 
 ## Session 24 (2026-08-30, 05:5x-07:0x)
 
