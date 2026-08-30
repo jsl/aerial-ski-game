@@ -145,6 +145,8 @@ DOME_SEAT_LO, DOME_SEAT_HI = -40.0, 5.0
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
 STRIPE     = (0.09, 0.24, 0.62)      # royal blue, full length of the outer leg
+PANEL      = (0.15, 0.25, 0.50)      # royal blue side panels
+YOKE       = (0.20, 0.35, 0.60)      # shoulder yoke
 # SESSION 30 — the bib is a THREE-BAND garment, measured off the author's
 # primary reference (`reference/images/aerial_suit.png`, the bib crop at
 # x 250..950 / y 980..1750). Measured medians, converted sRGB → linear and
@@ -6077,8 +6079,7 @@ def shell_report(body, shell):
         f'{r.get("thigh_depth_rungs")})'
         if r['thigh_depth'] is not None else
         f'  thigh garment depth/breadth UNMEASURABLE (n={_ns})')
-
-
+    return r
 def suit_shell_gate(body, shell, prop):
     if shell.get('off'):
         bad = []
@@ -7700,6 +7701,13 @@ def paint_suit(obj, lm):
         elif name.startswith(STRIPE_SEGMENTS):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
+        elif name in ('upperArmL', 'upperArmR', 'upperLegL', 'upperLegR') and abs(radial) < 0.6:
+            # Two-tone side panels: outboard royal blue, white base
+            # Stripe is outer seam (~0 deg or 180 deg)
+            col, tag = PANEL, 'panel'
+        elif name == 'torso' and (lz > 0.5):
+            # Shoulder yoke (yoke)
+            col, tag = YOKE, 'yoke'
             # cross-section centroid so the stripe tracks the visible face of
             # the calf/thigh rather than a pole in empty air beside the axis.
             #

@@ -12,13 +12,13 @@
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8933,
-   "belowHalf": 0.0811,
+   "mean": 0.8926,
+   "belowHalf": 0.0818,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7653,
+   "mean": 0.7651,
    "belowHalf": 0.159,
    "srgb": true
   },
@@ -48,34 +48,34 @@
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.59095
+  "stripe_leak": 0.58936
  },
  "delivery": {
   "athlete_albedo": {
    "mean_abs": 0.0037,
    "p99_abs": 0.0314,
-   "png": 1201762,
-   "ratio": 3.12,
+   "png": 1195316,
+   "ratio": 3.09,
    "res": 2048,
-   "web": 385706
+   "web": 386508
   },
   "athlete_ao": {
-   "mean_abs": 0.0118,
+   "mean_abs": 0.0119,
    "p99_abs": 0.1647,
-   "png": 2451784,
-   "ratio": 16.38,
+   "png": 2465594,
+   "ratio": 16.37,
    "res": 1024,
-   "web": 149718
+   "web": 150590
   },
   "athlete_normal": {
-   "mean_deg": 1.32,
-   "p95_deg": 3.762,
-   "png": 4787909,
-   "ratio": 8.28,
+   "mean_deg": 1.319,
+   "p95_deg": 3.735,
+   "png": 4820608,
+   "ratio": 8.29,
    "res": 2048,
-   "web": 578522
+   "web": 581564
   },
-  "total_web": 1113946
+  "total_web": 1118662
  },
  "faceForward": [
   -0.0058,
