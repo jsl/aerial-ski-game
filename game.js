@@ -4232,7 +4232,12 @@ void main(void) {
             try {
                 const floor = BABYLON.MeshBuilder.CreateDisc('terrainBase',
                     { radius: 600, tessellation: 48 }, scene);
-                floor.rotation.x = Math.PI / 2;
+                // −π/2, not +π/2: CreateDisc faces +Z, so +π/2 pointed the
+                // normal DOWN — with backFaceCulling=false it still drew but
+                // shaded as if lit from below, and the disc reads as a dark
+                // grey smear above the rear field edge (iter-141 measurement:
+                // 302 of 1054 near-black samples in the scene view hit it).
+                floor.rotation.x = -Math.PI / 2;
                 floor.position.y = BASE_Y - 0.01;
                 floor.material = snowMat;
                 floor.receiveShadows = true;
@@ -9381,13 +9386,19 @@ void main(void) {
         // the alpha-cutout card occluders in blender/bake_lightmap.py, so the
         // solid treeShadowProxy cone wedges (the "dirt smudge" read) and the
         // legacy tr_/fl_ meshes are off the CSM caster list. The proxy MESH
-        // stays in the scene hidden (display census unchanged); the athlete
-        // keeps its real-time contact shadow.
-        // B-net fencing casts as well: the thin posts render through their
-        // source caster, and the alpha-cut strip throws a cutout shadow via
-        // ALPHATEST in the depth pass (a solid-quad shadow here means that
-        // path broke — see venue-dressing.spec.js).
-        ['bnetPost', 'bnetStrip_L', 'bnetStrip_R'].forEach((n) => {
+        // stays in the scene hidden (display census unchanged). The athlete
+        // B-net: the thin POSTS cast (a 4 cm pole is a hairline shadow). The
+        // alpha-cut STRIPS do NOT — iter 141: the depth pass renders them as
+        // OPAQUE solids (the tile's alpha is not honoured in the shadow
+        // depth), so each strip threw one solid near-black band the width of
+        // the landing (measured: 282 of 1054 near-black samples in the scene
+        // view were terrainCorridor inside that band; entry-140's "hard black
+        // diagonal band"). A real net's shadow is dappled at most; when the
+        // static fence shadow is wanted it belongs in the lightmap bake (the
+        // tree path there honours cutout alpha), not in the CSM. The
+        // venue-dressing gate (near-side strip DRAWS) is unaffected — it
+        // never gated casting.
+        ['bnetPost'].forEach((n) => {
             const m = scene.getMeshByName(n);
             if (m) casters.add(m);
         });
