@@ -882,10 +882,34 @@ converging (1237 then 1026 units) — with a tight cap the relax diffuses weight
 back into the ramp band as fast as the localise takes it out.
 
 **So the rescue branch has to become a soft renormalisation onto the nearest
-segments before the ceiling can land.** That is the next session's first item and
-it is a self-contained change to one branch of `localise_weights`. Nothing was
-loosened and no fudged constant was shipped to make a red go green: the ceiling
-is in the tree, off, with both controls and the numbers above.
+segments before the ceiling can land.** Nothing was loosened and no fudged
+constant was shipped to make a red go green: the ceiling is in the tree, off,
+with both controls and the numbers above.
+
+### The soft rescue, written and measured — half the hinge, not all of it
+
+The replacement is continuous in position: each bone keeps its original weight
+scaled by `(e_min / e) ** RESCUE_P` (P = 4), so the nearest bone still
+dominates, a bone twice as far contributes 2^-4, and nothing steps as the
+ordering changes — at a crossing the two terms are equal and the blend passes
+through smoothly. The old `min()` winner-take-all was discontinuous exactly
+there: two neighbouring vertices whose excesses cross swapped bones outright and
+the hinge landed between them.
+
+Measured with the cap on, everything else equal:
+
+| | hard rescue | soft rescue | limit |
+|---|---|---|---|
+| WEIGHTSEAM max at the shipped skin | 1.632 | **1.382** | 1.10 |
+| hot edges over 1.0 | 24 | **12** | 6 |
+
+Half the defect, and the right half — but still red, so the cap stays off. The
+residual is not the rescue branch: it is the ramp BOUNDARY itself at
+`LOCALITY_MAX_R`, where a weight goes to zero while its neighbour's does not.
+The next move is to make the ramp end at a bone's own reach rather than at a
+fixed multiple of it, or to re-relax only the ramp band. With the cap OFF the
+pass reports **0 vertices reassigned**, so this branch is unreachable on the
+shipped asset and the change is inert there by construction.
 
 ### Verification
 
@@ -898,10 +922,11 @@ is in the tree, off, with both controls and the numbers above.
 
 ### Open at the end of session 23
 
-- **First item next session: the soft-rescue fix in `localise_weights`, then
-  turn `LOCALITY_REACH_CAP` on.** The measured prize is the shard fan in the
-  tuck and a flight-tuck strain gate that can finally be set at an honest
-  number (today it would have to be p999 5.76).
+- **First item next session: the last 1.382 -> 1.10 of seam hinge, then turn
+  `LOCALITY_REACH_CAP` on.** The soft rescue landed half of it; the residual is
+  the ramp boundary at `LOCALITY_MAX_R`, not the rescue. The measured prize is
+  the shard fan in the tuck and a flight-tuck strain gate that can finally be
+  set at an honest number (today it would have to be p999 5.76).
 - Then, in the reviewer's order: the smoothed suit shell (author #7 — still the
   author's most visible open item), panels / collar / cuffs, the THUMB, and the
   UV unwrap + arm stripe last (in TEXTURE space, per the 05:10 ruling).

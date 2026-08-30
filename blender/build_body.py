@@ -1170,6 +1170,7 @@ def _segment_halfdiag(name):
 # it fails it at max 1.632 / 1.643 (limit 1.10) whether the ramp starts at 1.25
 # or 0.90. The rescue branch has to become a soft renormalisation before the
 # ceiling can land. Set BODY_LOCALITY_CAP=1 to reproduce the red.
+RESCUE_P = 4.0                  # nearness exponent in the soft rescue above
 LOCALITY_REACH_CAP = 1.00       # x the segment's own cross-section half-diagonal
 LOCALITY_CAP_ON = os.environ.get('BODY_LOCALITY_CAP') == '1'
 
@@ -1304,13 +1305,31 @@ def localise_weights(obj, arm):
                 new_w[gi] = w * f
         tot = sum(new_w.values())
         if tot < 0.20:
-            # Everything this vertex was weighted to is far away. Give it
-            # wholly to the nearest segment rather than divide by nothing.
-            gi = min(excess, key=excess.get) if excess else None
-            if gi is None:
+            # Everything this vertex was weighted to is far away. Divide it
+            # among the bones it HAD by nearness rather than by the ramp.
+            #
+            # This used to hand the vertex WHOLLY to the nearest segment. That
+            # is a hard 1.0 next to blended skin — a rigid island, which is
+            # precisely the hinge `weight_seam_gate` exists to catch, and it is
+            # what stopped the reach ceiling landing in session 23 (1105
+            # rescues, seam max 1.632 against a 1.10 limit). Worse, the winner
+            # is chosen by a `min`, so two neighbouring vertices whose excesses
+            # cross swap bones outright and the hinge lands between them.
+            #
+            # The replacement is continuous in position: each bone keeps its
+            # original weight scaled by (e_min / e)^RESCUE_P, so the nearest
+            # bone still dominates, a bone twice as far contributes 2^-P, and
+            # nothing steps as the ordering changes — at a crossing the two
+            # terms are equal and the blend passes through smoothly.
+            if not excess:
                 continue
-            new_w = {gi: 1.0}
-            tot = 1.0
+            e_min = min(excess.values())
+            soft = {gi: cur[gi] * (e_min / max(e, 1e-6)) ** RESCUE_P
+                    for gi, e in excess.items() if cur.get(gi, 0.0) > 0.0}
+            tot = sum(soft.values())
+            if tot <= 1e-9:
+                continue
+            new_w = soft
             rescued += 1
         if abs(tot - 1.0) < 1e-9 and len(new_w) == len(cur):
             continue
