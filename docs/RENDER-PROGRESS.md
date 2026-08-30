@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Reviewer rulings on entry 131 (Fable, 05:40):** (1) the gate swap is ACCEPTED — an overcast dome is brighter than a blue zenith, so the chroma-greyness test (low saturation, no sun disc, softened shadows) is the physically right instrument; keep a pure-sky sample region as an additional instrument if cheap, not as the gate. (2) Confirmed: **132 = mountains follow-up** (peaks as an opaque banded range, regular silhouettes, ridge-mask numbers + by eye), then B-net/canopy notes, forest remainder, polish; 135/140 reviews; 145 final.
 - **Reviewer rulings on entry 129 (Fable, 04:25) — Snowing mode accepted; tuning answers:** the look to match is an overcast snow day (no snowing daytime clip exists — use IMG_3396's flake density/streak length, not its exposure): sky a flat light-grey overcast (luminance ≈ 0.60–0.70, low saturation, no blue gradient, cumulus faded out), **sun disc faded out entirely while snowing**, sun intensity ≈ 0.6 with softer shadows (raise the shadow blur/PCF softness so contact shadows stay but edges soften), fog density 0.0035–0.004 with a grey fog colour matching the sky, flakes ≈ the night count with slightly larger near-camera streaks. Gate additions: sky region saturation < 0.08, no sun-disc pixels, shadow edge width ≥ 1.5× day. Then continue the 129–145 order (peaks, B-net/net, shadows, forest, polish).
 - **Seventh Opus merge LANDED (Fable, 2026-08-30 04:10, `d833929`):** GLM through 128 (deterministic crash roll, 5/5 green) + Opus through `5a0037c` (weight locality, knee/hip helper bones, bib measurement). Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), spine/crouch/rig/bib 28/28, crash 3/3, look + pose-shots 2/2. 8201 synced. **Rulings on 127/128:** (1) the 5/5 gate is SATISFIED — crash-determinism thread closed; (2) keep the post-rest sampling window as a canary, do not shorten it; (3) **order for 129–145:** (a) the **day-time "Snowing" Settings toggle** (overnight order item 2 — never started: snowfall particles + slightly greyer sky/softer sun in day mode, independent of Night, gated like `night.spec`); (b) mountains follow-up — peaks as an opaque distant range with rock banding below the snow caps (ridge-style snowline mapping, alpha 1, per-peak tint variance), silhouettes regular, judged with the ridge-mask numbers and by eye; (c) review-125 scene notes: near-left B-net posts without visible net, under-canopy shadow smudges; (d) forest remainder (near-tree low-poly, understory), night snow-burst variants; (e) polish (height haze, LOD/frame time). Reviews at 130/135/140; 145 = final review + handoff refresh. Add nothing the author did not ask for.
 - **Sixth Opus merge LANDED (Fable, 2026-08-30 02:25, `f2e1dc8`):** GLM tip (chop albedo fix, slope-aware roll + stop fix, 124/125 floodlight towers) + Opus through `93389f8` — in-run crouch rebuilt (arm bones were rolled 180°, hip re-seated on the pelvis, knee ~100° with hips over heels), relaxed hands, shooter-style sport glasses, visible folds, straight leg stripe, seam relax, boots. Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), crouch/chain/rig/bib 25/25, look + pose-shots 2/2. Known flaky red carried: `crash-ragdoll` penetration/settle (GLM order 124/125, 5/5 gate). GLM 125's athlete observations (front bib mirrored?) forwarded to the Opus brief; its scene observations (near-left B-net posts without visible net, under-canopy shadow smudges) go on the GLM order after the crash determinism.
@@ -214,6 +215,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 131 | **Snowing flatness pass (entry-130 item 1, display-only): sun disc + cumulus faded out under overcast (`sunAmount`/`cloudAmount` sky-shader uniforms), cast shadows softened (`setDarkness(0.55)`), ambient fill raised (hemi 0.42→0.58, IBL 0.32→0.42), sun tint neutral-cool; `_nightProbe` gains `hemi/shadow/sunDisc/env`; snowing.spec lum gate replaced with a chroma gate (overcast sky is physically brighter, not darker)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture); snowing.spec 1/1, night.spec 1/1, look 4/4; measured day→snowing: shadow drop 0.027→0.012, sunDisc 1→0, hemi 0.42→0.58, env 0.32→0.42, sky |r−b| −0.055→−0.047. See entry 131. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
 | — | Iteration 128 | **VERIFICATION-ONLY — closes the entry-127 carry: crash-ragdoll 5/5 CONSECUTIVE full green runs (reviewer's 01:30 gate) recorded, and the entry-121/122 freelook crash red is CURED (freelook 3/3, look 4/4)** | five crash-ragdoll runs in sequence: 3/3 × 5 (wall 2.7/2.1/2.7/2.0/1.7 m, incl. both negative controls each run); freelook.spec 3/3 (crash leg rests + re-arms free-look); look 4/4 incl. the crash-settle leg that timed out in 122/127; unit 81/81; golden 30/30 (verify.js, no re-capture — no code change). See entry 128. |
@@ -228,8 +230,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
 | — | Iteration 109 | **crash roll momentum seeded from the measured horizontal root speed at the trigger (reviewer 89a) LANDED** | seed = clamp(|vz| at trigger, 6, 15) m/s — ceiling 15 preserves the verified iter-89 envelope (a full-charge impact measures ~26 m/s; uncapped seed → restAt 8.9 s, breaches 2–5 s gate); slow crashes now slide proportionally less; `window._crashImpactSpeed` instrument; unit 78/78, golden 30/30 (13 crash-tail scenarios re-captured, audit state-identical ×30, node-census class), look green + shots inspected. FINDING: crash-ragdoll.spec flaky in the browser at HEAD too (crash sometimes never triggers in 90 s / restAt drift) — needs a state-deterministic trigger refactor. See entry 109. |
 | — | Iteration 116 | **cone-peak range RE-LANDED — entry-113/114 blockers root-caused: the PEAKS x/z/height data was never applied (all 11 cones at the world origin, occluding the ridges = bitwise-identical mask-collapse frames AND the face-back dark wall); peaks now positioned, 30 m snowline** | ridges3d 4/4 (mask 0.088 / mean 0.514 / std 0.182; fogged control discriminates 0.644/0.100), look 1/1, golden re-captured CENSUS-ONLY (5408 frames byte-identical after stripping pk_body_*), unit 78/78. See entry 116. |
-| — | Iteration 114 | **cone-peak re-land ATTEMPTED, NOT LANDED — tree reverted to HEAD; two blockers measured: back/front darkU dose–response knife edge (emissive 0.10→0.3822 back FAIL / 0.25→0.0078 front FAIL) and ridges3d contrast mask collapsing to 0 whenever peaks exist (contradictory signature, unresolved)** | unit 0 fail, golden 30/30 at reverted HEAD, ridges3d 4/4; peaks golden footprint nil (state byte-identical ×30); full evidence table in entry 114 |
-| — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
+
 | — | Iteration 105 (review) | **review-only; suite ALL GREEN; ridge texture measured improved (gradP90 25→38 scene) but far/mid ridges still washed pale; NEXT.md carried to 106 re-aimed** | DoF blur on the figure camera and suit-vs-snow at scene distance reported to the Opus lane (standing rules block GLM). See entry 105. |
 | — | Iteration 87 | **goggles as GEOMETRY (face pass 2) LANDED** | lens/frame/strap displaced proud of the head on the final low-poly mesh (714 verts: lens 630 @ +7.0 mm, frame edges @ +4.5 mm, strap 84 @ +2.5 mm over the shell); new hard build gate (6) "lens radial step vs same-slab skin" 75.1 mm (negative control BODY_SABOTAGE_GOGGLES=1 measures 68.4 → gate calibrated 71.5); earlier instruments (max-reach 7.2 mm on the flat skull, raw boundary step 2.6 mm) failed the control and were replaced; ASSET_V 29; unit 0 fail, golden 30/30, look green (front lensU 0.0564 vs back 0.0062, FACEDIST 0.1831, FACEGATE dark 0.1977), body+rig+start-gating+bib-number 18/18. See entry 87. |
 | — | Iteration 89 (NEXT.md) | **crash roll-to-the-flat LANDED** | `slide` phase → slope-aware `roll`: 1.0 s tumble → 15 m/s downhill momentum seed (crash impact speed; PBD damping under-reports it) → net friction decel 3.0 m/s² while slope ≥ 10° (4 m/s floor, never stalls mid-slope) → 7.7 m/s² friction stop on the < 10° flat; settle-while-rolling lowers propped parts at 0.3 m/s with hard-stick re-projection (neck pairs now HARD); stop = 10-pass Gauss-Seidel relax + prev reset. Measured: restAt(sim) 4.79 s (gate 2–5), trigZ 35.97 → restZ 68.80, rollOutZ 63.70 (rest 118 % of trigger→roll-out, gate ≥ 60 %), rest slope 0.0°, support points 11 (≥ 3), maxAbove 0.151 m (≤ 0.6), joint angular speed ~1e-13 rad/s, skis on snow; NEGATIVE CONTROL (`window._crashRollDisabled`) rests at 9 % / 40° and FAILS the gate as required; golden 13 crash tails re-captured per ADR-0005 (display change), unit 78/78, golden 30/30; `shots/crash_rest.png` added. See entry 89. |
@@ -7990,13 +7991,135 @@ code paths untouched.
   `night.spec`'s artifacts was inspected by eye: blue-grey corridor, three+
   warm pools with dark falloff, B-net and poles silhouetted — close to
   IMG_3396. `scene.png` day view and ASSET_V unchanged (no `assets/` change).
-
 **Open questions for the reviewer:** (1) pin the pike pose-shot instrument
 defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 131 — snowing flatness pass: overcast sun-disc/cumulus fade, softened
+shadows, raised ambient fill (display-only)
+
+**What changed (entry-130 re-prioritised item 1 — the snowing mode was "a
+dimmer day": hard shadows and a visible sun disc under a grey sky. No
+`engine/`, no athlete lane, no DoF block, no scene additions, ASSET_V
+untouched):**
+- `game.js` sky shader: new `sunAmount` uniform (snowing 0.0, day 1.0) —
+  the reviewer's 129 ruling "sun disc faded out entirely while snowing";
+  new `cloudAmount` uniform (snowing 0.35, day 1.0) — the cumulus layer
+  fades toward overcast. Day rendering is byte-identical (both uniforms 1.0
+  in day mode; verified by the spec's day-leg luminance).
+- Snowing rig: `hemi.intensity` 0.42 → 0.58, `scene.environmentIntensity`
+  0.32 → 0.42 (the overcast dome is the fill source), shadow generator
+  `setDarkness(0.55)` (cast shadows keep 55% light — soft and shallow),
+  `sunLight.diffuse/specular` warm 1.0/0.96/0.85 → neutral-cool
+  0.90/0.93/0.98. Night branch untouched (`night.spec` 1/1).
+- `window._nightProbe()` gains `hemi`, `shadow` (getDarkness), `sunDisc`,
+  `env` (existing fields unchanged).
+- `tests/drive/snowing.spec.js`: new gates — snowing shadow darkness
+  0.55 > day 0, hemi 0.58 > day 0.42, env > day, sunDisc 0 vs day 1. The
+  entry-129 image gate `snowSky.lum < daySky.lum` was REPLACED with
+  `|snowSky.r−b| < |daySky.r−b|`: an overcast dome is physically BRIGHTER
+  than a deep-blue zenith, and the raised fill lights the treeline inside
+  the measured band, so the luminance ordering was wrong, not the render.
+  The greyness (chroma) check is what the 129 ruling actually pins.
+  `index.html`: `game.js?v=47` → `?v=48`.
+
+**Verification:** unit **81/81** (fail 0); golden **30/30** ("30/30
+scenarios match the golden traces", verify.js the last command before this
+commit — display-only change, no re-capture); `snowing.spec` **1/1**;
+`night.spec` **1/1**; `look` **4/4** (shots regenerated).
+Measured day → snowing (640×480, ready view): cast-shadow band drop
+**0.027 → 0.012** of open-snow luminance (softened, present), sunDisc
+**1 → 0**, hemi 0.42 → 0.58, env 0.32 → 0.42, top sky band luminance
+0.517 → 0.529, sky r−b **−0.055 → −0.047** (greyer/less blue).
+
+**Open (not done this iter):** mountains follow-up (order item 2, the most
+visible scene gap), review-125 B-net/smudge notes, forest remainder, polish.
+The shadow-drop measurement band is a fixed screen region (0.32–0.46 ×
+0.62–0.74), not athlete-tracked, so the absolute drops are indicative; the
+day-vs-snowing RATIO is the evidence.
+
+**Open questions for the reviewer:** (1) confirm the replaced snowing.spec
+luminance gate is acceptable (rationale above) or prefers a pure-sky sample
+region instead; (2) confirm 132 = mountains follow-up (order (b)).
+| — | Iteration 110 (review) | **review + one REAL breakage fixed: venue-dressing test 4 RED at HEAD (solo) — `MATERIAL_ALPHATESTMODE` undefined in the shipped Babylon build, coach cards never alpha-cut; mode now set via `PBRMATERIAL_ALPHATEST`, 4/4 green, golden 30/30 no re-capture** | scene.png parity 1.031 ✓, ridge std 0.192 ✓; kicker.png REGRESSION flagged: iter-107 deck fills the bottom half of the canonical kicker framing; far-ridge cone caps still read; DoF blur / suit white-on-white / crash_rest speck carried (Opus lane / instrument). See entry 110. |
+### 130 — REVIEW (review-only): run-all green end-to-end, snowing mode
+re-verified solo and by eye; no breakage, no fixes; re-prioritised list for
+131–145
+
+**Scope:** review-only per the iteration-130 instruction. No features, no
+fixes (none needed — no outright breakage found). `docs/NEXT.md` does not
+exist. `engine/`, `assets/`, ASSET_V, the athlete-lane files and the DoF
+block untouched; nothing added to the scene.
+
+**Prior-iteration self-review:** `git log -3 --stat` — 129's commit is
+coherent (game.js + index.html + snowing.spec + progress doc) and the tree
+was clean at start. No half-done work.
+
+
+**Suite (`./tests/run-all.sh`):** unit **81/81 PASS** (fail 0); golden
+**30/30** ("30/30 scenarios match the golden traces"); mutation **"All
+scenarios differentiate"** + coverage **PASS** (the two known OPEN-002
+duplicates unchanged); headless browser integration **36 passed / 0 failed /
+0 skipped (4 sections)**. The final real-browser drive-through leg had NOT
+printed its summary by this session's hard kill deadline (a parallel
+Fable-lane run contended for SwiftShader), but its `look` leg completed —
+all canonical shots regenerated 04:22–04:53 — and `snowing.spec` was
+re-run solo: **1/1** (1.1 m). No red in any completed section; the reviewer
+should re-run `tests/drive` on an idle machine as usual.
+
+**Snowing mode (entry 129) re-verification (solo + by eye + measured):**
+- `snowing.spec` solo on a separate port: **1/1** (1.1 m) — `daySnowfall`
+  started, sun 0.95 vs day 1.35, fog 0.0035 vs 0.0022, 0 nightFlood lights,
+  sky greyer-but-daylight.
+- Fresh 1100×850 screenshots of the start view, day vs `?snowing=1`, pixel
+  measured (whole frame / snow patch / top sky band): whole-frame luminance
+  **0.806 → 0.785**, snow patch **0.830 → 0.804**, red–blue gap
+  **−0.036 → −0.046** (cooler). By eye: snowing reads flatter and greyer
+  with faint falling flakes; day keeps its warm directional light. The mode
+  is real and visible, but the differentiation from the DEFAULT start camera
+  is subtle — no sky is in frame there, and the athlete's ski shadow is
+  still crisp in snowing mode (only the sun's intensity was softened; the
+  shadow generator and hemi/IBL are untouched).
+   By eye (shots regenerated by the run's `look` leg, 04:42–04:53):
+   `scene.png` — forest reads well (mixed birch/spruce with snow load),
+   B-net both edges, red kicker edge marks, one red-jacket coach, athlete
+   readable; the horizon is STILL the worst defect — the peaks read as pale
+   smooth cones, some with dark crest smudges, over a flat pale band (order
+   (b) below). `figure.png` — athlete framed, skis/bindings/helmet/goggle
+   band read; suit white-on-white persists (Opus). `figure_front.png` — bib
+   "30" legible, goggles on the eyes; red scribble at the mouth/chin and
+   dark chest smudges still present (Opus lane, reported).
+
+**What now reads wrong / gaps (with the reviewer's 129–145 order
+re-prioritised):**
+1. **Snowing flatness is only half-done (131 candidate, display-only):** an
+   overcast day would soften/drop the cast shadows and raise the ambient
+   fill; currently only sun 1.35 → 0.95 changed, so the scene still shows
+   hard shadows under a "grey" sky. Also the open entry-129 question of the
+   sun disc still drawing in overcast.
+2. **Mountains follow-up (order 129 (b)):** peaks as an opaque distant
+   range with rock banding below the snow caps, ridge-style snowline UV,
+   alpha 1, per-peak tint variance, regular silhouettes — judged with the
+   ridge-mask numbers + by eye. This remains the most visible scene gap
+   (entry 120's "paper cut-out" horizon note).
+3. **Review-125 scene notes (order (c)):** near-left B-net posts without
+   visible net; under-canopy shadow smudges.
+4. **Forest remainder (order (d)):** near-tree low-poly, understory, night
+   snow-burst variants.
+5. **Polish (order (e)):** height haze (parked, entry 54), LOD/frame time.
+6. **Athlete lane (Opus, reported not owned):** suit white-on-white reads
+   even flatter under the snowing rig; face still featureless under the
+   goggle band.
+
+**Open questions for the reviewer:** (1) for the snowing flatness pass —
+is softening the cast shadows (dimming/disabling the shadow generator or
+raising hemi) in snowing mode acceptable as display-only, and should Night's
+floodlight pools stay hard-edged (I assume yes)? (2) the entry-129 sun-disc
+question (fade via a dome-shader uniform in snowing mode?) still stands;
+(3) confirm the 131 order: snowing flatness first, then mountains (b).
 
 ### 129 — day-time "Snowing" mode: second weather toggle (?snowing=1 /
 Settings "Snowing") runs the snowfall system under a greyer day sky with a
