@@ -5299,7 +5299,13 @@ def relax_suit(body, joints):
 # fitted torso surface is measured before the move and re-applied after it.
 SHELL_OFF = os.environ.get('BODY_SHELL_OFF') == '1'   # negative control
 SHELL_DZ = 0.02
+# iter 147 (NEXT.md step 1): the old 0.55/0.90 fade still gave the knee band
+# (|along| 0.75..0.89, spine.spec's collapse pair) weight 0.42..0.02, and the
+# shell's radial pull there turned the in-run crouch's knee-edge strain from
+# 5.6 (cc05ab2) into 32.5 against the 8.0 gate. The joint's own anatomy is
+# what the fade exists to protect — it now ends sooner: zero by 0.70.
 SHELL_JOINT_LO, SHELL_JOINT_HI = 0.55, 0.90
+SHELL_JOINT_LO_LEG, SHELL_JOINT_HI_LEG = 0.40, 0.70   # knee band, iter 147
 # Radial ease, metres. The author's gate speaks in CIRCUMFERENCE (>= body
 # + 2.5 cm on the legs, + 1.5 cm on the arms), and a radial offset e adds
 # 2*pi*e of circumference: 8 mm -> 50 mm on the legs, 5 mm -> 31 mm on the arms.
@@ -5539,6 +5545,23 @@ def _thigh_gap(body, dom):
     if bl('upperLegL').x > 0:
         inner_l, inner_r = -min(rx), -max(lx)
     return inner_r - inner_l
+
+
+def _shell_leg_move_w(nm, z, w):
+    # iter 147 (NEXT.md step 1): the shell's radial pull inside the knee band
+    # (|along| 0.75..0.89 kept weight 0.42..0.02 under the 0.55/0.90 fade) is
+    # what took spine.spec's in-run-crouch knee-edge strain from 5.6 (cc05ab2)
+    # to 32.5 against the 8.0 gate: the pulled verts sit at the front of the
+    # joint on mixed upperLeg/hlpKnee weights, and the pull changed their rest
+    # positions so the posed ring collapses. Fitting keeps the full segment
+    # (a truncated fit lost the thigh tube's width and broke the item-4
+    # arm/thigh gate); only the MOVE fades, to zero by |along| 0.70.
+    if not nm.startswith(('upperLeg', 'lowerLeg')):
+        return w
+    half = SEGMENTS[nm]['h'] / 2
+    along = (z - bl(nm).z) / half if half > 0 else 0.0
+    return w * _shell_sstep((SHELL_JOINT_HI_LEG - abs(along))
+                            / (SHELL_JOINT_HI_LEG - SHELL_JOINT_LO_LEG))
 
 
 def suit_shell(body, joints):
@@ -5828,6 +5851,7 @@ def suit_shell(body, joints):
         # 214w/200d to 236w/210d and the leg-girth gate's depth/breadth ratio
         # fell 0.935 -> 0.890.
         cap = SHELL_MAX_MOVE_SEG.get(base, SHELL_MAX_MOVE)
+        w = _shell_leg_move_w(nm, z, w)
         nr = r + max(-cap, min(SHELL_MAX_OUT, w * (target - r)))
         worst = max(worst, abs(nr - r))
         v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
@@ -5866,6 +5890,7 @@ def suit_shell(body, joints):
             base0 = _shell_base(nm)
             cap0 = SHELL_MAX_MOVE_SEG.get(base0, SHELL_MAX_MOVE)
             ref = r0.get(i, r)
+            w = _shell_leg_move_w(nm, vs[i].co.z, w)
             nr = r + SHELL_SMOOTH_LAMBDA * w * (sum(nb) / len(nb) - r)
             nr = min(ref, max(ref - cap0, nr))
             vs[i].co.x, vs[i].co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)

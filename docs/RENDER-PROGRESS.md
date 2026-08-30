@@ -1415,6 +1415,55 @@ still stands from entry 83.
 
 ## Iterations
 
+### 147 — NEXT.md step 1: the shell's knee-band collapse fixed — the shell's MOVE now fades to zero by |along| 0.70 on the legs; kneeMax 32.516 → 5.65; ASSET_V 66
+
+**NEXT.md step 1 executed (knee-band collapse). Steps 2–3 remain; NEXT.md kept.**
+
+**Root cause (measured, not the reviewer's exact mechanism).** A temporary
+probe (`_poseProbe(1, true, 0)`, full LBS on the shipped buffers) isolated the
+collapse pair: a 24.8 mm rest edge at the FRONT of each knee (rest
+(±0.024, −0.591, +0.099)→(±0.024, −0.615, +0.106)) collapses to 0.8 mm posed —
+strain 32.52 as a COLLAPSE (the gate is two-sided). Endpoints sit on mixed
+`upperLegR:0.651/hlpKneeR:0.349` vs `hlpKneeR:0.640/upperLegR:0.360` weights,
+i.e. the |along| 0.75–0.89 ring, where the shell's 0.55/0.90 joint fade still
+gave the MOVE weight 0.42–0.02. The shell's radial pull there changed those
+verts' rest positions and the posed ring folds at the 98° knee.
+
+**Fix (`blender/build_body.py`, 25 added lines, 0 removed).**
+`_shell_leg_move_w` multiplies the shell's MOVE weight (radial move AND the
+Laplacian smoothing) by a legs-only fade `SHELL_JOINT_LO/HI_LEG = 0.40/0.70`,
+zero by |along| 0.70. The FIT keeps the full-segment weights: fitting on the
+truncated region first tried lost the thigh tube (106 → 87.4 mm at mid) and
+broke the item-4 arm/thigh gate (0.634–0.661 > 0.55); with fit/move split, the
+tubes are byte-for-byte the old numbers (upper-arm 57.8, thigh 106.0, ratio
+0.545 ≤ 0.55; shoulder/hip 0.893; inner-thigh gap +31.0 mm — the ≥ 40 mm item
+remains open from session 28).
+
+**Verification:** in-run crouch kneeMax **32.516 → 5.65** (probe; worst
+surviving edge 21.2 mm → 3.8 mm), all four spine knee gates pass including
+flight tuck; `spine` + `rig` + `chain` **37/37**; `npm run test:unit` **81/81**;
+`npm run test:golden` **30/30** (no re-capture — no physics/census change);
+`look` **6/6** on the final build; full-res rebuild (2048/96) passes every
+build gate including SHELLCURV (lowerArm 0.153/0.163, lowerLeg gated items
+unchanged). A/B anchor: `cc05ab2`'s glb under today's `game.js` PASSES
+(assets are the discriminator, as the reviewer's bisect said). ASSET_V 65 → 66
+(`game.js?v=66`, preloads, `index.html`). Temp probe spec and KNEEDBG block
+removed; scratch under `/home/justin/aerial-agents/scratch/iter-147/`.
+
+**Process note for the reviewer:** two mid-iteration build failures were
+instrumentation accidents (a low-res-only bib-layout gate abort at res 256 —
+passes at 2048; and a brief window where my cleanup dropped the move loop's
+vertex write, caught because SHELLCURV "after" moved while "before" was
+identical). The shipped script's diff is pure additions and the committed
+assets are from a clean full-res build of exactly that script.
+
+**Open / for 148+:** NEXT.md step 2 (upper-arm/thigh/torso curvature ≤ 0.35;
+`thigh_depth` re-derived on the garment per the reviewer ruling; two-tone
+panels/collar/cuffs; crotch shard cleanup), then step 3 (arm stripe
+verification on the merged branch).
+
+**Open questions for the reviewer:** none new.
+
 ### 146 — NEXT.md step 0: the FACEDIST face gates made honest-passing /
 sabotage-failing and non-fatal to `figure_side.png`; the negative control
 itself was un-buildable at this tip and is repaired

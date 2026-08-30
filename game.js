@@ -2385,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=65';   // 65: athlete rebuild after build_body sabotage-control gate exemptions (iter 146) — assets re-baked, geometry unchanged
+    const ASSET_V = "?v=66";   // 66: knee-band shell fix (iter 147) — suit-shell move fades to zero by |along| 0.70 on the legs; assets re-baked
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
