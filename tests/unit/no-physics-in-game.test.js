@@ -45,6 +45,9 @@ const ALLOWED_FUNCTIONS = {
     _removeAthleteOverlay: 'loading overlay removal in the reveal frame — renderer',
     updateSpineChain:     'walks the spine_01..03 DRIVER NODES up the torso mesh driver (OPUS item 5) — renderer (ADR-0002). It reads torso/thigh/head mesh rotations and writes transform nodes; it solves nothing, adds no state, and is a pure function of transforms the pose solver already produced.',
     _spineRestDeltas:     'caches the neutral-stance neighbour angles updateSpineChain measures deviations against, by calling the shared solver once — renderer',
+    updateJointHelpers:   'places the four hlp* HELPER DRIVER NODES at the half-angle of the hip and knee bones they sit between (OPUS item 5, reviewer approval 2026-08-30 02:40) — renderer (ADR-0002). Like updateSpineChain it reads mesh-driver transforms the pose solver already produced and writes transform nodes; it holds no state and decides nothing about the simulation.',
+    _wrapPi:              'shortest signed angle difference, so a half-angle never jumps a full turn — a two-line renderer helper for updateJointHelpers',
+    _localUp:             'local +Y of a segment under Babylon YXZ order, the frame construction updateSpineChain and the P13 anchors already use — renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
