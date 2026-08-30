@@ -5670,14 +5670,27 @@ void main(void) {
                         const gz = _tv.z * c.x + _tw.z * c.y + _tu.z * c.z;
                         const cG = Math.max(-1, Math.min(1, vx * gx + vy * gy + vz * gz));
                         const exc = Math.acos(cG);
-                        if (track && exc > R.peakExc) R.peakExc = exc;
+                        // Track the POST-clamp residual: the clamp below
+                        // removes exactly (exc − MAXEX), so recording the
+                        // pre-clamp angle double-counts overshoot the clamp
+                        // is about to fix in the same pass (measured 38.1°
+                        // vs the 38° gate — a knife edge, not a rendered
+                        // violation). The limp negative control skips the
+                        // clamp and still records the raw excursion.
+                        if (track) {
+                            const resid = R.limp ? exc : Math.min(exc, MAXEX);
+                            if (resid > R.peakExc) R.peakExc = resid;
+                        }
                         let clampAng = exc > MAXEX ? exc - MAXEX : 0;
                         let tx = gx, ty = gy, tz = gz;
                         if (c.j === 'neck') {
                             // Spine bend: head axis vs the TORSO axis.
                             const cT = Math.max(-1, Math.min(1, vx * _tu.x + vy * _tu.y + vz * _tu.z));
                             const bend = Math.acos(cT);
-                            if (track && bend > R.peakSpine) R.peakSpine = bend;
+                            if (track) {
+                                const sresid = R.limp ? bend : Math.min(bend, MAXSPINE);
+                                if (sresid > R.peakSpine) R.peakSpine = sresid;
+                            }
                             if (bend > MAXSPINE && bend - MAXSPINE > clampAng) {
                                 clampAng = bend - MAXSPINE; tx = _tu.x; ty = _tu.y; tz = _tu.z;
                             }
@@ -5870,10 +5883,12 @@ void main(void) {
             // slow landings slide proportionally less instead of always
             // pretending 15 m/s. Bands: 6 m/s floor keeps even soft crashes
             // rolling to the flat; 15 m/s ceiling = the verified iter-89
-            // behaviour (a full-charge impact measures ~26 m/s horizontal,
-            // and the 2–5 s motion envelope + roll-to-flat gates were tuned
-            // at 15).
-            const _seed = Math.min(Math.max(R.impactSpeed || 0, 6), 15);
+            // Momentum seed (reviewer entry-112 ruling): seed from the
+            // measured horizontal root speed, floor lowered 6 → 3 m/s (a
+            // soft crash genuinely rolls less; the slope model below now
+            // accelerates on the steep so a small seed still reaches the
+            // flat), 15 m/s ceiling (faster tumbles read cartoonish).
+            const _seed = Math.min(Math.max(R.impactSpeed || 0, 3), 15);
             if (R.slideV.z < _seed) {
                 R.slideV.x = 0;
                 R.slideV.z = _seed;
@@ -5882,16 +5897,15 @@ void main(void) {
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
-            // After the 1.0 s tumble the body is a near-rigid mass in its
-            // last pose that keeps moving DOWN the slope under slope
-            // gravity: a = g·(sinθ − μ·cosθ) with the game gravity g = 14
-            // and a tumbling-body friction μ ≈ 0.55 (≈ 2–3 m/s² of
-            // friction deceleration, net ≈ +3 m/s² downhill on the 40°
-            // landing), never stalling mid-slope (0.6 m/s floor while
-            // θ ≥ 10°); on the < 10° flat friction alone decelerates at
-            // μ·g ≈ 7.7 m/s² to the 0.1 m/s freeze. Total motion lands in
-            // the 2–5 s envelope and the rest point is carried well past
-            // the 60%-to-roll-out gate.
+            // Slope-aware roll (reviewer entry-112 ruling, iter 121): a
+            // tumbling body on the steep landing slope ACCELERATES —
+            // a = g·(sinθ − μ·cosθ) with the game gravity g = 14 and a
+            // suit/snow μ = 0.5, the top of the ruling's 0.35–0.5 band
+            // (θ = 35° → ≈ +2.3 m/s²); the old model decelerated there and
+            // the body crept, missing the envelope (restAt 9.1 s). Only
+            // while still on the steep (θ ≥ 10°) a 1.5 m/s floor prevents
+            // a mid-slope stall. On the < 10° flat friction alone
+            // decelerates at μ·g = 7.0 m/s² to the stop.
             // The negative control (window._crashRollDisabled, set before
             // the crash) restores the OLD iter-47 behaviour — an exponential
             // exp(-5·dt) stop ~1 s after the freeze, wherever the body is —
@@ -5903,25 +5917,39 @@ void main(void) {
                 const _dec = Math.exp(-5 * dt);
                 R.slideV.x *= _dec; R.slideV.z *= _dec;
             } else if (_onSteep) {
-                // Net friction deceleration on the landing slope ≈ 2.5 m/s²
-                // (the 12 m/s momentum seed below is the crash impact speed
-                // the PBD verlet damping under-reports; the rigid mass keeps
-                // it). 4.0 m/s floor: never stalls mid-slope.
-                const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
+                const _th = Math.atan(Math.abs(_slope));
+                const _a = Math.max(0, 14 * (Math.sin(_th) - 0.5 * Math.cos(_th)));
                 if (_vH0 > 1e-6) {
-                    const _k = Math.max(4.0, _vH0 - 3.0 * dt) / _vH0;
+                    const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
                     R.slideV.x *= _k; R.slideV.z *= _k;
                 }
             } else {
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
-                    const _k = Math.max(0, _vH0 - 7.7 * dt) / _vH0;
-                    R.slideV.x *= _k; R.slideV.z *= _k;
+                    const _k = Math.max(0, _vH0 - 0.5 * 14 * dt) / _vH0;
                 }
             }
             const _vH = Math.hypot(R.slideV.x, R.slideV.z);
             if (_vH < 0.1 || (!_onSteep && !R.noRoll && _vH < 0.6)) {
                 R.slideV.x = 0; R.slideV.z = 0;
+                // Post-stop settle (slope-aware roll, iter 121): the body
+                // reaches the flat FASTER than the old
+                // decelerate-on-the-steep creep, so more of the frozen
+                // crumple is still propped when the stop fires (measured
+                // maxAbove 0.612–0.615 m vs the 0.6 m gate). If any point
+                // is still > 0.52 m above the snow, defer to a bounded
+                // 'settling' phase (0.15 m/s lowering per frame, hard
+                // sticks relaxed so joints stay ≤ 2 cm) BEFORE rest is
+                // declared — an instant sub-step settle teleports the
+                // rendered body and trips the post-stop speed gate.
+                let _propped = 0;
+                for (const pt of R.parts) {
+                    const _gap = pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
+                    if (_gap > _propped) _propped = _gap;
+                }
+                if (!R.noRoll && _propped > 0.52) {
+                    R.phase = 'settling'; R.settleT0 = R.t; R.maxSpeed = 0;
+                } else {
                 // Zero the settle's residual joint gaps: relax the hard
                 // sticks to their rest lengths (10 Gauss-Seidel passes).
                 for (let _i = 0; _i < 10; _i++) {
@@ -5944,6 +5972,7 @@ void main(void) {
                 // the 0.1 boundary on the decay tail. The machine's speed
                 // ends at exactly 0 — the author's "exactly 0 thereafter".
                 R.maxSpeed = 0;
+                }
             } else {
                 const _dx = R.slideV.x * dt, _dz = R.slideV.z * dt;
                 const _dy = _slope * R.slideV.z * dt;
@@ -5979,6 +6008,44 @@ void main(void) {
                     b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
                 }
                 R.maxSpeed = _vH;
+            }
+        } else if (R.phase === 'settling') {
+            // Bounded post-stop settle: lower non-contacting parts at
+            // 0.15 m/s per frame (the rolling-settle rate; joint angular
+            // speed stays far under the 90°/s gate), relaxing the hard
+            // sticks so joints stay ≤ 2 cm, until every point is within
+            // 0.5 m of the snow or 2 s has elapsed — then rest.
+            let _above = 0;
+            for (const pt of R.parts) {
+                const _tY = _crashFloorY(pt.p.z) + pt.r;
+                const _gap = pt.p.y - _tY;
+                if (_gap > _above) _above = _gap;
+                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
+            }
+            for (const hp of R.hard) {
+                const a = hp.a.p, b = hp.b.p;
+                const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                const k = (l - hp.rest) / l * 0.5;
+                a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+            }
+            R.maxSpeed = 0;
+            if (_above <= 0.5 || R.t - R.settleT0 > 2) {
+                for (let _i = 0; _i < 10; _i++) {
+                    for (const hp of R.hard) {
+                        const a = hp.a.p, b = hp.b.p;
+                        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                        const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                        const k = (l - hp.rest) / l * 0.5;
+                        a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                        b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                }
+                for (const pt of R.parts) {
+                    pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                }
+                R.phase = 'stopped'; R.resting = true; R.restAt = R.t;
             }
         }
     // ── Write driver transforms (root-local, bones follow as always) ──
