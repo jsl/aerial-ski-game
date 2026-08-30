@@ -231,6 +231,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 146 | **NEXT.md step 0 (FACEDIST) LANDED — the sabotage control was UN-BUILDABLE at this tip (the later temple-arm + required-region gates aborted `BODY_SABOTAGE_FACE=1` before export; exempted under the flag), and the face-discrimination gates are no longer fatal to `figure_side.png` (deferred behind the side-shot gates); measured on the merged branch: honest FACEDIST 0.1802 PASS, sabotage 0.1784 + back lensFrac 0.1655 + front−back 0.024 → spec FAILS as required — the `≤` inversion NEXT.md asked for is measurably impossible here (it would fail the honest build) and is recorded as an open question** | honest: look 6/6, FACEDIST 0.1802, figure_side.png written; sabotage: spec fails exactly on the two lens gates, figure_side.png STILL written (the point of the rework); unit 81/81, golden 30/30, rig 13/13; ASSET_V 64→65, `game.js?v=65`, preloads `?v=65`. See entry 146. |
 | — | Iteration 145 | **P0 corridor grey slab FIXED — corridor unbaked (game.js skips `terrainCorridor` in `applyBakedLighting`; the 138/142 baked multipliers were the in-run slab); grey-attr y-flip corrected (141/142 closed the ramp on MIRRORED numbers); corridor gate rebased on the corrected instrument** | negative control (baked 4992619, inrun framing): 0.7613/0.8155 = 0.933 — FAILS the 0.95 gate; fixed build: 0.7869/0.816 = 0.964 — PASSES; scene framing canary 0.6573/0.8337 (mean there cannot discriminate — pre-138 good build measures 0.787; see entry); by eye inrun.png is white again, matching `before_138`. unit 81/81, golden 30/30 (audit 0 diffs × 30/5408), look 6/6. See entry 145. |
 | — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
 | — | Iteration 144 | **Iter-143's crashed understory tree LANDED and finished — 7th baked variant (`tree_under_card_6.png`, own 4.0 m bake frame), clustered bush planting hugging the corridor fence line, ASSET_V 58; shrub rebalanced after by-eye (14 stems, fork depth 3, browner bark 0.28/0.21/0.15 with snow from n·z 0.35, interior uprights halved — the first bake read as sparse white sticks)** | unit 81/81; golden 30/30 (census-only re-capture from 143, `audit-physics-state.js` **0 physics-state diffs × 30 scenarios / 5408 frames, 0 display-node diffs**); trees.spec 1/1 (7 variant meshes, 7 draw calls, bush gates: mound, lower-half mass, sky-top, bark red>green); look 6/6, shots regenerated; bush card inspected by eye — low bare mound, correct; scene.png shows dark shrubs along both fence lines. See entry 144. |
@@ -1412,6 +1413,90 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 146 — NEXT.md step 0: the FACEDIST face gates made honest-passing /
+sabotage-failing and non-fatal to `figure_side.png`; the negative control
+itself was un-buildable at this tip and is repaired
+
+**Scope:** `docs/NEXT.md` step 0 ONLY (the suit-shell steps 1–3 remain the
+task; NEXT.md kept). Athlete-file ban lifted exactly under NEXT.md. Files
+touched: `blender/build_body.py` (gate exemptions under `BODY_SABOTAGE_FACE`
+only), `tests/drive/look.spec.js`, `game.js` (ASSET_V comment+bump only),
+`index.html` (cache-bust only), assets re-baked. No `engine/`, no DoF block,
+no scene additions.
+
+**Finding 1 — the sabotage control could not run at all on this branch.**
+`BODY_SABOTAGE_FACE=1` wraps the goggle lens round the full circumference;
+the later "temple ARM" work (author 21:55) classifies those same verts as
+temple, so the build hit TWO hard aborts before export: the face gate
+(`temple arms 0/0 verts`, `push −1.00 mm`) and the required-paint-regions
+check (`['temple'] matched no vertices`). The control has been dead since
+the temple arms landed. Fix: both sites exempt their checks under
+`SABOTAGE_FACE` (the wrap deliberately IS the strap look the control
+reproduces); honest builds gate unchanged. Honest rebuild after the edit:
+`athlete_albedo.webp` / `athlete_ao.webp` byte-identical, glb/maps/normal
+re-written (re-bake), ASSET_V 64 → 65, `game.js?v=65`, asset preloads
+`?v=65`.
+
+**Finding 2 — the recorded FACEDIST numbers do not hold on the merged
+branch, and the requested inversion is measurably impossible here.** NEXT.md
+cites Opus-worktree numbers: honest 0.1411 FAIL vs sabotage 0.1719 PASS, so
+"fix the comparison direction". On THIS branch (merged Opus 27–32 unwrap/
+stripe assets, res 2048 samples 96 rebuilds): honest **0.1802** (the existing
+`≥ 0.15` gate PASSES; look 6/6), sabotage **0.1784**. A `≤` gate calibrated
+to pass 0.1802 must also pass 0.1784. The mechanism: the control flips
+`faceForward` by 180° AND wraps the lens, so the spec's "front" and "back"
+cameras swap roles and the front/back pair stays structurally different —
+FACEDIST cannot see this control. The gates that DO discriminate (and always
+have) are the lens-fraction gates: sabotage measures back lensFrac
+**0.1655** (gate < 0.06) and front−back **0.024** (gate > 0.04) → spec
+FAILS, exactly as the control requires. I kept the `≥ 0.15` direction (its
+rationale "a head with no front converges the pair" is sound) rather than
+shipping a gate that fails the honest build, and documented this in the spec
+comment.
+
+**Finding 3 — non-fatality (the actual figure-shot bug), fixed.** The face
+block ran BEFORE `figure_side.png` and any gate failure aborted the spec
+before the side shot was written (the "abort also stops figure_side.png"
+symptom). The block's six expects (primitive split, ndc z, matte maskFrac ×
+2, lensFrac front/back, lens difference, FACEDIST) are now recorded into
+`faceGateFails` and thrown from ONE expect placed immediately AFTER
+`figure_side.png` is written and its own span/skin gates pass. Hard-gate
+semantics preserved; ordering fixed.
+
+**Proof (both builds re-baked and run this session):**
+- Honest build: `look` **6/6 passed**, FACEDIST **0.1802**, `figure_side.png`
+  on disk (SIDESIL span 0.775, skin 0.0067).
+- Sabotage build (`BODY_SABOTAGE_FACE=1`): spec **FAILS with exactly the two
+  lens-gate messages** (back lensFrac 0.1655; front−back 0.1896 vs 0.1655)
+  AND `figure_side.png` is STILL written (SIDESIL span 0.728, skin 0.0068) —
+  the non-fatality works under a real failing control.
+- Honest build restored and re-baked after the control run; assets in the
+  commit are the HONEST bake (albedo/AO byte-identical to HEAD).
+
+**Verification:** `npm run test:unit` **81/81**; `npm run test:golden`
+**30/30** (no re-capture — no physics/display-census change; audit inside
+the golden run clean); `rig.spec` **13/13** (athlete rebuild sanity);
+`look` **6/6** × 2 (honest before/after the sabotage round-trip). Note: the
+pre-existing `expect ... ndcZ/lensFrac` comment block was rewritten as
+`faceGate(...)` calls — same thresholds (0.02 / 0 / 0.02 / 0.06 / 0.06 /
+0.04 / 0.15), no recalibration.
+
+**Open / for 147+:** NEXT.md steps 1–3 (knee-band collapse fix
+`spine.spec` kneeMax 32.5 vs KNEE_MAX 8.0, bisected to `bb125ee`; then the
+#12 shell gates; then stripe verification).
+
+**Open questions for the reviewer:** (1) FACEDIST direction — confirm you
+accept keeping `dist ≥ 0.15` on the strength of the merged-branch
+measurements above (honest 0.1802 / sabotage 0.1784), with the lens gates
+carrying the discrimination; if you want FACEDIST itself to gate the
+control, the control must stop flipping `faceForward` (flip-only would let
+dist converge) — that changes what the control simulates, so I did not
+choose it unilaterally. (2) The temple/required-region exemptions are active
+ONLY under `BODY_SABOTAGE_FACE=1`; honest gates are byte-for-byte the old
+conditions. (3) The Opus-session numbers in NEXT.md (0.1411/0.1719) should
+be treated as superseded by this entry's merged-branch numbers.
+
 
 ### 145 — P0 corridor grey slab: corridor unbaked + grey-attr instrument y-flip corrected; the ramp gate rebased on honest numbers
 

@@ -3587,13 +3587,18 @@ def face_helmet_gate(low, lm):
         bad.append(f'shield bottom {band_lo:.3f}h is not clear of the nose '
                    f'tip {nose_tip_h:.3f}h by 0.010h — the glasses sit on '
                    f'the nose (author 21:55: no lens or frame below the tip)')
-    if tL < 10 or tR < 10:
+    # BODY_SABOTAGE_FACE=1 (negative control for the LOOK gates) wraps the
+    # lens band round the full circumference, which reclassifies the temple
+    # verts as lens — the wrap deliberately IS the pre-arm strap look. These
+    # two entries would abort the control build before export, so they only
+    # gate honest builds.
+    if not SABOTAGE_FACE and (tL < 10 or tR < 10):
         bad.append(f'temple arms {tL}/{tR} verts per side (need >=10 each) — '
                    f'the sport glasses have no arms')
-    if rear:
+    if not SABOTAGE_FACE and rear:
         bad.append(f'{rear} temple verts behind 2.75 rad — the arm closes '
                    f'round the back of the head, i.e. it is a strap again')
-    if tpush_mm < 1.5:
+    if not SABOTAGE_FACE and tpush_mm < 1.5:
         bad.append(f'temple arm realised push {tpush_mm:.2f} mm < 1.5 '
                    f'(negative control BODY_SABOTAGE_GOGGLES=1 reads 0.00)')
     if not lens_z:
@@ -7732,8 +7737,11 @@ def paint_suit(obj, lm):
     # The three parts that replaced it are required in its place, so the
     # sport glasses cannot silently lose an arm or the brow bar either.
     required = ['suit', 'helmet', 'face', 'goggle', 'nostril',
-                'browbar', 'bridge', 'temple', 'waist', 'bib', 'number',
+                'browbar', 'bridge', 'waist', 'bib', 'number',
                 ] + ([] if SABOTAGE_BIBBANDS else ['bibwaist']) + [
+                # BODY_SABOTAGE_FACE=1 wraps the lens over the temple band,
+                # so no vertex can classify as temple in that build.
+                ] + ([] if SABOTAGE_FACE else ['temple']) + [
                 'stripe', 'glove',
                 'lip', 'noshade']
     if not SABOTAGE_BOOT:

@@ -2385,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=64';   // 64: merge — GLM 139-145 (P0 corridor unbake) + fable/peaks + Opus 27-32 (bindings, bib garment, unwrap, arm stripe ships)
+    const ASSET_V = '?v=65';   // 65: athlete rebuild after build_body sabotage-control gate exemptions (iter 146) — assets re-baked, geometry unchanged
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what

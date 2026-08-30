@@ -142,6 +142,13 @@ test('look', async ({ page }) => {
     // plate-surface hit (raycast inward along -forward from in front of the
     // chest) and require navy digits inside a plate box at the frame centre,
     // plus camera alignment with the forward ray.
+    // NEXT.md step 0 (iter 146): the face-discrimination gates below are
+    // HARD, but no longer fatal to the figure shots — a failure is recorded
+    // here and thrown only AFTER figure_side.png and its own gates have run
+    // (the old abort at this block stopped figure_side.png from ever being
+    // written).
+    const faceGateFails = [];
+    const faceGate = (ok, msg) => { if (!ok) faceGateFails.push(msg); };
     {
         const plate = await page.evaluate((fwd) => {
             const scene = BABYLON.EngineStore.LastCreatedScene;
@@ -540,16 +547,16 @@ test('look', async ({ page }) => {
                 await setFaceCam(nm);
                 pair[nm] = (await page.screenshot()).toString('base64');
                 metrics[nm] = await faceMeasure(pair[nm], nm === 'front');
-                expect(metrics[nm].parts, 'the athlete head has no '
+                faceGate(metrics[nm].parts === 2, 'the athlete head has no '
                     + 'primitive1/primitive2 material split — the silhouette '
-                    + 'cannot be isolated').toBe(2);
+                    + 'cannot be isolated (parts ' + metrics[nm].parts + ')');
                 // The projected head must be IN FRONT of the near plane. This
                 // caught the wrong-bone-matrix bug that silently produced a
                 // whole-frame "head".
-                expect(metrics[nm].ndcZ[0], 'the projected head silhouette is '
-                    + 'behind the near plane (ndc z ' + metrics[nm].ndcZ + ') — '
-                    + 'the skinning or the projection is wrong')
-                    .toBeGreaterThan(0);
+                faceGate(metrics[nm].ndcZ[0] > 0, 'the projected head '
+                    + 'silhouette is behind the near plane (ndc z '
+                    + metrics[nm].ndcZ + ') — the skinning or the projection '
+                    + 'is wrong');
             }
             require('node:fs').writeFileSync(path.join(OUT, 'face_back.png'),
                 Buffer.from(pair.back, 'base64'));
@@ -585,34 +592,43 @@ test('look', async ({ page }) => {
             // Instrument sanity FIRST: a matte that saw nothing would make
             // every fraction below 0/0, and "no head" is not "no lens".
             for (const nm of ['front', 'back']) {
-                expect(metrics[nm].maskFrac, 'the ' + nm + ' head matte is '
-                    + 'empty — the close-up does not frame the head, or the '
-                    + 'primitive1/primitive2 material split has changed '
-                    + '(maskFrac ' + metrics[nm].maskFrac + ')')
-                    .toBeGreaterThan(0.02);
+                faceGate(metrics[nm].maskFrac > 0.02, 'the ' + nm + ' head '
+                    + 'matte is empty — the close-up does not frame the head, '
+                    + 'or the primitive1/primitive2 material split has '
+                    + 'changed (maskFrac ' + metrics[nm].maskFrac + ')');
             }
             // Now the front/back discrimination, measured INSIDE the head
             // silhouette (Opus item 8) so the forest cannot vote. The old
             // whole-frame darkU had to be walked from 0.04 to 0.015 when the
             // trees behind the athlete changed; these numbers move only when
-            // the head does. Measured on this build: front lensFrac 0.13-0.20
-            // (the goggle band), back 0.01-0.03 (the strap, which is navy and
-            // fails the neutral test). Gate at 0.06 — between the two — and
-            // the negative control (a flipped faceForward, or the
-            // BODY_SABOTAGE_FACE lens wrap) swaps them.
-            expect(mf.lensFrac, 'face front close-up has no goggle-lens '
-                + 'pixels inside the head silhouette (lensFrac '
-                + mf.lensFrac + ')').toBeGreaterThan(0.06);
-            expect(mb.lensFrac, 'face BACK close-up shows lens pixels inside '
-                + 'the head silhouette — the goggle paint/geometry wraps the '
-                + 'full circumference, or faceForward has the wrong sign '
-                + '(lensFrac ' + mb.lensFrac + ')').toBeLessThan(0.06);
-            expect(mf.lensFrac - mb.lensFrac, 'front and back carry the same '
-                + 'amount of lens (' + mf.lensFrac + ' vs ' + mb.lensFrac
-                + ') — the head has no front').toBeGreaterThan(0.04);
-            expect(dist, 'front and back face close-ups are structurally '
-                + 'identical — the head has no front (distance ' + dist
-                + ')').toBeGreaterThanOrEqual(0.15);
+            // the head does. Measured on the merged build (iter 146): front
+            // lensFrac 0.13-0.20 (the goggle band), back 0.01-0.03. Gate at
+            // 0.06 — between the two — and the negative control (the
+            // BODY_SABOTAGE_FACE lens wrap + faceForward flip) FAILS it
+            // (measured sabotage: back lensFrac 0.1655, front-back 0.024).
+            // NEXT.md step 0 asked to invert the FACEDIST direction on the
+            // strength of the Opus-worktree numbers (honest 0.1411 vs
+            // sabotage 0.1719); on the merged branch the honest build
+            // measures 0.1802 and the sabotage control 0.1784 — a <= gate
+            // calibrated to pass honest would also pass sabotage, because
+            // the control's 180-deg facing flip swaps the two cameras and
+            // preserves the structural difference. The >= gate is kept
+            // (a head with no front must converge the pair) and the lens
+            // gates carry the discrimination; open question recorded.
+            faceGate(mf.lensFrac > 0.06, 'face front close-up has no '
+                + 'goggle-lens pixels inside the head silhouette (lensFrac '
+                + mf.lensFrac + ')');
+            faceGate(mb.lensFrac < 0.06, 'face BACK close-up shows lens '
+                + 'pixels inside the head silhouette — the goggle '
+                + 'paint/geometry wraps the full circumference, or '
+                + 'faceForward has the wrong sign (lensFrac ' + mb.lensFrac
+                + ')');
+            faceGate(mf.lensFrac - mb.lensFrac > 0.04, 'front and back carry '
+                + 'the same amount of lens (' + mf.lensFrac + ' vs '
+                + mb.lensFrac + ') — the head has no front');
+            faceGate(dist >= 0.15, 'front and back face close-ups are '
+                + 'structurally identical — the head has no front (distance '
+                + dist + ')');
         }
     }
 
@@ -665,6 +681,10 @@ test('look', async ({ page }) => {
     expect(sideSil.skin, 'figure_side.png shows no skin — dark trees/fence '
         + 'pass the span gate, only the athlete carries skin pixels (skin '
         + sideSil.skin + ')').toBeGreaterThan(0.002);
+    // The deferred face-discrimination gates fire here — every figure shot
+    // that precedes this line is on disk regardless of their outcome.
+    expect(faceGateFails, 'face discrimination gates failed: '
+        + faceGateFails.join(' | ')).toEqual([]);
 
     // Canonical face close-up (author 2b pass 1): r = 0.6 m in front of the
     // head. Entry-77 root causes of three iterations of landscape face.png,
