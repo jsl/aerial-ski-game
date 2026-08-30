@@ -221,6 +221,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 137 | **Tree-shadow smudge root-caused + lightmap bake GROUNDWORK: `bake_lightmap.py` gains `add_tree_occluders` (`blender/trees.json` = the game's 152 thin-instance trees dumped from the running page, baked as per-variant alpha-cutout crossed cards so tree shadows get crown structure and dappled penumbra); the full rewire is BLOCKED this iteration and recorded as a proposal** | unit 81/81; golden **30/30** (verify.js the last command before this commit — no game-side change, nothing to re-capture); findings: baked lighting `applied: 0` (the 08-25 sidecar's mesh names/vertex counts match no current mesh), corridor uv2 has 2204 per-vertex conflicts, the flank "dirt smudges" are the solid `treeShadowProxy` cone wedges — the ONLY tree shadowing actually live. See entry 137. |
 | — | Iteration 136 | **Reviewer-135 leftover LANDED — sky shader restored (declared `float f` for the cloud fbm + the `sunDir` uniform `main()` already used; it had failed GLSL compilation); terrain.json float jitter reverted. Then entry-134 open item 1 — strata-mode `forestEdge` 0.42→0.20, so the mid/far ridge crests (v ≈ 0.42–0.5) leave the forest band and read rock/snow; near ridge untouched; `textures.js?v=23`** | unit 81/81; golden **30/30** (verify.js the last command before this commit, display-only); ridges3d 5/5; look 4/4; scene.png upper-55% green-dominant pixel fraction **0.00041** (was clearly visible crest caps in 134's by-eye); sky bands 0–15% b−r **+36**, 15–30% **+22** — blue sky reads above the ridgelines again. See entry 136. |
 | — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
 | — | Iteration 134 | **Entry-133 blotch fix — `makeRidgeSurface` gains a STRATA mode (band-edge jitter 0.12→0.04, snow-band outcrop contrast 3.6→1.6, rock-fracture dark mix 0.9→0.45, near-horizontal sediment strata ±0.22 keyed on elevation, bump strength 2.2); peaks AND mid/far ridge materials now use it (near ridge keeps the full-detail forest map)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, mask 0.053, mean 0.677 / std 0.0846 vs 0.05 floor; ridge-only contrast + fogged control still discriminate); look 4/4; scene.png bands 0.663/0.616/0.778; by-eye: mid/far ridge faces read as layered strata, blotches gone. See entry 134. |
@@ -8006,6 +8007,82 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+
+### 137 — tree-shadow "dirt smudges" root-caused (live cone wedges; the baked
+lightmap is dead) + `bake_lightmap.py` tree-occluder groundwork
+
+**Order acted on:** the Seventh-Opus-merge order for 129–145, item (c)
+remainder — review-125 scene note: "dark under-canopy shadow streaks on the
+flank read as dirt smudges rather than tree shadows". Items (a) Snowing and
+the B-net half of (c) already landed (129/131 and 133). No `docs/NEXT.md`.
+
+**Investigation (measured, not guessed):**
+- `scene.png` by eye: the left-flank streaks are long, uniform, featureless
+  grey wedges detached from any crown shape, and the near trees show no
+  contact shadow at their bases.
+- Root cause: every tree shadows through ONE solid 6-sided cone per tree
+  (`treeShadowProxy`, `game.js` ~4330 — a SwiftShader frame-time stand-in for
+  alpha-tested cards in the CSM depth pass, tools/scratch-tree-cost.js: 40 ms
+  with cards vs 109.6→149.9 ms splice test). A cone's shadow at the ~32° sun
+  IS a featureless wedge — the smudge read is the mechanism, not the tuning.
+- The static bake cannot currently take over: in a live page
+  `window._bakedApplied` is **0** — the 08-25 `terrain_uv2.json` names/vertex
+  counts (wInrun/wTable/… 28-mesh era) match no current mesh, so no snow mesh
+  receives `terrain_shadow.png` at all. And a fresh bake attempt fails at
+  `check_uv_consistency`: `terrainCorridor` now shares vertices across faces
+  (smoothed normals) = **2204 per-vertex UV conflicts**, so the sidecar cannot
+  represent it. `terrainSkirt`/`terrainBase` (vertical closure walls, new
+  since the bake) also fail the old receiver assert.
+
+**Landed (bake groundwork, no game-side change — nothing rendered differs):**
+- `blender/bake_lightmap.py`: `add_tree_occluders()` (`--trees`, default
+  `blender/trees.json`) adds the forest as alpha-cutout crossed-card
+  occluders — per-variant materials using the shipped `tree_*_card_*.png`
+  alpha, Transparent→Principled mix, so Cycles path-traces crown-shaped,
+  dappled tree shadows. 152 trees / 304 quads verified built in-session
+  (per-variant log lines: 17/18/15/16/45/41). Also: open occluders
+  (terrainSkirt/Base, ridges) no longer trip the receiver sky-facing assert;
+  the atlas/bake passes themselves are unchanged.
+- `blender/trees.json`: the per-variant thin-instance world matrices dumped
+  from the RUNNING game (scratch Playwright probe, since deleted) —
+  x −58.0..57.3, y −32.8..6.8, z −47.0..165.2, s 0.70..1.39; mix
+  60% birch (45+41) / 40% spruce (17+18+15+16), matching the game's grid.
+
+**Blocked this iteration (why the full fix did not land):** the pipeline
+needs (1) `terrainCorridor`'s vertices unshared in `game.js` (duplicate
+per-triangle, copy normals — shading unchanged, uv2 representable), (2) a
+re-extract (`extract-terrain.spec.js`) — which numerically churns
+`terrain.json` (revert precedent `3034882`), and (3) a rebake + proxy
+unhooking + `shadows.spec`/`baked.spec` gate rewrites (both currently demand
+`treeShadowProxy` casting > 50). Too many unknowns (bake runtime, extraction
+churn) for the remaining session budget; groundwork + proposal instead of an
+unverified half-rewire.
+
+**Verification:** unit **81/81**; golden **30/30** (`node
+tests/golden/verify.js` the LAST command before this commit — game.js,
+assets and display nodes untouched, no re-capture). Bake script:
+`ast.parse` clean; executed end-to-end up to the pre-existing uv-conflict
+failure (which now reports instead of the old silent-staleness) with the
+tree occluders confirmed in-scene by log. Scratch dir removed; temp server
+stopped.
+
+**No changes:** `engine/`, `assets/`, ASSET_V, `game.js`, athlete-lane files,
+DoF block, nothing added to the scene.
+
+**Open questions for the reviewer:**
+1. Approve the rewire sequence for 138: unshare `terrainCorridor` vertices in
+   `game.js` (normals copied → shading identical; vertex count grows ~3×,
+   display-census untouched) → re-extract `terrain.json` (accepting the float
+   churn, or pin the extractor to emit stable rounding — your call) → rebake
+   with the new tree occluders → remove `treeShadowProxy` from the CSM caster
+   list (mesh stays; census intact) → rewrite the two caster-count gates to
+   assert trees are NOT live casters anymore. ASSET_V bump rides the bake.
+2. Should `terrainSkirt`/`terrainBase` (vertical closure walls) ever receive
+   the lightmap, or stay occluder-only as implemented?
+3. The near trees' missing BASE contact shadow will also come from the bake
+   (trunk-level occlusion), not from the cones — confirm that is the wanted
+   mechanism.
 
 
 ### 136 — reviewer-135 leftover: sky shader compile fix landed; mid-ridge
