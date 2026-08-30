@@ -943,7 +943,30 @@ lower-back 705) at the same 40% floor.
             12.7 mm, width 41.7 mm), boot paint, sliver, goggle band, dome
             seating 0.4 mm, leg taper, bib number, suit NM variance 6.43,
             atlas share, weight seam
+    unit    PASS
+    golden  PASS, no re-capture, no physics change
+    browser 36/36
+    mutation + coverage  PASS
+    drive   38/38 on the athlete set (rig, body, bib-number, athlete,
+            ready-stance, spine, chain) + look 3/3 + pose-shots 1/1.
+            NOT the whole suite: 111 tests at ~17 s each on one worker is over
+            two hours, and this change cannot reach the rest — `git diff` shows
+            assets/athlete_body.glb BYTE-IDENTICAL, so the geometry, the
+            skinning and the physics are untouched and only the three baked
+            maps moved. crash-ragdoll is skipped deliberately per the 21:30
+            ruling (c): it is the GLM lane's.
     wire    998 682 B total (budget 2.5 MB)
+    shots   figure_side.png shows crease banding at the knee, above the elbow
+            and across the lumbar flank where the last build was flat white.
+            The same shot shows the author's HUMAN TESTING #7 defect plainly —
+            shoulder, chest and lat contours read as anatomy through the suit.
+
+**Operational note, again:** port 8399 was held by a stale `python3 -m
+http.server` from a previous run and Playwright refuses to start over it
+(`Address already in use` — the whole suite errors out). It is always this
+worktree's own; kill the pid first. `tests/run-all.sh` ALSO ignores DRIVE_PORT
+unless you export it, and defaults to 8099, which the brief forbids — run it as
+`DRIVE_PORT=8399 ./tests/run-all.sh`.
 
 `ASSET_V` 43 → 44, `index.html` `game.js?v=` 37 → 38, preload hrefs `?v=44`.
 
