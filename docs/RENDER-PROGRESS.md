@@ -224,6 +224,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
 | — | Iteration 137 | **Tree-shadow smudge root-caused + lightmap bake GROUNDWORK: `bake_lightmap.py` gains `add_tree_occluders` (`blender/trees.json` = the game's 152 thin-instance trees dumped from the running page, baked as per-variant alpha-cutout crossed cards so tree shadows get crown structure and dappled penumbra); the full rewire is BLOCKED this iteration and recorded as a proposal** | unit 81/81; golden **30/30** (verify.js the last command before this commit — no game-side change, nothing to re-capture); findings: baked lighting `applied: 0` (the 08-25 sidecar's mesh names/vertex counts match no current mesh), corridor uv2 has 2204 per-vertex conflicts, the flank "dirt smudges" are the solid `treeShadowProxy` cone wedges — the ONLY tree shadowing actually live. See entry 137. |
 | — | Iteration 140 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6, shots inspected + measured. Top finding: a hard black diagonal band crosses the landing in scene.png (mid-band 2.67% of pixels lum<60, p5=80 vs p50=213) — the tree-shadow cone-wedge defect is still live at the tip; corridor still ~10% darker than flank snow (194 vs 215); background peaks read at 0.98× sky luminance (glassy). No code change; defects recorded in entry 140** | run-all drive-through phase timed out at 30 min under SwiftShader contention (unit/golden/mutation/coverage had already passed inside it); re-verified unit + golden + look solo. See entry 140. |
 | — | Iteration 136 | **Reviewer-135 leftover LANDED — sky shader restored (declared `float f` for the cloud fbm + the `sunDir` uniform `main()` already used; it had failed GLSL compilation); terrain.json float jitter reverted. Then entry-134 open item 1 — strata-mode `forestEdge` 0.42→0.20, so the mid/far ridge crests (v ≈ 0.42–0.5) leave the forest band and read rock/snow; near ridge untouched; `textures.js?v=23`** | unit 81/81; golden **30/30** (verify.js the last command before this commit, display-only); ridges3d 5/5; look 4/4; scene.png upper-55% green-dominant pixel fraction **0.00041** (was clearly visible crest caps in 134's by-eye); sky bands 0–15% b−r **+36**, 15–30% **+22** — blue sky reads above the ridgelines again. See entry 136. |
@@ -8012,6 +8013,73 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 142 — iteration-141's crashed tree LANDED: b-net strips off the CSM,
+terrainBase disc normal flipped, dark-pixel budget root-caused as legitimate
+content; grey-attr instrument landed with a corrected gate
+
+**Scope:** recovery of iteration 141's UNCOMMITTED work (no entry 141
+exists; the session was killed before verify/commit): (1) `terrainBase`
+disc `rotation.x` +π/2 → −π/2 (CreateDisc faces +Z, so +π/2 pointed the
+normal DOWN — shaded as if lit from below); (2) the alpha-cut B-net STRIPS
+removed from the CSM caster list (the shadow depth pass rendered them as
+OPAQUE solids — tile alpha is not honoured there — one solid band the width
+of the landing; posts still cast); (3) `venue-dressing.spec.js`'s
+near-side-strip gate re-aimed: the old look.spec grazing framing no longer
+SEES the near-left strip (the P1 berm/kicker occludes it; the old passes
+were diffing the strip's opaque CSM shadow band), so the gate now aims a
+dedicated face-on camera at a mid-run left-side sample, with a full-cull
+control (`alphaCutOff = 1.001`) replacing the mip-averaging 0.5 control;
+(4) new `tests/drive/grey-attr.spec.js` — ray-classified corridor-vs-flank
+luminance + near-black pixel attribution at the scene framing.
+`game.js?v=53 → 54`. One-off probes moved to scratch, not committed.
+
+**Root-cause finding (this session, probe-measured):** the strips-off-CSM
+fix is CORRECT but was never the dark budget's owner. On the fixed build:
+darkFrac **2.36–2.86%** with attribution IDENTICAL to the pre-fix control
+(terrainBase ~287–305, corridor ~222–289, strip_R 83–150, strip_L 37–53).
+Toggles: hiding the strips → strip picks vanish, corridor dark RISES
+(222→278: the pixels under the strips are dark anyway); hiding the disc →
+terrainBase picks vanish but "none" (sky) rises 247→527 — the region is
+dark either way; **clearing the shadow render list entirely moved darkFrac
+0.0236 → 0.0235** — the CSM is not in the budget at all. The near-black
+content is: the ridges' SHADED FLANKS (rays through the UNPICKABLE ridge
+meshes fall through to terrainBase/sky, so "terrainBase 287 / none 247"
+are FALSE attributions), the bare birch branchwork, and the fence's
+contact shadow. Entry-140's "hard black band crosses the landing" does not
+survive: `scene.png` regenerated this session shows bright landing snow
+with only the fence's soft contact shadow.
+
+**Instrument correction (grey-attr gate):** the drafted `darkFrac < 0.01`
+gate failed at 2.86% — it was gating legitimate scene content (above).
+Replaced with: (a) a STRUCTURAL assert that no `bnetStrip*` mesh is in any
+shadow render list (the actual fix's contract); (b) darkFrac < 0.035 kept
+as a content-bounded regression canary with the control spread quoted.
+Grey-ramp gate unchanged and PASSING: corridor **0.6783** vs flank
+**0.5873** (nCor 14124 / nFlank 7148) — the run is the BRIGHTER surface;
+entry-140's "corridor 194 vs flank 215" grey-ramp finding is closed.
+
+**Verification:** unit **81/81**; golden **30/30** — traces re-captured by
+141, `audit-physics-state.js`: **0 physics-state diffs × 30 scenarios /
+5408 frames, 0 display-node diffs** (precedent iters 109/116/121);
+`verify.js` **30/30** as the last command before this commit;
+grey-attr **1/1**; venue-dressing **2/2**; `look` **6/6**, shots
+regenerated. `scene.png` by eye: bright continuous corridor, B-net both
+edges, athlete framed with a soft contact shadow, landing snow clean — no
+hard band. Remaining scene defects: the upper-left ridge's dark grey
+shaded flank band (reviewer's peaks/ridge lane) and bare birch
+branchwork (P4 forest read).
+
+**No changes:** `engine/`, `assets/`, ASSET_V (no regeneration), athlete
+files, DoF block, nothing added to the scene.
+
+**Open questions for the reviewer:** (1) confirm the grey-attr gate swap
+(structural no-strip-caster assert + 0.035 canary) in place of the
+miscalibrated < 1% luminance gate; (2) confirm landing 141's crashed tree
+rather than reverting (precedent: iters 124/125, 135 rules); (3) the
+ridge-flank dark band in `scene.png` upper-left is the largest remaining
+dark area — peaks/ridge materials are the reviewer's lane; flag if you
+want it re-examined here.
 
 ### 140 — REVIEW-ONLY: suite verified, shots inspected + measured; the tree-shadow
 black band is still the worst scene defect at the tip

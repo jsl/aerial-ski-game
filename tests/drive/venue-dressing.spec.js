@@ -320,8 +320,34 @@ test('venue dressing: near-side net strip draws at the grazing scene view (revie
         const engine = scene.getEngine();
         const cam = scene.activeCamera;
         engine.stopRenderLoop();
-        cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;   // look.spec scene framing
+        // Iter-141: the old look.spec scene framing no longer SEES the
+        // near-left strip — the P1 berm/kicker geometry now occludes it from
+        // that viewpoint (measured: hiding the strip diffed 30 px of 12 556
+        // in its projected bbox, at every alphaCutOff 0.3/0.15/0.05/0.01).
+        // The gate's pre-141 passes at that framing were an artefact: the
+        // diff signal was the strip's OPAQUE CSM shadow band (removed this
+        // iteration), not the net. Aim a dedicated camera at the seated
+        // fence instead: 6 m into the corridor from a mid-run sample,
+        // looking at the net face-on — the review-125 question ("does the
+        // near-side strip actually draw?") answered directly.
+        const dbg = window._bnetDebug;
+        // samples is a flat array over both sides (entries carry x); the
+        // mid entry of the LEFT side (x < 0) is a seated fence midpoint.
+        const left = (dbg && dbg.samples || []).filter((s) => s.x < 0);
+        const smp = left.length ? left[Math.floor(left.length / 2)] : null;
         const stripL = scene.getMeshByName('bnetStrip_L');
+        if (smp && smp.x !== undefined) {
+            const t = new BABYLON.Vector3(smp.x, smp.yBot + 0.6, smp.z);
+            cam.setTarget(t);
+            const pos = new BABYLON.Vector3(smp.x - (smp.x > 0 ? 6 : -6), smp.yBot + 1.6, smp.z);
+            cam.position.copyFrom(pos);
+            const off = pos.subtract(cam.target);
+            const r = off.length();
+            cam.alpha = Math.atan2(off.z, off.x);
+            cam.beta = Math.acos(Math.max(-1, Math.min(1, off.y / r)));
+            cam.radius = r;
+            cam.minZ = 0.05;
+        }
         const grab = async () => {
             scene.render(); scene.render();
             return engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
@@ -344,15 +370,16 @@ test('venue dressing: near-side net strip draws at the grazing scene view (revie
         const visible = await diffFrac();
         const mat = stripL.material;
         const saved = mat.alphaCutOff;
-        mat.alphaCutOff = 0.5;              // the pre-fix value
+        // Iter-141: the old pre-fix-value 0.5 control only culled at the old
+        // grazing framing (mip-averaged alpha below 0.5); face-on at 6 m the
+        // tile draws at 0.5 too (measured mask 0.0746). A full-cull control
+        // proves the instrument detects culling at ANY framing.
+        mat.alphaCutOff = 1.001;
         const culled = await diffFrac();
         mat.alphaCutOff = saved;
         return { visible, culled };
     });
-    // Measured 2026-08-30 (swiftshader, scene framing): cutoff 0.3 mask
-    // 0.0151, 0.4 → 0.0092, pre-fix 0.5 → 0.0039 (monotone in the mip
-    // averaging). Gates sit between with ≥ 2x discrimination each way.
-    expect(r.culled, `cutoff-0.5 control still drew mask ${r.culled}`)
+    expect(r.culled, `cutoff-1.001 control still drew mask ${r.culled}`)
         .toBeLessThan(0.007);
     expect(r.visible, `net strip mask ${r.visible} at the grazing view`)
         .toBeGreaterThan(Math.max(0.012, r.culled * 2));
