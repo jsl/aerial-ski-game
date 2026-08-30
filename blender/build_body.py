@@ -6029,23 +6029,54 @@ def shell_report(body, shell):
     # REVIEWER RULING (2026-08-30, NEXT.md step 2): thigh_depth re-derived on
     # the GARMENT shell — the shell's own verts at mid-thigh, not the skin
     # cluster. The 0.90 gate is enforced in suit_shell_gate.
+    # REVIEWER RULING (2026-08-30 16:15, instrument fix): the ±2 cm band read
+    # n=16 and over-read the ratio (1.468); the plausible reading is near 1.0.
+    # Widening a single-thigh band alone caps out at n=84 around mid-thigh, and
+    # a band EXTENT spans the thigh's taper toward the knee, which inflates the
+    # depth term — so the instrument now pools BOTH thighs (the property is
+    # symmetric) until n >= 100 and computes depth/breadth per 2 cm rung,
+    # reporting the median rung ratio per thigh (mean of the two sides).
     _own = dominant_segments(body)
-    _zd = bl('upperLegL').z
-    _pts = [(v.co.x, v.co.y) for v in body.data.vertices
-            if abs(v.co.z - _zd) < 0.02 and _own[v.index] == 'upperLegL'
-            and v.index in shell['cand']]
-    if len(_pts) >= 6:
-        _xs = [p[0] for p in _pts]
-        _ys = [p[1] for p in _pts]
-        r['thigh_depth'] = ((max(_ys) - min(_ys))
-                            / max(1e-6, max(_xs) - min(_xs)))
+    _rung_ratio = {}
+    for _side in ('upperLegL', 'upperLegR'):
+        _zd = bl(_side).z
+        _band = 0.02
+        while _band < 0.12:
+            _pts = [(v.co.x, v.co.y, v.co.z) for v in body.data.vertices
+                    if abs(v.co.z - _zd) < _band
+                    and _own[v.index] == _side and v.index in shell['cand']]
+            if len(_pts) >= 50:
+                break
+            _band += 0.01
+        _byr = {}
+        for x, y, z in _pts:
+            _byr.setdefault(round((z - _zd) / 0.02), []).append((x, y))
+        _ratios = []
+        for _k in sorted(_byr):
+            _run = _byr[_k]
+            if len(_run) < 6:
+                continue
+            _xs = [p[0] for p in _run]
+            _ys = [p[1] for p in _run]
+            _ratios.append((max(_ys) - min(_ys))
+                           / max(1e-6, max(_xs) - min(_xs)))
+        _rung_ratio[_side] = (_ratios, len(_pts), _band)
+    _ns = sum(v[1] for v in _rung_ratio.values())
+    if all(len(v[0]) for v in _rung_ratio.values()):
+        r['thigh_depth'] = sum(sorted(v[0])[len(v[0]) // 2]
+                               for v in _rung_ratio.values()) / 2
+        r['thigh_depth_n'] = _ns
+        r['thigh_depth_band'] = max(v[2] for v in _rung_ratio.values())
+        r['thigh_depth_rungs'] = {k: len(v[0]) for k, v in _rung_ratio.items()}
     else:
         r['thigh_depth'] = None
-    log(f'  thigh garment depth/breadth {r["thigh_depth"]:.3f} '
-        f'(gate >= {LEG_GIRTH_GATE["thigh_depth"]}, n={len(_pts)})'
+    log(f'  thigh garment depth/breadth (per-rung median, both thighs) '
+        f'{r["thigh_depth"]:.3f} (gate >= {LEG_GIRTH_GATE["thigh_depth"]}, '
+        f'n={r.get("thigh_depth_n")}, '
+        f'band ±{r.get("thigh_depth_band", 0)*100:.0f} cm, rungs '
+        f'{r.get("thigh_depth_rungs")})'
         if r['thigh_depth'] is not None else
-        f'  thigh garment depth/breadth UNMEASURABLE (n={len(_pts)})')
-    return r
+        f'  thigh garment depth/breadth UNMEASURABLE (n={_ns})')
 
 
 def suit_shell_gate(body, shell, prop):

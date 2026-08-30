@@ -236,6 +236,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 148 | **NEXT.md step 2 slice 1 — shell curvature gates EXTENDED to the upper arms and thighs, ALL 8 gated segments now ≤ 0.35: upperArm 0.160/0.324 (was 1.037/0.715), thighs 0.343/0.242 (was 0.529/0.455), torso 0.088 (was 0.644, still reported-not-gated). Chest-wall verts excluded from the upper-arm fit/move via the torso's own fitted tube; thigh iron freed 6→16 mm under the reviewer's garment-`thigh_depth` ruling (gate re-attached to the shipped garment); inner-thigh gap 45.5 mm ≥ 40 (session-28 open item CLOSED); arm/thigh 0.498 ≤ 0.55; ASSET_V 67** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43. See entry 148. |
+| — | Iteration 149 | **NEXT.md reviewer-ruling instrument fix — garment `thigh_depth` sampling widened until n ≥ 100 (single-thigh bands cap at n=84, so the instrument now POOLS BOTH THIGHS and computes depth/breadth per 2 cm rung, reporting the median rung ratio per side); citable reading 1.663 (n=103, band ±6 cm, 6 rungs/side), gate ≥ 0.90 green. NEXT.md step 3 (arm stripe) VERIFIED on the merged branch: blue band on BOTH arms' outer seams in figure_front/figure_side, default flag state, leak gates green. Geometry untouched — assets byte-identical, NO ASSET_V bump** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43 (kneeMax 1.0); shots regenerated + inspected. See entry 149. |
 | — | Iteration 146 | **NEXT.md step 0 (FACEDIST) LANDED — the sabotage control was UN-BUILDABLE at this tip (the later temple-arm + required-region gates aborted `BODY_SABOTAGE_FACE=1` before export; exempted under the flag), and the face-discrimination gates are no longer fatal to `figure_side.png` (deferred behind the side-shot gates); measured on the merged branch: honest FACEDIST 0.1802 PASS, sabotage 0.1784 + back lensFrac 0.1655 + front−back 0.024 → spec FAILS as required — the `≤` inversion NEXT.md asked for is measurably impossible here (it would fail the honest build) and is recorded as an open question** | honest: look 6/6, FACEDIST 0.1802, figure_side.png written; sabotage: spec fails exactly on the two lens gates, figure_side.png STILL written (the point of the rework); unit 81/81, golden 30/30, rig 13/13; ASSET_V 64→65, `game.js?v=65`, preloads `?v=65`. See entry 146. |
 | — | Iteration 145 | **P0 corridor grey slab FIXED — corridor unbaked (game.js skips `terrainCorridor` in `applyBakedLighting`; the 138/142 baked multipliers were the in-run slab); grey-attr y-flip corrected (141/142 closed the ramp on MIRRORED numbers); corridor gate rebased on the corrected instrument** | negative control (baked 4992619, inrun framing): 0.7613/0.8155 = 0.933 — FAILS the 0.95 gate; fixed build: 0.7869/0.816 = 0.964 — PASSES; scene framing canary 0.6573/0.8337 (mean there cannot discriminate — pre-138 good build measures 0.787; see entry); by eye inrun.png is white again, matching `before_138`. unit 81/81, golden 30/30 (audit 0 diffs × 30/5408), look 6/6. See entry 145. |
 | — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
@@ -1014,6 +1015,14 @@ forest.
   Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
+- **Entry 149 (thigh_depth instrument):** (1) the citable pooled per-rung reading is 1.663
+  (n=103, both thighs, gate ≥ 0.90 green) — NOT the ~1.0 the 16:15 ruling called plausible.
+  Named cause: `dominant_segments` crotch ownership clips each thigh's INNER face from its
+  own candidate set, so breadth under-measures while depth is complete. If ~1.0 is expected
+  on the full section, authorize an ownership-tolerant breadth (mirror-symmetric inner-face
+  completion); I will not re-tune the instrument silently. (2) Magenta patches at the
+  waist/hip in both figure shots (unexplained paint, sits in slice 2's panels/collar
+  territory) — pre-existing defect to fold into slice 2, or a pass aimed wrong?
 - **Entry 86 (face/helmet):** (1) NEXT's structural-distance gate said ≥0.3; the healthy build measures 0.1831 and the sabotaged build fails via the darkU gates, so I calibrated the distance gate to ≥0.15 — accept, or re-pin at 0.3 and I will strengthen the discriminator. (2) The paint-wrap-only sabotage is INVISIBLE to the gates (the healthy back already carries the dark navy strap at eye level), so the negative control also flips `faceForward` 180° — confirm that satisfies item 5's intent or specify a stronger paint sabotage (e.g. strap removed). (3) Face features (eyes/brows/lips) still do not read at the 0.6 m close-up — face pass 3 queued next unless re-ordered.
 - **Iteration 60 — three calls.**
   (a) **baked.spec gate re-derivation** (review-only mandate was "fix outright
@@ -1418,6 +1427,66 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 149 — NEXT.md: the `thigh_depth` instrument made citable (n ≥ 100); step 3 stripe verified on the merged branch
+
+**Order check.** NEXT.md step 0 is CLOSED by the reviewer's 14:55 ruling, and step 1 (the shell
+knee band) was already LANDED by iteration 147 (`2325b71`: kneeMax 32.516 → 5.65 by ending the
+shell MOVE at |along| 0.70 on the legs). Re-measured this iteration on the rebuilt assets:
+spine.spec 14/14 baseline and 43/43 in the combined run, kneeMax 1.0 — comfortably under the
+8.0 cap, flight tuck included. The reviewer's 16:15 instrument ruling is therefore the top open
+item, and it is done.
+
+**What changed (`blender/build_body.py`, measurement only — geometry untouched).**
+The garment `thigh_depth` instrument in `shell_report` no longer samples one ±2 cm band on one
+thigh (n=16, ratio 1.468, ruled non-citable). Findings while widening it:
+- a single-thigh band cannot reach n=100 around mid-thigh: widening to ±10–11 cm saturates at
+  n=84, and a band EXTENT spans the thigh's taper toward the knee, inflating the depth term
+  (band-extent reading 1.573 at n=84);
+- so the instrument now pools BOTH thighs (the property is symmetric) until the pooled n ≥ 100
+  (per-side bands widen from ±2 cm in 1 cm steps to a ±12 cm cap, needing ≥ 50 per side), and
+  computes depth/breadth per 2 cm rung, reporting the MEDIAN rung ratio per side (mean of the
+  two medians). Rungs with < 6 shelled verts are skipped; both sides must measure or the value
+  is None and the gate skips it as before.
+
+**Citable number: thigh garment depth/breadth 1.663** (gate ≥ 0.90 — green), n=103 pooled,
+band ±6 cm, 6 rungs per side, 6+ verts per rung. This is NOT the ~1.0 the ruling called
+plausible — see open questions.
+
+**NEXT.md step 3 (arm stripe) — VERIFIED, not redone.** Build run with default flags; all build
+gates green; the stripe reads in the figure shots as a blue band on the outer seam of BOTH arms:
+`figure_front.png` shows it on both shoulders/upper arms; `figure_side.png` shows the
+continuous band down the near arm's outer seam. No ragged inner-leg patch visible at this
+framing (the session-28 note predates `9e81fcc`). Step 3 stays verified-closed.
+
+**By-eye on the new shots:** limbs still read as cloth cylinders; the bib "30" is legible
+front; boots/seating unchanged. NEW OBSERVATION: magenta/pink patches show at the waist (front
+view, just under the bib) and at the hip (side view). Unexplained paint — possibly a
+collar/cuff/panel pass landing at the wrong UV region; it sits exactly in slice 2's territory
+(panels + collar + cuffs), so it is recorded here, not patched blind.
+
+**Verification:** Blender rebuild (all build gates green, SHELLPROP unchanged: arm/thigh 0.498,
+shoulder/hip 0.896, inner-thigh gap +45.5 mm; SHELLCURV 8/8 ≤ 0.35). The instrument writes no
+vertex data, so `assets/` is BYTE-IDENTICAL to 148 and **ASSET_V stays 67** (the rule bumps on
+regeneration; none happened — an interim bump to 68 was reverted in the same session).
+unit 81/81, golden 30/30 (no re-capture — no physics or display-census change), drive
+spine+rig+chain+look 43/43, shots regenerated.
+
+**Open (NEXT.md not yet deletable):** step 2 slice 2 — two-tone panels + collar + cuffs
+(the suit is still white-on-white), the crotch/inner-thigh shard cluster, and the torso
+bib-aware curvature mask. The 1.663 reading above is the new baseline the slice-2 thigh work
+must respect (gate ≥ 0.90 unchanged).
+
+**Open questions for the reviewer** (also filed under Open questions):
+1. `thigh_depth` reads 1.663 at n=103 — far from the ruling's plausible ~1.0. Named cause:
+   `dominant_segments` ownership hands each thigh's INNER face to the other thigh at the
+   crotch (session-28 finding 2), and the shell candidates exclude those verts, so the
+   lateral breadth under-measures while the fore-aft depth is complete. If the ruling's
+   ~1.0 expectation rests on the full section, the instrument wants an ownership-tolerant
+   breadth (e.g. mirror-symmetric completion of the inner face) — a ruling call, not
+   something I will tune silently. The 0.90 gate remains green either way.
+2. The magenta waist/hip patches (see by-eye) — pre-existing defect or a mis-aimed existing
+   pass? Say the word and slice 2 fixes it as part of the panels/collar work.
 
 ### 148 — NEXT.md step 2 slice 1: shell curvature gates extended to the upper arms and thighs — all 8 gated segments ≤ 0.35; thigh iron freed per the garment-`thigh_depth` ruling; inner-thigh gap ≥ 40 reached; ASSET_V 67
 
