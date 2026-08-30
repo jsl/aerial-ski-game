@@ -895,13 +895,19 @@ test('look', async ({ page }) => {
             // fixed amount above the floor it stands on).
             const body = scene.meshes.find(m => (m.name || '').indexOf('athleteBody') === 0);
             const root = body ? body.getAbsolutePosition() : null;
-            const standOff = root ? root.y - floor(gs.posZ) : 1.5;
+            // The skinned body's absolute position can be stale/garbage at
+            // freeze time (measured -14.29 m for the pike: the athlete was
+            // placed 1.4 m UNDER the landing and the camera shot it from
+            // inside the snow — the terrain hard-lock now refuses that).
+            // Bound the stand-off to a plausible root height above the floor.
+            const standOffRaw = root ? root.y - floor(gs.posZ) : 1.5;
+            const standOff = Math.max(0.6, Math.min(2.2, standOffRaw));
             window._poseFreeze = {
                 tuck: pose.tuck, grounded, pike: pose.pike,
                 posZ: z,
                 rootY: grounded ? floor(z) + standOff : floor(z) + standOff + 8,
             };
-            return { z, standOff: +standOff.toFixed(3) };
+            return { z, standOff: +standOff.toFixed(3), standOffRaw: +standOffRaw.toFixed(3) };
         }, P);
         // Geometric cameras from the frozen figure.
         for (const view of ['front', 'side']) {
