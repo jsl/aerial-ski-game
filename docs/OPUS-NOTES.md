@@ -796,6 +796,131 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 14 (2026-08-29, 23:0x-23:5x)
+
+### Item 1 (re-issued) — the eyewear is SPORT GLASSES, not goggles. Commit `8a460f8`
+
+The author's 21:55 ruling. Three separate things on the head were the
+goggle, and each had to move:
+
+| part | goggle (before) | sport glasses (after) |
+|---|---|---|
+| band | 0.40..0.57h = 0.17h | **0.44..0.57h = 0.128h = 29.4 mm** |
+| frame | `rim`, drawn on the top AND bottom edges | **`browbar`, top edge only** (721 verts) + a **`bridge`** notch at the bottom centre (178 verts) |
+| back | `strap`, a 0.10h navy band round the WHOLE skull, RECESSED by a groove | **`temple` arms** (463 verts): dark moulded plastic, 16 low-poly verts a side, centred 0.520h, stopping at 2.45 rad behind the ear, pushed **2.50 mm PROUD** |
+
+**On the "3.5-4 cm shield".** The ruling's height is a real head's
+chin-to-crown. This model's `h` is chin to **helmet crown**, 229 mm, so the
+shield scales with the band fractions, not with a millimetre literal:
+0.128h = 29.4 mm. Pushing it to 35 mm would need the floor at 0.415h, i.e.
+back down toward the nose, which is the defect the same ruling forbids. The
+top stays pinned just under item 2's 0.58h front rim. Logged every build as
+`lens band height ... = ...h on a ... mm chin-to-crown`.
+
+**Three new build gates, each with a negative control that FIRES:**
+
+    shield bottom clears the nose tip   0.440h vs 0.357h   --lens-lo 0.28 -> FAILS at 0.280h vs 0.357h
+    band window 0.44..0.57 +-0.03       0.440..0.568h      --lens-lo 0.32 --lens-hi 0.49 -> FAILS
+    temple arms >=10/side, 0 rear,      16/16, 0, 2.50 mm  BODY_SABOTAGE_GOGGLES=1 -> FAILS at 0.00 mm
+      realised push >= 1.5 mm
+
+**The nose-tip gate took three attempts and the first two could not fail.**
+Worth writing down, because both looked green:
+
+1. "max forward reach among FACE-region verts, window up to the band edge"
+   found the **brow ridge one vertex row under the band** and passed by
+   0.002h. A margin that small is not a measurement.
+2. Fixing the window to 0.10..0.40h but still excluding lens verts BY REGION
+   made the window shrink as the band grew downward: `--lens-lo 0.28` slid
+   the "tip" down to 0.239h along with the band and the gate stayed green on
+   **exactly the build the gate exists to reject**.
+3. Shipped: the landmark is measured on the **UN-PUSHED SKULL** — undo
+   `goggle_geometry`'s recorded pre-push radii — in a fixed 0.10..0.40h
+   window. The tip now reads 0.357h whatever the band does, and `--lens-lo
+   0.28` fails.
+
+Also fixed: the temple-push check was written `if not SABOTAGE_GOGGLES and
+tpush_mm < 1.5`, i.e. **inert under its own negative control**. The guard is
+gone; `BODY_SABOTAGE_GOGGLES=1` now fails on both pushes (lens 0.00 mm,
+temple 0.00 mm).
+
+`'rim'` leaves `paint_suit`'s required-region list and `browbar`/`bridge`/
+`temple` take its place — the build refuses to ship glasses that have
+silently lost an arm or the brow bar. (It caught exactly that on the first
+run: `these suit regions matched no vertices: ['rim']`.)
+
+`ASSET_V` 44 -> 45, `index.html` `game.js?v=` 38 -> 39, preload hrefs `?v=45`.
+
+**NOT done in this item, and it is the next thing to look at.** `face.png`
+shows small grey nubs at the outer ends of the band. They are not the
+skinned head: `assets/athlete.glb` carries a SECOND, older eyewear model —
+`gogglesLens` / `gogglesFrame` / `gogglesStrap`, built by
+`blender/build_athlete.py::add_goggles` as a lens shell, a LARGER shell
+behind it and a TORUS STRAP — which `game.js` adopts onto the driver head
+and makes visible. Those are the "foam frame" and the "strap around the
+helmet" the author's ruling removes, and they are sized to the primitive
+head, so they poke through the (larger) skinned head at the temples. They
+must be rebuilt as a shield + brow bar + two arms, or removed; three drive
+assertions (`athlete-wired.spec.js`) require all three node names, so this
+is a spec change too, not just a bake.
+
+### What the shots show (`shots/face.png`, `shots/figure_side.png`, 23:33)
+
+Front: the band is narrower and on the eye line, the dark stroke that ran
+UNDER the eyes is gone, the brow bar is a thin line at the top and the
+nose-bridge notch reads at the bottom centre. Side: the shield wraps to the
+temple and a dark arm continues back over the ear under the rim — the temple
+arms are visible, which is the ruling's side-view requirement.
+
+Still wrong by eye, and NOT fixed here: (a) the lens reads as bright cyan
+face paint rather than a dark mirrored lens — the painted eye/brow detail
+shows straight through it; the author's ruling says to keep the tint, so
+this is a material/value question for the reviewer, not a colour I should
+retune unasked. (b) The `athlete.glb` shells (below) are visible in profile
+as a translucent wedge in front of the face. (c) The collar streak at the
+throat (item 9) is untouched.
+
+### Verification
+
+    build   all gates green at 2048/96; negative controls above all fail
+    unit    81/81
+    browser 36/36
+    drive   look.spec.js, rig.spec.js, athlete-wired.spec.js ALL GREEN
+            (18 passed / 10.2 min). The one red in that run is
+            `freelook.spec.js` "after a forced crash settles" — it only ran
+            because the filter `look.spec.js` also matches `freelook`, and it
+            hangs waiting for the ragdoll to settle, i.e. it is the same
+            crash-model red the 21:30 ruling (c) assigned to the GLM lane,
+            now reaching a second spec after GLM's slope-aware crash roll.
+    golden  17/30 — see below, NOT this lane
+    merge   `render-realism-glm` merged TWICE (79b1d41 and again after the
+            commit: GLM had advanced 4 commits mid-session)
+
+**GOLDEN IS RED AND IT IS NOT THIS LANE.** 13 scenarios diverge. After the
+second merge my `game.js` differs from `render-realism-glm`'s by **the
+`ASSET_V` string and nothing else**, and `tests/golden/traces` is
+byte-identical between the two branches — so `verify.js` produces the same
+17/30 on GLM's own branch. The first merge's failure was the peak scale
+(`PEAK_H_SCALE = 0.70` shipped without a re-capture: every `pk_body_*.p[1]`
+off by exactly 14.4 m); GLM re-captured for that, and what is left after
+their re-capture is a real divergence at mid-flight frames, e.g.
+`aerial-tuck frame[495].nodes.head.p[1] -3.638 -> -3.282`. I did not
+re-baseline anything (no physics changes, no golden re-captures in this
+lane) and I did not touch their crash-roll commit.
+
+### Open at the end of session 14
+
+- The `athlete.glb` eyewear (above) — the visible half of the author's
+  21:55 ruling that is still a goggle.
+- Item 3's smoothed shell (author HUMAN TESTING #7) — still the other
+  top-priority item and NOT started this session.
+- Everything session 13 left open: the two-tone panels / collar / cuffs /
+  gaiter / bib-as-geometry, the arm stripe behind the UV-overlap repair,
+  then 10, 2, 9, 6, 7. `pose-shots.spec.js` framing still not fixed.
+- **For the reviewer:** golden 17/30 on the integration branch. It blocks a
+  clean merge to 8201 and it is the GLM lane's to re-capture or fix.
+
+
 ## Session 13 (2026-08-29, 22:0x-23:0x)
 
 ### Item 3 (b) — the arm stripe — NOT SHIPPED, and the reason is now MEASURED
