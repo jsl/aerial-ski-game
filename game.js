@@ -4462,7 +4462,13 @@ void main(void) {
         bnetMat.albedoTexture = bnetTex;
         bnetMat.albedoColor = new BABYLON.Color3(1, 1, 1);
         bnetMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;
-        bnetMat.alphaCutOff = 0.5;
+        // 0.3, not the usual 0.5: the tile's rope coverage is ~45%, so the
+        // HIGH MIP LEVELS average below 0.5 and the whole strip was alpha-
+        // culled at grazing angles (review-125: the near-side fence read as
+        // floating posts with no net, while the face-on far fence was fine).
+        // Full-res alpha is binary (clearRect + strokes), so holes near the
+        // camera are unchanged; only the mip-collapsed distance case differs.
+        bnetMat.alphaCutOff = 0.3;
         bnetMat.backFaceCulling = false;
         bnetMat.metallic = 0;
         bnetMat.roughness = 0.85;
@@ -4827,7 +4833,7 @@ void main(void) {
     // ≈ 29 m) sit in the forest band, mid (≈ 50 m) at the rock/snow edge, and
     // only the far/back crests are pure snowfield. At 45 the whole visible
     // face clamped into the snowfield band and read as flat pale felt.
-    const _ridgeMat = (name, mix, tint) => {
+    const _ridgeMat = (name, mix, tint, texOpts) => {
         const m = makePBR(name, scene);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
         m.metallic = 0;
@@ -4835,7 +4841,7 @@ void main(void) {
         m.backFaceCulling = false;
         const T = AerialEngine && AerialEngine.textures;
         const s = T && T.makeRidgeSurface
-            ? T.makeRidgeSurface(BABYLON, scene, 512, { strength: 3.5 }) : null;
+            ? T.makeRidgeSurface(BABYLON, scene, 512, texOpts || { strength: 3.5 }) : null;
         // Reviewer fix (Fable, 2026-08-29, HUMAN TESTING #4/#6 "mountains
         // flat / lost texture"): with scene fog ON, the ridge materials wash
         // to a single pale fog tint far harder than the EXP2 curve predicts
@@ -4918,8 +4924,14 @@ void main(void) {
     // Baked haze per layer (scene fog is off on these materials — see
     // _ridgeMat): near hills stay saturated, far ridges recede.
     const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55]);
+    // Iter 134: mid/far ridges share the peaks' STRATA map — at their
+    // distance the default map's dark rock fractures read as irregular
+    // blotches (entry-133 by-eye); strata reads as layered rock. The near
+    // hills keep the full-detail forest map (tree-line strokes read there).
+    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31],
+                              { strength: 2.2, strata: true });
+    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55],
+                              { strength: 2.2, strata: true });
     [-1, 1].forEach(function (s) {
         _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         // HUMAN TESTING #7 (author): "reduce one or two of the big peaks and
@@ -4942,8 +4954,27 @@ void main(void) {
     // mapping as the ridges) gives forest low (hidden behind the ridge
     // band), rock mid-slope, snow caps. Scene fog (the peaks sit 200+ m out)
     // makes them read as a distant range.
-    const peakMat = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
-    peakMat.fogEnabled = true;
+    // Reviewer by-eye (Fable, 2026-08-29 20:10): the peaks read as "pale
+    // translucent glass pyramids overlapping each other" — their whole face
+    // sat in the snow band (30 m divisor over ~65 m cones ⇒ v clamped at 1
+    // above 20 m), all 11 shared ONE un-tinted material, and back-face
+    // culling was off so overlapping cones blended. Fixes: the ridges' own
+    // RIDGE_SNOWLINE_M elevation mapping (rock banding below the caps, with
+    // a per-peak snowline so caps sit at varied heights), per-peak tint/haze
+    // jitter, and an opaque material (alpha 1, backFaceCulling on — the
+    // cones are closed solids).
+    // Iter 134 (entry-133 open item): the shared ridge band map's strong
+    // outcrop/fracture noise reads as irregular dark CAMOUFLAGE BLOTCHES on
+    // the pale peak faces (one texture width spans the whole 2π cone
+    // circumference). The peaks get their own STRATA variant: gentle band
+    // jitter, soft rock contrast, near-horizontal sediment strata keyed on
+    // elevation — bands read as rock strata, not blotches. Softer bump
+    // (strength 2.2) so the relief does not blobble at 200+ m.
+    const peakMatBase = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52],
+                                  { strength: 2.2, strata: true });
+    peakMatBase.fogEnabled = true;
+    peakMatBase.backFaceCulling = true;
+    peakMatBase.alpha = 1;
     const PEAKS = [
         // Back range, behind ridge_back (z < SLOPE_START_Z - 200)
         { x: -60, z: SLOPE_START_Z - 260, h:  96, rb:  80 },
@@ -4968,6 +4999,21 @@ void main(void) {
     const PEAK_H_SCALE = 0.70, PEAK_R_SCALE = 0.85;
     PEAKS.forEach(function (m, i) {
         m.h *= PEAK_H_SCALE; m.rb *= PEAK_R_SCALE;
+        // Deterministic per-peak variation (no Math.random — census stable):
+        // tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m.
+        const tint = 0.90 + 0.18 * ((i * 73) % 7) / 6;
+        const haze = 0.26 + 0.12 * ((i * 37) % 5) / 4;
+        const snline = 66 + 24 * ((i * 53) % 6) / 5;
+        const mat = makePBR('peakMat_' + i, scene);
+        mat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+        mat.metallic = 0; mat.roughness = 0.95;
+        mat.albedoTexture = peakMatBase.albedoTexture;   // share the band map
+        mat.bumpTexture = peakMatBase.bumpTexture;
+        mat.fogEnabled = true; mat.backFaceCulling = true; mat.alpha = 1;
+        mat.albedoColor = new BABYLON.Color3(
+            (1 + (FOG.r - 1) * haze) * tint,
+            (1 + (FOG.g - 1) * haze) * tint,
+            (1 + (FOG.b - 1) * haze) * tint);
         const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
             height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
             tessellation: 28    // regular cone silhouettes (author: "weird … not regular shapes")
@@ -4979,22 +5025,23 @@ void main(void) {
         // collapse and the face-back dark wall.)
         body.position.set(m.x, valleyFloorY - 4 + m.h / 2, m.z);
         // Elevation-keyed band UV: v = height above the valley floor over a
-        // COMPRESSED 30 m snowline (the ridges use 80 m) — the peaks are
-        // higher, so they must read SNOWIER than the ridges in front of
-        // which they sit; with the ridges' own 80 m mapping the two
-        // backdrops were near-pixel-identical at the crest and the ridges3d
-        // contrast mask collapsed to 0 (entry-114 blocker; iter-116 root
-        // cause). v CLAMPS at 1 — UV wrap would loop the crown back into
-        // the dark forest band. u arcs around the cone.
+        // per-peak snowline (66–90 m, the ridges' RIDGE_SNOWLINE_M=80 scale
+        // — reviewer: "not compressed to 30 m"). With ~60–69 m cones the
+        // snow caps occupy only the top ~quarter; the mid-slope reads as
+        // ROCK band, and the lower slopes stay hidden behind the ridges.
+        // The peaks still read snowier than the ridges in front of which
+        // they sit (higher v at any shared elevation). v CLAMPS at 1 — UV
+        // wrap would loop the crown back into the dark forest band.
+        // u arcs around the cone.
         const p = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
         const uv = [];
         for (let k = 0; k < p.length; k += 3) {
             uv.push(Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5,
                     Math.min(1, Math.max(0, (p[k + 1] + body.position.y
-                                - valleyFloorY) / 30)));
+                                - valleyFloorY) / snline)));
         }
         body.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
-        body.material = peakMat;
+        body.material = mat;
         body.isPickable = false;
     });
 

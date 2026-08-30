@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **HUMAN TESTING #10 (author, 2026-08-30 05:45):** (1) "Reset to top of slope with R doesn't seem to work. regression or bug from adding dvorak keyboard? check other keys" — measured: `hotkeys.spec` 3/3 green and an end-to-end probe shows R resets the state in free play and realistic mode; the real defect was the CAMERA — with free-look active after a crash the follow block stands down, so R reset the athlete while the camera stayed parked at the crash site looking at empty snow. Reviewer fix: R re-frames the athlete from behind after the reset (gate in `freelook.spec`). Two legitimate R blocks remain by design (Ian's): realistic/FIS mode waits for the next trick pick; competition modes block until stopped/crashed. (2) "hard lock on camera rotation below the surface at all points of game" — reviewer fix: the clamp now ray-picks the real ground under the eye (flanks/knoll included) and runs every rendered frame in every state; gate: 6 headings × 3 radii at the lowest beta, eye ≥ 0.99 m above ground (worst 1.00). Branch `fable/camera-r`, lands with the next candidate.
 - **Reviewer rulings on entry 131 (Fable, 05:40):** (1) the gate swap is ACCEPTED — an overcast dome is brighter than a blue zenith, so the chroma-greyness test (low saturation, no sun disc, softened shadows) is the physically right instrument; keep a pure-sky sample region as an additional instrument if cheap, not as the gate. (2) Confirmed: **132 = mountains follow-up** (peaks as an opaque banded range, regular silhouettes, ridge-mask numbers + by eye), then B-net/canopy notes, forest remainder, polish; 135/140 reviews; 145 final.
 - **Reviewer rulings on entry 129 (Fable, 04:25) — Snowing mode accepted; tuning answers:** the look to match is an overcast snow day (no snowing daytime clip exists — use IMG_3396's flake density/streak length, not its exposure): sky a flat light-grey overcast (luminance ≈ 0.60–0.70, low saturation, no blue gradient, cumulus faded out), **sun disc faded out entirely while snowing**, sun intensity ≈ 0.6 with softer shadows (raise the shadow blur/PCF softness so contact shadows stay but edges soften), fog density 0.0035–0.004 with a grey fog colour matching the sky, flakes ≈ the night count with slightly larger near-camera streaks. Gate additions: sky region saturation < 0.08, no sun-disc pixels, shadow edge width ≥ 1.5× day. Then continue the 129–145 order (peaks, B-net/net, shadows, forest, polish).
 - **Seventh Opus merge LANDED (Fable, 2026-08-30 04:10, `d833929`):** GLM through 128 (deterministic crash roll, 5/5 green) + Opus through `5a0037c` (weight locality, knee/hip helper bones, bib measurement). Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), spine/crouch/rig/bib 28/28, crash 3/3, look + pose-shots 2/2. 8201 synced. **Rulings on 127/128:** (1) the 5/5 gate is SATISFIED — crash-determinism thread closed; (2) keep the post-rest sampling window as a canary, do not shorten it; (3) **order for 129–145:** (a) the **day-time "Snowing" Settings toggle** (overnight order item 2 — never started: snowfall particles + slightly greyer sky/softer sun in day mode, independent of Night, gated like `night.spec`); (b) mountains follow-up — peaks as an opaque distant range with rock banding below the snow caps (ridge-style snowline mapping, alpha 1, per-peak tint variance), silhouettes regular, judged with the ridge-mask numbers and by eye; (c) review-125 scene notes: near-left B-net posts without visible net, under-canopy shadow smudges; (d) forest remainder (near-tree low-poly, understory), night snow-burst variants; (e) polish (height haze, LOD/frame time). Reviews at 130/135/140; 145 = final review + handoff refresh. Add nothing the author did not ask for.
@@ -215,6 +216,9 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
+| — | Iteration 134 | **Entry-133 blotch fix — `makeRidgeSurface` gains a STRATA mode (band-edge jitter 0.12→0.04, snow-band outcrop contrast 3.6→1.6, rock-fracture dark mix 0.9→0.45, near-horizontal sediment strata ±0.22 keyed on elevation, bump strength 2.2); peaks AND mid/far ridge materials now use it (near ridge keeps the full-detail forest map)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, mask 0.053, mean 0.677 / std 0.0846 vs 0.05 floor; ridge-only contrast + fogged control still discriminate); look 4/4; scene.png bands 0.663/0.616/0.778; by-eye: mid/far ridge faces read as layered strata, blotches gone. See entry 134. |
+| — | Iteration 133 | **Review-125 B-net near-post read FIXED — `bnetMat.alphaCutOff` 0.5 → 0.3 (the tile's ~45% rope coverage mip-averages BELOW 0.5, so the whole near-side strip was alpha-culled at grazing angles and the fence read as floating dark posts); new venue-dressing test 5 with an in-page negative control at cutoff 0.5** | venue-dressing 5/5 (grazing gate: mask 0.0151 @ 0.3 vs 0.0039 @ 0.5 control, 0.0092 @ 0.4 — monotone); unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); look 4/4; scene.png by eye: near-left net now visible between its posts. See entry 133. |
 | — | Iteration 131 | **Snowing flatness pass (entry-130 item 1, display-only): sun disc + cumulus faded out under overcast (`sunAmount`/`cloudAmount` sky-shader uniforms), cast shadows softened (`setDarkness(0.55)`), ambient fill raised (hemi 0.42→0.58, IBL 0.32→0.42), sun tint neutral-cool; `_nightProbe` gains `hemi/shadow/sunDisc/env`; snowing.spec lum gate replaced with a chroma gate (overcast sky is physically brighter, not darker)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture); snowing.spec 1/1, night.spec 1/1, look 4/4; measured day→snowing: shadow drop 0.027→0.012, sunDisc 1→0, hemi 0.42→0.58, env 0.32→0.42, sky |r−b| −0.055→−0.047. See entry 131. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
@@ -7997,6 +8001,164 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 134 — entry-133 blotch fix: STRATA band map for the peaks and the
+mid/far ridges — the dark outcrop/fracture noise read as camouflage
+blotches; now layered rock strata
+
+**Order acted on:** entry-133 open question 1 (its by-eye finding: "the dark
+bands read as camouflage blotches, not rock" on the UPPER-LEFT RIDGE/PEAK
+faces). No `docs/NEXT.md`. No Reviewer feedback beyond the standing rules.
+
+**Root cause (seen in the raster, not guessed):** the peaks and the
+mid/far ridges all shared `makeRidgeSurface`'s default map. On the cones one
+texture width spans the whole 2π circumference (~130 m), and on the ridge
+faces the rock band's `mix(ROCK, DARK, (r−0.55)·0.9)` fractures plus the
+snow band's `mix(SNOW, ROCK, (d−0.47)·3.6)` outcrops render as irregular
+high-contrast dark blobs — camouflage, not geology.
+
+**Fix (display-only):**
+- `render/textures.js` `makeRidgeSurface(..., { strata: true })`: band-edge
+  jitter 0.12 → 0.04, snow-band outcrop contrast 3.6 → 1.6, rock-fracture
+  dark mix 0.9 → 0.45, plus near-horizontal sediment strata
+  `sin(v·2π·9 + small jitter)` mixing ±0.22 rock/dark tones keyed on
+  elevation. Default (non-strata) output byte-identical.
+- `game.js`: `_ridgeMat` gains a `texOpts` pass-through; `peakMatBase`,
+  `matMid`, `matFar` build the strata map (bump strength 2.2); the NEAR
+  ridge keeps the full-detail forest map (tree-line strokes read up close).
+- `index.html` `game.js?v=51`.
+
+**Verification:** unit **81/81**; golden **30/30** ("30/30 scenarios match
+the golden traces", verify.js the last command before this commit —
+display-only, no re-capture); `ridges3d.spec` **5/5** twice (with peaks-only,
+then with mid/far ridges on strata): peak gate mask 0.053, peak-pixel mean
+**0.677** / std **0.0846** (floor 0.05), ridge-only contrast gates and the
+fogged negative control still discriminate; `look` **4/4**, shots
+regenerated. `scene.png` luminance bands 0–20% **0.663** / 20–35% **0.616** /
+35–50% **0.778** (133: 0.661/0.618/0.794 — unchanged within noise). BY EYE
+(raster, this session): the mid-left ridge face that was dark-mottled now
+reads as smooth layered grey strata; the right-hand cones are pale with
+faint streaks and clean white below the snowline. B-net still continuous on
+both edges (133's fix intact).
+
+**Open:** (1) a few mid-ridge crests still carry dark-GREEN forest-band caps
+(the near-ridge map's forest band appears on the mid ridge wherever its
+crest v ≈ 0.42–0.5); options: give `ridge_mid` its own crest elevation or a
+higher forestEdge in strata mode — next mountain touch; (2) forest remainder
+(P4), polish.
+
+**Open questions for the reviewer:** (1) confirm by eye that the strata
+reads as rock layers rather than blotches in `shots/scene.png`; (2) should
+the near ridge also lose its green crest caps, or is tree-line green on the
+near hills wanted?
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete-lane files, DoF
+block, nothing added to the scene. Scratch removed from
+`~/aerial-agents/scratch/iter-134/`.
+
+### 133 — review-125 B-net near-post read fixed: the grazing-angle strip was
+alpha-culled by mip averaging (cutoff 0.5 → 0.3); new venue-dressing gate
+with an in-page negative control
+
+**Order acted on:** reviewer ruling on entry 131 (129–145 order): after 132's
+mountains follow-up, the "B-net/canopy notes" — review-125 scene note (2):
+"the near-left B-net posts read as a row of floating dark sticks — the net
+mesh is invisible at that grazing angle". No `docs/NEXT.md`.
+
+**Root cause (measured, not guessed):** the net tile's rope coverage is
+~45% of texels, so the HIGH mip levels average alpha to ~0.45 — below
+`alphaCutOff = 0.5` — and the GPU culled the ENTIRE strip once it was small
+or oblique enough in screen space for the mips to engage. The face-on far
+fence kept full-res texels (binary 0/1 alpha) and survived, which is why
+only the near-left side read as bare posts. This session could raster PNGs,
+so the defect was confirmed by eye in `shots/scene.png` before the fix
+(near-left: posts only; far-right: full net).
+
+**Fix (display-only, one line + comment):** `bnetMat.alphaCutOff`
+0.5 → 0.3 (`game.js`). Full-res alpha is unchanged (clearRect + strokes =
+0 or 1), so holes near the camera stay identical; only the mip-collapsed
+distance case differs. `index.html`: `game.js?v=49` → `?v=50`.
+
+**New gate (`venue-dressing.spec.js` test 5):** from the look.spec scene
+framing, hide `bnetStrip_L` and difference the frame (mask = pixels that
+changed ≥ 12/255). Measured (SwiftShader): mask **0.0151** at cutoff 0.3,
+**0.0092** at 0.4, **0.0039** at the pre-fix 0.5 — monotone in the mip
+averaging. Gates: control (cutoff 0.5 set in-page) < 0.007, visible
+> max(0.012, 2×control) — ≥ 2× discrimination each way.
+
+**Verification:** venue-dressing **5/5**; unit **81/81** (fail 0); golden
+**30/30** (verify.js the last command before this commit — display-only
+change, no re-capture); `look` **4/4**, shots regenerated. `scene.png` by
+eye after: the near-left fence now shows net between its posts down the
+in-run; the far fence is unchanged.
+
+**Canopy half of the note (review-125 item 3), by eye at this tip:** the
+tree shadows on the flank in the regenerated `scene.png` read as soft
+canopy blobs, acceptable at this sun angle — no smudge defect visible in
+this view, so no change made. What DOES read as dark smudges is the
+UPPER-LEFT RIDGE/PEAK faces: iter-132's rock band map shows as irregular
+dark blotches on the pale ridge waves rather than structured strata (the
+132 open question 1 by-eye check). Not touched this iteration.
+
+**Open questions for the reviewer:** (1) confirm the 132 peak banding by
+eye — in `scene.png` the dark bands read as camouflage blotches, not rock;
+options if you agree: lower the band-map contrast on the peak materials,
+or stretch the snowline divisor so bands are wider/stratified; (2) the
+grazing gate's absolute mask floor (0.012) is one measurement on a shared
+SwiftShader rig — tighten or loosen as you prefer.
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete-lane files, DoF
+block, nothing added to the scene. Scratch removed from
+`~/aerial-agents/scratch/iter-133/`.
+
+### 132 — mountains follow-up: peaks de-"glassed" (per-peak banding, tint
+variance, opaque materials)
+
+**What changed (reviewer order 129–145 item (b), confirmed for 132 in
+88dc802; the entry-131 by-eye defect "pale translucent glass pyramids
+overlapping each other"):** root causes in the `pk_body_*` block of
+`game.js` — all 11 cones shared ONE material with the 30 m snowline divisor
+(cones are ~60–69 m tall ⇒ UV v clamped at 1 above 20 m, the whole face in
+the snow band), no tint variance, and `backFaceCulling = false` (from
+`_ridgeMat`) so overlapping cones blended through each other's backfaces.
+Fixes, display-only:
+- Per-peak snowline divisor 66–90 m (deterministic `(i*53)%6` — census
+  stable), the ridges' `RIDGE_SNOWLINE_M=80` scale as the reviewer
+  specified ("not compressed to 30 m"). Caps now occupy only the top
+  ~quarter; mid-slope reads as the ROCK band; lower slopes stay hidden
+  behind the ridges.
+- Per-peak material (`peakMat_0..10`, built with `makePBR` + the base
+  material's shared albedo/bump textures — `PBRMaterial.clone` does not
+  exist on the headless stub and broke smoke/probe until replaced): tint
+  0.90–1.08, haze mix 0.26–0.38, `alpha = 1`, `backFaceCulling = true`.
+- `index.html` `game.js?v=48` → `?v=49`.
+- `tests/drive/ridges3d.spec.js` gains test 5 "peaks render as opaque,
+  varied, rock-banded mountains": every `pk_body_*` material alpha 1 +
+  culling on, ≥ 8 unique tints, peak-hide diff mask in frame, peak-pixel
+  mean lum < 0.75 (not snow felt) and std > 0.05 (banding).
+
+**Verification:** unit **81/81** (fail 0); golden **30/30** ("30/30
+scenarios match the golden traces", verify.js the last command before this
+commit — display-only, `pk_body_*` transforms and names unchanged, no
+re-capture); `ridges3d.spec` **5/5** — peak gate measured: 11 peaks, 11/11
+`alpha:1, cull:true`, uniqueTints 11, maskFrac 0.055, peak-pixel mean lum
+**0.672** / std **0.092** (old shared-snow state would be near-white flat);
+ridge contrast gates unaffected (fixed state and fogged negative control
+both still discriminate); `look` **4/4**, shots regenerated; scene.png
+luminance bands 0–20% 0.661 (sky), 20–35% 0.618 (peak/ridge zone, was
+washed pale), 35–50% 0.794 (snow). Raster PNG cannot be viewed in this
+session (no viewer); numbers above are the evidence.
+
+**Open:** forest remainder (P4), entry-125 B-net/smudge notes, polish.
+The contrast-gate comment in ridges3d.spec still describes the old 30 m
+snowline rationale — kept because the ridge-ONLY mask argument is
+unchanged; peak pixels are excluded from that mask either way.
+
+**Open questions for the reviewer:** (1) by-eye check of the new peaks in
+`shots/scene.png` — is the rock banding/variance now reading as a distant
+range rather than glass pyramids? (2) the peak gate's mean-lum ceiling of
+0.75 was chosen from one measurement (0.672); tighten if you want a harder
+rock-fraction guarantee.
 
 ### 131 — snowing flatness pass: overcast sun-disc/cumulus fade, softened
 shadows, raised ambient fill (display-only)
