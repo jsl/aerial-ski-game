@@ -213,6 +213,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
+| — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
 | — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 126 | **Crash determinism (reviewer 01:30 top order) PARTIALLY LANDED — fixed-step PBD: `_crashRagdollStep` split into a frame-level wrapper + `_crashRagdollTick` at a constant 1/120 s from a dt accumulator (restAt now deterministic 3.67–4.16 s across runs); post-stop velocity memory translated rigidly with the pose (maxSpeed exactly 0 tail restored); display root PARKED at rest + re-parked in `onBeforeRenderObservable`** | unit 81/81; golden 30/30 after census-only re-capture (audit 0 physics-state diffs × 30 / 5408 frames); crash-ragdoll 1/5 fully green, 5/5 reach `stopped` — one residual single-sample rendered spike 4.6–4.7 m/s at t≈+8 s post-rest remains (see entry 126, open). See entry 126. |
@@ -7991,6 +7992,59 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 127 — crash determinism COMPLETE: the post-stop rendered spike was the
+freeze transition itself; park + world-matrix freeze now land in the same
+step that detects rest — crash-ragdoll fully green incl. negative controls
+
+**What changed (carried from 126; display-only, `engine/` untouched):**
+Root cause found by instrumenting the spec's TAIL sampler with the torso
+node's `isWorldMatrixFrozen` flag: on failing runs the spike sample read
+`frozen=true`, i.e. the spike was NOT a mystery external writer — it was the
+first rendered frame AFTER the iter-126 freeze engaged. The freeze ran at the
+START of `_crashRagdollStep` one step AFTER `R.resting` was set, so that one
+frame rendered the driver chain on the engine root the machine had kept
+integrating past the out-run (drifting/falling) — a ~0.37 m one-sample jump
+(measured 3.2–4.6 m/s) exactly at the stop boundary, which `settledTail`
+(the samples right after the first `resting` sample) always caught.
+
+Fix: park the display root AND freeze the world matrices of the root + all
+driver nodes at the END of the same step in which rest was detected — the
+driver locals are freshly written there and the root is positioned at the
+capture, so the transition frame already renders the parked matrix
+(`_crashRagdollStep`, `game.js`). `R._frozen`/`R._park` guard one-shot
+execution; the per-frame park block and the `onBeforeRenderObservable`
+re-park from iter 126 stay. The next-run reset in the crash teardown
+unfreezes the whole chain so normal per-frame matrix updates resume
+(skis' rotationQuaternion clearing and visibility restore untouched).
+
+**Verification:** `node --check` clean; unit **81/81**; golden **30/30**
+(`node tests/golden/verify.js` last command before the commit — no
+re-capture: no physics or display-census change); crash-ragdoll **3/3**
+including BOTH negative controls (roll-less rest gate fails as required;
+limp excursion exceeds the 38° gate — probe alive throughout, so the
+entry-126 mid-run `_crashRagdollStep` exception class is gone; a temporary
+diagnostic line that threw post-rest and killed the ragdoll was caught by
+exactly these controls and removed before commit). Zero TAIL samples on the
+green run; in-page 12 s post-rest probe: zero jumps > 2 cm, frozen=true.
+Two prior solo runs of the same build (before the freeze was relocated)
+still spiked — consistent with the transition explanation.
+
+**Open / carried:** (1) the reviewer's 5/5 consecutive-green gate: 1 full
+green run (3 tests) recorded; the session budget cut the remaining 4
+repeats — the fix is deterministic (frozen matrices cannot move), but the
+gate needs the sampling to be repeated. (2) The spec's `CRASHREST
+silhouette gate SOFT-FAIL: span 0 (gate 0.15)` soft log fired on the green
+run — pre-existing camera-aim-at-rest-x soft item, untouched. (3) The
+pre-fix negative control for the penetration symptom stays not-reproducible
+on the fixed-step frame grid (entry 126).
+
+**Open questions for the reviewer:** (1) confirm the rest-pose world-matrix
+freeze + next-run unfreeze as the permanent parking mechanism (answers
+entry 126's open question 2 — still display-only). (2) `getAbsolutePosition`
+on frozen nodes returns the captured matrix indefinitely; the 30 s sampler
+window can now never see post-rest motion — should the spec's sampling
+window be shortened or kept as a canary?
 
 ### 126 — crash determinism PARTIAL: fixed-step PBD substeps land (restAt
 now deterministic); the rendered-tail spike is narrowed to one single-sample
