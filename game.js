@@ -4565,7 +4565,13 @@ void main(void) {
         { x:  60, z: OUTRUN_Z + 380,      h:  94, rb:  80 },
         { x: 150, z: OUTRUN_Z + 300,      h:  84, rb:  70 },
     ];
+    // Author (HUMAN TESTING #7): "reduce one or two of the big peaks and see
+    // some more sky" — the whole range is scaled down (heights ×0.7, bases
+    // ×0.85) so the cones no longer fill the sky above the corridor; the
+    // four tallest were also cut individually above.
+    const PEAK_H_SCALE = 0.70, PEAK_R_SCALE = 0.85;
     PEAKS.forEach(function (m, i) {
+        m.h *= PEAK_H_SCALE; m.rb *= PEAK_R_SCALE;
         const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
             height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
             tessellation: 28    // regular cone silhouettes (author: "weird … not regular shapes")

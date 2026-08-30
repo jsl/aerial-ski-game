@@ -133,7 +133,11 @@ const CONTRAST_SRC = `
 `;
 // Measured 2026-08-29 (swiftshader, look.spec framing): fixed state mean 0.50 / std 0.165;
 // fogged (rejected) state mean 0.63 / std 0.123 — thresholds sit between with margin.
-const CONTRAST_MIN_STD = 0.14, CONTRAST_MAX_MEAN = 0.56, MASK_MIN = 0.02;
+// Re-measured 2026-08-29 22:40 after the author's "more sky" skyline (mid/far crests
+// lowered, peaks scaled): with less ridge in frame the remaining ridge pixels are
+// crest tops, so the fixed state reads mean 0.58 / std 0.175 and the fogged control
+// 0.68 / 0.092 — the mean ceiling moves to 0.63 (margin ≥ 0.05 both ways); std unchanged.
+const CONTRAST_MIN_STD = 0.14, CONTRAST_MAX_MEAN = 0.63, MASK_MIN = 0.02;
 
 async function contrastProbe(page) {
     await page.goto('/index.html');
