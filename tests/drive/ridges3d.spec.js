@@ -174,3 +174,59 @@ test('negative control: fogged ridge materials fail the contrast gate', async ({
     expect(r.maskFrac).toBeGreaterThan(MASK_MIN);
     expect(r.stdLum < CONTRAST_MIN_STD || r.meanLum > CONTRAST_MAX_MEAN).toBe(true);
 });
+// ── Peaks are opaque, rock-banded mountains, not glass pyramids ─────────
+// Reviewer by-eye (Fable, 2026-08-29 20:10): the peaks read as "pale
+// translucent glass pyramids overlapping each other" — one shared snow-band
+// material, back-face culling off. Iter-132 fixes it (per-peak tint/haze/
+// snowline, opaque materials). Gate: every pk_body_* material is opaque
+// (alpha 1, backFaceCulling ON), the tints are actually varied, and the
+// RENDERED peak pixels (peak-hide diff mask, same technique as the ridge
+// contrast gate) are mid-luminance with band variance — snow-felt would be
+// near-white and flat.
+const PEAK_SRC = `
+    window._peakGate = async function () {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const engine = scene.getEngine();
+        const cam = scene.activeCamera;
+        engine.stopRenderLoop();
+        cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;
+        const peaks = scene.meshes.filter(m => m.name && m.name.startsWith('pk_body_'));
+        const mats = peaks.map(m => m.material);
+        const opacity = mats.map(m => ({ alpha: m.alpha, cull: m.backFaceCulling, name: m.name }));
+        const tints = new Set(mats.map(m => [m.albedoColor.r, m.albedoColor.g, m.albedoColor.b].map(v => v.toFixed(3)).join(',')));
+        const grab = async () => { scene.render(); scene.render(); return engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight()); };
+        const withP = await grab();
+        peaks.forEach(m => m.setEnabled(false));
+        const without = await grab();
+        peaks.forEach(m => m.setEnabled(true));
+        let n = 0, sum = 0, sum2 = 0;
+        for (let i = 0; i < withP.length; i += 4) {
+            const d = Math.abs(withP[i] - without[i]) + Math.abs(withP[i+1] - without[i+1]) + Math.abs(withP[i+2] - without[i+2]);
+            if (d < 12) continue;
+            const lum = (0.2126 * withP[i] + 0.7152 * withP[i+1] + 0.0722 * withP[i+2]) / 255;
+            n++; sum += lum; sum2 += lum * lum;
+        }
+        const mean = n ? sum / n : 0, std = n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0;
+        return { count: peaks.length, opacity, uniqueTints: tints.size, maskFrac: n / (withP.length / 4), meanLum: mean, stdLum: std };
+    };
+`;
+test('peaks render as opaque, varied, rock-banded mountains', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForTimeout(1500);
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    await page.evaluate(PEAK_SRC);
+    const r = await page.evaluate(() => window._peakGate());
+    console.log('peak gate', JSON.stringify(r));
+    expect(r.count).toBe(11);
+    for (const o of r.opacity) {
+        expect(o.alpha).toBe(1);                 // opaque — no glass
+        expect(o.cull).toBe(true);               // backfaces culled — no overlap blend
+    }
+    expect(r.uniqueTints).toBeGreaterThanOrEqual(8);   // per-peak tint variance
+    expect(r.maskFrac).toBeGreaterThan(0.01);          // peaks actually in frame
+    expect(r.meanLum).toBeLessThan(0.75);              // rock visible — not all snow felt
+    expect(r.stdLum).toBeGreaterThan(0.05);            // banding, not a flat fill
+});

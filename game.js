@@ -4893,8 +4893,19 @@ void main(void) {
     // mapping as the ridges) gives forest low (hidden behind the ridge
     // band), rock mid-slope, snow caps. Scene fog (the peaks sit 200+ m out)
     // makes them read as a distant range.
-    const peakMat = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
-    peakMat.fogEnabled = true;
+    // Reviewer by-eye (Fable, 2026-08-29 20:10): the peaks read as "pale
+    // translucent glass pyramids overlapping each other" — their whole face
+    // sat in the snow band (30 m divisor over ~65 m cones ⇒ v clamped at 1
+    // above 20 m), all 11 shared ONE un-tinted material, and back-face
+    // culling was off so overlapping cones blended. Fixes: the ridges' own
+    // RIDGE_SNOWLINE_M elevation mapping (rock banding below the caps, with
+    // a per-peak snowline so caps sit at varied heights), per-peak tint/haze
+    // jitter, and an opaque material (alpha 1, backFaceCulling on — the
+    // cones are closed solids).
+    const peakMatBase = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
+    peakMatBase.fogEnabled = true;
+    peakMatBase.backFaceCulling = true;
+    peakMatBase.alpha = 1;
     const PEAKS = [
         // Back range, behind ridge_back (z < SLOPE_START_Z - 200)
         { x: -60, z: SLOPE_START_Z - 260, h:  96, rb:  80 },
@@ -4919,6 +4930,21 @@ void main(void) {
     const PEAK_H_SCALE = 0.70, PEAK_R_SCALE = 0.85;
     PEAKS.forEach(function (m, i) {
         m.h *= PEAK_H_SCALE; m.rb *= PEAK_R_SCALE;
+        // Deterministic per-peak variation (no Math.random — census stable):
+        // tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m.
+        const tint = 0.90 + 0.18 * ((i * 73) % 7) / 6;
+        const haze = 0.26 + 0.12 * ((i * 37) % 5) / 4;
+        const snline = 66 + 24 * ((i * 53) % 6) / 5;
+        const mat = makePBR('peakMat_' + i, scene);
+        mat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+        mat.metallic = 0; mat.roughness = 0.95;
+        mat.albedoTexture = peakMatBase.albedoTexture;   // share the band map
+        mat.bumpTexture = peakMatBase.bumpTexture;
+        mat.fogEnabled = true; mat.backFaceCulling = true; mat.alpha = 1;
+        mat.albedoColor = new BABYLON.Color3(
+            (1 + (FOG.r - 1) * haze) * tint,
+            (1 + (FOG.g - 1) * haze) * tint,
+            (1 + (FOG.b - 1) * haze) * tint);
         const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
             height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
             tessellation: 28    // regular cone silhouettes (author: "weird … not regular shapes")
@@ -4930,22 +4956,23 @@ void main(void) {
         // collapse and the face-back dark wall.)
         body.position.set(m.x, valleyFloorY - 4 + m.h / 2, m.z);
         // Elevation-keyed band UV: v = height above the valley floor over a
-        // COMPRESSED 30 m snowline (the ridges use 80 m) — the peaks are
-        // higher, so they must read SNOWIER than the ridges in front of
-        // which they sit; with the ridges' own 80 m mapping the two
-        // backdrops were near-pixel-identical at the crest and the ridges3d
-        // contrast mask collapsed to 0 (entry-114 blocker; iter-116 root
-        // cause). v CLAMPS at 1 — UV wrap would loop the crown back into
-        // the dark forest band. u arcs around the cone.
+        // per-peak snowline (66–90 m, the ridges' RIDGE_SNOWLINE_M=80 scale
+        // — reviewer: "not compressed to 30 m"). With ~60–69 m cones the
+        // snow caps occupy only the top ~quarter; the mid-slope reads as
+        // ROCK band, and the lower slopes stay hidden behind the ridges.
+        // The peaks still read snowier than the ridges in front of which
+        // they sit (higher v at any shared elevation). v CLAMPS at 1 — UV
+        // wrap would loop the crown back into the dark forest band.
+        // u arcs around the cone.
         const p = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
         const uv = [];
         for (let k = 0; k < p.length; k += 3) {
             uv.push(Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5,
                     Math.min(1, Math.max(0, (p[k + 1] + body.position.y
-                                - valleyFloorY) / 30)));
+                                - valleyFloorY) / snline)));
         }
         body.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
-        body.material = peakMat;
+        body.material = mat;
         body.isPickable = false;
     });
 

@@ -215,6 +215,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
 | — | Iteration 131 | **Snowing flatness pass (entry-130 item 1, display-only): sun disc + cumulus faded out under overcast (`sunAmount`/`cloudAmount` sky-shader uniforms), cast shadows softened (`setDarkness(0.55)`), ambient fill raised (hemi 0.42→0.58, IBL 0.32→0.42), sun tint neutral-cool; `_nightProbe` gains `hemi/shadow/sunDisc/env`; snowing.spec lum gate replaced with a chroma gate (overcast sky is physically brighter, not darker)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture); snowing.spec 1/1, night.spec 1/1, look 4/4; measured day→snowing: shadow drop 0.027→0.012, sunDisc 1→0, hemi 0.42→0.58, env 0.32→0.42, sky |r−b| −0.055→−0.047. See entry 131. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
@@ -7997,6 +7998,55 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 132 — mountains follow-up: peaks de-"glassed" (per-peak banding, tint
+variance, opaque materials)
+
+**What changed (reviewer order 129–145 item (b), confirmed for 132 in
+88dc802; the entry-131 by-eye defect "pale translucent glass pyramids
+overlapping each other"):** root causes in the `pk_body_*` block of
+`game.js` — all 11 cones shared ONE material with the 30 m snowline divisor
+(cones are ~60–69 m tall ⇒ UV v clamped at 1 above 20 m, the whole face in
+the snow band), no tint variance, and `backFaceCulling = false` (from
+`_ridgeMat`) so overlapping cones blended through each other's backfaces.
+Fixes, display-only:
+- Per-peak snowline divisor 66–90 m (deterministic `(i*53)%6` — census
+  stable), the ridges' `RIDGE_SNOWLINE_M=80` scale as the reviewer
+  specified ("not compressed to 30 m"). Caps now occupy only the top
+  ~quarter; mid-slope reads as the ROCK band; lower slopes stay hidden
+  behind the ridges.
+- Per-peak material (`peakMat_0..10`, built with `makePBR` + the base
+  material's shared albedo/bump textures — `PBRMaterial.clone` does not
+  exist on the headless stub and broke smoke/probe until replaced): tint
+  0.90–1.08, haze mix 0.26–0.38, `alpha = 1`, `backFaceCulling = true`.
+- `index.html` `game.js?v=48` → `?v=49`.
+- `tests/drive/ridges3d.spec.js` gains test 5 "peaks render as opaque,
+  varied, rock-banded mountains": every `pk_body_*` material alpha 1 +
+  culling on, ≥ 8 unique tints, peak-hide diff mask in frame, peak-pixel
+  mean lum < 0.75 (not snow felt) and std > 0.05 (banding).
+
+**Verification:** unit **81/81** (fail 0); golden **30/30** ("30/30
+scenarios match the golden traces", verify.js the last command before this
+commit — display-only, `pk_body_*` transforms and names unchanged, no
+re-capture); `ridges3d.spec` **5/5** — peak gate measured: 11 peaks, 11/11
+`alpha:1, cull:true`, uniqueTints 11, maskFrac 0.055, peak-pixel mean lum
+**0.672** / std **0.092** (old shared-snow state would be near-white flat);
+ridge contrast gates unaffected (fixed state and fogged negative control
+both still discriminate); `look` **4/4**, shots regenerated; scene.png
+luminance bands 0–20% 0.661 (sky), 20–35% 0.618 (peak/ridge zone, was
+washed pale), 35–50% 0.794 (snow). Raster PNG cannot be viewed in this
+session (no viewer); numbers above are the evidence.
+
+**Open:** forest remainder (P4), entry-125 B-net/smudge notes, polish.
+The contrast-gate comment in ridges3d.spec still describes the old 30 m
+snowline rationale — kept because the ridge-ONLY mask argument is
+unchanged; peak pixels are excluded from that mask either way.
+
+**Open questions for the reviewer:** (1) by-eye check of the new peaks in
+`shots/scene.png` — is the rock banding/variance now reading as a distant
+range rather than glass pyramids? (2) the peak gate's mean-lum ceiling of
+0.75 was chosen from one measurement (0.672); tighten if you want a harder
+rock-fraction guarantee.
 
 ### 131 — snowing flatness pass: overcast sun-disc/cumulus fade, softened
 shadows, raised ambient fill (display-only)
