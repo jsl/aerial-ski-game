@@ -208,6 +208,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
+| — | Iteration 121 | **slope-aware crash roll LANDED (entry-112 ruling) — steep accelerates a = g·(sinθ−μ·cosθ) μ=0.5, flat brakes μ·g=7.0, seed floor 6→3, bounded `settling` phase fixes maxAbove 0.615 vs 0.6, post-clamp excursion tracking fixes the 38.1° knife edge; spec envelope 2–5 → 3–7 s** | unit 0 fail; golden 30/30 CENSUS-ONLY re-capture (HEAD was 22 red on un-rebaselined pk_body_* peak scale), audit 0 physics diffs ×30/5408 frames, 0 display diffs; crash-ragdoll 2/3 green (restAt 9.1 → 7.19 → one residual never-stopped run, open for 122). See entry 121. |
 | — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
 | — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
 | — | Iteration 119 | **119 bundle LANDED — night mode made author-reachable + visible (settings toggle w/ localStorage reload, start-plateau + kicker-backlight floods, ambient raise, dimmer/denser flakes), generic blue/white kicker side panels (P3 gap), chop displacement raised to 0.095 + bump level 1.7; pike pose-shot instrument NOT done (open)** | night.spec 1/1 (9 warm spots incl. start flood aimed at the athlete; clearColor lum 0.0039, snow region mean 0.24, lit-pool lum 0.55+ r−b>0, athlete band 0.25+); venue-dressing 5/5 (6 panel ribbons hugging the wall planes ≤ 5 mm, cornerMat red untouched); chop.spec 1/1 (worstSink 0.093 ≤ 0.101, landing p95−p5 luminance > 0.10); unit 81/81, golden 30/30 CENSUS-ONLY re-capture (verify diffs were kickerPanel0/1/2 node presence only, audit-physics-state 0 diffs ×30); look NOT re-run this iter (run-all > 30 min under SwiftShader, budget killed it) — see open items. See entry 119. |
@@ -7982,6 +7983,43 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 121 — slope-aware crash roll (entry-112 ruling): accelerate on the
+steep, brake on the flat; bounded post-stop settle; envelope gate 3–7 s
+
+**What changed (order item 1 of 121–145; display-only, no `engine/` touch):**
+`_crashRagdollStep`'s roll phase now applies the ruling's physics instead of
+the old decelerate-on-the-steep creep: `a = g·(sinθ − μ·cosθ)` on slope ≥ 10°
+with g = 14 and μ = 0.5 (top of the ruling's 0.35–0.5 band), a 1.5 m/s
+anti-stall floor only while still on the steep, μ·g = 7.0 m/s² friction brake
+on the < 10° flat. Momentum seed floor 6 → 3 m/s (ceiling 15 kept). New
+bounded `settling` phase: if the stop fires with a body point still > 0.52 m
+above the snow, non-contacting parts lower at the rolling-settle rate
+0.15 m/s (hard sticks relaxed every frame, joints ≤ 2 cm) BEFORE rest is
+declared — the old instant stop left `maxAbove` 0.612–0.615 m vs the 0.6 m
+gate (reproduced twice). Excursion/spine gates now track the POST-clamp
+residual in `shapePass` (`min(exc, MAXEX)`; limp negative control still
+records the raw excursion) — the 38.1° vs 38° knife edge was a pre-clamp
+angle the clamp removes in the same pass, never rendered. Spec: motion
+envelope 2–5 s → 3–7 s per the ruling ("3–7 s" comment strings updated;
+38°/43° excursion gates NOT widened).
+
+**Verification:** `node --check` clean; unit 0 fail; golden 30/30 after a
+CENSUS-ONLY re-capture — at HEAD (reviewer's mountains merge) 22 scenarios
+already failed on display-node census (`pk_body_*` y offset from the
+un-rebaselined peak scale-down) — `audit-physics-state.js`: **0 physics-state
+diffs × 30 scenarios / 5408 frames, 0 display-node diffs** after re-capture.
+`crash-ragdoll.spec` progression across the iteration: restAt 9.10 s (red at
+HEAD) → μ=0.45 build reached 7.19 s (0.19 over) → μ=0.5 trim → **one run
+still failed with the machine never observing `stopped` inside the sampler
+window** (2/3 tests pass each run; joint gaps, penetration, no-legacy-solid,
+peaks, speed-zero gates all green). Diagnose first thing in 122.
+
+**Open questions for the reviewer:** (1) the residual crash-spec red above —
+model or sampler budget? (2) confirm census-only re-capture of the 22
+peak-scale scenarios is acceptable (precedent iters 109/116); (3) HUMAN
+TESTING #9 landed at 23:05 mid-iteration — 122 will take its items (chop
+albedo gate, floodlight towers) ahead of further crash polish.
 
 ### 120 — FINAL REVIEW (review-only) + branch summary; suite green except the
 known quality.spec frame-time flake (green solo); shots regenerated and
