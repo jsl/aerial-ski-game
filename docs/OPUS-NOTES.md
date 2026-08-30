@@ -796,6 +796,129 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 22 (2026-08-30, 05:0x-06:3x)
+
+Merged `render-realism-glm` first (9 commits: GLM's iter 127-129 crash-determinism
+parking, the day-time Snowing mode and its spec). Clean auto-merge, unit 81/81 +
+golden 30/30 on it before going further (`d719534`).
+
+### Item 3 — THE BIB BACK PLATE. Commits `41d641b`, `2bb164b`
+
+The 03:05 ruling asks for the back plate laid out exactly like the front, with
+≥ 10 % margins each side, gated on the horizontal ink profile. Session 21
+refused to lay it out against session 19's instrument, having just shown that
+instrument to be too thin. This session built the replacement and then found
+the defect was neither of the two things three sessions had called it.
+
+**The instrument: `_rect_plate`.** A fixed 96×64 grid in PATCH space,
+rasterised from the same low triangles with the atlas UV interpolated per cell
+and the baked albedo fetched there. Two differences from the point sampler
+carry the whole result:
+
+- **partial triangles are CLIPPED, not dropped.** The old test threw away
+  every triangle with a corner outside the plate — the entire border ring — so
+  the sampled region was the plate's *interior*, its extent set by wherever the
+  triangulation happened to fall. "Ink hard against the plate edge" could have
+  been, and was, an artefact of a sampled window that is not the plate. Patch
+  coordinates are affine in the triangle, so a corner outside [0,1]² is
+  interpolated through perfectly well; only the CELLS outside are dropped.
+- **the grid is the plate**, so an empty bucket is visibly empty instead of
+  silently renormalised. 96/96 columns covered on both faces, against ~1.2
+  samples per cell and whole empty columns before.
+
+**THE FINDING, and it retires three sessions of verdicts:**
+
+> Both plates carry a correctly-oriented "30". Neither is mirrored and neither
+> is edge-clipped. What differs is **STROKE WIDTH** — the front's vertical
+> stems render ~5 of 96 columns, the back's ~1.
+
+**The cause is a units bug in `_GLYPH_RECTS`.** The rects are normalised to
+[0,1] in BOTH axes of a cell measuring 5.6 × 12.3 cm, so `0.16` meant a
+19.6 mm horizontal bar but a 9.0 mm vertical stem. The paint is per-VERTEX on
+the high poly and then baked, so the plate has the torso lattice's resolution
+— measured here for the first time (new `plate paint` instrument):
+
+| face | plate verts | patch-u vertex gap median | p90 | p90 in mm |
+|---|---|---|---|---|
+| front | 892 | 0.0052 | 0.0478 | 7.2 |
+| back | 679 | 0.0036 | **0.0641** | **9.6** |
+
+The bars sat at twice the gap and always resolved. The stems sat AT it and
+survived on the front only by the lattice's phase. **Nothing about U, the bake
+or the atlas was ever wrong** — session 21's equal texel densities (83.0 vs
+82.9 texels/cm²) were right, and they pointed here.
+
+**The fix**: stems as thick in METRES as the bars, and the pair inset by
+`NUM_MARGIN = 0.10` so the ruling's margins hold identically on both faces.
+Shipped at stems 0.25 of cell width / bars 0.14 of cell height = 14.1 and
+15.9 mm, both ~1.5× the back's 9.6 mm gap. Ink band narrowed 0.24–0.76 →
+0.27–0.75 so the digit aspect stays a numeral's: 5.6 × 11.4 cm, aspect 0.497
+in the 0.45–0.75 gate.
+
+**The gate the ruling specifies — `_bib_layout_gate`:**
+
+| | shipped | negative control `BODY_SABOTAGE_BIBLAYOUT=1` | gate |
+|---|---|---|---|
+| ink in the outer 1/12 of the plate, front | **0.000** | 0.092 | ≤ 0.02 |
+| ink in the outer 1/12 of the plate, back | **0.000** | 0.081 | ≤ 0.02 |
+| back-vs-front column profile L1 | **0.232** | 0.502 | ≤ 0.40 |
+| back-vs-MIRRORED-front L1 | 0.426 | 0.496 | must exceed the row above |
+
+The negative control restores the pre-session-22 layout exactly and fails all
+three. Note its last row: **the old back plate matched the MIRRORED front
+marginally better than the front (0.496 vs 0.502)** — which is precisely the
+reading that produced "the back is mirrored" three times.
+`bib_orientation_report`'s DEFECT line clears on its own.
+
+### Two reds the first commit caused, and the A/B that pinned each
+
+**(1) `body.spec.js` front-minus-back torso blue 0.028 against its 0.03
+floor.** Checking out `HEAD~1`'s assets and re-running the same test is what
+pinned it to the commit rather than the merge: **0.070 / 0.015 before,
+0.062 / 0.034 after**. That gate calls a torso texel blue at `b - r > 0.15`
+in the SHIPPED sRGB atlas, and `NUM_INK` (0.07, 0.10, 0.18) linear encodes to
+b − r = **0.174** — every numeral texel was being counted as competition-bib
+blue. Harmless while the stems were 9 mm and half of them dissolved; resolving
+them doubled the back's blue. The bib is what that test is about and the
+number is not, and `reference/images/aerial_suit.png` has black numerals, so
+the ink is now near-black (0.05, 0.05, 0.06), b − r = 0.023 in sRGB.
+**front 0.070 → 0.040, back 0.015 → 0.004, margin 0.036 > 0.03.**
+
+**(2) then `bib-number.spec`'s dark-slab ceiling, front navyFrac 0.2540
+against < 0.25.** The 0.30/0.16 table draws a genuinely legible "30", but the
+gate asks whether the plate reads as a slab and 0.254 is its answer, so the
+STROKES came down and the gate did not: **navyFrac front 0.2540 → 0.2134,
+back 0.2008 → 0.1711** (band 0.02–0.25).
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96
+    unit    81/81      golden 30/30 (no display node changed; no re-capture)
+    drive   body 4/4, bib-number 1/1, rig 11/11, spine + chain + ready-stance 15/15
+            ATHLETE WIRE total 1 817 213 B (budget 2.5 MB maps / 3 MB athlete)
+
+`ASSET_V` 52 → 53, `game.js?v=` 48 → 49, preload hrefs `?v=53`.
+
+### Open at the end of session 22
+
+- **The paint lattice is now a known, measured ceiling on ALL suit detail**, not
+  just the bib: any painted feature narrower than ~10 mm is at or under the
+  high-poly vertex gap on the back of the torso and will render as the bib
+  stems did. Worth carrying into the panels/collar/cuffs work — a 3 cm collar
+  and a 5 cm stripe are safe, a seam line is not, and seams should stay in the
+  normal map where they already are.
+- Carried, in the reviewer's order: the flight-tuck re-check; the smoothed suit
+  shell (author #7 — still the author's most visible open item); panels /
+  collar / cuffs; the THUMB as its own finger group; the UV unwrap + arm stripe
+  last.
+- The residual strain tail is item 3 bake geometry on two independent
+  measurements (session 21): the crotch bridge face and the armpit band.
+- Not re-run this session: `crash-ragdoll.spec.js` (green on this tree in
+  session 20/GLM's iter 128 recorded 5/5; nothing in these commits reaches the
+  crash path) and the shot regeneration — the bib change is visible in the
+  rectified ASCII dumps (`BODY_BIB_ASCII=1`), which is a denser read of the
+  plates than any shot.
+
 ## Session 21 (2026-08-30, 04:0x-05:0x)
 
 Merged `render-realism-glm` first (2 commits, no conflicts; GLM's iter-126 PBD
