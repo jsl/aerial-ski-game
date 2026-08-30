@@ -4557,13 +4557,27 @@ def loosen_suit(body, joints):
         t = clamp01(t)
         return t * t * (3 - 2 * t)
 
-    def breadth(z, band=0.02, zone=None):
+    def breadth_xs(z, band=0.02, zone=None):
         if zone is None:
-            xs = [v.co.x for v in body.data.vertices if abs(v.co.z - z) < band]
-        else:
-            xs = [v.co.x for i, v in enumerate(body.data.vertices)
-                  if abs(v.co.z - z) < band and dom_at(v.index) == zone]
+            return [v.co.x for v in body.data.vertices if abs(v.co.z - z) < band]
+        return [v.co.x for i, v in enumerate(body.data.vertices)
+                if abs(v.co.z - z) < band and dom_at(v.index) == zone]
+
+    def breadth(z, band=0.02, zone=None):
+        xs = breadth_xs(z, band, zone)
         return (max(xs) - min(xs)) if xs else 0.0
+
+    # breadth is max-min, so it sums the two flanks and cannot tell "both sides
+    # stood off 20 mm" from "one side stood off 40". That matters here because
+    # the slice is filtered by vertex OWNERSHIP and reclaim_chest_wall — which
+    # hands the ribcage side wall from the arm groups to `torso` — runs on the
+    # RIGHT side only, so the two flanks of the chest and waist anchors are in
+    # different groups and get different stand-off budgets. Measured (session
+    # 26): the waist reads R +165.6 -> +187.5 mm against L -91.2 -> -106.7,
+    # i.e. the two halves are not even the same part of the body. Log them.
+    def halves(z, band=0.02, zone=None):
+        xs = breadth_xs(z, band, zone)
+        return ((max(xs) if xs else 0.0), (min(xs) if xs else 0.0))
 
     def deltoid_width():
         sh = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
@@ -4585,6 +4599,7 @@ def loosen_suit(body, joints):
         'forearm': (bl('lowerArmL').z, 'lowerArmL'),
     }
     before = {k: breadth(z, zone=zo) for k, (z, zo) in anchors.items()}
+    before_h = {k: halves(z, zone=zo) for k, (z, zo) in anchors.items()}
     delt_before = deltoid_width()
     sh_z = bl('upperArmL').z + SEGMENTS['upperArmL']['h'] / 2
     knee_z = (bl('upperLegL').z - SEGMENTS['upperLegL']['h'] / 2
@@ -4727,6 +4742,11 @@ def loosen_suit(body, joints):
             f'chest anchor above the panel, waist band reads it)')
 
     after = {k: breadth(z, zone=zo) for k, (z, zo) in anchors.items()}
+    after_h = {k: halves(z, zone=zo) for k, (z, zo) in anchors.items()}
+    log('SUIT GIRTH halves (max x / min x, mm, before -> after): ' + ' | '.join(
+        f'{k} R {before_h[k][0]*1000:+.1f}->{after_h[k][0]*1000:+.1f} '
+        f'L {before_h[k][1]*1000:+.1f}->{after_h[k][1]*1000:+.1f}'
+        for k in sorted(anchors)))
     delt_delta = deltoid_width() - delt_before
     worst = None
     parts = []
