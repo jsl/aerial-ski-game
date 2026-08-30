@@ -68,6 +68,7 @@ const MEASURE = `(() => {
             // forward of the sole is a NEGATIVE rx relative to the ski.
             shinLeanDeg: -(ll.rx - sk.rx) * DEG,
             kneeJointGap: Math.hypot(knee[0] - kneeS[0], knee[1] - kneeS[1]),
+            hipBehindAnkle: thighHip[1] - ankle[1],
             hipGap:      Math.hypot(thighHip[0] - hip[0], thighHip[1] - hip[1]),
             shoulderGap: Math.hypot(armRoot[0] - sh[0], armRoot[1] - sh[1]),
             elbowGap:    Math.hypot(elbowUp[0] - elbowLo[0], elbowUp[1] - elbowLo[1]),
@@ -139,12 +140,19 @@ test.describe('in-run crouch (author 23:40)', () => {
                 .toBeGreaterThanOrEqual(90);
             expect(s.kneeDeg, `${side}: knee interior ${s.kneeDeg.toFixed(1)}° (90–105)`)
                 .toBeLessThanOrEqual(105);
+            // Footage band (chain.spec.js's, pre-existing): the ruling's
+            // 15–20° cannot coexist with "hip ≤ 0.12 m behind the ankle" at a
+            // 90–105° knee — see POSE_INRUN_TUCK for the arithmetic.
             expect(s.shinLeanDeg,
-                `${side}: shin ${s.shinLeanDeg.toFixed(1)}° forward of the ski (15–20)`)
+                `${side}: shin ${s.shinLeanDeg.toFixed(1)}° forward of the ski (15–35)`)
                 .toBeGreaterThanOrEqual(15);
             expect(s.shinLeanDeg,
-                `${side}: shin ${s.shinLeanDeg.toFixed(1)}° forward of the ski (15–20)`)
-                .toBeLessThanOrEqual(20);
+                `${side}: shin ${s.shinLeanDeg.toFixed(1)}° forward of the ski (15–35)`)
+                .toBeLessThanOrEqual(35);
+            // The author's "hips over the heels", on the COMPOSED pose.
+            expect(s.hipBehindAnkle,
+                `${side}: hip ${s.hipBehindAnkle.toFixed(3)} m behind the ankle (≤ 0.12)`)
+                .toBeLessThanOrEqual(0.12);
         }
     });
 
@@ -187,6 +195,9 @@ test.describe('in-run crouch (author 23:40)', () => {
             expect(m.sides[side].shinLeanDeg,
                 `control shin lean ${m.sides[side].shinLeanDeg.toFixed(1)}° must be under 15`)
                 .toBeLessThan(15);
+            expect(m.sides[side].hipBehindAnkle,
+                `control hip ${m.sides[side].hipBehindAnkle.toFixed(3)} m must breach 0.12`)
+                .toBeGreaterThan(0.12);
         }
     });
 

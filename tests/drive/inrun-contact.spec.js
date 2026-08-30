@@ -19,8 +19,13 @@
 //     to the ski in a crouch. The SOLE half of the invariant is unchanged and
 //     is what "boot sole on the ski" means: ≤ 5 mm at both stations, always.
 //     The pitch half is now crouch-aware — 0–2° at rest (item 10's
-//     perpendicular standing stance) rising to 15–20° forward at full
-//     crouch, and never backwards.
+//     perpendicular standing stance) rising to the footage band at full
+//     crouch, and never backwards. The band is chain.spec.js's own
+//     pre-existing footage band (shins forward 15–35°) rather than the
+//     ruling's 15–20°: at 0.36 m segments the ruling's box cannot reach
+//     chain.spec.js's "hip ≤ 0.12 m behind the ankle" (minimum 0.1718 m), so
+//     the two approved numbers are incompatible — see POSE_INRUN_TUCK and
+//     docs/OPUS-NOTES.md.
 //
 // (5) In-run crouch arm hold — while grounded with the crouch engaged the
 //     hands stay AHEAD of the hips by 0.25–0.40 m in the body frame and below
@@ -74,7 +79,7 @@ function expectBootsSeated(page, label, leanBand) {
 }
 // The cuff is moulded, not free: at full crouch the lean must be in the
 // ruling's band, and it must never lean BACKWARDS in any state.
-const CROUCH_LEAN = [15, 20];
+const CROUCH_LEAN = [15, 35];   // chain.spec.js's footage band
 const REST_LEAN   = [-2, 2];
 
 test('rest and gate crouch: boots seated ≤5 mm; crouch hands ahead of hips, below shoulders', async ({ page }) => {

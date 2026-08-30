@@ -1300,7 +1300,10 @@ const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015 }
 // (hop turn, landing) — a boot cuff only leans when you press into it.
 // The invariant the ruling keeps is the SOLE: the shin's -Y end stays exactly
 // on the binding anchor at every lean, so sole-to-ski-top stays 0.
-const _BOOT_CUFF_LEAN = 0.3054;   // 17.5 deg, middle of the ruling's 15-20
+const _BOOT_CUFF_LEAN = 0.5000;   // 28.6 deg — see POSE_INRUN_TUCK: the ruling's
+                                  // 15-20 cannot reach the pre-existing hip-over-heel
+                                  // gate (min 0.1718 m vs 0.12); 28.6 is inside the
+                                  // footage band chain.spec.js already gates (15-35).
 function _pinBootsToSkis(meshes, tuck, armRaise) {
     if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
     // Same weight as _seatTorsoOnHips / _inrunArmForward: exactly 0 at rest and

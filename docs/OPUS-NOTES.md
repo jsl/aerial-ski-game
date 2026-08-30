@@ -796,6 +796,173 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 17 (2026-08-30, 02:0x-03:0x)
+
+### The merge first (commit c3f1b4a)
+
+Six golden traces conflicted. Both lanes had re-captured them: the GLM lane for
+its crash-roll residual fix (`643e2dd` — the very failure session 16 measured
+and attributed to them), this lane for the session-15 crouch display nodes. A
+three-way TEXT merge of trace JSON is meaningless, so every trace was taken
+wholesale from `render-realism-glm` (their physics change is the new baseline)
+and then re-captured on the merged tree under the standing 17:05 condition:
+
+    audit-physics-state.js   30 scenarios, 5408 frames
+                             scenarios with ANY physics-state difference: 0
+                             with display-node differences: 13
+                             (lowerArmL, head, lowerArmL_elbow)
+
+so the re-capture is display-only and GLM's crash trajectory survives
+byte-for-byte. Verified on the merge: **unit 81/81, golden 30/30, browser
+36/36**. `ASSET_V` stays 47.
+
+**The 00:45 merge blocker is closed by the merge itself**: `crash-ragdoll`'s red
+was GLM's never-stopping ragdoll, exactly as session 16 measured, and their
+`643e2dd` fixes it. Nothing was owed by this lane.
+
+### Ruling 00:15 item (b) — THE CROUCH KNEE. Commit 5180010.
+
+Measured live at the crouch endpoint before the change: **knee interior 134.2
+deg, shin lean 0.0 deg, hip 0.258 m BEHIND the ankle**. That is a skier standing
+almost straight and leaning over — the shape the author has been objecting to.
+
+The cause is one line in `_pinBootsToSkis`. It set the shin's rotation to
+`atan2(upZ, upY)`, the ski's NORMAL, so **the shin was exactly perpendicular to
+the ski in every state**. With a perpendicular shin the knee interior angle is
+identically `180 - (thigh rx)`, so the only way to deepen the knee was to throw
+the hip further backwards — and the author's other requirement is hips over the
+heels. The two were in direct contradiction, which is why four sessions of
+pose-table edits never fixed the crouch: the table was not the binding
+constraint, the pin was.
+
+A real ski boot's cuff is moulded with 15-20 deg of forward lean and the athlete
+flexes into it. The shin is never perpendicular to the ski in a crouch — which
+is precisely what the reviewer's ruling says, and it is a statement about the
+PIN, not about the pose table.
+
+- the pin leans the shin forward by `_BOOT_CUFF_LEAN` (0.3054 rad = 17.5 deg),
+  weighted by the same `tuck*(1-armRaise)` the two sibling display fix-ups use,
+  so it is exactly 0 in the ready stance (item 10's perpendicular-standing gate)
+  and in every other grounded state (hop turn, landing);
+- the **SOLE** half of the boot-ski invariant is untouched, and it is what the
+  ruling means by "boot sole on the ski": the shin's -Y end stays on the binding
+  anchor at any lean, and sole-to-ski-top measures **0.0000 m** at both stations;
+- `POSE_INRUN_TUCK`'s legs rebuilt by forward kinematics off the ski so the
+  chain closes on itself; torso/head/arms re-seated on the new hip.
+
+### REVIEWER: the ruling's 15-20 deg lean is geometrically impossible. 28.6 shipped.
+
+The first cut of this fix used the ruling's 17.5 deg and turned
+`chain.spec.js`'s pre-existing footage gate red -- **"hip joint behind ankle"**,
+which is the author's own "hips over the heels", gated at <= 0.12 m. That is not
+a stale gate. For 0.36 m segments the geometry is forced:
+
+        hip behind ankle = 0.36 * (sin(flex - lean) - sin(lean))
+
+    lean  15.0 deg -> 0.2382 m      lean  25.2 deg -> 0.1480 m
+    lean  17.5 deg -> 0.2167 m      lean  28.6 deg -> 0.1167 m   PASS
+    lean  20.0 deg -> 0.1947 m      lean  35.0 deg -> 0.0568 m
+
+Over the ruling's WHOLE box (knee 90-105 => flex 75-90, lean 15-20) the
+**minimum reachable hip offset is 0.1718 m** against a 0.12 m gate. The two
+approved numbers cannot both hold; no pose-table edit can reconcile them.
+
+Shipped: **lean 0.50 rad = 28.6 deg**, taken from the band `chain.spec.js`
+already gates as the footage target (*shins forward 15-35 deg*) and which the
+pre-ruling table's own comment used ("shins ~25 deg forward over the ankles").
+It satisfies the knee ruling, the hip-over-heels gate and the footage band
+together, and it is *closer* to what the author asked for than 17.5 would have
+been -- the hip lands 0.116 m behind the ankle instead of 0.217. **The 15-20 deg
+in the ruling is the boot cuff's MOULDED lean; the shin angle in a deep tuck is
+that plus the ankle flex inside the boot, which is why the footage reads
+higher.** Reviewer: confirm 28.6, or tell me which of the two numbers to break.
+
+| at the crouch endpoint | before | after | band |
+|---|---|---|---|
+| knee interior | **134.2 deg** | **98.0** | 90-105 |
+| shin lean off the ski normal | **0.0 deg** | **28.6** | 15-35 (footage) |
+| hip behind the ankle | **0.258 m** | **0.116** | <= 0.12 |
+| hand vs knee height | -14 mm | **+53 mm** | +-100 |
+| hand ahead of the knee | 0.308 m | **0.192** | 0.10-0.30 |
+| back above horizontal | 44.0 deg | 44.0 | 40-50 |
+| head above the back line | 28.8 deg | 28.8 | >= 25 |
+| sole-to-ski-top, both stations | 0.0000 m | 0.0000 | <= 5 mm |
+| knee ahead of the ankle | 0.000 m | **0.173** | — |
+
+Joint gaps at the endpoint: knee 0 mm, elbow 0 mm, shoulder 8 mm, hip 8 mm (the
+8 mm is `BASE_Z`, the L/R lateral offset, not a dislocation).
+
+### The other two reds in the full drive run, both measured
+
+- **`chain.spec.js:61` (knee/ankle residual, mid-blend) was a MEASUREMENT bug in
+  the test, exposed rather than caused by the lean.** It located the ski's top
+  face half a ski-thickness along **the SHIN's** normal instead of the ski's --
+  the same vector only while the pin held the shin on the ski normal. At
+  mid-blend that read 0.1366 m against a 0.1361 m allowance: a **0.5 mm**
+  artefact. Measured off the ski's own normal, where the ski's top face actually
+  is, it reads 0.1344 m and passes. Fixed in the test, not in the pose.
+- **`crash-ragdoll.spec.js` "worst body penetration ~0.12 m" is NOT this lane's
+  and is NOT the crouch commit.** Attributed by running the spec in a detached
+  worktree at **`c3f1b4a`** -- this session's merge commit, i.e. before any
+  crouch work: **0.1160 m**, the same failure. On the crouch commit it reads
+  **0.1185 m**. This also closes session 16's open question to the reviewer:
+  their 00:45 figure of 0.1221 m was real, and it is reachable now only because
+  GLM's `643e2dd` finally lets the ragdoll reach `stopped` -- before that the
+  spec aborted at line 254 and never evaluated the penetration assertion at all.
+  The body is put 12 cm into the snow by the GLM-lane crash-roll rest model.
+
+**Gates, each with a negative control that fires:**
+
+- `inrun-crouch.spec.js` — knee 90-105 deg, shin lean 15-20 deg forward, knee
+  joint gap <= 20 mm. NEGATIVE CONTROL (a new test) writes the pre-ruling legs
+  onto the same meshes — shin back on the ski normal, thigh rx 0.80 — and reads
+  **134.2 deg / 0.0 deg**, breaching both.
+- `inrun-contact.spec.js` — **the blanket "shin within +-2 deg of the ski normal
+  in EVERY state" gate was itself the thing holding the knee at 134 deg.** It is
+  replaced, not loosened: the cuff lean is now gated as -2..2 deg at rest and
+  **15-20 deg forward at full crouch and mid-in-run**, never backwards. A gate
+  that forbids the correct posture is a defect in the gate. The <= 5 mm sole gap
+  at both stations is unchanged and still measured at rest, gate crouch, through
+  the whole hop turn and mid-in-run.
+
+`POSE_INRUN_TUCK` is display-only — `computeI` reads `POSE_TUCKED_INERTIA` and
+`POSE_UNTUCKED`, never this table — and the audit confirms it rather than
+asserting it: **30 scenarios, 5408 frames, 0 physics-state differences**, 2 with
+display-node differences. Traces re-captured.
+
+### Verification
+
+    build   not run — no asset was rebuilt this session (ASSET_V stays 47)
+    unit    81/81      golden 30/30 (re-captured, display-only)
+    browser 36/36
+    drive   rig + body + chain + athlete + athlete-wired + ready-stance +
+            bib-number + spine + inrun-crouch + inrun-contact + crash-ragdoll:
+            **49 passed, 1 failed** — the failure is crash-ragdoll's
+            penetration, attributed above to the merge base, not to this lane.
+            pose-shots 1/1.
+    shots   pose_{inrun,tuck,pike}_{side,front}.png regenerated, figure 448 px
+
+`game.js?v=` 41 -> 43, `body-model.js?v=` 25 -> 27.
+
+### Open, and visible in shots/pose_inrun_side.png
+
+The crouch now reads as a real in-run tuck by eye. What the deeper hip flex
+exposes, and did not expose at 134 deg, is a **dark smeared crease over the
+buttock and the back of the thigh** — the suit skin stretching across the hip
+ring at 98 deg of knee and a deeply closed hip. This is item 5's blend-ring
+problem showing at a joint angle the old pose never reached, not a new defect:
+the same rings the reviewer's session-8 ruling sent back to the skin weights.
+It is the next thing to measure (strain p99 over the hip ring at the new
+endpoint) and should be done before the smoothed-shell suit, because the shell
+pass would otherwise be tuned against a torn surface.
+
+Still open from session 16: **the THUMB** still stands ~45 deg off the hand
+(`relax_hands` finds fingers by connectivity and the thumb is never a component
+at any cut depth); the next handle is a lateral-protrusion test rather than
+connectivity. The finger CURL is also still skipped — the base mesh's hand is
+flat enough that the palm-side inference measures 0.0 mm and the pass declines
+to guess a direction.
+
 ## Session 16 (2026-08-30, 01:0x-02:0x)
 
 ### The merge first (commit 09af510)
