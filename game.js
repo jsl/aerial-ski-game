@@ -5850,37 +5850,8 @@ void main(void) {
         };
     }
 
-    function _crashRagdollStep(R, dt) {
+    function _crashRagdollTick(R, dt) {
         R.t += dt;
-        // The root KEEPS SLIDING during the crash (physics continues; only the
-        // crash froze state.vz at impact and the slope re-accelerates it), so
-        // the world→local write-back must use the LIVE root transform, not a
-        // capture. The root orientation is frozen while crashActive.
-        const _rp = character.root.position;
-        const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
-        const _rq = character.root.rotationQuaternion || R.qRoot;
-        const qRootInv = _crashQConj(_rq);
-        // Root-slide lag compensation (iter 123): the write-back below
-        // projects the frozen world pose through the root position captured
-        // HERE, but the engine keeps sliding the root afterwards in the same
-        // frame — so the rendered body drifts at the root's residual speed
-        // after rest (measured 0.109 m/s vs the 0.06 gate; during the roll it
-        // adds to slideV). While the pose is rigid (every phase after the
-        // tumble), translate the frozen world points by the root's per-step
-        // delta BEFORE the projection: rendered world speed is then exactly
-        // the pose's own speed in every phase.
-        if (R.phase !== 'tumble') {
-            if (R._lastRoot) {
-                const _rd = _crashVSub(rootPos, R._lastRoot);
-                for (const pt of R.parts) {
-                    pt.p.x += _rd.x; pt.p.y += _rd.y; pt.p.z += _rd.z;
-                }
-                for (const sk of R.skis) {
-                    sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
-                }
-            }
-            R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
-        }
         // When the hard freeze has fired (R.phase leaves 'tumble'), the
         // ragdoll pose is FROZEN in world space — but the physics root KEEPS
         // SLIDING under it (the crash only froze state.vz at impact and the
@@ -6376,7 +6347,101 @@ void main(void) {
                 R.phase = 'stopped'; R.resting = true; R.restAt = R.t;
             }
         }
-    // ── Write driver transforms (root-local, bones follow as always) ──
+    }
+
+    // Fixed-step driver (reviewer 2026-08-30 01:30; entry 125): the ragdoll's
+    // settle, friction and phase transitions were frame-time dependent (the
+    // crash-ragdoll spec flaked 1/3 solo; post-stop tail 322 nonzero
+    // samples). The physics now runs in constant 1/120 s substeps drained
+    // from a frame-dt accumulator, so the simulated state is a function of
+    // accumulated SIM time only — identical step counts and identical state
+    // regardless of the rendered frame grid. Per-substep surface projection
+    // was already inside the PBD loop; no performance.now() is involved.
+    const _CRASH_DT = 1 / 120;
+    function _crashRagdollStep(R, dt) {
+        // The root KEEPS SLIDING during the crash (physics continues; only
+        // the crash froze state.vz at impact and the slope re-accelerates
+        // it), so the world→local write-back must use the LIVE root
+        // transform, not a capture. The root orientation is frozen while
+        // crashActive.
+        // Park the display root at rest (iter 126): the engine keeps
+        // integrating the crashed root after the machine stops — past the
+        // out-run it leaves the terrain and FALLS, dragging the riding
+        // frozen pose with it (measured rendered-tail bursts 2.6–4.5 m/s at
+        // t≈+6–7 s after rest). The root is a display node; hold its world
+        // transform at the rest capture so the rendered body and skis stay
+        // exactly where the machine stopped. Engine state is untouched; the
+        // next run's reset repositions the root as before.
+        if (R.resting) {
+            if (!R._park) {
+                const _q = character.root.rotationQuaternion;
+                R._park = { x: character.root.position.x, y: character.root.position.y, z: character.root.position.z,
+                            qx: _q ? _q.x : 0, qy: _q ? _q.y : 0, qz: _q ? _q.z : 1, qw: _q ? _q.w : 0 };
+            }
+            character.root.position.x = R._park.x;
+            character.root.position.y = R._park.y;
+            character.root.position.z = R._park.z;
+            if (character.root.rotationQuaternion) {
+                character.root.rotationQuaternion.set(R._park.qx, R._park.qy, R._park.qz, R._park.qw);
+            }
+        }
+        // Late engine writes (the root update can land after this step on a
+        // janky frame) would reach the render as a one-frame body jump
+        // (measured single-sample 4.6 m/s spikes at t≈+8 s after rest), so
+        // re-apply the park after the scene update, before the render.
+        if (R.resting && scene && scene.onBeforeRenderObservable) {
+            if (!R._parkObs) {
+                R._parkObs = scene.onBeforeRenderObservable.add(function () {
+                    if (!ragdoll || !ragdoll.resting || !ragdoll._park) return;
+                    const pk = ragdoll._park;
+                    character.root.position.x = pk.x;
+                    character.root.position.y = pk.y;
+                    character.root.position.z = pk.z;
+                    if (character.root.rotationQuaternion) {
+                        character.root.rotationQuaternion.set(pk.qx, pk.qy, pk.qz, pk.qw);
+                    }
+                });
+            }
+        }
+        const _rp = character.root.position;
+        const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
+        const _rq = character.root.rotationQuaternion || R.qRoot;
+        const qRootInv = _crashQConj(_rq);
+        // Root-slide lag compensation (iter 123): translate the frozen world
+        // points by the root's per-FRAME delta before the ticks, so the
+        // rendered body tracks the sliding root exactly (per-frame because
+        // the root's own motion is engine-driven at frame granularity).
+        if (R.phase !== 'tumble') {
+            if (R._lastRoot) {
+                const _rd = _crashVSub(rootPos, R._lastRoot);
+                for (const pt of R.parts) {
+                    pt.p.x += _rd.x; pt.p.y += _rd.y; pt.p.z += _rd.z;
+                    // Rigid translation: move the velocity memory too, so
+                    // the tick's displacement read (p − prev) stays EXACTLY
+                    // 0 once stopped — translating only p made maxSpeed
+                    // read the root's residual slide for every post-stop
+                    // frame the root kept moving (the 151–322 nonzero tail
+                    // samples). Every tick re-bases prev = p, so this is
+                    // inert during roll/settling.
+                    if (pt.prev) {
+                        pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
+                    }
+                }
+                for (const sk of R.skis) {
+                    sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
+                }
+            }
+            R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
+        }
+        R._acc = (R._acc || 0) + Math.min(dt, 0.25);
+        let _n = 0;
+        while (R._acc >= _CRASH_DT && _n < 24) {
+            _crashRagdollTick(R, _CRASH_DT);
+            R._acc -= _CRASH_DT;
+            _n++;
+        }
+        if (_n >= 24) R._acc = 0; // dump backlog under extreme load (≤ 5 fps)
+        // ── Write driver transforms (root-local, bones follow as always) ──
         // Arm segments are passed (distal, proximal) so the written +Y matches
         // the arm drivers' own frame (+Y = elbow/wrist end); torso/head/legs
         // pass (proximal, distal) per their +Y-proximal frames. See the note
