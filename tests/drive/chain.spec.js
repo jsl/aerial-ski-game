@@ -70,9 +70,18 @@ test.describe('P13 chain joint anchors', () => {
                 // knee gap from the probe (cross-axis measure)
                 out['kneeGap' + side] = window._poseProbe(0.5, true, 0)['knee' + side];
                 const llc = Math.cos(ll.rotation.x), lls = Math.sin(ll.rotation.x);
+                // The ski's top face is half a ski-thickness along the SKI's
+                // own normal, not the shin's. The two used to be the same
+                // vector because _pinBootsToSkis nailed the shin to the ski
+                // normal; once the boot cuff leans (ruling 00:15 item b) they
+                // differ by the lean and this measured the wrong point —
+                // 0.1366 m against a 0.1361 m allowance at mid-blend, a
+                // 0.5 mm artefact of the measurement, not of the pose
+                // (measuring off the ski normal: 0.1344 m).
+                const skc = Math.cos(sk.rotation.x), sks = Math.sin(sk.rotation.x);
                 out['ankleGap' + side] = Math.hypot(
-                    (sk.position.y + 0.015 * llc) - (ll.position.y - 0.18 * llc),
-                    (sk.position.z + 0.015 * lls) - (ll.position.z - 0.18 * lls));
+                    (sk.position.y + 0.015 * skc) - (ll.position.y - 0.18 * llc),
+                    (sk.position.z + 0.015 * sks) - (ll.position.z - 0.18 * lls));
             }
             return out;
         });
@@ -146,9 +155,11 @@ test.describe('HARD endpoint tear gate (FABLE-80 finding 5)', () => {
                 (h.dz - 0.125 * Math.sin(h.rx)) - topZ) };
             for (const side of ['L', 'R']) {
                 const ua = OLD['upperArm' + side], crz = Math.cos(ua.rz);
+                // Shoulder = the arm's -Y end (bind axis; the tables that put
+                // it at +Y were rolled 180 deg out of it — see POSE_INRUN_TUCK).
                 out['shoulder' + side] = Math.hypot(
-                    (ua.y + 0.150 * crz * Math.cos(ua.rx)) - topY,
-                    (ua.dz + 0.150 * crz * Math.sin(ua.rx)) - topZ);
+                    (ua.y - 0.150 * crz * Math.cos(ua.rx)) - topY,
+                    (ua.dz - 0.150 * crz * Math.sin(ua.rx)) - topZ);
                 const ul = OLD['upperLeg' + side];
                 const uc = Math.cos(ul.rx), us = Math.sin(ul.rx);
                 out['hip' + side] = Math.hypot(
@@ -186,8 +197,9 @@ test.describe('in-run tuck pose targets (APPROVED table, footage targets)', () =
             const hipZ = M.torso.position.z - 0.275 * Math.sin(M.torso.rotation.x);
             const ankleZ = M.lowerLegL.position.z - 0.18 * Math.sin(lrx);
             const shoulderY = M.torso.position.y + 0.275 * Math.cos(M.torso.rotation.x);
-            const handY = M.lowerArmL.position.y - 0.125 * Math.cos(M.lowerArmL.rotation.x);
-            const handZ = M.lowerArmL.position.z - 0.125 * Math.sin(M.lowerArmL.rotation.x);
+            // Hand = the fore-arm's +Y end (bind axis).
+            const handY = M.lowerArmL.position.y + 0.125 * Math.cos(M.lowerArmL.rotation.x);
+            const handZ = M.lowerArmL.position.z + 0.125 * Math.sin(M.lowerArmL.rotation.x);
             const deg = r => Math.abs(r) * 180 / Math.PI;
             return {
                 torsoDeg: deg(M.torso.rotation.x),
@@ -198,8 +210,14 @@ test.describe('in-run tuck pose targets (APPROVED table, footage targets)', () =
                 handAheadOfHip: handZ < hipZ - 0.20,
             };
         });
-        expect(m.torsoDeg, 'torso from vertical').toBeGreaterThanOrEqual(55);
-        expect(m.torsoDeg, 'torso from vertical').toBeLessThanOrEqual(75);
+        // AUTHOR 23:40 (screenshot author_inrun_crouch_2026-08-29.png): the back
+        // is 40-50 deg ABOVE HORIZONTAL, i.e. 40-50 deg from vertical — "NOT
+        // flat". This band read 55-75 (the reviewer's 22:25 "back
+        // near-horizontal" target), which is the plank the author rejected;
+        // the newer ruling supersedes it. Not a loosening: the window is the
+        // same 20 deg wide and the old table now fails it.
+        expect(m.torsoDeg, 'torso from vertical').toBeGreaterThanOrEqual(40);
+        expect(m.torsoDeg, 'torso from vertical').toBeLessThanOrEqual(50);
         expect(m.kneeFlexDeg, 'knee flexion').toBeGreaterThanOrEqual(90);
         expect(m.kneeFlexDeg, 'knee flexion').toBeLessThanOrEqual(110);
         expect(m.shinDeg, 'shins forward').toBeGreaterThanOrEqual(15);
