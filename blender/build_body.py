@@ -846,10 +846,49 @@ def _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES):
     return out
 
 
+def _collapse_helpers(W, names):
+    """
+    Re-express a weight field in the ORIGINAL bone basis, helpers folded back
+    onto the two bones they interpolate, half each.
+
+    WHY THE SEAM METRIC NEEDS THIS. Weight L1 across an edge is a proxy for one
+    thing: how differently the two endpoints move. It is a fair proxy only
+    while every unit of weight is one bone apart from every other, which was
+    true until add_joint_helpers halved the lattice. Measured on this build,
+    the projection took the hip edge at (-0.020,-0.102,-0.300) from 0.72 to
+    1.36 — exactly a doubling — while the two endpoints move NO differently
+    than before, because hlpHip is the half-angle of the pair it replaced. Raw
+    L1 on the fine lattice counts the same physical gradient twice.
+
+    Folding each helper back 50/50 undoes exactly that: the hat projection
+    preserves the vertex's first moment along the chain, so the fold is its
+    exact inverse in this metric, and the number the gate reads after the
+    helpers is the number it read before them. That is a claim with a
+    consequence — if the projection ever DID cut a seam, the fold cannot hide
+    it, because a discontinuity in the moment survives the fold.
+    """
+    out = {}
+    for gi, w in W.items():
+        nm = names.get(gi)
+        h = JOINT_HELPERS.get(nm)
+        if h is None:
+            out[gi] = out.get(gi, 0.0) + w
+            continue
+        for other in h:
+            oi = next((k for k, v in names.items() if v == other), None)
+            if oi is None:
+                out[gi] = out.get(gi, 0.0) + w
+                break
+            out[oi] = out.get(oi, 0.0) + w * 0.5
+    return out
+
+
 def weight_seam_report(obj, tag, verbose=True):
     """Per-edge weight-field discontinuity on the mesh as it will be skinned."""
     W = _vertex_weights(obj)
     names = {g.index: g.name for g in obj.vertex_groups}
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W = [_collapse_helpers(w, names) for w in W]
     per_edge = []
     for e in obj.data.edges:
         a, b = W[e.vertices[0]], W[e.vertices[1]]
@@ -1066,6 +1105,15 @@ def _group_segment(name):
     """
     if name in SPINE_NAMES:
         return seg_ends('torso')
+    if name in JOINT_HELPERS:
+        # A half-joint helper's domain is the two HALF-SEGMENTS it bridges, so
+        # its reference runs from one neighbour's centre to the other's. The
+        # first cut of this used the thigh axis alone and the gate flagged four
+        # groin weights at 1.80 x reach: measured against the torso-centre to
+        # thigh-centre axis the same vertices sit at 0.6 x, which is what they
+        # are — hip blend, not a bone driving skin half a body away.
+        ea, eb = (_group_segment(n) for n in JOINT_HELPERS[name])
+        return ((ea[0] + ea[1]) / 2.0, (eb[0] + eb[1]) / 2.0)
     if name in SEGMENTS:
         return seg_ends(name)
     return None
@@ -7237,6 +7285,298 @@ def add_spine_chain(low, arm):
     return moved
 
 
+# ── OPUS ITEM 5: half-angle HELPER BONES at the hips and knees ─────────────
+#
+# APPROVED by the reviewer 2026-08-30 02:40, in the same class as the spine.
+#
+# THE DEFECT, measured in the browser in session 18 at the deep-hip crouch
+# endpoint: the worst edge left in the skin is at the KNEE — 22.1 mm at rest,
+# 1.28 mm posed, a strain of 17.2 — and its two endpoints are weighted
+# upperLegR 0.648 / lowerLegR 0.352 and lowerLegR 0.506 / upperLegR 0.494.
+# That is not a bad weight. It is the arithmetic of linear blend skinning:
+# Babylon averages the two bones' MATRICES, and the average of two rotations
+# theta apart is not a rotation — it is a rotation scaled by cos(theta/2). At a
+# knee closing 98 degrees a vertex weighted 50/50 lands at 0.66 of its radius
+# from the joint axis, and the ring pinches. The candy wrapper. No weight edit
+# reaches it, because the 50/50 IS the smooth blend the seam gates ask for.
+#
+# THE FIX. Put a bone at the joint whose rotation is the HALF-ANGLE of the two
+# it sits between (game.js: updateJointHelpers), and re-express every blended
+# vertex on the finer lattice
+#
+#     spine_01 --- hlpHip --- upperLeg --- hlpKnee --- lowerLeg
+#        0.0        0.5          1.0         1.5         2.0
+#
+# so no vertex is ever blended across more than HALF a joint. cos(theta/2) at
+# 49 degrees is 0.91 instead of 0.66: the pinch drops by roughly three
+# quarters, and it does so without a single extra influence per vertex (see
+# below) and without dual-quaternion skinning, which Babylon's default path
+# does not have.
+#
+# WHY IT IS INERT AT REST, which is what makes it safe to land: bind == driver
+# for every bone (patch_skin_binds), so at the rest pose each bone contributes
+# T(c) . T(-c) = identity and ANY partition of unity reproduces the bind mesh
+# exactly. The helpers change deformation only. Like add_spine_chain and
+# localise_weights this therefore runs LAST, after the bake and after every
+# geometry gate.
+JOINT_HELPERS = {
+    'hlpHipL':  ('spine_01',  'upperLegL'),
+    'hlpHipR':  ('spine_01',  'upperLegR'),
+    'hlpKneeL': ('upperLegL', 'lowerLegL'),
+    'hlpKneeR': ('upperLegR', 'lowerLegR'),
+}
+# The lattice, per side. Coordinates are half-joints; the helpers are the
+# half-integers.
+HELPER_LATTICE = [
+    ('spine_01', 0.0), ('hlpHip', 0.5), ('upperLeg', 1.0),
+    ('hlpKnee', 1.5), ('lowerLeg', 2.0),
+]
+HELPER_MIN_W = 0.02        # below this a weight moves a vertex by microns
+HELPER_SPAN_MAX = 0.5      # half a joint, the whole point of the pass
+SABOTAGE_HELPERS = os.environ.get('BODY_SABOTAGE_HELPERS') == '1'
+
+
+def _helper_rest_translation(name):
+    """The helper driver's REST position in the BABYLON axes seg_matrix uses.
+
+    Both helpers on a side are ends of the SAME segment — the thigh — so this
+    needs nothing from the spine or the shin: the hip is the thigh's top, the
+    knee is the thigh's bottom, and game.js walks to exactly those two points
+    from the thigh driver every frame.
+    """
+    side = name[-1]
+    leg = 'upperLeg' + side
+    p = POSE[leg]
+    half = SEGMENTS[leg]['h'] / 2.0
+    sgn = 1.0 if name.startswith('hlpHip') else -1.0
+    return Vector((p.get('x', 0.0), p.get('y', 0.0) + sgn * half,
+                   BASE_Z.get(leg, 0.0) + p.get('dz', 0.0)))
+
+
+def _helper_chain_of(vname):
+    """(side, lattice coordinate) for a group name, or None if it is off-chain."""
+    for stem, c in HELPER_LATTICE:
+        if stem == 'spine_01':
+            continue
+        for side in ('L', 'R'):
+            if vname == stem + side:
+                return side, c
+    return None
+
+
+def joint_span_report(obj, arm, tag, verbose=True):
+    """
+    How far, in JOINTS, each vertex's influences are spread along a leg chain.
+
+    A span of 1.0 is a vertex blended between two bones a whole joint apart —
+    the candy-wrapper vertex. 0.5 is the most the lattice allows. Vertices with
+    weight on both legs are counted per side; `spine_01` is on both chains at
+    coordinate 0, which is correct — it is the shared root.
+    """
+    bones = {b.name for b in arm.data.bones}
+    coord = {}
+    for g in obj.vertex_groups:
+        if g.name not in bones:
+            continue
+        if g.name == 'spine_01':
+            coord[g.index] = ('*', 0.0)
+        else:
+            c = _helper_chain_of(g.name)
+            if c is not None:
+                coord[g.index] = c
+    bad = 0
+    worst = []
+    spans = []
+    for v in obj.data.vertices:
+        per = {'L': [], 'R': []}
+        for g in v.groups:
+            if g.weight < HELPER_MIN_W or g.group not in coord:
+                continue
+            side, c = coord[g.group]
+            for s in (('L', 'R') if side == '*' else (side,)):
+                per[s].append((c, g.weight, obj.vertex_groups[g.group].name))
+        for s in ('L', 'R'):
+            e = per[s]
+            if len(e) < 2:
+                continue
+            # spine_01 alone on a side is not a leg blend; it needs a real leg
+            # bone opposite it to span anything.
+            if all(c == 0.0 for c, _, _ in e):
+                continue
+            span = max(c for c, _, _ in e) - min(c for c, _, _ in e)
+            spans.append(span)
+            if span > HELPER_SPAN_MAX + 1e-6:
+                bad += 1
+                worst.append((span, v.co.copy(),
+                              sorted(((n, round(w, 3)) for _, w, n in e))))
+    spans.sort()
+    worst.sort(key=lambda r: -r[0])
+    r = {'bad': bad, 'n': len(spans), 'worst': worst[:6],
+         'max': spans[-1] if spans else 0.0,
+         'p99': spans[int(0.99 * (len(spans) - 1))] if spans else 0.0}
+    if verbose:
+        log(f'JOINTSPAN {tag}: {bad}/{r["n"]} blended vertices span more than '
+            f'{HELPER_SPAN_MAX} of a joint | span p50 '
+            f'{spans[len(spans)//2] if spans else 0:.2f} p99 {r["p99"]:.2f} '
+            f'max {r["max"]:.2f}')
+        for sp, co, e in worst[:3]:
+            log(f'  span {sp:.2f} at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}): '
+                + ', '.join(f'{n} {w}' for n, w in e))
+    return r
+
+
+def joint_span_gate(obj, arm, tag):
+    r = joint_span_report(obj, arm, tag)
+    if r['bad'] > 0:
+        sp, co, e = r['worst'][0]
+        raise SystemExit(
+            f'[body] joint-span gate FAILED at {tag}: {r["bad"]} vertices are '
+            f'blended across more than {HELPER_SPAN_MAX} of a joint — worst '
+            f'{sp:.2f} at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}) '
+            + ', '.join(f'{n} {w}' for n, w in e) +
+            '. Linear blend skinning collapses such a vertex toward the joint '
+            'axis by cos(theta/2) — the candy wrapper at the knee the author '
+            'sees in the crouch (negative control BODY_SABOTAGE_HELPERS=1)')
+    return r
+
+
+def add_joint_helpers(low, arm):
+    """Add the four helper bones and re-project the leg weights onto them."""
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    for nm in JOINT_HELPERS:
+        side = nm[-1]
+        uh = arm.data.bones['upperLeg' + side].head_local.copy()
+        lh = arm.data.bones['lowerLeg' + side].head_local.copy()
+        # pose_onto_segments has already moved every bone's HEAD onto its
+        # segment CENTRE, so these two heads are the thigh and shin centres and
+        # the joints are their midpoint and its reflection. The edit-bone rest
+        # is cosmetic — patch_skin_binds writes the binding from
+        # _helper_rest_translation — but a bone whose rest disagrees with its
+        # bind is a trap for the next reader, so it is placed honestly.
+        head = (uh + lh) / 2.0 if nm.startswith('hlpKnee') else uh + (uh - lh) / 2.0
+        d = (lh - uh)
+        d = d.normalized() if d.length > 1e-6 else Vector((0.0, 0.0, -1.0))
+        if nm in eb:
+            eb.remove(eb[nm])
+        b = eb.new(nm)
+        b.head = head
+        b.tail = head + d * 0.05
+        b.use_connect = False
+        b.inherit_scale = 'NONE'
+        b.parent = None          # FLAT, like every other bone here.
+    bpy.ops.object.mode_set(mode='OBJECT')
+    arm.select_set(False)
+    bpy.context.view_layer.objects.active = low
+
+    vgs = low.vertex_groups
+    for nm in JOINT_HELPERS:
+        if nm not in vgs:
+            vgs.new(name=nm)
+    # ONLY skin joints, for the reason localise_weights records: the mesh also
+    # carries mask groups that are not bones (`reduce` drives the Decimate
+    # modifier), and renormalising one of those alongside the bone weights
+    # rewrites a mask rather than a skin.
+    bone_names = {b.name for b in arm.data.bones}
+    joints = {g.index for g in vgs if g.name in bone_names}
+    bone_groups = [g for g in vgs if g.name in bone_names]
+    idx = {g.name: g.index for g in vgs}
+    lattice = {}                       # side -> [(group index, coord)]
+    for side in ('L', 'R'):
+        lattice[side] = [(idx['spine_01'], 0.0)] + [
+            (idx[stem + side], c) for stem, c in HELPER_LATTICE
+            if stem != 'spine_01']
+    all_chain = {gi for s in lattice for gi, _ in lattice[s]}
+
+    moved = 0
+    worst_mass = 0.0
+    both_sides = 0
+    capped = 0
+    for v in low.data.vertices:
+        cur = {g.group: g.weight for g in v.groups
+               if g.weight > 1e-6 and g.group in joints}
+        legs = {s: sum(w for gi, w in cur.items()
+                       if gi in {g for g, c in lattice[s] if c >= 1.0})
+                for s in ('L', 'R')}
+        if legs['L'] + legs['R'] <= 1e-6:
+            continue               # no leg weight: a pure trunk/arm/head vertex
+        if legs['L'] > 1e-6 and legs['R'] > 1e-6:
+            both_sides += 1
+        wS = cur.get(idx['spine_01'], 0.0)
+        tot = legs['L'] + legs['R']
+        new = dict(cur)
+        for gi in all_chain:
+            new.pop(gi, None)
+        for side in ('L', 'R'):
+            # The shared root is split between the sides in proportion to the
+            # leg weight each side already carries, so a crotch vertex sitting
+            # on both thighs keeps its total and neither side is privileged.
+            mass = legs[side] + wS * (legs[side] / tot)
+            if mass <= 1e-6:
+                continue
+            coords = {gi: c for gi, c in lattice[side]}
+            s = sum(w * coords[gi] for gi, w in cur.items() if gi in coords
+                    and (coords[gi] >= 1.0 or gi == idx['spine_01']))
+            # spine_01's contribution to the moment is zero (coord 0), so the
+            # numerator is the legs' alone; the DENOMINATOR carries its share.
+            s /= mass
+            # Hat functions on the lattice: at most two adjacent nodes, so the
+            # span is 0.5 by construction and the result is a partition of
+            # unity of `mass`. Identity at every lattice node, so a vertex that
+            # was purely one bone's stays purely that bone's.
+            lo = max(0, min(len(lattice[side]) - 2, int(math.floor(s / 0.5))))
+            a = (s - lo * 0.5) / 0.5
+            a = 0.0 if a < 0.0 else (1.0 if a > 1.0 else a)
+            for k, part in ((lo, 1.0 - a), (lo + 1, a)):
+                if part <= 1e-6:
+                    continue
+                gi = lattice[side][k][0]
+                new[gi] = new.get(gi, 0.0) + mass * part
+        got = sum(new.values())
+        was = sum(cur.values())
+        worst_mass = max(worst_mass, abs(got - was))
+        ws = sorted(new.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        if len(new) > WEIGHT_SEAM_INFLUENCES:
+            capped += 1
+        t2 = sum(w for _, w in ws) or 1.0
+        keep = {k: w / t2 for k, w in ws if w > 1e-6}
+        for g in bone_groups:
+            if g.index in keep:
+                g.add([v.index], keep[g.index], 'REPLACE')
+            elif g.index in cur or g.index in all_chain:
+                g.remove([v.index])
+        moved += 1
+    low.data.update()
+    log(f'joint helpers: {len(JOINT_HELPERS)} bones added; {moved} leg-weighted '
+        f'verts re-projected onto the half-joint lattice ({both_sides} carry '
+        f'both legs, {capped} needed the {WEIGHT_SEAM_INFLUENCES}-influence '
+        f'cap); worst chain-mass error before the cap {worst_mass:.2e}')
+    if worst_mass > 1e-4:
+        raise SystemExit(
+            f'[body] the helper re-projection is not a partition of unity: '
+            f'worst vertex is off by {worst_mass:.2e}')
+    # How much skin each helper actually owns. A helper that is in the file,
+    # linked and weightless would pass every structural check and change
+    # nothing on screen — the same trap spine.spec.js records for the spine.
+    for nm in JOINT_HELPERS:
+        tot = 0.0
+        gi = vgs[nm].index
+        for v in low.data.vertices:
+            for g in v.groups:
+                if g.group == gi:
+                    tot += g.weight
+        log(f'  {nm}: {tot:.1f} weight units')
+        if tot < 1.0:
+            raise SystemExit(
+                f'[body] helper bone {nm} carries {tot:.2f} weight units — it '
+                f'would be a bone that changes nothing')
+    return moved
+
+
 def patch_skin_binds(path):
     """
     Rewrite the skin's inverseBindMatrices to exactly inverse(driver rest).
@@ -7303,8 +7643,22 @@ def patch_skin_binds(path):
         fore = BASE_Z.get('torso', 0.0) + p.get('dz', 0.0)
         return Matrix.Translation(Vector((p.get('x', 0.0), up, fore)))
 
+    def helper_matrix(name):
+        """
+        The joint helpers' REST local matrices: translation to the joint, no
+        rotation. game.js walks each one to the same point off the thigh
+        driver every frame (updateJointHelpers), and at rest every leg driver
+        is unrotated, so the hip helper sits exactly on the thigh's top and the
+        knee helper exactly on its bottom. Bind == driver for the helpers is
+        the same statement it is for the spine, and rig.spec.js asserts it on
+        all of them.
+        """
+        return Matrix.Translation(_helper_rest_translation(name))
+
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
     want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})
+    if not SABOTAGE_HELPERS:
+        want.update({nm: helper_matrix(nm).inverted() for nm in JOINT_HELPERS})
 
     data = bytearray(open(path, 'rb').read())
     magic, ver, total = struct.unpack_from('<III', data, 0)
@@ -8477,6 +8831,34 @@ def main():
         localise_weights(low, arm)
     weight_seam_gate(low, 'shipped skin')
     weight_locality_gate(low, arm, 'shipped skin')
+
+    # OPUS ITEM 5: the half-angle helpers go in after the locality repair, and
+    # that order is a PROOF as well as a convenience. The re-projection only
+    # ever puts weight where a leg bone already had it, so every helper weight
+    # sits inside skin localise_weights has just certified as local to that
+    # leg; the locality gate cannot be undone by a pass that adds no reach.
+    # The seam gate is re-run below because the claim there is different — the
+    # projection must be CONTINUOUS across the mesh, not merely local.
+    joint_span_report(low, arm, 'before the helpers')
+    if SABOTAGE_HELPERS:
+        # NEGATIVE CONTROL, and a HISTORICAL one like the seam and locality
+        # controls: skip the pass and let the gate measure the skin session 19
+        # shipped, whose knee ring blends a full joint 50/50 and collapses to
+        # cos(49 deg) of its radius. It must be rejected.
+        log('joint helpers SABOTAGED: add_joint_helpers SKIPPED — the gate now '
+            'measures the pre-session-20 skin and must reject it')
+    else:
+        add_joint_helpers(low, arm)
+    # NOT followed by another smooth_blend_rings: the ring relax diffuses each
+    # vertex's weight vector into its neighbours', which would put upperLeg
+    # weight back onto lowerLeg vertices and re-open the very span this pass
+    # closes. It is not needed either — the lattice coordinate s is a weighted
+    # mean of weights that are already continuous over the mesh, and the hat
+    # functions are continuous, so the projection cannot cut a seam. That is a
+    # claim, so the seam gate below re-measures it on the shipped skin.
+    joint_span_gate(low, arm, 'shipped skin')
+    weight_seam_gate(low, 'shipped skin, after the helpers')
+    weight_locality_gate(low, arm, 'shipped skin, after the helpers')
 
     # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
     # position is the whole point.  add_spine_chain and smooth_blend_rings both
