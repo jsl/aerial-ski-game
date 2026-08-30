@@ -229,6 +229,67 @@ BOOT_LIGHT_LUMA = 0.45
 BOOT_LIGHT_FRAC = 0.02
 BOOT_DARK_MAX = 0.20
 BOOT_HEIGHT_MIN = 0.09      # metres of shell from the sole to the cuff lip
+
+# ── OPUS ITEM 3 / ITEM 9: the neck gaiter, the collar and the cuffs ─────────
+#
+# Read off the author's PRIMARY reference (reference/images/aerial_suit.png,
+# and the same athlete through reference/frames/IMG_3770). Three garment
+# features the build has never had, each of them named in the brief:
+#
+#   GAITER  "at the neck a multicoloured neck gaiter filling the gap between
+#           collar and helmet".  Today every head-owned vertex below the rim
+#           and outside the lens sector is painted SKIN, so the athlete has a
+#           bare throat running from the jaw into the suit — and the dark line
+#           the reviewer logged at 17:30 ("red streak across the throat",
+#           item 9) is the bib/collar boundary landing on that bare skin.  A
+#           gaiter is the garment that is actually there, and it removes the
+#           boundary rather than repainting it.
+#
+#           `lm['chin']` is the LOWEST head-dominant vertex, i.e. the base of
+#           the neck and not the chin at all (`head_landmarks` takes min(z)),
+#           so the gaiter band is measured from there: 0 .. GAITER_HI of head
+#           height is throat and jaw, with the nose tip at 0.357h and the lens
+#           at 0.44h well clear above it.
+#
+#   COLLAR  a stand-up collar ~3 cm high at the top of the torso — above the
+#           reviewer's 10 mm paint-lattice floor (05:10 ruling), so it is a
+#           vertex-paint feature and not a texture-space one.
+#
+#   CUFF    "sleeve and ankle cuffs (slightly darker, elastic ribbing)".  The
+#           wrist band sits between the glove step (-0.78) and the forearm, the
+#           ankle band immediately above the boot cuff step (BOOT_ALONG).
+# Both tones are deliberately NEUTRAL-WARM and NOT blue-dominant. The first
+# build of this pass used (0.15, 0.19, 0.26) for the dark half, and look.spec's
+# lens detector — "blue minus red > 0.10 AND blue > 0.32", the discriminator
+# that tells the mirrored shield from the helmet shell — counted the nape of the
+# neck as goggle: back-face lensFrac 0.104 against a 0.06 limit, i.e. the front/
+# back camera gate failed on a garment. The reference gaiter is warm-neutral
+# anyway (a mottled tan-grey, not a blue tube), so the fix is the reference's
+# colour and not a threshold.
+GAITER     = (0.30, 0.28, 0.26)     # the gaiter's mid tone: a patterned tube reads as one value at 3 m
+GAITER_ALT = (0.14, 0.13, 0.13)     # its darker half — a coarse helical two-tone, so "multicoloured" survives the bake
+COLLAR     = (0.40, 0.42, 0.46)     # stand-up collar: clearly darker than SUIT (0.80/0.82/0.85) so the neck has an edge
+CUFF       = (0.58, 0.60, 0.64)     # elastic ribbing, slightly darker than the suit, at wrist and ankle
+GAITER_HI_F = 0.16          # head fraction (from lm['chin'] = neck base) the gaiter reaches in FRONT: under the chin, below the mouth band's 0.19h
+GAITER_HI_B = 0.26          # ... and at the NAPE, where a real gaiter rides up over the jaw and neck
+GAITER_HI  = GAITER_HI_F    # the band collar_cuff_gate requires covered EVERYWHERE:
+                            # above it the front is chin and must stay skin, so
+                            # sampling to GAITER_HI_B would ask the gate to
+                            # reject a correctly-cut garment. The nape's extra
+                            # rise is asserted separately, in its own sector.
+COLLAR_A0  = 0.86           # torso `along` above which the suit is collar stand (~30 mm)
+CUFF_A0, CUFF_A1 = -0.78, -0.58     # forearm `along`: the wrist band, glove step to +25 mm
+ANKLE_A1 = -0.22            # shin `along`: the ankle band runs BOOT_ALONG .. here
+# Gate thresholds for collar_cuff_gate. SUIT luma 0.816, COLLAR 0.417,
+# CUFF 0.596, GAITER 0.267 — every band is separated from the suit by more
+# than the 0.10 the bake's own filtering can move a flat region.
+GAITER_SKIN_MAX = 0.06      # fraction of the throat band still painted SKIN
+GAITER_AZIM_MIN = 8         # octants of the neck the gaiter must reach (of 8)
+COLLAR_MIN_MM = 18.0        # the collar stand's measured height
+CUFF_MIN_MM = 15.0          # the wrist band's measured height, per arm
+# NEGATIVE CONTROL for collar_cuff_gate: skip the gaiter/collar/cuff paint and
+# ship the bare throat and cuffless sleeves this build had up to session 29.
+SABOTAGE_COLLAR = os.environ.get('BODY_SABOTAGE_COLLAR') == '1'
 # Negative control for the boot gate: skip the boot paint and ship the white
 # blob this project shipped up to session 9.
 SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
@@ -7289,7 +7350,33 @@ def paint_suit(obj, lm):
             hx = bl('head').x
             # level. Same function that splits the material slots on the low poly. that splits the material slots on the low poly.
             reg = head_region(Vector((x, y, z)), lm)
-            if reg == 'lens':
+            _hzl = (z - lm['chin']) / lm['h']
+            # A gaiter is not a level band: it sits UNDER the chin in front and
+            # rides up over the nape and the jaw at the sides, which is what the
+            # reference still shows and what keeps the chin visible. The top
+            # edge is therefore a function of the fore/aft sector, low at the
+            # front (GAITER_HI_F) and high at the back (GAITER_HI_B).
+            _gfwd = (y - bl('head').y) / max(1e-6, lm['h'] * 0.12)
+            _ghi = GAITER_HI_F + (GAITER_HI_B - GAITER_HI_F) \
+                * (0.5 - 0.5 * max(-1.0, min(1.0, _gfwd)))
+            if _hzl < _ghi and not SABOTAGE_COLLAR:
+                # OPUS ITEM 3 / ITEM 9: the NECK GAITER. Below the jaw the head
+                # segment is throat, and every one of those vertices used to be
+                # painted SKIN — a bare neck running from the jaw down into the
+                # suit, with the collar/bib boundary drawing the dark line
+                # across it that the reviewer logged at 17:30. The reference
+                # athlete wears a gaiter there, which is both what closes the
+                # gap between collar and helmet and what removes the boundary.
+                #
+                # "Multicoloured" cannot survive as a per-vertex pattern at a
+                # 3.5 mm lattice if the features are small, so the pattern is
+                # deliberately COARSE: one helical two-tone about the neck axis
+                # at ~3 turns of head height, whose bands are ~25 mm wide — the
+                # same scale rule the 05:10 paint-lattice ruling sets.
+                _gz = math.atan2(x - hx, y - bl('head').y) * 1.5 + _hzl * 22.0
+                col = GAITER if math.sin(_gz) > 0.0 else GAITER_ALT
+                tag = 'gaiter'
+            elif reg == 'lens':
                 # AUTHOR 21:55: a shooter-style shield carries a THIN FRAME
                 # ALONG THE TOP EDGE ONLY (the brow bar). The bottom edge is
                 # frameless — it is the lens itself, tapering away over the
@@ -7324,15 +7411,34 @@ def paint_suit(obj, lm):
                 # 0.6 m. Wider/darker lip and nostril strokes, plus a
                 # nose-side shadow band each flank of the nose so the nose
                 # has a visible edge in flat light.
+                # OPUS ITEM 9 (session 29): `hz` is ALREADY a fraction of head
+                # height, and all three feature bands then compared it against
+                # `lm['h'] * <fraction>` — i.e. multiplied by the head height a
+                # SECOND time. On a 229 mm head that put the mouth at
+                # 0.043..0.070h, the nostrils at 0.069..0.076h and the nose
+                # shading at 0.076..0.108h: every facial feature was painted
+                # 10..25 mm above the base of the NECK, a hand's breadth below
+                # the face, while the nose tip sits at 0.357h and the lens at
+                # 0.440h. That is the whole of the author's "nose, mouth and
+                # chin must be discernible" — they were drawn, and they were
+                # drawn on the throat. The intended numbers are the fractions
+                # themselves; only the z tests were wrong, the lateral ones
+                # (a length against a length) were always right.
                 hz = (z - lm['chin']) / lm['h']
-                if lm['h'] * 0.19 < hz < lm['h'] * 0.305 \
-                        and abs(x - hx) < lm['h'] * 0.17:
+                # The lip band also had NO fore/aft condition, where the
+                # nostril and nose-shade bands below it both carry one
+                # (`ly > 0.10h`). A band with only a z range and a lateral
+                # half-width is a RING: the mouth was painted round the
+                # full circumference of the head, nape included. Same
+                # frontal test as its two neighbours.
+                if 0.19 < hz < 0.305 and abs(x - hx) < lm['h'] * 0.17 \
+                        and ly > lm['h'] * 0.10:
                     col, tag = LIP, 'lip'
-                elif lm['h'] * 0.30 < hz < lm['h'] * 0.33 \
+                elif 0.30 < hz < 0.33 \
                         and abs(abs(x - hx) - lm['h'] * 0.055) < lm['h'] * 0.026 \
                         and ly > lm['h'] * 0.10:
                     col, tag = BROW, 'nostril'
-                elif lm['h'] * 0.33 < hz < lm['h'] * 0.47 \
+                elif 0.33 < hz < 0.47 \
                         and abs(abs(x - hx) - lm['h'] * 0.032) < lm['h'] * 0.022 \
                         and ly > lm['h'] * 0.10:
                     col, tag = SKIN_SHADE, 'noshade'
@@ -7346,6 +7452,19 @@ def paint_suit(obj, lm):
                 col, tag = HELMET, 'helmet'
         elif name.startswith('lowerArm') and along < -0.78:
             col, tag = GLOVE, 'glove'
+        elif name.startswith('lowerArm') and along < CUFF_A1 \
+                and not SABOTAGE_COLLAR:
+            # OPUS ITEM 3: the SLEEVE CUFF — elastic ribbing, slightly darker
+            # than the suit, between the glove step and the forearm. It is what
+            # gives the sleeve an end; without it the white suit ran straight
+            # into the glove.
+            col, tag = CUFF, 'cuff'
+        elif name == 'torso' and along > COLLAR_A0 and not SABOTAGE_COLLAR:
+            # OPUS ITEM 3: the STAND-UP COLLAR. ~3 cm, comfortably above the
+            # reviewer's 10 mm paint-lattice floor, so it is a vertex-paint
+            # feature. It sits above the bib (bib_mask stops at along 0.52) and
+            # meets the gaiter at the neck joint.
+            col, tag = COLLAR, 'collar'
         elif name == 'torso' and -1.00 < along < -0.90:
             # A waistband at the HIP, not a slab across the lower back. It
             # used to span -0.95..-0.70, i.e. it began 2 hundredths of an
@@ -7416,6 +7535,13 @@ def paint_suit(obj, lm):
             tag = 'number'
         elif bib_mask(name, along, front, lx) > 0.5:
             col, tag = BIB, 'bib'
+        if tag == 'suit' and name.startswith('lowerLeg') \
+                and along < ANKLE_A1 and not SABOTAGE_COLLAR:
+            # OPUS ITEM 3: the ANKLE CUFF. It runs as a POST-step rather than
+            # as a branch so the leg STRIPE keeps the band it already owns —
+            # in the reference the blue seam runs hip to ankle and the cuff is
+            # what the trouser bunches over, not what interrupts the stripe.
+            col, tag = CUFF, 'ankcuff'
         if tag == 'suit':
             f = fold_shade(name, along)
             if f > 0.0:
@@ -7508,6 +7634,8 @@ def paint_suit(obj, lm):
                 'lip', 'noshade']
     if not SABOTAGE_BOOT:
         required += ['boot', 'bootlip']
+    if not SABOTAGE_COLLAR:
+        required += ['gaiter', 'collar', 'cuff', 'ankcuff']
     missing = [t for t in required if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
@@ -7594,6 +7722,143 @@ def boot_paint_gate(obj):
     if bad:
         raise SystemExit('[body] BOOT PAINT GATE FAILED: ' + '; '.join(bad))
     return {'mean': mean, 'light_frac': frac, 'span': span, 'n': len(lumas)}
+
+
+
+def collar_cuff_gate(obj, lm):
+    """
+    OPUS ITEM 3 / ITEM 9 hard gate: the neck is COVERED, and the sleeves and
+    trouser legs END IN CUFFS.
+
+    Same shape as `boot_paint_gate`, and for the same reason: `paint_suit`'s
+    `required` list only proves a region matched SOME vertices, not that it
+    matched the right ones. Four assertions on the painted high-poly:
+
+      covered   almost no vertex in the throat band (0 .. GAITER_HI of head
+                height, measured from `lm['chin']`, which is the LOWEST
+                head-dominant vertex and therefore the base of the neck) is
+                still painted at skin luma. This is the bare throat itself, so
+                it is the assertion the negative control trips first.
+      wraps     the gaiter reaches every one of the eight azimuth octants
+                about the neck axis — a tube, not a bib that happens to ride
+                up. A patch covering only the front would satisfy `covered`
+                on a frontal sample and leave the nape bare.
+      collar    the collar stand measures >= COLLAR_MIN_MM tall on the torso.
+      cuff      BOTH forearms carry a wrist band >= CUFF_MIN_MM tall, and both
+                shins carry an ankle band. A cuff on one arm is a bug in the
+                side test, not a garment.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_COLLAR=1 skips all three paints in
+    `paint_suit` and ships the bare throat and cuffless sleeves this build had
+    up to session 29 — and this gate must reject it.
+    """
+    attr = obj.data.color_attributes.get('suit')
+    if attr is None:
+        raise SystemExit('[body] collar gate: no "suit" colour attribute')
+    own = dominant_segments(obj)
+    hc = bl('head')
+
+    def luma(c):
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    # A vertex counts as still-skin if it is within 0.05 luma of SKIN and
+    # nowhere near the gaiter's two tones (0.267 / 0.185) — the bands are far
+    # enough apart that no threshold in between is a judgement call.
+    skin_y = luma(SKIN)
+    throat, skin_left, octants = 0, 0, set()
+    for i, v in enumerate(obj.data.vertices):
+        if own[i] != 'head':
+            continue
+        hzl = (v.co.z - lm['chin']) / lm['h']
+        if not (0.0 <= hzl < GAITER_HI):
+            continue
+        throat += 1
+        y = luma(attr.data[i].color)
+        if abs(y - skin_y) < 0.05:
+            skin_left += 1
+        else:
+            th = math.atan2(v.co.x - hc.x, v.co.y - hc.y)
+            octants.add(int((th + math.pi) / (math.pi / 4.0)) % 8)
+    # The gaiter's FRONT/BACK cut, measured directly: the highest gaiter
+    # vertex behind the head axis must sit above the highest one in front of
+    # it. A level band would read ~0 and a garment cut the wrong way round
+    # (high under the chin, low at the nape) would read negative. Reported
+    # rather than gated on an invented threshold — the assertions below are
+    # the ones the brief asks for, and this is the number that says which way
+    # the collar is cut.
+    top_f, top_b = -9.0, -9.0
+    for i, v in enumerate(obj.data.vertices):
+        if own[i] != 'head':
+            continue
+        # Match the gaiter's two tones EXACTLY (paint_suit writes them
+        # unshaded, so they survive the vertex buffer bit for bit). "Not
+        # skin" is not enough: the LIP band's dark red sits 0.03 of luma
+        # from GAITER's, so a luma test read the mouth as gaiter and
+        # reported the cut the wrong way round (-0.054h).
+        c = attr.data[i].color
+        if not any(all(abs(c[k] - g[k]) < 1e-3 for k in range(3))
+                   for g in (GAITER, GAITER_ALT)):
+            continue
+        hzl = (v.co.z - lm['chin']) / lm['h']
+        if v.co.y - hc.y > 0:
+            top_f = max(top_f, hzl)
+        else:
+            top_b = max(top_b, hzl)
+    rise = top_b - top_f
+    if throat < 100:
+        raise SystemExit(
+            f'[body] collar gate: only {throat} vertices in the throat band '
+            f'— the head ownership or lm[\'chin\'] moved, so nothing is measured')
+    skin_frac = skin_left / throat
+
+    def band_mm(seg_pred, a0, a1):
+        """Height in mm of the painted band over `along` in [a0, a1)."""
+        zs = []
+        for i, v in enumerate(obj.data.vertices):
+            nm = own[i]
+            if not seg_pred(nm):
+                continue
+            c = bl(nm)
+            half = SEGMENTS[nm]['h'] / 2
+            al = (v.co.z - c.z) / half
+            if a0 <= al < a1 and luma(attr.data[i].color) < luma(SUIT) - 0.10:
+                zs.append(v.co.z)
+        return (max(zs) - min(zs)) * 1000.0 if len(zs) >= 20 else 0.0
+
+    collar_mm = band_mm(lambda n: n == 'torso', COLLAR_A0, 1.01)
+    cuff_mm = {s: band_mm(lambda n, s=s: n == 'lowerArm' + s, CUFF_A0, CUFF_A1)
+               for s in ('L', 'R')}
+    ank_mm = {s: band_mm(lambda n, s=s: n == 'lowerLeg' + s, BOOT_ALONG, ANKLE_A1)
+              for s in ('L', 'R')}
+    log(f'collar/cuff: throat {throat} verts, skin left {skin_left} = '
+        f'{skin_frac:.4f} (gate <= {GAITER_SKIN_MAX}), gaiter octants '
+        f'{len(octants)}/8 (gate >= {GAITER_AZIM_MIN}), collar '
+        f'{collar_mm:.1f} mm (gate >= {COLLAR_MIN_MM}), wrist cuff '
+        f'L {cuff_mm["L"]:.1f} R {cuff_mm["R"]:.1f} mm (gate >= '
+        f'{CUFF_MIN_MM}), ankle cuff L {ank_mm["L"]:.1f} R {ank_mm["R"]:.1f} mm'
+        f' | gaiter top front {top_f:.3f}h back {top_b:.3f}h, back-minus-'
+        f'front rise {rise:+.3f}h (a level band reads 0)')
+    bad = []
+    if skin_frac > GAITER_SKIN_MAX:
+        bad.append(f'{skin_frac:.4f} of the throat band is still SKIN — the '
+                   f'neck is bare between the collar and the helmet')
+    if len(octants) < GAITER_AZIM_MIN:
+        bad.append(f'the gaiter reaches only {len(octants)}/8 octants of the '
+                   f'neck — it is a patch, not a tube')
+    if collar_mm < COLLAR_MIN_MM:
+        bad.append(f'collar stand only {collar_mm:.1f} mm '
+                   f'(>= {COLLAR_MIN_MM})')
+    for s in ('L', 'R'):
+        if cuff_mm[s] < CUFF_MIN_MM:
+            bad.append(f'wrist cuff {s} only {cuff_mm[s]:.1f} mm '
+                       f'(>= {CUFF_MIN_MM})')
+        if ank_mm[s] < CUFF_MIN_MM:
+            bad.append(f'ankle cuff {s} only {ank_mm[s]:.1f} mm '
+                       f'(>= {CUFF_MIN_MM})')
+    if bad:
+        raise SystemExit('[body] COLLAR/CUFF GATE FAILED: ' + '; '.join(bad))
+    return {'skin_frac': skin_frac, 'octants': len(octants), 'rise': rise,
+            'collar_mm': collar_mm, 'cuff_mm': cuff_mm, 'ankle_mm': ank_mm}
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
@@ -8453,6 +8718,7 @@ def make_highpoly(low, lm):
     fold_ripple_gate(high)
     paint_suit(high, lm)
     boot_paint_gate(high)
+    collar_cuff_gate(high, lm)
 
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')
