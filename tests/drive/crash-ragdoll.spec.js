@@ -311,8 +311,17 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         .toBeGreaterThanOrEqual(3000);
     console.log('CRASHROLL bodyMotionEnd(wall, log-only)=' + bodyMotionEnd.toFixed(2) +
         's, exactly-0 span ' + (zeroSpanMs / 1000).toFixed(2) + 's');
+    // The settled tail is measured from firstStopped+1: tSpeed[i] is the
+    // displacement from sample i−1, and sample firstStopped−1 was still
+    // mid-roll, so the boundary sample's speed is the stop transition, not
+    // post-stop motion (iter 123: measured 0.05–0.08 m/s there; a solo
+    // probe reads exactly 0.000 for every sample after the boundary).
     const afterFreeze = traceR.slice(firstStopped).filter(r => r.tSpeed !== null);
-    const maxTailSpeed = afterFreeze.length ? Math.max(...afterFreeze.map(r => r.tSpeed)) : 0;
+    const settledTail = afterFreeze.slice(1);
+    const maxTailSpeed = settledTail.length ? Math.max(...settledTail.map(r => r.tSpeed)) : 0;
+    settledTail.forEach((r, i) => { if (r.tSpeed > 0.01)
+        console.log('TAIL i=' + (i + 1) + ' t=' + (r.t / 1000).toFixed(2) + ' spd=' + r.tSpeed.toFixed(4)
+            + ' phase=' + (r.probe && r.probe.phase) + ' resting=' + (r.probe && r.probe.resting)); });
     expect(maxTailSpeed, `settled: post-stop rendered speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
         .toBeLessThan(0.06);
     // Skis at rest on the surface at the end.

@@ -211,6 +211,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
+| — | Iteration 123 | **entry-121 never-stopped crash residual FIXED — two roll-phase bugs: TDZ ReferenceError (`_vH0` out of scope) killed the machine on the steep via the swallowed catch, and the flat branch never applied friction `_k`; plus root-slide lag compensation so the frozen pose renders static after rest; tail gate measures from firstStopped+1** | crash-ragdoll 3/3 (restAt 5.80 s in 3–7, rest slope 0.0°, support 9, exactly-0 span 21 s); unit 81/81; golden 30/30 census-only re-capture (audit 0 physics diffs ×5408 frames); look 4/4 (122's freelook crash-settle red gone). See entry 123. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 121 | **slope-aware crash roll LANDED (entry-112 ruling) — steep accelerates a = g·(sinθ−μ·cosθ) μ=0.5, flat brakes μ·g=7.0, seed floor 6→3, bounded `settling` phase fixes maxAbove 0.615 vs 0.6, post-clamp excursion tracking fixes the 38.1° knife edge; spec envelope 2–5 → 3–7 s** | unit 0 fail; golden 30/30 CENSUS-ONLY re-capture (HEAD was 22 red on un-rebaselined pk_body_* peak scale), audit 0 physics diffs ×30/5408 frames, 0 display diffs; crash-ragdoll 2/3 green (restAt 9.1 → 7.19 → one residual never-stopped run, open for 122). See entry 121. |
 | — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
@@ -7987,6 +7988,47 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 123 — entry-121 never-stopped crash residual FIXED: two roll-phase bugs
+(TDZ ReferenceError on the steep; friction `_k` never applied on the flat) +
+root-slide lag compensation; crash-ragdoll 3/3, look 4/4
+
+**What changed (order item 1 of 121–145 — the residual 121 left open):**
+Root-caused in `game.js` `_crashRagdollStep`'s roll phase, two real bugs that
+the swallowed try/catch (line ≈7981) hid:
+1. The steep branch referenced `_vH0`, declared only in the sibling `else`
+   block — a ReferenceError on EVERY roll frame on the steep. The catch set
+   `_crashErr` and nulled the ragdoll, so once the freeze landed on the
+   landing slope the machine silently died and `resting` never fired. This
+   WAS the never-stopped run (and why the two negative controls always
+   passed — their `_crashRollDisabled` branch precedes the steep branch).
+2. The flat branch computed friction `_k` but never applied it
+   (`R.slideV *= _k` missing) — a second never-stopped path on the flat.
+   Both fixed; `node --check` passes (it cannot catch a TDZ read).
+3. Rendered-tail drift: after rest the write-back projected the frozen pose
+   through the root position captured at step entry while the engine kept
+   sliding the root — measured rendered torso speed 0.109 m/s post-stop vs
+   the 0.06 gate. Fix: while the pose is rigid (every phase after tumble)
+   the frozen world points are translated by the root's per-step delta
+   before projection; a solo probe then reads exactly 0.000 for every
+   post-stop sample.
+4. Spec instrument (not the model): the "settled" tail gate now measures
+   from `firstStopped+1` — `tSpeed[i]` spans sample i−1, which was still
+   mid-roll, so the boundary sample read 0.05–0.08 m/s of stop transition.
+   restAt/excursion/envelope gates unchanged.
+
+**Verification (final commands before commit):** unit 81/81; `verify.js`
+**30/30** after a CENSUS-ONLY re-capture (the crash-tail driver-node poses
+changed; `audit-physics-state.js`: **0 physics-state diffs × 30 scenarios /
+5408 frames**, 13 display-node scenarios — precedent iters 109/116/121);
+`crash-ragdoll.spec` **3/3**: restAt 5.80 s (gate 3–7), peakExc 35.0° /
+peakSpine 40.0°, worst joint ang speed 3.6e-1 rad/s, trigZ 35.98 → restZ
+92.37 (past the roll-out), rest slope 0.0°, support 9, maxAbove 0.489,
+exactly-0 span 21.2 s, no legacy solids; **look 4/4** (122's freelook
+crash-settle timeout is gone — the crash now settles and free-look re-arms).
+
+**Open:** crash_rest.png silhouette span 0 (SOFT gate, camera aim at rest-x —
+open since entry 93). Athlete-lane residuals carried (Opus).
 
 ### 122 — HUMAN TESTING #9 item 1: landing chop reads snow again (SSAO
 radius root cause + albedo lift), chop.spec rewritten to the author's gates
