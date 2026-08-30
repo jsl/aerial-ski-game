@@ -25,6 +25,10 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Author approval (2026-08-29 22:00): GLM authorized for 25 more iterations overnight — 121–145.** Answer to "can you do a night mode or snowing mode?": night mode exists (Settings → Night / snowfall, or `?night=1`); a **day-time snowing mode** is added to the order below. **Order for 121–145 (reviewer), in priority:** (1) **slope-aware crash roll** per the ruling on entry 112 (accelerate on the steep under friction, brake on the flat, envelope 3–7 s, rest on the flat; `crash-ragdoll.spec` is currently red/knife-edge at 38.1° vs 38° and restAt 9.1 s — fix the model, do not widen the gate); (2) **snowing mode in daylight**: a second Settings toggle "Snowing" (independent of Night) that runs the snowfall particles + a slightly greyer sky/softer sun in day mode, gated like `night.spec`; (3) **mountains**: after the reviewer's 22:00 pass (lower crests, four big peaks reduced, regular cones) continue the author's "some are weird … not regular shapes": peaks must read as an opaque distant range (rock banding below snow caps, ridge-style snowline mapping, alpha 1, per-peak tint variance), silhouettes regular — verify by eye AND with the ridge-mask numbers; (4) landing chop legibility at gameplay distance (texture/normal, not amplitude); (5) forest remainder (near-tree low-poly meshes, understory) and night snow-burst variants; (6) polish group (height haze, LOD/frame time). **Standing rules:** add NOTHING to the scene the author did not ask for; athlete + DoF block belong to Opus; reviews at multiples of 5; commit per item; `run-all.sh` layers separately (drive > 600 s).
+- **HUMAN TESTING #7 (author, 2026-08-29 21:45) — STANDING RULE: do not add anything to the scene unless the author asks.** Items: (1) three coaches on the knoll → keep ONE, remove two; (2) the judges' platform adds no value unless it is a full judging stand → REMOVE it; (3) mountains: "some are sort of weird … don't seem to have regular shapes" → reviewer (Fable) reworks them: reduce one or two of the big peaks, show more sky, regular silhouettes; (4) **BUG: the camera starts in FRONT of the aerialist on page load** (you see the athlete's face); it used to start behind — restore; (5) Opus: "body shape still seems too muscular under the suit, tight on the legs; the suit should cover the contours rather than show every muscle; not baggy, just arms/legs without accentuated muscles" → brief item 3 fit rule tightened with a gate. Reviewer handles 1–4 directly on the integration branch (GLM loop closed at 120).
+- **Fourth Opus merge LANDED (Fable, 2026-08-29 20:45, `38119ea`, fast-forward on the final GLM tip `55b9a78`):** Opus @ `42537f9` — skin seam relax (`smooth_blend_rings`, weight-seam gate), boots painted + gated, pose-shot generator/framing, sub-10 mm strain gate. Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), drive 54/54 (19.0 m, 12 specs incl. look/night/pose-shots). 8201 synced. GLM loop closed at 120; further scene work needs a new authorization.
+- **Reviewer by-eye on the Opus lane's `figure_side.png` / `pose_tuck_side.png` (Fable, 20:10, opus @ `d638150`):** the tuck is now a recognisable cannonball (knees up, hands on shins, head down, arms visible) — the single biggest athlete improvement so far; boots are dark and the leg tapers into them. Scene defect seen from the low athlete camera: the re-landed cone peaks read as **pale translucent glass pyramids** overlapping each other (their whole face is in the snow band and un-fogged), unlike the ridges. For 120's review / a follow-up: give the peaks rock banding below their snow caps (snowline UV like the ridges', not compressed to 30 m), per-peak tint variance, and check they are opaque (alpha 1, backface culling on) — they should read as a distant range, not glass.
 - **Reviewer note on 119 (Fable, 19:40):** the "pike pose-shot instrument" item is DROPPED for the GLM lane — `pose-shots.spec.js` was rewritten by the Opus lane (session 8) and Opus owns it; its framing fix (figure ≥ 350 px) is already ordered there. 120 = final review + HANDOFF/ADR/branch summary as planned; afterwards the GLM loop ends at the author's authorization of 120. Opus continues; the reviewer merges its batches.
 - **Third Opus merge LANDED (Fable, 2026-08-29 19:05, `acdef3e`):** integration @ `b384f5b` (118 night mode) + `opus/athlete-body` @ `e5e13f6` — flight tuck chain closes (`POSE_TUCKED` hip gap removed in `engine/core/body-model.js`, inertia frozen byte-for-byte in `POSE_TUCKED_INERTIA` + unit test), new pose-shot generator, `audit-physics-state.js` in the tree. Golden: 7 trace conflicts (both lanes had re-captured) resolved by audited re-capture — physics state 0 diffs / 5408 frames. Verified on the candidate: unit 81/81, golden 30/30, drive 50/50 (18.1 m) + night/reveal/spine/ridges 17/17 after folding 118. 8201 synced.
 - **Reviewer note on 118 (Fable, 18:45):** night mode via `?night=1` is accepted as the mechanism, but the author must be able to reach it: 119 adds a **Settings menu toggle "Night / snowfall"** (persisted in localStorage, hotkey-free) that reloads or switches the mode, plus the night variants of the takeoff puff / landing cloud. Then the 119 items already ordered (kicker side panels, pike pose-shot instrument). Light halation stays out (pipeline block is Opus's). **Reviewer's own night shot (`?night=1`, scene framing, 18:50): the athlete at the start is NOT lit — invisible against the dark snow — and the scene is darker than the footage (IMG_3396 reads blue-grey snow with a backlit, glowing jumper). 119 must: add a floodlight covering the start plateau and one behind the kicker so the jumper is backlit in flight; raise the night ambient so snow reads ≈ 0.18–0.25 luminance (not near-black); denser, larger flakes near the camera. Gate: athlete silhouette mean luminance ≥ 0.25 in the night scene shot, snow-region mean 0.15–0.30.**
@@ -202,6 +206,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
+| — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
 | — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
 | — | Iteration 119 | **119 bundle LANDED — night mode made author-reachable + visible (settings toggle w/ localStorage reload, start-plateau + kicker-backlight floods, ambient raise, dimmer/denser flakes), generic blue/white kicker side panels (P3 gap), chop displacement raised to 0.095 + bump level 1.7; pike pose-shot instrument NOT done (open)** | night.spec 1/1 (9 warm spots incl. start flood aimed at the athlete; clearColor lum 0.0039, snow region mean 0.24, lit-pool lum 0.55+ r−b>0, athlete band 0.25+); venue-dressing 5/5 (6 panel ribbons hugging the wall planes ≤ 5 mm, cornerMat red untouched); chop.spec 1/1 (worstSink 0.093 ≤ 0.101, landing p95−p5 luminance > 0.10); unit 81/81, golden 30/30 CENSUS-ONLY re-capture (verify diffs were kickerPanel0/1/2 node presence only, audit-physics-state 0 diffs ×30); look NOT re-run this iter (run-all > 30 min under SwiftShader, budget killed it) — see open items. See entry 119. |
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
@@ -7975,3 +7980,67 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 120 — FINAL REVIEW (review-only) + branch summary; suite green except the
+known quality.spec frame-time flake (green solo); shots regenerated and
+inspected; `docs/RENDER-FINAL-SUMMARY.md` written
+
+**Scope:** review-only per the iteration-120 instruction; the reviewer's 19:40
+note ("120 = final review + HANDOFF/ADR/branch summary; the GLM loop ends at
+the author's authorization of 120"). No `docs/NEXT.md`. No features, no fixes
+except none needed — no outright breakage found. `engine/`, `assets/`, ASSET_V,
+athlete-lane files and the DoF block untouched.
+
+**Prior-iteration self-review:** `git log -3 --stat` — 119's two commits are
+coherent (bundle + terrain.json FP-jitter revert); no half-done work; tree
+clean at start.
+
+**Suite (`./tests/run-all.sh`, 37.7 m):** unit **81/81 PASS**; golden **30/30
+PASS**; browser **36/36 PASS** (4 sections); mutation PASS; coverage PASS (the
+two known OPEN-002 duplicates unchanged). Drive: **107 passed / 2 skipped /
+1 FAILED** — `quality.spec.js` frame-time budget. **Solo re-run: 6/6 green,
+mean 114.7 ms / p95 119.6 ms, scaling 1** — the same under-contention
+SwiftShader flake iter 115 documented (145.8 ms solo then); not a regression.
+
+**Shots (`look` 3/3, 4.6 m, regenerated 20:12–20:16) — by eye:**
+- `scene.png` — reads well overall: bright corridor (grey ramp holds), B-net
+  both edges, red kicker edge marks, judges' deck, red-jacket coaches, blue/white
+  kicker side panels visible, mixed birch/spruce forest with snow load. **Worst
+  remaining scene defect: the horizon.** The 3D ridge meshes read as pale
+  draped-cloth curtains with irregular dark-green blobs on their crests, and the
+  far background behind them is a flat pale band — still recognisably "paper
+  cut-out", not the footage's forested ridgelines (P6 open; the 116 cone re-land
+  fixed positioning, not the read).
+- `figure.png` — athlete framed, skis with upturned tips, bindings under the
+  boots, blue leg stripe, helmet + goggle band at eye height. Residual
+  (Opus lane): suit white-on-white against snow behind; dark paint smudges on
+  the torso; the face is featureless under the goggle band.
+- `figure_front.png` — **bib "30" clearly legible**; goggles on the eyes;
+  proportions acceptable. Residuals (Opus lane, reported not owned): red
+  scribble artefact at the mouth/chin; dark suit smudges on chest/belly;
+  in this framing the binding blocks read displaced toward the tail relative to
+  the boot soles (worth a rig check in the Opus lane).
+- `pose_pike_side` instrument numbers from the run: span 0.38, frac 0.0507
+  (pike front span 0.394) — gates pass; the framing/ownership question was
+  dropped to Opus by the reviewer's 19:40 note, so no GLM action.
+
+**Gaps vs the plan / reference footage (re-prioritised for whoever continues):**
+1. P6 horizon read (above) — the single most visible scene defect.
+2. P5 landing chop: displacement is at the top of the sink band (0.095 m);
+   further visibility needs normal/albedo work, not more amplitude.
+3. P4 forest remainder: 8-view atlas billboards, near-tree meshes, understory;
+   night takeoff puff / landing-cloud variants (carried from 119).
+4. Night halation — blocked on the Opus pipeline block.
+5. Parked: height haze (entry 54); crash 2–5 s envelope vs the measured seed
+   floor (entry 112 open question, unanswered).
+6. Athlete items (Opus lane): DoF blur, suit legibility, face features,
+   figure_front residuals above.
+
+**Deliverable added:** `docs/RENDER-FINAL-SUMMARY.md` — what landed per plan
+area with verification pointers, the six standing rules for the next lane
+driver, and the open-item list. ADRs were maintained throughout (0001–0010
+cover the decisions; nothing at 120 changes architecture).
+
+**Open questions for the reviewer:** none new — entry 112's crash-envelope
+question and entry 119's census-re-capture question remain open; the loop ends
+here at 120 as authorized.
