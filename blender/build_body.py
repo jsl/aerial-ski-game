@@ -127,6 +127,9 @@ SABOTAGE_SLIVER = os.environ.get('BODY_SABOTAGE_SLIVER') == '1'
 # Negative control for the weight-seam gate: re-cut one ownership hinge into
 # the shipped skin, the shape reclaim_chest_wall's step assignment makes.
 SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
+# Negative control for the weight-LOCALITY gate: skip localise_weights, so the
+# gate measures the skin that put upperLeg weight on the ribcage.
+SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -1017,6 +1020,215 @@ def smooth_blend_rings(obj):
     log(f'blend rings relaxed: {seeds} seam verts, {touched}/{nv} verts within '
         f'{BLEND_RING_RINGS} rings, {BLEND_RING_ITERS} iters at rate '
         f'{BLEND_RING_RATE}; head share {head_before:.4f} -> {head_after:.4f}')
+
+
+# ── WEIGHT LOCALITY (session 18) ────────────────────────────────────────────
+#
+# The crouch smear over the buttock and the back of the thigh, measured in the
+# browser at the deep-hip endpoint, is not a seam and not a weight-sum defect
+# (every vertex sums to exactly 1.000). It is a LOCALITY defect: chest and
+# shoulder vertices carry 17-25% weight on `upperLegL`, so when the hip closes
+# 90 degrees they are flung with the thigh and the edges between them go from
+# 23 mm at rest to 210 mm posed. That is the streaking the author sees.
+#
+# A vertex may legitimately share influence with a NEIGHBOURING segment - a
+# deltoid with the chest, a glute with the pelvis. It may not share influence
+# with a segment half a body away. This measures exactly that: the distance
+# from each vertex to the SEGMENT of every bone it is weighted to.
+LOCALITY_MIN_W = 0.05      # weights under this move a vertex by millimetres
+# The quantity is a RATIO to the bone's own REACH, not a distance and not an
+# excess over the nearest segment. An absolute distance measures girth (a torso
+# vertex is legitimately 100-150 mm from the torso axis). An excess over the
+# nearest segment is worse: its reference flips as you cross the midline or a
+# limb boundary, so the metric jumps discontinuously and cutting on it puts a
+# hinge exactly where the skin must stay smooth — measured, the first cut of
+# this pass cut 62 of them and the seam gate caught it.
+#
+# A bone's REACH is measured from the skin it already owns: the 98th percentile
+# distance from its segment among the vertices it drives at >= 0.5. That is a
+# per-bone constant, so d/reach is continuous in position and can be ramped.
+LOCALITY_MAX_R = 1.70      # d/reach above which a weight is removed outright
+LOCALITY_RAMP0 = 1.25      # d/reach below which a weight is left alone
+
+
+def _group_segment(name):
+    """
+    (head, tail) in the driver frame for any skin group, spine included.
+
+    The three vertebrae report the WHOLE torso segment on purpose. They are
+    collinear thirds of it and their relative rotation is a few degrees, so a
+    vertex sharing weight across them is not the defect this measures; treating
+    them as one segment keeps the metric on the thing that does harm, which is
+    a limb bone driving trunk skin.
+    """
+    if name in SPINE_NAMES:
+        return seg_ends('torso')
+    if name in SEGMENTS:
+        return seg_ends(name)
+    return None
+
+
+def _locality_frame(obj, arm):
+    """{group index: (name, head, tail, reach)} for every skin joint with a segment."""
+    bones = {b.name for b in arm.data.bones}
+    segs = {}
+    for g in obj.vertex_groups:
+        if g.name not in bones:
+            continue
+        e = _group_segment(g.name)
+        if e is not None:
+            segs[g.index] = [g.name, e[0], e[1], 0.0]
+    core = {gi: [] for gi in segs}
+    for v in obj.data.vertices:
+        for g in v.groups:
+            if g.group in segs and g.weight >= 0.5:
+                nm, a, b, _ = segs[g.group]
+                core[g.group].append(_seg_dist(v.co, a, b))
+    out = {}
+    for gi, ds in core.items():
+        if not ds:
+            continue                     # a bone with no core owns no skin
+        ds.sort()
+        segs[gi][3] = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        out[gi] = tuple(segs[gi])
+    return out
+
+
+def weight_locality_report(obj, arm, tag, verbose=True):
+    """How far each weight sits from its own bone, in units of that bone's reach."""
+    segs = _locality_frame(obj, arm)
+    ds = []
+    worst = []
+    per_group = {}
+    for v in obj.data.vertices:
+        for g in v.groups:
+            if g.weight < LOCALITY_MIN_W or g.group not in segs:
+                continue
+            nm, a, b, reach = segs[g.group]
+            r = _seg_dist(v.co, a, b) / reach
+            ds.append(r)
+            if r > LOCALITY_MAX_R:
+                worst.append((r, nm, g.weight, v.co.copy()))
+                per_group[nm] = per_group.get(nm, 0) + 1
+    ds.sort()
+    n = max(1, len(ds))
+    worst.sort(key=lambda r: -r[0])
+    r = {'n': len(ds), 'bad': len(worst), 'max': ds[-1] if ds else 0.0,
+         'p99': ds[int(0.99 * (n - 1))] if ds else 0.0,
+         'per_group': per_group, 'worst': worst[:8]}
+    if verbose:
+        log(f'LOCALITY {tag}: {r["bad"]}/{r["n"]} weights >= {LOCALITY_MIN_W} '
+            f'sit further than {LOCALITY_MAX_R:.2f} x their bone\'s own reach '
+            f'| d/reach p50 {ds[n//2]:.2f} p90 {ds[int(0.90*(n-1))]:.2f} '
+            f'p99 {r["p99"]:.2f} max {r["max"]:.2f}')
+        if worst:
+            top = sorted(per_group.items(), key=lambda kv: -kv[1])[:5]
+            log('  by group: ' + ', '.join(f'{k} {v}' for k, v in top))
+            d, nm, w, co = worst[0]
+            log(f'  worst: {nm} w={w:.3f} at ({co.x:+.3f},{co.y:+.3f},'
+                f'{co.z:+.3f}), {d*1000:.0f} mm from its segment')
+    return r
+
+
+def localise_weights(obj, arm):
+    """
+    Take each bone's influence off skin that does not belong to it.
+
+    Runs LAST, on the low-poly, after the bake and after smooth_blend_rings, so
+    it changes deformation only — the rest mesh is the bind pose whatever the
+    weights are, and every gate upstream has already measured the geometry.
+
+    The removal is a spatial RAMP, not a cut: full weight up to LOCALITY_RAMP0
+    of excess, zero at LOCALITY_MAX_D, smoothstep between. A step would put back
+    exactly the hinge smooth_blend_rings exists to remove, so the seam report
+    runs after this and the seam gate still has to pass.
+    """
+    # ONLY skin joints. The mesh also carries mask groups that are not bones —
+    # `reduce` drives the Decimate modifier — and renormalising those alongside
+    # the bone weights rewrites a mask, which the first cut of this pass did:
+    # it cut a 1.52 hinge at [reduce|upperLegR] and the seam gate caught it.
+    bones = {b.name for b in arm.data.bones}
+    segs = _locality_frame(obj, arm)
+    joints = {g.index for g in obj.vertex_groups if g.name in bones}
+    groups = [g for g in obj.vertex_groups if g.name in bones]
+    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    changed = 0
+    removed = 0.0
+    rescued = 0
+    for v in obj.data.vertices:
+        cur = {g.group: g.weight for g in v.groups
+               if g.weight > 1e-6 and g.group in joints}
+        if not cur:
+            continue
+        new_w = {}
+        excess = {}
+        for gi, w in cur.items():
+            if gi not in segs:
+                new_w[gi] = w          # boots and anything without a segment
+                continue
+            nm, a, b, reach = segs[gi]
+            e = _seg_dist(v.co, a, b) / reach
+            excess[gi] = e
+            if e <= d0:
+                f = 1.0
+            elif e >= d1:
+                f = 0.0
+            else:
+                t = (e - d0) / (d1 - d0)
+                f = 1.0 - t * t * (3.0 - 2.0 * t)     # smoothstep
+            if f < 1.0:
+                removed += w * (1.0 - f)
+            if w * f > 1e-6:
+                new_w[gi] = w * f
+        tot = sum(new_w.values())
+        if tot < 0.20:
+            # Everything this vertex was weighted to is far away. Give it
+            # wholly to the nearest segment rather than divide by nothing.
+            gi = min(excess, key=excess.get) if excess else None
+            if gi is None:
+                continue
+            new_w = {gi: 1.0}
+            tot = 1.0
+            rescued += 1
+        if abs(tot - 1.0) < 1e-9 and len(new_w) == len(cur):
+            continue
+        ws = sorted(new_w.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        t2 = sum(w for _, w in ws) or 1.0
+        keep = {k: w / t2 for k, w in ws}
+        for g in groups:
+            if g.index in keep:
+                g.add([v.index], keep[g.index], 'REPLACE')
+            elif g.index in cur:
+                g.remove([v.index])
+        changed += 1
+    obj.data.update()
+    log(f'weights localised: {changed} verts rewritten, {removed:.1f} weight '
+        f'units taken off distant bones, {rescued} vertices reassigned wholly '
+        f'to their nearest segment')
+    return changed
+
+
+# Calibrated on the measured build (the numbers are in docs/OPUS-NOTES.md): the
+# repaired skin reports 0 offenders, the pre-repair skin reports hundreds with
+# leg weight on the chest. A single offender is a vertex that will be flung
+# across the body when its far bone rotates, so the gate is zero-tolerance on
+# the population and reads the same quantity the browser strain probe found.
+LOCALITY_GATE_BAD = 0
+
+
+def weight_locality_gate(obj, arm, tag):
+    r = weight_locality_report(obj, arm, tag)
+    if r['bad'] > LOCALITY_GATE_BAD:
+        d, nm, w, co = r['worst'][0]
+        raise SystemExit(
+            f'[body] weight-locality gate FAILED at {tag}: {r["bad"]} weights '
+            f'(limit {LOCALITY_GATE_BAD}) sit further than {LOCALITY_MAX_R:.2f} x '
+            f'their own bone\'s reach — worst {nm} w={w:.3f} '
+            f'at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}), {d:.2f} x reach. '
+            f'A vertex weighted to a bone half a body from it is flung when '
+            f'that bone rotates: this is the crouch smear over the buttock '
+            f'(negative control BODY_SABOTAGE_LOCALITY=1)')
+    return r
 
 
 # The gate. Calibrated on the measured build, not on the defect: the repaired
@@ -8071,6 +8283,7 @@ def main():
     # dominance query upstream can see the torso group split. See add_spine_chain.
     add_spine_chain(low, arm)
     weight_seam_report(low, 'after add_spine_chain')
+    weight_locality_report(low, arm, 'after add_spine_chain')
     if SABOTAGE_SEAM:
         # NEGATIVE CONTROL, and a HISTORICAL one: skip the repair and let the
         # gate measure the skin this project actually shipped up to session 8.
@@ -8082,7 +8295,26 @@ def main():
             'measures the pre-session-9 skin and must reject it')
     else:
         smooth_blend_rings(low)
+    if SABOTAGE_LOCALITY:
+        # NEGATIVE CONTROL: skip the localisation and let the gate measure the
+        # skin sessions 9-17 shipped — 494 weights >= 0.05 on bones further
+        # from the vertex than the nearest segment by more than 100 mm, with
+        # the upper legs driving the side of the ribcage. It must be rejected.
+        log('weight locality SABOTAGED: localise_weights SKIPPED — the gate '
+            'now measures the pre-session-18 skin and must reject it')
+    else:
+        # localise, then RE-RELAX, then localise again. The ramp is smooth in
+        # space but it still ends at a boundary, and the first cut of this
+        # left one 1.24 hinge at the front crotch midline. Re-running the ring
+        # relax repairs that boundary; it also diffuses a little weight back
+        # out, so the localisation runs once more to take it off again. The
+        # second pass is small by construction and the two gates below are what
+        # say so.
+        localise_weights(low, arm)
+        smooth_blend_rings(low)
+        localise_weights(low, arm)
     weight_seam_gate(low, 'shipped skin')
+    weight_locality_gate(low, arm, 'shipped skin')
 
     # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
     # position is the whole point.  add_spine_chain and smooth_blend_rings both
