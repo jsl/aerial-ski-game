@@ -874,7 +874,27 @@ panel's surface extent under `in_number_patch`, not `number_uv`.
     build   rc=0, every existing gate green at 2048/96; the bib report logs
             DEFECT as above. glb 8995 verts / 13 bones.
     unit    81/81      golden 30/30 (no display node changed)
-    drive   see the fixup commit below
+    drive   rig + body + athlete + athlete-wired + bib-number + crash-ragdoll:
+            **24 passed, 1 failed** (7.1 m).
+
+The one red is `crash-ragdoll.spec.js` › "settles with skis at rest", at the
+SETTLED-TAIL assertion (`post-stop samples all exactly 0`): **351 nonzero**.
+Re-run alone it fails the same way (2 passed, 1 failed, 1.7 m), so unlike the
+01:20 flake this one is reproducible, not load-dependent.
+
+**It is not this lane's.** GLM's own iter 125 note measures the same assertion
+at **322 nonzero solo on their tip** and orders deterministic PBD settling for
+iteration 126 — the failure arrived here with this session's merge of those 12
+commits. Session 18 measured crash-ragdoll 3/3 green on the pre-merge tree, and
+nothing in commit 9b53d03 can reach the crash path: it changes `build_body.py`
+logging (never loaded by the browser), bake-noise bytes in the glb/normal map,
+and version strings. Reported as GLM's open item, not worked around here.
+
+A note for whoever runs the drive layer next: it needs
+`-c tests/drive/playwright.config.js`. Without it Playwright picks up no
+config, `baseURL` is unset, and all 25 tests fail instantly on
+"Cannot navigate to invalid URL" — which looks like a catastrophic regression
+and is a harness mistake.
 
 `ASSET_V` 49 -> 50, `game.js?v=` 45 -> 46, preload hrefs `?v=50` (the rebuild
 moves bake-noise bytes in the glb, maps.json and normal.webp; albedo and AO are
@@ -888,6 +908,8 @@ byte-identical because no paint changed).
   0.648/0.352 across a joint closing 98 deg) are a linear-blend limit no weight
   edit can reach.
 - **The bib back plate's horizontal clipping**, with the arbitration above.
+- **GLM's crash settled tail** (351 nonzero post-stop samples), tracked on
+  their board as the iteration-126 PBD determinism item.
 - Carried: the THUMB as its own finger group; the flight-tuck re-check; the
   smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV unwrap + arm
   stripe last.
