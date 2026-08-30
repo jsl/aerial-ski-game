@@ -796,6 +796,335 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 10 (2026-08-29, 19:0x-20:0x)
+
+### Merge with `render-realism-glm` — commit `f6a5edd`
+
+Seven commits (iter 118's night snowfall mode, iter 119's docs, the session-9
+rulings). Clean auto-merge, no conflicts — no golden trace was re-captured on
+either side this time. Unit 81/81, golden 30/30 on the merge.
+
+### Item 12 (boots) — LANDED, commit `b4ca09f`
+
+**The boot geometry has existed all along; nothing ever painted it.**
+`rigid_boots` pins it to the shin, `seat_soles` lands its sole on the ski,
+`align_boots` yaws it onto the ski axis, and `leg_taper_gate` has been
+measuring its cuff breadth for several sessions (boot/shin 1.230, gate >= 1.0
+— the leg already tapered INTO a cuff). The defect was one missing branch in
+`paint_suit`: there was no boot region at all, so SUIT white ran unbroken from
+the hip onto the topsheet. `paint_suit`'s `missing` check cannot catch that —
+it only asks whether the regions it already knows about matched something.
+
+**Measuring moved the number.** The obvious cuff step is `along` -0.74: it is
+where `LEG_TAPER_BANDS['boot']` tops out (z=-0.95) and what `SUIT_FOLDS`'
+'boot-cuff' band is documented against. Painting from it gave a **47 mm rim**,
+not a boot — because **the segment model has no foot below the ankle**:
+`seat_soles` lands the sole at z=-0.995 and the shin's own ankle end is
+z=-0.995 too. On this rig the boot has to BE the lower shin, which is also what
+a real ski boot is. `BOOT_ALONG = -0.40` puts the cuff 108 mm above the ski on
+a 360 mm shin, clear of the calf belly the taper gate measures at z
+-0.80..-0.66, so the calf still shows above the shell and tapers into it —
+half of item 11 as well, since a calf only reads as over-inflated when there is
+nothing for it to taper into.
+
+| | verts | mean luma | light frac | shell height |
+|---|---|---|---|---|
+| shipped | 34 177 below the cuff step | **0.078** (gate <= 0.20) | **0.0000** (gate <= 0.02) | **112 mm** (gate >= 90) |
+| `BODY_SABOTAGE_BOOT=1` | same band | 0.764 | **0.9073** | 112 mm |
+
+**NEGATIVE CONTROL**: `BODY_SABOTAGE_BOOT=1` skips the branch, which reproduces
+the skin this project shipped up to session 9 — and `boot_paint_gate` rejects
+it. **0.9073 of the boot band was light**: that number IS the author's white
+blob, measured.
+
+A lighter liner lip (`BOOT_CUFF`) runs along the rim so the shell has an edge
+instead of dissolving into a black sock — the same trick the glove cuff uses.
+The stripe branch is unreachable below the cuff (leg blue census 2322 -> 1926
+verts): a leg stripe runs hip to cuff on the SUIT and stops at the boot.
+
+`shots/figure_side.png` by eye: the boot reads as a dark shell from the ski up
+over the ankle, and the leg tapers into it.
+
+### THE FINDING — the "fabric folds" gate has never measured folds
+
+Moving `SUIT_FOLDS`' 'boot-cuff' crease up the shin (so cloth bunches ABOVE the
+shell instead of creasing rigid plastic) turned `rig.spec.js`'s crease-band
+variance gate red, 57159 -> 43692 against a 55000 floor. That looked like lost
+fold relief. It is not. Measured on the same window:
+
+| normal map | crease-band metric | vs shipped |
+|---|---|---|
+| shipped (folds + weave) | 43 692 | — |
+| folds OFF (`BODY_SABOTAGE_FOLDS=1`) | 43 095 | **-1.4 %** |
+| weave OFF (`BODY_SABOTAGE_WEAVE=1`) | 42 362 | **-3.0 %** |
+| band where it has always been | 57 159 | **+30.8 %** |
+
+**Everything `displace_suit` writes moves that metric by under 3 %.** The
+13 467 the original band adds comes from 62 732 texels whose mean |Laplacian|
+is ~100 000 — double any cloth band — because the boot-cuff band (-0.62±0.18)
+sits over the **ankle and boot**, and hard geometry edges are high-Laplacian
+for exactly the reason the session-7 note in `build_body.py` records the suit
+TEAR being ("long mis-shaded faces are high-Laplacian too"). This is the same
+mistake a third time.
+
+Widening the Laplacian stencil to the folds' own ~25 mm wavelength does not
+rescue it: folds-on vs folds-off separation at radii 1/2/4/6/8/12/16 texels is
+1.4 / 0.8 / 0.3 / 0.2 / 0.2 / 0.5 / 0.4 %. The folds (1.5-1.9 mm ridges over a
+~25 mm wavelength) are simply not visible in the bake beside the 2.1 mm
+peak-to-peak weave.
+
+**What I did about it**: reverted the fold-band move (it buys nothing visible
+and only blinds a gate), did **not** recalibrate the floor — a floor tuned for
+a metric that measures nothing would be worse than the red — and wrote the
+evidence into the gate's own header. The two sabotage flags and `rig.spec.js`'s
+new per-zone / multi-radius breakdown stay in the tree, so the next session
+reproduces the whole table in one build.
+
+### Verification
+
+    build   all gates green at 2048/96 (NEW boot paint, sliver, goggle band,
+            dome seating, leg taper, bib number, stripe, suit NM variance 6.36,
+            atlas share, weight seam, fold population)
+    unit    81/81
+    golden  30/30, no re-capture, no physics change
+    drive   rig 12/12 (crease-band gate included), body + chain + athlete +
+            ready-stance + bib-number + spine 31/31, look 3/3
+    wire    1 803 719 B total, budget 2.5 MB
+    shots   figure_side.png, figure_front.png, face*, pose_* regenerated
+
+`ASSET_V` 41 -> 42, `index.html` `game.js?v=` 35 -> 36, preload hrefs `?v=42`.
+
+### Open at the end of session 10
+
+- Item 12 CLOSED. Item 5's weight half CLOSED (session 9).
+- Items 3 (suit panels + separate bib + the armpit/crotch bridge faces),
+  10 (stance), 2 (helmet rim lip / chin strap / vents), 9 (collar + throat red
+  streak), 6 (in-run arms), 7 (pike hip) untouched.
+- **GLM's review-115 finding (a) is already fixed**: `shots/figure_side.png`
+  shows a full dark dome in profile, not "a thin dark rim with a bare
+  skin-coloured crown". No crown-coverage gate was added; the defect is not
+  reproducible on the current build.
+- **Item 3 (d), by eye in `figure_side.png`**: the blue leg stripe is still a
+  ragged blob wandering across the shin, not a clean ~5 cm band on the outer
+  seam. The paint's angular width is right (dphi < 0.32 rad ~= 3.8 cm of arc);
+  the raggedness is in the per-vertex azimuth, so `limb_azim`/the slice
+  centroids are where to look.
+- `pose-shots.spec.js` still frames the tuck from too far off (session 9).
+
+### For the reviewer (session 10)
+
+1. **`rig.spec.js`'s "fabric folds read at the creases" gate should be renamed
+   or replaced.** The table above is the evidence: it is a relief/smoothing
+   guard whose entire dynamic range is the boot's hard geometry, and it has
+   never been sensitive to the folds it is named for. Two follow-ups worth a
+   ruling: (a) is the gate kept as an unnamed relief guard, or replaced with a
+   metric that resolves a 25 mm ridge (a band-limited one, not a Laplacian)?
+   (b) **the folds themselves are invisible in the bake** — 1.4 % — so item 3's
+   "subtle folds at elbows, knees, groin and lower back" is NOT currently being
+   delivered at any amplitude the eye or the suite can see. That is an item 3
+   decision (deeper folds, or folds as geometry rather than normal map), and it
+   is worth knowing before item 3 starts.
+2. Carried, unchanged: the `POSE_TUCKED_INERTIA` reconciliation
+   (`NEEDS-APPROVAL:`, deferred by the 18:30 ruling); the 1.35 strain gate
+   still unset pending item 3's bridge faces (session 9 question 1);
+   `smooth_blend_rings` running after the bake (session 9 question 2).
+
+---
+
+## Session 9 (2026-08-29, 18:2x-19:3x)
+
+### Merge with `render-realism-glm` — commit `97bec99`
+
+Seven commits (iter 116's cone-peak re-land, iter 117's free-look camera, the
+session-8 rulings). The conflict was **all seven golden traces that BOTH sides
+had re-captured**: GLM's iter 116 added the `pk_body_*` peak nodes to the node
+census, session 8 removed the spine drivers from it. Neither is a physics
+change, and taking either side wholesale would have shipped a trace that is
+wrong about the other side's nodes.
+
+Resolved by re-capturing on the merged tree, with
+`tests/golden/audit-physics-state.js` run FIRST as the evidence:
+
+    30 scenarios, 5408 frames compared
+    scenarios with ANY physics-state difference:  0
+    scenarios with display-node differences:      7   (exactly the seven)
+
+Then `capture.js`, then `verify.js` 30/30. Unit 81/81.
+
+### Item 5 (skin weights) — the seams were cut by the OWNERSHIP passes
+
+The reviewer's session-8 ruling aimed this at the hip and shoulder blend
+rings. That was right, and the cause turned out to be nameable.
+
+**New instrument: `weight_seam_report(obj, tag)`** in `build_body.py`. For
+every edge it computes the L1 distance between its two endpoints' normalised
+weight vectors, taken at the exporter's four influences — i.e. the weights the
+runtime actually sees. The quantity is in [0, 2]: 0 means the edge is rigid
+under ANY pose, 2 means the endpoints share no bone at all and the edge is a
+bare hinge between two rigid bodies. Under LBS an edge can only stretch if its
+endpoints are driven by different matrices, so this is the half of the strain
+product that this lane owns; the pose tables set the other half.
+
+Run after every weight pass, same build:
+
+| after | p99 | max L1 | edges over 1.0 |
+|---|---|---|---|
+| `skin` (heat map) | 0.328 | **0.636** | **0**/21170 |
+| `sharpen_limb_weights` | 0.830 | 1.599 | 145 |
+| `rebind_arm_weights` | 0.863 | 1.639 | 175 |
+| `reclaim_chest_wall` | 0.925 | **2.000** | 190 |
+
+**The heat-map bind is smooth. Every seam in the shipped skin was cut
+afterwards, by the three ownership passes.** Each decides membership with a
+hard predicate — a distance margin, a normal-alignment test, a z-band — and
+then writes a step across it; `reclaim_chest_wall` literally zeroes every
+group and writes 1.0. A hard predicate over a smooth surface gives a ragged
+boundary, and a step across a ragged boundary is a hinge. The 2.000 sits at
+`(+0.171, -0.002, +1.224)` — the right armpit, which is where session 8
+measured the strain tail.
+
+**The fix, and why it is safe: `smooth_blend_rings(low)` runs LAST**, on the
+low-poly, after the bake and after `add_spine_chain`. The three ownership
+passes still have to run and still have to run early — their real job is to
+make `pose_onto_segments` transport each limb the whole way to the game's
+segment length, and that result is BAKED into the rest mesh. By the time the
+repair runs that job is done and frozen, so the sharp weights have no
+remaining purpose: they describe only how the mesh leaves its rest pose, which
+is exactly the thing that tears. The rest pose is the bind pose whatever the
+weights are, so the shipped geometry and every gate upstream are untouched.
+
+Seeded from every seam edge (L1 > 0.35, or a dominant-group flip — two rules,
+because a wide blend gradient and a hard 100%/100% ownership flip look
+different and the second shares no influence to gradient over), grown 4
+topological rings, 8 Laplacian iterations at rate 0.5 with a per-ring falloff.
+
+    blend rings relaxed: 788 seam verts, 2801/8995 verts within 4 rings
+    WEIGHTSEAM after add_spine_chain: p99 0.850  max 1.538  151/18502 hot
+    WEIGHTSEAM shipped skin:          p99 0.319  max 0.715    0/18502 hot
+
+**HEAD GUARD.** `skin()` documents that a global weight smooth once grew the
+head group from 16% to 26% of the mesh, bulging the neck and shoulders. The
+pass measures the head's weight share before and after and raises if it grows
+by more than 10%: **0.1954 -> 0.1955**, +0.05%.
+
+**New gate `weight_seam_gate`**: max L1 <= 1.10, at most 6 edges over 1.0.
+**NEGATIVE CONTROL** `BODY_SABOTAGE_SEAM=1` skips the repair, so the gate
+measures the skin this project shipped up to session 8 — and rejects it, at
+max 1.538 / 151 hot. A historical control, the same shape the sliver gate
+carries; stronger than a synthetic hinge because the thing it rejects really
+went out. (First cut of the control tried to re-cut a hinge by coordinate and
+selected 0 verts — the low mesh is in the driver frame by then, not the
+anatomical one. Corrected rather than left reading `0 verts SABOTAGED`.)
+
+### What it bought, measured in the browser (`spine.spec.js`)
+
+| pose | p99 s8 -> s9 | p99.9 s8 -> s9 | max s8 -> s9 |
+|---|---|---|---|
+| in-run crouch | 4.696 -> **3.878** | 15.227 -> **7.119** | 38.571 -> **15.114** |
+| flight tuck | 4.281 -> **3.534** | 11.678 -> **6.316** | 27.700 -> **12.233** |
+| pike | 3.190 -> 3.554 | 9.335 -> **7.288** | 52.130 -> **17.966** |
+
+p99.9 halved and max halved in every pose. The worst edge has also MOVED off
+the armpit onto the hip/glute (crouch worst now `y -0.182, z -0.152`), which
+is the seam fix doing what it was aimed at.
+
+### THE FINDING — the residue is NOT the LBS bound, and it is not the weights
+
+I expected the remainder to be linear-blend skinning's own limit, and wrote a
+dose-response to confirm it. **It refuted the hypothesis, which is why the
+test ships**: an LBS term is proportional to `|R(T)p - p|` and must GROW with
+the joint angle.
+
+    tuck     0      0.15   0.3    0.5    0.75   1
+    p99      1.000  3.495  3.516  3.593  3.663  3.534
+
+It is a **step, not a ramp**. Full strain arrives at a 15% tuck, where the
+joints have barely moved, and does not grow as they open to 100%. So a fixed
+POPULATION of edges misbehaves the moment the pose leaves the bind.
+
+Splitting the same measurement by REST-EDGE LENGTH says which population
+(`byLen`, now in every STRAIN line):
+
+| rest length | edges | p99 crouch | p99 tuck | p99 pike |
+|---|---|---|---|---|
+| 2-5 mm | 6 934 | 1.370 | 1.330 | 1.367 |
+| 5-10 mm | 20 872 | 1.483 | 1.553 | 1.621 |
+| **>= 10 mm** | **26 138** | **4.574** | **4.202** | **4.566** |
+
+The short edges are essentially inside item 5's 1.35 target already. The tail
+is entirely in the LONG edges — and long rest edges on a mesh whose median is
+11 mm are the **bridge faces at the armpit and crotch**, which session 7
+identified by name as "long by construction because they span a real gap" and
+which are the surviving 50 sliver faces. The reviewer classified those as
+item 3 (bake/geometry), not skinning.
+
+**So: item 5's weight half is done and gated. The residual strain is a
+GEOMETRY defect — the armpit/crotch bridge faces — and it belongs to item 3.**
+The 1.35 gate is still not set, and now for a third, sharper reason than
+session 8's: on the geometry this lane can reach with weights, the sub-10 mm
+skin is already at 1.33-1.62, and the number that fails is produced by faces
+that should not exist at that length.
+
+### Verification
+
+    build   all gates green at 2048/96 (sliver, goggle band, dome seating, leg
+            taper, bib number + aspect, stripe, suit NM variance 6.36, atlas
+            share, NEW weight-seam gate); delivery maps 976 716 B total
+    unit    81/81
+    golden  30/30 after the merge re-capture; audit 0/5408 physics diffs
+    drive   spine 9/9 (8 + the new dose-response), pose-shots 1/1;
+            rig + body + chain + athlete + ready-stance + bib-number
+            30 passed (8.1 m), 0 failed — every gate the three ownership
+            passes were protecting (boot-ski invariant, ready stance, bib
+            number front AND back, arm transport, chain closure) is green
+            with the relaxed weights, which is the evidence that moving the
+            repair after the bake costs nothing upstream
+    wire    1 801 759 B total (glb 823 768 + maps 976 716 + json), budget 2.5 MB
+
+`_bodyVisibleAt` read 4 878 ms in this run against session 1's 1 457-1 542 ms,
+but that run was six specs in parallel under SwiftShader and session 1's was
+solo — the same contention effect iteration 115 recorded for the frame-time
+spec. Not comparable, and not chased; flagged so the next session does not
+read it as a regression.
+
+    shots   pose_* regenerated; TUCKEXTENT 0.870/1.498 = 0.581, identical to
+            session 8 — the pose is unchanged, only the deformation moved
+
+`ASSET_V` 40 -> 41, `index.html` `game.js?v=` 34 -> 35, preload hrefs `?v=41`.
+
+### Open at the end of session 9
+
+- **Item 5's weight half is CLOSED.** The remaining strain is the armpit/crotch
+  bridge faces and moves to item 3, with the `byLen` split as the evidence.
+- Items 3 (suit panels + separate bib + the bridge faces), 12 (boots),
+  10 (stance), 2 (helmet rim lip / chin strap / vents / profile bare crown),
+  9 (collar + throat red streak), 6 (in-run arms), 7 (pike hip) untouched.
+- `pose-shots.spec.js` frames the tuck from a long way off — the figure is
+  ~60 px tall in `shots/pose_tuck_side.png`, too small to judge by eye. The
+  numbers (extent ratio) are right; the CAMERA needs to come in. Small, worth
+  doing before the next visual ruling on the tuck.
+
+### For the reviewer (session 9)
+
+1. **The 1.35 strain gate is still unset, and session 9 says why with a
+   different measurement than session 8's.** The dose-response shows the
+   residue is a step at 15% tuck, not an angle-driven bound, and the
+   rest-length split shows it lives entirely in edges >= 10 mm — the
+   armpit/crotch bridge faces. Sub-10 mm skin is at 1.33-1.62. I believe the
+   honest sequence is: fix those faces under item 3, then set 1.35. Please
+   confirm, or rule that the gate should ship now on the sub-10 mm band only.
+2. **`smooth_blend_rings` runs after the bake and changes only deformation.**
+   That is the judgement call in this commit: it deliberately undoes, for
+   runtime purposes, the sharpening that `sharpen_limb_weights` /
+   `rebind_arm_weights` / `reclaim_chest_wall` exist to produce — on the
+   argument that their product is already frozen into the rest mesh. Every
+   gate those passes were protecting is still green, which is the evidence,
+   but the reasoning is worth a second pair of eyes.
+3. Carried, unchanged: the `POSE_TUCKED_INERTIA` reconciliation
+   (`NEEDS-APPROVAL:`, deferred by the 18:30 ruling).
+
+---
+
 ## Session 8 (2026-08-29, 18:0x-18:5x)
 
 ### Merge with `render-realism-glm` — commit `ad21306` (docs only)

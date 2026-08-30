@@ -55,7 +55,7 @@ const MEASURE = function (pose) {
     for (const mesh of parts) {
         try { mesh.skeleton.prepare(true); } catch (e) { mesh.skeleton.prepare(); }
     }
-    const out = { n: 0, strain: [], back: [], worst: null };
+    const out = { n: 0, strain: [], rest: [], back: [], worst: null };
     const M = window._characterMeshes;
     const torso = M && M.torso;
     // The torso's own frame, so "along the back" means along the spine and not
@@ -110,6 +110,7 @@ const MEASURE = function (pose) {
                 const d = Math.hypot(dx, dy, dz);
                 const s = d > r ? d / r : r / Math.max(d, 1e-6);
                 out.strain.push(s);
+                out.rest.push(r);
                 out.n++;
                 if (!out.worst || s > out.worst.s) {
                     out.worst = { s: +s.toFixed(3),
@@ -133,7 +134,20 @@ const MEASURE = function (pose) {
         return +a[Math.min(a.length - 1, Math.floor(a.length * q))].toFixed(3);
     };
     const chain = window._spineProbe ? window._spineProbe() : null;
+    // WHICH EDGES CARRY THE TAIL. A ratio on a 2 mm edge is invisible on a
+    // body whose median edge is ~11 mm, so a percentile taken over all edges
+    // can be dominated by geometry no one can see. Split it.
+    const bands = [[0.002, 0.005], [0.005, 0.010], [0.010, 1e9]];
+    const byLen = bands.map(([lo, hi]) => {
+        const v = [];
+        for (let i = 0; i < out.strain.length; i++) {
+            if (out.rest[i] >= lo && out.rest[i] < hi) v.push(out.strain[i]);
+        }
+        return { lo, n: v.length, p99: pct(v, 0.99), p999: pct(v, 0.999),
+                 max: v.length ? +Math.max.apply(null, v).toFixed(3) : null };
+    });
     return {
+        byLen,
         n: out.n,
         p50: pct(out.strain, 0.50),
         p99: pct(out.strain, 0.99),
@@ -280,6 +294,48 @@ test.describe('OPUS item 5 — the spine carries the bend', () => {
             console.log('STRAINTABLE ' + JSON.stringify(rows));
             for (const [k, v] of Object.entries(rows)) {
                 expect(v.n, `${k}: no skinned edges measured`).toBeGreaterThan(1000);
+            }
+        });
+
+    // ── Is the residue a WEIGHT defect, or the LBS bound? ──────────────────
+    //
+    // Session 9 relaxed the ownership seams: the shipped skin's worst per-edge
+    // weight-vector L1 is 0.715 with ZERO edges over 1.0 (it was 2.000 with
+    // 190 over, i.e. a bare hinge). p99.9 and max halved. p99 did not reach
+    // 1.35, and this test says why rather than guessing.
+    //
+    // Under linear-blend skinning an edge across a joint of angle T whose
+    // endpoints differ in weight by dw shortens by roughly dw*|R(T)p - p|.
+    // That term is ZERO at T = 0 and grows without bound with T, for ANY
+    // weight field: no weighting removes it, only a different skinning method
+    // (dual quaternion) or corrective shapes do. So if the residue is the LBS
+    // bound, strain must rise MONOTONICALLY with the tuck amount from 1.0 at
+    // rest; if it is a weight defect, it is there at small angles too.
+    test('INSTRUMENT: strain vs joint angle — the LBS dose-response',
+        async ({ page }) => {
+            const dose = {};
+            for (const t of [0, 0.15, 0.3, 0.5, 0.75, 1]) {
+                const r = await page.evaluate(MEASURE,
+                    { tuck: t, grounded: false, pike: 0 });
+                dose['tuck=' + t] = { p99: r.p99, p999: r.p999, max: r.max };
+            }
+            console.log('LBSDOSE ' + JSON.stringify(dose));
+            // MEASURED, session 9, and it REFUTES the LBS-bound reading above:
+            //
+            //   tuck    0      0.15   0.3    0.5    0.75   1
+            //   p99     1.000  3.495  3.516  3.593  3.663  3.534
+            //
+            // The strain is a STEP, not a ramp. It reaches its full value at a
+            // 15% tuck, where the joints have barely moved, and does not grow
+            // as they open to 100%. An LBS-bound term would be proportional to
+            // |R(T)p - p| and would have to grow with T. So the residue after
+            // the seam relaxation is a fixed POPULATION of edges that misbehave
+            // as soon as the pose leaves the bind, not a bound on the method —
+            // which is why `byLen` below splits it by rest-edge length.
+            expect(dose['tuck=0'].max, 'rest must be exactly rigid')
+                .toBeLessThanOrEqual(STRAIN_LIMIT);
+            for (const k of Object.keys(dose)) {
+                expect(dose[k].p99, `${k}: strain unmeasured`).toBeGreaterThan(0);
             }
         });
 

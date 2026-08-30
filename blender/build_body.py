@@ -123,6 +123,9 @@ SABOTAGE_DOME_MM = float(os.environ.get('BODY_SABOTAGE_DOME_MM', '0') or 0)
 # Negative control for the SLIVER gate: re-introduce one shard by rescaling a
 # slab of the trunk about the left shoulder plane, exactly as the sign bug did.
 SABOTAGE_SLIVER = os.environ.get('BODY_SABOTAGE_SLIVER') == '1'
+# Negative control for the weight-seam gate: re-cut one ownership hinge into
+# the shipped skin, the shape reclaim_chest_wall's step assignment makes.
+SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -135,6 +138,14 @@ BIB        = (0.55, 0.72, 0.88)      # powder-blue competition bib
 BIB_NUMBER = (0.95, 0.96, 0.97)      # white number patch on the bib
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
+# OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
+# short of the binding (author/reviewer, session 4 (c)) — the boot GEOMETRY has
+# existed since `rigid_boots`/`seat_soles` and is already gated by
+# `leg_taper_gate`'s cuff band, but nothing ever PAINTED it, so the suit ran
+# white all the way onto the ski. A dark shell is also half of item 11: a calf
+# only reads as over-inflated if there is no boot for it to taper into.
+BOOT       = (0.07, 0.075, 0.09)     # moulded shell: near-black plastic, darker than the glove
+BOOT_CUFF  = (0.17, 0.18, 0.21)      # the liner lip at the top of the shell, so the boot has an edge
 HELMET     = (0.09, 0.10, 0.12)
 SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, chin)
 # OPUS ITEM 1: a MIRRORED lens. The old (0.04,0.06,0.08) was DARKER and less
@@ -161,6 +172,37 @@ GOGGLE_RIM = (0.14, 0.15, 0.17)   # dark goggle frame between the lens and the s
 # never again be moved in one pass and not the others.
 LENS_LO = float(arg('--lens-lo', '0.40'))   # band bottom (above the nose tip)
 LENS_HI = float(arg('--lens-hi', '0.57'))   # band top (just under the front rim, 0.58)
+
+# OPUS ITEM 12: where the boot starts, in the shin's own `along` coordinate
+# (segment_frame: hip +1 -> ankle -1, CLAMPED, so the whole foot below the shin
+# sits at exactly -1.0). This is not a new number — it is the cuff step the rest
+# of the pipeline already agrees on: LEG_TAPER_BANDS['boot'] tops out at
+# z = -0.95, which on the 0.36 m shin (knee -0.635, ankle -0.995) is along
+# -0.75, and SUIT_FOLDS' 'boot-cuff' crease band is documented against the same
+# step. Painting from it puts the shell exactly on the geometry that was built
+# for it, and leaves the crease bunching just above the cuff where cloth does.
+#
+# MEASURED, and it moved the number: the segment model has NO FOOT BELOW THE
+# ANKLE. `seat_soles` lands the sole at z=-0.995 and the shin's own ankle end is
+# z=-0.995 too, so the cuff step at along -0.74 leaves only 47 mm of mesh under
+# it — a dark rim, not a boot. The boot on this rig has to be the LOWER SHIN,
+# which is also what a real ski boot is: the shell runs from the ski up past the
+# ankle and the cuff closes around the calf. -0.40 puts the cuff 108 mm above
+# the ski on a 360 mm shin, clear of the calf belly the taper gate measures at
+# z -0.80..-0.66, so the calf still shows above the shell and tapers into it.
+BOOT_ALONG = -0.40          # cuff top: below this the leg is boot, not suit
+BOOT_LIP_ALONG = -0.46      # the top of the shell is the lighter liner lip (~11 mm)
+# boot_paint_gate thresholds. SUIT reads luma 0.816 and BOOT 0.075, so the
+# light/dark split at 0.45 sits in empty space between them; the 2% allowance
+# covers the handful of verts the smart-project seam and the sole/ski contact
+# leave straddling the step.
+BOOT_LIGHT_LUMA = 0.45
+BOOT_LIGHT_FRAC = 0.02
+BOOT_DARK_MAX = 0.20
+BOOT_HEIGHT_MIN = 0.09      # metres of shell from the sole to the cuff lip
+# Negative control for the boot gate: skip the boot paint and ship the white
+# blob this project shipped up to session 9.
+SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -682,6 +724,234 @@ def skin(body, arm):
     bpy.ops.object.mode_set(mode='OBJECT')
     log('skinned with automatic (heat map) weights, smoothed across the joints')
 
+
+
+# ── Item 5: the skin's WEIGHT SEAMS ─────────────────────────────────────────
+#
+# The strain tail measured in session 8 (p50 exactly 1.000, p99 4.6, max 38)
+# is the signature of a thin RING of vertices, not of a pose: 99% of the skin
+# is rigid and a handful of edges explode. Under linear-blend skinning an edge
+# can only stretch if its two endpoints are driven by DIFFERENT matrices, so
+# the strain is bounded by how fast the weight field changes across that edge
+# times how far the two bones' transforms diverge. The pose tables set the
+# second factor; this measures the first, which is the half this lane owns.
+#
+# The quantity is the L1 distance between the two endpoints' normalised weight
+# vectors, in [0, 2]. 0 = the edge is rigid under ANY pose. 2 = the endpoints
+# share no bone at all, so the edge is a hinge between two rigid bodies and
+# will tear as far as the pose asks it to.
+WEIGHT_SEAM_INFLUENCES = 4        # what the glTF exporter ships per vertex
+
+
+def _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES):
+    """Per-vertex {group_index: weight}, top-`cap` and renormalised — i.e. the
+    weights the RUNTIME sees, not the ones Blender stores."""
+    out = []
+    for v in obj.data.vertices:
+        ws = sorted(((g.group, g.weight) for g in v.groups if g.weight > 1e-6),
+                    key=lambda gw: -gw[1])[:cap]
+        s = sum(w for _, w in ws)
+        out.append({gidx: w / s for gidx, w in ws} if s > 1e-9 else {})
+    return out
+
+
+def weight_seam_report(obj, tag, verbose=True):
+    """Per-edge weight-field discontinuity on the mesh as it will be skinned."""
+    W = _vertex_weights(obj)
+    names = {g.index: g.name for g in obj.vertex_groups}
+    per_edge = []
+    for e in obj.data.edges:
+        a, b = W[e.vertices[0]], W[e.vertices[1]]
+        d = sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in set(a) | set(b))
+        per_edge.append((d, e.vertices[0], e.vertices[1]))
+    if not per_edge:
+        return {'p50': 0.0, 'p99': 0.0, 'max': 0.0, 'hot': 0, 'edges': 0}
+    per_edge.sort(key=lambda t: t[0])
+    n = len(per_edge)
+    q = lambda f: per_edge[min(n - 1, int(f * n))][0]
+    hot = sum(1 for d, _, _ in per_edge if d > WEIGHT_SEAM_HOT)
+    r = {'p50': q(0.50), 'p90': q(0.90), 'p99': q(0.99), 'max': per_edge[-1][0],
+         'hot': hot, 'edges': n}
+    if verbose:
+        worst = []
+        for d, i, j in per_edge[-3:][::-1]:
+            co = (obj.data.vertices[i].co + obj.data.vertices[j].co) / 2
+            ga = max(W[i], key=W[i].get, default=None)
+            gb = max(W[j], key=W[j].get, default=None)
+            worst.append(f'{d:.2f}@({co.x:+.3f},{co.y:+.3f},{co.z:+.3f})'
+                         f'[{names.get(ga, "-")}|{names.get(gb, "-")}]')
+        log(f'WEIGHTSEAM {tag}: p50 {r["p50"]:.3f} p90 {r["p90"]:.3f} '
+            f'p99 {r["p99"]:.3f} max {r["max"]:.3f}; '
+            f'{hot}/{n} edges over {WEIGHT_SEAM_HOT}; worst ' + ' '.join(worst))
+    return r
+
+
+# How wide a jump counts as a seam. 1.0 means the two endpoints disagree about
+# half of their total influence — under a 90 deg joint rotation that alone is
+# already a >40% edge stretch.
+WEIGHT_SEAM_HOT = 1.0
+
+
+# ── Item 5: repair the seams, on the SHIPPED mesh, after everything ─────────
+#
+# Where the seams come from, measured by weight_seam_report on the same build:
+#
+#     after skin (heat map)       p99 0.328  max 0.636  hot   0/21170
+#     after sharpen_limb_weights  p99 0.830  max 1.599  hot 145
+#     after rebind_arm_weights    p99 0.863  max 1.639  hot 175
+#     after reclaim_chest_wall    p99 0.925  max 2.000  hot 190
+#
+# The heat-map bind is smooth. Every seam in the shipped skin was cut by the
+# three OWNERSHIP passes, each of which decides membership with a hard
+# predicate — a distance margin, a normal-alignment test, a z-band — and then
+# writes a step function across it (reclaim_chest_wall literally zeroes every
+# group and writes 1.0). A hard predicate over a smooth surface produces a
+# ragged boundary, and a step across a ragged boundary is a hinge.
+#
+# Those three passes still have to run, and they have to run EARLY: their real
+# job is to make pose_onto_segments transport each limb the whole way to the
+# game's segment length, and that result is BAKED into the rest mesh. By the
+# time we get here that job is done and frozen. The sharp weights have no
+# remaining purpose — they only describe how the mesh leaves its rest pose,
+# which is precisely the thing that is tearing.
+#
+# So the repair runs LAST, on the low-poly, after the bake and after
+# add_spine_chain: the rest mesh and every gate upstream are untouched (the
+# rest pose is the bind pose whatever the weights are), and only the
+# deformation changes.
+BLEND_RING_SEED = 0.35     # edge L1 that counts as a seam worth relaxing
+BLEND_RING_RINGS = 4       # topological rings grown from the seam (brief: >= 4)
+BLEND_RING_ITERS = 8
+BLEND_RING_RATE = 0.5
+# Ring k's share of the full smoothing rate. Ring 0 is the seam itself.
+BLEND_RING_FALLOFF = (1.00, 0.78, 0.52, 0.28, 0.10)
+
+
+def smooth_blend_rings(obj):
+    """Spread each ownership seam across >= 4 rings of vertices."""
+    ng = len(obj.vertex_groups)
+    names = {g.index: g.name for g in obj.vertex_groups}
+    W = _vertex_weights(obj, cap=ng)          # full vectors while smoothing
+    nv = len(obj.data.vertices)
+    adj = [[] for _ in range(nv)]
+    for e in obj.data.edges:
+        a, b = e.vertices
+        adj[a].append(b)
+        adj[b].append(a)
+
+    # Seed: both endpoints of every seam edge. Two rules, because the two
+    # defect shapes look different — a wide BLEND gradient (sharpen) and a
+    # hard OWNERSHIP flip with no blend at all (reclaim_chest_wall, whose
+    # endpoints are each 100% of one group and so share no influence to
+    # gradient over).
+    ring = [None] * nv
+    frontier = []
+    for e in obj.data.edges:
+        a, b = e.vertices
+        wa, wb = W[a], W[b]
+        d = sum(abs(wa.get(k, 0.0) - wb.get(k, 0.0)) for k in set(wa) | set(wb))
+        da = max(wa, key=wa.get) if wa else None
+        db = max(wb, key=wb.get) if wb else None
+        if d > BLEND_RING_SEED or (da is not None and da != db):
+            for v in (a, b):
+                if ring[v] is None:
+                    ring[v] = 0
+                    frontier.append(v)
+    seeds = len(frontier)
+    for k in range(1, BLEND_RING_RINGS + 1):
+        nxt = []
+        for v in frontier:
+            for u in adj[v]:
+                if ring[u] is None:
+                    ring[u] = k
+                    nxt.append(u)
+        frontier = nxt
+    strength = [0.0 if ring[v] is None else
+                BLEND_RING_FALLOFF[min(ring[v], len(BLEND_RING_FALLOFF) - 1)]
+                for v in range(nv)]
+    touched = sum(1 for v in range(nv) if strength[v] > 0.0)
+
+    # HEAD GUARD. A global weight smooth is exactly how the head group grew
+    # from 16% to 26% of the mesh once before (see skin()), bulging the neck
+    # and shoulders. Record the share now and assert it below.
+    def _share(gname):
+        gidx = obj.vertex_groups[gname].index if gname in obj.vertex_groups else None
+        if gidx is None:
+            return 0.0
+        return sum(w.get(gidx, 0.0) for w in W) / max(1, nv)
+
+    head_before = _share('head')
+
+    for _ in range(BLEND_RING_ITERS):
+        nxtW = [None] * nv
+        for v in range(nv):
+            a = strength[v] * BLEND_RING_RATE
+            if a <= 0.0 or not adj[v]:
+                continue
+            acc = {}
+            for u in adj[v]:
+                for k, w in W[u].items():
+                    acc[k] = acc.get(k, 0.0) + w
+            n = float(len(adj[v]))
+            cur = W[v]
+            new = {}
+            for k in set(cur) | set(acc):
+                val = (1.0 - a) * cur.get(k, 0.0) + a * (acc.get(k, 0.0) / n)
+                if val > 1e-6:
+                    new[k] = val
+            tot = sum(new.values())
+            nxtW[v] = {k: w / tot for k, w in new.items()} if tot > 1e-9 else cur
+        for v in range(nv):
+            if nxtW[v] is not None:
+                W[v] = nxtW[v]
+
+    head_after = _share('head')
+    if head_after > head_before * 1.10 + 1e-6:
+        raise SystemExit(
+            f'[body] blend-ring smoothing inflated the head group '
+            f'{head_before:.4f} -> {head_after:.4f} (limit +10%) — the ring '
+            f'growth is reaching past the neck, exactly the failure skin() '
+            f'documents')
+
+    # Write back at the exporter's influence count, so what ships is what was
+    # measured. Everything outside the top 4 is REMOVED, not left at a small
+    # weight the exporter would silently drop.
+    groups = list(obj.vertex_groups)
+    for v in range(nv):
+        if strength[v] <= 0.0:
+            continue
+        ws = sorted(W[v].items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        tot = sum(w for _, w in ws) or 1.0
+        keep = {k: w / tot for k, w in ws}
+        for g in groups:
+            if g.index in keep:
+                g.add([v], keep[g.index], 'REPLACE')
+            else:
+                g.remove([v])
+    obj.data.update()
+    log(f'blend rings relaxed: {seeds} seam verts, {touched}/{nv} verts within '
+        f'{BLEND_RING_RINGS} rings, {BLEND_RING_ITERS} iters at rate '
+        f'{BLEND_RING_RATE}; head share {head_before:.4f} -> {head_after:.4f}')
+
+
+# The gate. Calibrated on the measured build, not on the defect: the repaired
+# mesh reports the numbers in the log line above, the defect reported max 2.000
+# with 190 hot edges. A max of 2.0 is a bare hinge between two rigid bodies and
+# is the only value that is categorically wrong whatever the pose.
+WEIGHT_SEAM_MAX = 1.10
+WEIGHT_SEAM_HOT_MAX = 6
+
+
+def weight_seam_gate(obj, tag):
+    r = weight_seam_report(obj, tag)
+    if r['max'] > WEIGHT_SEAM_MAX or r['hot'] > WEIGHT_SEAM_HOT_MAX:
+        raise SystemExit(
+            f'[body] weight-seam gate FAILED at {tag}: max {r["max"]:.3f} '
+            f'(limit {WEIGHT_SEAM_MAX}), {r["hot"]} edges over '
+            f'{WEIGHT_SEAM_HOT} (limit {WEIGHT_SEAM_HOT_MAX}). The skin has a '
+            f'hinge in it: neighbouring vertices driven by disjoint bones tear '
+            f'under any pose that moves those bones apart.')
+    return r
 
 # Sharpening caps: how far from each limb's END JOINTS the sharpening below is
 # allowed to act. Inside a cap, blending between neighbours is legitimate — a
@@ -4523,9 +4793,33 @@ SUIT_FOLDS = {
                  ('glove-cuff', -0.70, 0.18, 0.0015, 2.0, None)],
     'upperLeg': [('knee', -0.88, 0.24, 0.0019, 2.0, None),
                  ('hip', 0.86, 0.22, 0.0014, 2.0, 0.25)],
+    # OPUS ITEM 12 tried to raise 'boot-cuff' to (-0.26, 0.13) so the crease
+    # bunches ABOVE the new boot shell instead of creasing rigid plastic, and
+    # REVERTED it — not because the placement was wrong, but because measuring
+    # it showed the move is worth nothing and costs a gate. rig.spec.js's
+    # crease-band variance gate reads 57159 with this band and 43692 with the
+    # raised one, and the 13600 difference is not fold relief: a folds-OFF bake
+    # (BODY_SABOTAGE_FOLDS=1) scores 43095 and a weave-OFF bake
+    # (BODY_SABOTAGE_WEAVE=1) scores 42362, i.e. everything displace_suit
+    # writes moves that metric by under 3%. The old window's extra 62732 texels
+    # carry mean |Laplacian| ~100000, double any cloth band — they are the
+    # BOOT's hard geometry edges. So the gate's dynamic range is the boot, the
+    # fold placement is invisible either way, and moving the band only blinds
+    # the gate. Reviewer question in docs/OPUS-NOTES.md; the placement belongs
+    # with item 3's fold design, once folds are deep enough to measure.
     'lowerLeg': [('knee', 0.80, 0.22, 0.0017, 2.0, None),
                  ('boot-cuff', -0.62, 0.18, 0.0015, 2.0, None)],
 }
+
+# NEGATIVE CONTROL for rig.spec.js's crease-band variance gate ("fabric folds
+# read at the creases"): flatten every fold band, which is precisely the
+# "folds lost" failure that gate exists to catch. The weave micro-normal and
+# the joint bunching are left alone, so what this isolates is the FOLDS.
+SABOTAGE_FOLDS = os.environ.get('BODY_SABOTAGE_FOLDS') == '1'
+SABOTAGE_WEAVE = os.environ.get('BODY_SABOTAGE_WEAVE') == '1'
+if SABOTAGE_FOLDS:
+    SUIT_FOLDS = {k: [(z, a0, w, 0.0, c, fb) for (z, a0, w, _a, c, fb) in v]
+                  for k, v in SUIT_FOLDS.items()}
 
 
 def displace_suit(obj, lm):
@@ -4591,7 +4885,12 @@ def displace_suit(obj, lm):
             # cloth its weave for real (item 3's "fine woven fabric
             # micro-normal"), not to drop the floor to what the torn mesh
             # happened to score.
-            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0021
+            # NEGATIVE CONTROL for the crease-band variance gate: the weave IS
+            # the relief that gate actually measures (folds contribute 1.4% —
+            # see the gate's header in rig.spec.js), so erasing it is the
+            # "suit relief erased" failure, and the gate must reject it.
+            d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) \
+                * (0.0 if SABOTAGE_WEAVE else 0.0021)
 
             # Fabric folds (task 3, folds slice): structured compression
             # ridges at the crease planes — see SUIT_FOLDS. Where a fold band
@@ -4676,12 +4975,20 @@ def displace_suit(obj, lm):
     # elbow 1612, glove-cuff 621, hip 496, knee 1806 — floored at 40% so a
     # re-placed band (or a segment rename that orphans SUIT_FOLDS keys) fails
     # the build instead of silently flattening the creases.
+    #
+    # (Item 12 briefly re-baselined boot-cuff to 1112 for a raised band; the
+    # band move was reverted, so this reference is back to the measured 3312.
+    # The gate caught that move exactly as designed, at 34% of the floor.)
     FOLD_GATE = 0.40
     fold_ref = {'armpit': 836, 'boot-cuff': 3312, 'elbow': 1612,
                 'glove-cuff': 621, 'hip': 496, 'knee': 1806}
     missing = [z for z, n in fold_ref.items()
                if fold_hit.get(z, 0) < n * FOLD_GATE]
-    if missing:
+    if missing and SABOTAGE_FOLDS:
+        log(f'BODY_SABOTAGE_FOLDS=1: fold population gate bypassed ({missing}) '
+            f'— this build exists only to be REJECTED by the crease-band '
+            f'variance gate in the browser')
+    elif missing:
         raise SystemExit(
             f'[body] fold gate FAILED: zones below {FOLD_GATE:.0%} of the '
             f'reference population: ' + ', '.join(
@@ -4792,6 +5099,17 @@ def paint_suit(obj, lm):
             # three fifths that hold the actual number. That band, not the
             # digits, was ~70% of the back face's 0.4099 navy fraction.
             col, tag = WAIST, 'waist'
+        elif name.startswith('lowerLeg') and along < BOOT_ALONG \
+                and not SABOTAGE_BOOT:
+            # OPUS ITEM 12: the ski boot. Everything below the cuff step is a
+            # dark moulded shell, with a lighter liner lip along its top edge so
+            # the boot has a visible rim instead of dissolving into a black sock
+            # — the same trick the glove cuff uses at along -0.78. The stripe is
+            # deliberately NOT reachable from here: a leg stripe runs hip to
+            # cuff on the SUIT and stops at the boot, and letting the branch
+            # below paint it would have run royal blue down the shell.
+            col, tag = ((BOOT_CUFF, 'bootlip') if along >= BOOT_LIP_ALONG
+                        else (BOOT, 'boot'))
         elif name.startswith(('upperLeg', 'lowerLeg')):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
@@ -4858,16 +5176,97 @@ def paint_suit(obj, lm):
     # condition never fires produces no error and no warning — the bake simply
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
-    missing = [t for t in ('suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
-                           'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
-                           'lip', 'noshade')
-               if counts.get(t, 0) == 0]
+    required = ['suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
+                'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
+                'lip', 'noshade']
+    if not SABOTAGE_BOOT:
+        required += ['boot', 'bootlip']
+    missing = [t for t in required if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
             f'[body] these suit regions matched no vertices: {missing}. Their '
             f'conditions are wrong for the reference pose, and the bake would '
             f'silently omit them.')
     return counts
+
+
+
+def boot_paint_gate(obj):
+    """
+    OPUS ITEM 12 hard gate: the leg must END IN A BOOT.
+
+    The reviewer's session-4 finding (c) was that the leg "ends in a white blob
+    that stops short of the binding", and the diagnosis in session 3 added why
+    it matters for item 11: a calf only reads as over-inflated when there is no
+    dark shell for it to taper into. The GEOMETRY for the boot has been there
+    since `rigid_boots`/`seat_soles`, and `leg_taper_gate` already measures its
+    cuff breadth — what was missing was paint, and a paint region that is
+    simply absent produces no error, exactly the failure mode `paint_suit`'s
+    `missing` check exists for. That check only proves the region matched SOME
+    vertices, though; this one proves it matched the RIGHT ones, on the mesh
+    the bake reads.
+
+    Three assertions, all on the painted high-poly:
+
+      dark      the shell's mean luma is boot-plastic dark, not grey suit;
+      covered   almost no shin/foot vertex below the cuff step is still light —
+                this is the white blob itself, so it is the assertion the
+                negative control trips;
+      tall      the painted band spans a boot's worth of height from the sole,
+                so a shell that collapses to a sliver at the cuff fails.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_BOOT=1 skips the boot branch in
+    `paint_suit`, which reproduces the skin this project shipped up to session 9
+    — and this gate must reject it.
+    """
+    attr = obj.data.color_attributes.get('suit')
+    if attr is None:
+        raise SystemExit('[body] boot gate: no "suit" colour attribute')
+    own = dominant_segments(obj)
+
+    def luma(c):
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    lumas, zs = [], []
+    light = 0
+    for i, v in enumerate(obj.data.vertices):
+        nm = own[i]
+        if nm not in ('lowerLegL', 'lowerLegR'):
+            continue
+        c = bl(nm)
+        half = SEGMENTS[nm]['h'] / 2
+        if v.co.z >= c.z + BOOT_ALONG * half:
+            continue                       # above the cuff step: suit, not boot
+        y = luma(attr.data[i].color)
+        lumas.append(y)
+        zs.append(v.co.z)
+        if y > BOOT_LIGHT_LUMA:
+            light += 1
+    if len(lumas) < 200:
+        raise SystemExit(
+            f'[body] boot gate: only {len(lumas)} vertices below the cuff step '
+            f'— the shin ownership or the step moved, so nothing is measured')
+    mean = sum(lumas) / len(lumas)
+    frac = light / len(lumas)
+    span = max(zs) - min(zs)
+    log(f'boot paint: {len(lumas)} verts below the cuff step, mean luma '
+        f'{mean:.3f} (gate <= {BOOT_DARK_MAX}), light {light} = {frac:.4f} '
+        f'(gate <= {BOOT_LIGHT_FRAC}), shell height {span * 1000:.0f} mm '
+        f'(gate >= {BOOT_HEIGHT_MIN * 1000:.0f})')
+    bad = []
+    if mean > BOOT_DARK_MAX:
+        bad.append(f'mean luma {mean:.3f} > {BOOT_DARK_MAX} — the shell is not '
+                   f'dark boot plastic')
+    if frac > BOOT_LIGHT_FRAC:
+        bad.append(f'{frac:.4f} of the boot band is still LIGHT (> '
+                   f'{BOOT_LIGHT_LUMA}) — that is the white blob running onto '
+                   f'the ski')
+    if span < BOOT_HEIGHT_MIN:
+        bad.append(f'shell only {span * 1000:.0f} mm tall (>= '
+                   f'{BOOT_HEIGHT_MIN * 1000:.0f} mm)')
+    if bad:
+        raise SystemExit('[body] BOOT PAINT GATE FAILED: ' + '; '.join(bad))
+    return {'mean': mean, 'light_frac': frac, 'span': span, 'n': len(lumas)}
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
@@ -5291,6 +5690,7 @@ def make_highpoly(low, lm):
 
     displace_suit(high, lm)
     paint_suit(high, lm)
+    boot_paint_gate(high)
 
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')
@@ -5900,10 +6300,15 @@ def main():
     joints = mesh_arm_joints(body, joints)
     arm = build_armature(joints)
     skin(body, arm)
+    weight_seam_report(body, 'after skin')
     sharpen_limb_weights(body, joints)
+    weight_seam_report(body, 'after sharpen_limb_weights')
     rebind_arm_weights(body, joints)
+    weight_seam_report(body, 'after rebind_arm_weights')
     reclaim_chest_wall(body, joints)
+    weight_seam_report(body, 'after reclaim_chest_wall')
     rigid_boots(body, arm, joints)
+    weight_seam_report(body, 'after rigid_boots')
 
     # How tall the boot is: ankle joint down to the sole, expressed in the shin's
     # own scale so it survives the stretch onto the game's segment length.
@@ -6195,6 +6600,19 @@ def main():
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.
     add_spine_chain(low, arm)
+    weight_seam_report(low, 'after add_spine_chain')
+    if SABOTAGE_SEAM:
+        # NEGATIVE CONTROL, and a HISTORICAL one: skip the repair and let the
+        # gate measure the skin this project actually shipped up to session 8.
+        # It must be rejected — max 1.538 with 151 edges over 1.0 (measured).
+        # This is the same shape of control the sliver gate carries, and it is
+        # stronger than re-cutting a synthetic hinge would be, because the
+        # thing it rejects is a mesh that really went out.
+        log('weight seam SABOTAGED: smooth_blend_rings SKIPPED — the gate now '
+            'measures the pre-session-9 skin and must reject it')
+    else:
+        smooth_blend_rings(low)
+    weight_seam_gate(low, 'shipped skin')
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
