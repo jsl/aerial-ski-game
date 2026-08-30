@@ -796,6 +796,129 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 23 (2026-08-30, 06:3x-08:0x)
+
+Merged `render-realism-glm` first (1 commit, docs only). Reviewer's 05:10 ruling
+on the brief puts the **flight tuck re-check** first, and that is this session.
+
+### Item 5 — the flight-tuck re-check: the tuck POSE is fixed, the SKIN is not
+
+Regenerated the pose shots and looked at `shots/pose_tuck_side.png`. Against
+session 3's reading of the same shot ("the whole BACK has become one blank white
+sail ... the NECK is a long bare skin tube ... the arms are absorbed into the
+mass under the chest") the pose itself is now **right**: back a continuous
+curve, head up on a short neck, both arms visible with the hands down at the
+shins, knees to the chest. The spine chain, the closed hip gap and the
+half-angle helpers did their job.
+
+What is left is a **fan of long silvery shards over the hip and lower back** —
+thin stretched triangles radiating from the waist. `spine.spec.js` is green
+(25/25) because it gates strain at NEUTRAL only; the flight tuck reads
+`p99 2.613, p999 5.759, max 10.345` (LBSDOSE).
+
+### The root cause, and it is a defect in the METRIC as much as in the skin
+
+The strain buckets by rest-edge length say where to look:
+
+| rest edge | p99 | max |
+|---|---|---|
+| <= 2 mm | 1.14 | 1.43 |
+| <= 5 mm | 1.10 | 3.47 |
+| **>= 10 mm** | **1.65** | **12.93** |
+
+A browser probe over every edge with strain > 3 at tuck = 1 (322 edges) with the
+full 4-influence weight vector of both endpoints:
+
+```
+s=10.34 restMm 6.9  upperArmR:0.68, spine_02:0.31   at (+0.081,-0.030,-0.125)
+s= 6.82 restMm 39.7 upperLegR:0.67, spine_02:0.33   at (+0.158,-0.153,-0.044)
+s= 6.64 restMm 22.1 spine_02:0.75, upperLegR:0.25   at (+0.117,-0.075,+0.041)
+s= 6.46 restMm 12.4 spine_02:0.53, upperArmL:0.44   at (-0.131,-0.053,-0.098)
+```
+
+**`upperArmR` owns 0.68 of a vertex on the lower belly.** The arm bind axis is
+at x = +/-0.175 running down the side; that vertex is **150 mm** from it, 2.7x
+the upper arm's own radius. In the flight tuck the arm swings ~150 deg and takes
+the belly with it. Histogram of the 322: `spine_02|spine_02` 116 (both endpoints
+trunk-dominant but with arm/leg secondaries 0.18-0.44 apart), `spine_02|upperArm*`
+38, `upperLeg*` 22.
+
+**And `weight_locality_gate` reads 0 offenders on exactly this skin.** Its
+quantity is `d / reach`, where a bone's `reach` is *the p98 distance of the skin
+it already drives at >= 0.5*. That is **self-certifying**: skin a bone has
+wrongly grabbed sets the reach that then declares the grab local, and the pass
+converges on a fixed point around its own bleed. New `_locality_reach_log`
+prints each bone's self-certified reach beside its **own cross-section**
+half-diagonal, which is a property of the box the segment was built from and
+cannot be inflated by mis-weighting:
+
+| bone | self-certified reach | own cross-section | ratio |
+|---|---|---|---|
+| lowerArmL / R | 180 / 179 mm | 64 mm | **2.81x** |
+| upperArmL / R | 146 / 148 mm | 78 mm | **1.90x** |
+| lowerLegL / R | 155 / 152 mm | 92 mm | 1.68x |
+| upperLegL / R | 154 / 152 mm | 141 mm | 1.09x |
+| spine_02 (torso) | 190 mm | 175 mm | 1.09x |
+| head | 132 mm | 163 mm | 0.81x |
+
+The arms are the outliers by a factor of two, and the arms are the bones whose
+swing tears the tuck. That is the whole diagnosis, and it is independent of the
+strain probe that found it.
+
+### The fix is written but does NOT ship, and the reason is measured
+
+`LOCALITY_REACH_CAP` caps reach at the segment's own cross-section
+(`BODY_LOCALITY_CAP=1`); `BODY_LOCALITY_NOCAP=1` forces the old reach so the two
+can be measured in one session. With the cap on, LOCALITY goes 24 -> 1244
+offenders before the repair and `localise_weights` takes off **1237 weight
+units** instead of 94 — it sees the bleed for the first time. But it then fails
+`weight_seam_gate` at **max 1.632** (limit 1.10, 24 hot edges), and the cause is
+specific: capping pushes **1105 vertices** through the pass's `tot < 0.20`
+rescue branch, which assigns a **hard weight of 1.0** to one bone. A rigid
+island beside blended skin is precisely the hinge that gate exists to catch.
+Widening the ramp (RAMP0 1.25 -> 0.90) makes it worse, not better: 1659 units
+removed, seam max 1.643. The two `localise -> relax -> localise` passes also stop
+converging (1237 then 1026 units) — with a tight cap the relax diffuses weight
+back into the ramp band as fast as the localise takes it out.
+
+**So the rescue branch has to become a soft renormalisation onto the nearest
+segments before the ceiling can land.** That is the next session's first item and
+it is a self-contained change to one branch of `localise_weights`. Nothing was
+loosened and no fudged constant was shipped to make a red go green: the ceiling
+is in the tree, off, with both controls and the numbers above.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96 (the change is log-only;
+            the rebuilt assets differed from the shipped ones by 10 bytes of
+            WebP bake noise, so they were restored and ASSET_V is NOT bumped)
+    unit    81/81      golden 30/30 (no display node changed, no re-capture)
+    drive   spine 25/25, chain 11/11, pose-shots 1/1 before the change; the
+            change cannot reach the shipped asset (cap off by default)
+
+### Open at the end of session 23
+
+- **First item next session: the soft-rescue fix in `localise_weights`, then
+  turn `LOCALITY_REACH_CAP` on.** The measured prize is the shard fan in the
+  tuck and a flight-tuck strain gate that can finally be set at an honest
+  number (today it would have to be p999 5.76).
+- Then, in the reviewer's order: the smoothed suit shell (author #7 — still the
+  author's most visible open item), panels / collar / cuffs, the THUMB, and the
+  UV unwrap + arm stripe last (in TEXTURE space, per the 05:10 ruling).
+- `reclaim_chest_wall` runs on the **R side only** (`upperArmR` hard-coded).
+  Noticed while reading it, not acted on; the L-side chest wall has never had
+  the same repair, and `upperArmL` measures the same 1.90x over-reach as R.
+- The paint-lattice ceiling from session 22 still governs any feature under
+  ~10 mm.
+
+### For the reviewer (session 23)
+
+1. **The weight-locality gate has been self-certifying since session 18.** Its
+   "24 offenders -> 0" was true of its own metric and false of the skin. The
+   honest reference is in the tree and logged every build; please confirm the
+   plan above (soft rescue, then cap) rather than any loosening of the seam gate.
+2. No physics changes, no golden rebaselines, no gate loosened, no asset change.
+
 ## Session 22 (2026-08-30, 05:0x-06:3x)
 
 Merged `render-realism-glm` first (9 commits: GLM's iter 127-129 crash-determinism

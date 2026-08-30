@@ -130,6 +130,10 @@ SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
 # Negative control for the weight-LOCALITY gate: skip localise_weights, so the
 # gate measures the skin that put upperLeg weight on the ribcage.
 SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
+# Companion switch to BODY_LOCALITY_CAP (see LOCALITY_REACH_CAP): forces the
+# old self-certifying reach even when the cap is on, so the two can be measured
+# against each other in one session. Numbers in docs/OPUS-NOTES.md.
+LOCALITY_NOCAP = os.environ.get('BODY_LOCALITY_NOCAP') == '1'
 # Negative control for the bib-number ORIENTATION gate: mirrors the BACK
 # plate's reading direction. The gate must reject it.
 SABOTAGE_BIBMIRROR = os.environ.get('BODY_SABOTAGE_BIBMIRROR') == '1'
@@ -1119,6 +1123,57 @@ def _group_segment(name):
     return None
 
 
+def _segment_halfdiag(name):
+    """
+    Half-diagonal of a segment's own cross-section, in metres.
+
+    This is a property of the MODEL — the box each limb was built from — so no
+    amount of mis-weighting can inflate it. The spine bones report the torso's;
+    a helper reports the larger of the two segments it bridges, since its
+    domain really does straddle both.
+    """
+    if name in SPINE_NAMES:
+        name = 'torso'
+    if name in JOINT_HELPERS:
+        return max(_segment_halfdiag(n) for n in JOINT_HELPERS[name])
+    s = SEGMENTS.get(name)
+    if not s:
+        return None
+    return math.hypot(s['w'] / 2.0, s['d'] / 2.0)
+
+
+# THE REACH CEILING (session 23) — MEASURED, INSTRUMENTED, NOT YET SHIPPED.
+#
+# The p98 of the skin a bone already owns is a SELF-CERTIFYING measure: if a
+# bone has grabbed skin that is not its own, that same skin sets the reach
+# which then declares the grab local, and the pass converges on a fixed point
+# that legitimises its own bleed. Measured on the shipped skin: `upperArmR`
+# holds **0.68** of a vertex on the lower belly (game-space
+# (+0.081, -0.030, -0.125)), 150 mm from its own bone axis and 2.7x the upper
+# arm's own radius — and LOCALITY reads 0 offenders. In the flight tuck the arm
+# swings ~150 deg and takes that belly with it: that is the fan of silvery
+# shards over the hip and lower back in `shots/pose_tuck_side.png`, and it is
+# why the >= 10 mm rest-edge bucket tops out at strain 12.9 at tuck = 1 while
+# the <= 5 mm bucket stays at 3.5.
+#
+# The cross-section of the box a segment was BUILT from cannot be inflated by
+# mis-weighting, so it is the honest reference. `_locality_reach_log` prints
+# both numbers for every bone each build; on this build the ratio owned/own
+# cross-section is 2.81x lowerArm, 1.90x upperArm, 1.68x lowerLeg against
+# 1.09x upperLeg, 1.09x spine and 0.81x head — the arms are the outliers and
+# they are the bones whose swing tears the tuck.
+#
+# It does NOT ship yet, and the reason is measured too: capping reach pushes
+# 1100+ vertices through `localise_weights`'s `tot < 0.20` rescue branch, which
+# assigns a HARD weight of 1.0 to one bone. That is a rigid island beside
+# blended skin, i.e. exactly the hinge `weight_seam_gate` exists to catch, and
+# it fails it at max 1.632 / 1.643 (limit 1.10) whether the ramp starts at 1.25
+# or 0.90. The rescue branch has to become a soft renormalisation before the
+# ceiling can land. Set BODY_LOCALITY_CAP=1 to reproduce the red.
+LOCALITY_REACH_CAP = 1.00       # x the segment's own cross-section half-diagonal
+LOCALITY_CAP_ON = os.environ.get('BODY_LOCALITY_CAP') == '1'
+
+
 def _locality_frame(obj, arm):
     """{group index: (name, head, tail, reach)} for every skin joint with a segment."""
     bones = {b.name for b in arm.data.bones}
@@ -1140,9 +1195,25 @@ def _locality_frame(obj, arm):
         if not ds:
             continue                     # a bone with no core owns no skin
         ds.sort()
-        segs[gi][3] = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        owned = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        hd = _segment_halfdiag(segs[gi][0])
+        cap = LOCALITY_REACH_CAP * hd if hd else None
+        segs[gi][3] = min(owned, cap) if (cap and LOCALITY_CAP_ON and not LOCALITY_NOCAP) else owned
         out[gi] = tuple(segs[gi])
     return out
+
+
+def _locality_reach_log(obj, arm):
+    """Both reaches side by side, so the cap's effect is on the record."""
+    bones = {b.name for b in arm.data.bones}
+    idx = {g.index: g.name for g in obj.vertex_groups if g.name in bones}
+    frame = _locality_frame(obj, arm)
+    rows = []
+    for gi, (nm, a, b, reach) in sorted(frame.items(), key=lambda kv: kv[1][0]):
+        hd = _segment_halfdiag(nm)
+        rows.append(f'{nm} {reach*1000:.0f}'
+                    + (f'/{LOCALITY_REACH_CAP*hd*1000:.0f}' if hd else ''))
+    log('LOCALITY reach (mm, capped/cap): ' + ', '.join(rows))
 
 
 def weight_locality_report(obj, arm, tag, verbose=True):
@@ -9286,6 +9357,7 @@ def main():
         # out, so the localisation runs once more to take it off again. The
         # second pass is small by construction and the two gates below are what
         # say so.
+        _locality_reach_log(low, arm)
         localise_weights(low, arm)
         smooth_blend_rings(low)
         localise_weights(low, arm)
