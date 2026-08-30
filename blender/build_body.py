@@ -169,7 +169,7 @@ SKIN       = (0.78, 0.56, 0.46)      # matte skin under the brim (face, nose, ch
 LENS       = (0.09, 0.28, 0.55)      # mirrored blue goggle lens across the eyes
 LENS_WARM  = (0.42, 0.30, 0.18)      # the orange half of the mirror flash, low-outer corners
 BROW       = (0.10, 0.07, 0.06)      # face pass 3: dark, wide strokes — the 0.16 brown washed out at 0.6 m
-LIP        = (0.45, 0.20, 0.18)      # face pass 3: darker/wider lips (was 0.62/0.34/0.30)
+LIP        = (0.42, 0.26, 0.24)      # lips: a mouth line, not a lurid red slab (0.45/0.20/0.18 read as one when the band was 26 mm tall)
 SKIN_SHADE = (0.62, 0.43, 0.37)      # face pass 3: nose-side / nostril shadow shading on the face
 # OPUS ITEM 1: the frame is DARK in the reference, not white. The near-white
 # frame existed only to separate a black lens from a black shell; the mirrored
@@ -7431,15 +7431,26 @@ def paint_suit(obj, lm):
                 # half-width is a RING: the mouth was painted round the
                 # full circumference of the head, nape included. Same
                 # frontal test as its two neighbours.
-                if 0.19 < hz < 0.305 and abs(x - hx) < lm['h'] * 0.17 \
+                # SIZES, once the bands actually land on the face. The old
+                # numbers were never seen in the right place, so nothing ever
+                # constrained them: 0.19..0.305h x |x| < 0.17h is 26 mm tall
+                # and 78 mm wide on a 229 mm head — the whole lower face, and
+                # that is exactly how it rendered when the units were fixed
+                # (shots/face.png, a dark red slab from nose to jaw with two
+                # black rectangles for nostrils). Re-derived from the head's
+                # own landmarks: the eye line is at 0.50h and the nose tip at
+                # 0.357h, so the mouth sits about midway between the tip and
+                # the jaw at ~0.27h, ~50 mm wide and ~10 mm tall, and the
+                # nostrils are a pair 14 mm apart just under the tip.
+                if 0.250 < hz < 0.295 and abs(x - hx) < lm['h'] * 0.11 \
                         and ly > lm['h'] * 0.10:
                     col, tag = LIP, 'lip'
-                elif 0.30 < hz < 0.33 \
-                        and abs(abs(x - hx) - lm['h'] * 0.055) < lm['h'] * 0.026 \
-                        and ly > lm['h'] * 0.10:
+                elif 0.345 < hz < 0.365 \
+                        and abs(abs(x - hx) - lm['h'] * 0.030) < lm['h'] * 0.014 \
+                        and ly > lm['h'] * 0.12:
                     col, tag = BROW, 'nostril'
-                elif 0.33 < hz < 0.47 \
-                        and abs(abs(x - hx) - lm['h'] * 0.032) < lm['h'] * 0.022 \
+                elif 0.370 < hz < 0.470 \
+                        and abs(abs(x - hx) - lm['h'] * 0.034) < lm['h'] * 0.016 \
                         and ly > lm['h'] * 0.10:
                     col, tag = SKIN_SHADE, 'noshade'
                 else:
