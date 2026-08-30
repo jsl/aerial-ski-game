@@ -203,6 +203,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
+| — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
 | — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
 | — | Iteration 119 | **119 bundle LANDED — night mode made author-reachable + visible (settings toggle w/ localStorage reload, start-plateau + kicker-backlight floods, ambient raise, dimmer/denser flakes), generic blue/white kicker side panels (P3 gap), chop displacement raised to 0.095 + bump level 1.7; pike pose-shot instrument NOT done (open)** | night.spec 1/1 (9 warm spots incl. start flood aimed at the athlete; clearColor lum 0.0039, snow region mean 0.24, lit-pool lum 0.55+ r−b>0, athlete band 0.25+); venue-dressing 5/5 (6 panel ribbons hugging the wall planes ≤ 5 mm, cornerMat red untouched); chop.spec 1/1 (worstSink 0.093 ≤ 0.101, landing p95−p5 luminance > 0.10); unit 81/81, golden 30/30 CENSUS-ONLY re-capture (verify diffs were kickerPanel0/1/2 node presence only, audit-physics-state 0 diffs ×30); look NOT re-run this iter (run-all > 30 min under SwiftShader, budget killed it) — see open items. See entry 119. |
 | — | Iteration 115 (review) | **REVIEW-ONLY: run-all drive RED only in the quality frame-time spec under 28.9-min parallel SwiftShader contention — 6/6 GREEN solo (mean 145.8 ms, scaling 1), a flake, not a regression; shots regenerated + inspected; peaks re-land UNBLOCKED (Opus merge `3050977` is an ancestor of this branch)** | unit PASS, golden 30/30 + coverage PASS inside run-all; look 1/1; suit shard artefacts + neck red-streak confirmed by eye for the Opus lane; entry-114 peak blockers remain the top scene item. See entry 115. |
@@ -7976,3 +7977,67 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 120 — FINAL REVIEW (review-only) + branch summary; suite green except the
+known quality.spec frame-time flake (green solo); shots regenerated and
+inspected; `docs/RENDER-FINAL-SUMMARY.md` written
+
+**Scope:** review-only per the iteration-120 instruction; the reviewer's 19:40
+note ("120 = final review + HANDOFF/ADR/branch summary; the GLM loop ends at
+the author's authorization of 120"). No `docs/NEXT.md`. No features, no fixes
+except none needed — no outright breakage found. `engine/`, `assets/`, ASSET_V,
+athlete-lane files and the DoF block untouched.
+
+**Prior-iteration self-review:** `git log -3 --stat` — 119's two commits are
+coherent (bundle + terrain.json FP-jitter revert); no half-done work; tree
+clean at start.
+
+**Suite (`./tests/run-all.sh`, 37.7 m):** unit **81/81 PASS**; golden **30/30
+PASS**; browser **36/36 PASS** (4 sections); mutation PASS; coverage PASS (the
+two known OPEN-002 duplicates unchanged). Drive: **107 passed / 2 skipped /
+1 FAILED** — `quality.spec.js` frame-time budget. **Solo re-run: 6/6 green,
+mean 114.7 ms / p95 119.6 ms, scaling 1** — the same under-contention
+SwiftShader flake iter 115 documented (145.8 ms solo then); not a regression.
+
+**Shots (`look` 3/3, 4.6 m, regenerated 20:12–20:16) — by eye:**
+- `scene.png` — reads well overall: bright corridor (grey ramp holds), B-net
+  both edges, red kicker edge marks, judges' deck, red-jacket coaches, blue/white
+  kicker side panels visible, mixed birch/spruce forest with snow load. **Worst
+  remaining scene defect: the horizon.** The 3D ridge meshes read as pale
+  draped-cloth curtains with irregular dark-green blobs on their crests, and the
+  far background behind them is a flat pale band — still recognisably "paper
+  cut-out", not the footage's forested ridgelines (P6 open; the 116 cone re-land
+  fixed positioning, not the read).
+- `figure.png` — athlete framed, skis with upturned tips, bindings under the
+  boots, blue leg stripe, helmet + goggle band at eye height. Residual
+  (Opus lane): suit white-on-white against snow behind; dark paint smudges on
+  the torso; the face is featureless under the goggle band.
+- `figure_front.png` — **bib "30" clearly legible**; goggles on the eyes;
+  proportions acceptable. Residuals (Opus lane, reported not owned): red
+  scribble artefact at the mouth/chin; dark suit smudges on chest/belly;
+  in this framing the binding blocks read displaced toward the tail relative to
+  the boot soles (worth a rig check in the Opus lane).
+- `pose_pike_side` instrument numbers from the run: span 0.38, frac 0.0507
+  (pike front span 0.394) — gates pass; the framing/ownership question was
+  dropped to Opus by the reviewer's 19:40 note, so no GLM action.
+
+**Gaps vs the plan / reference footage (re-prioritised for whoever continues):**
+1. P6 horizon read (above) — the single most visible scene defect.
+2. P5 landing chop: displacement is at the top of the sink band (0.095 m);
+   further visibility needs normal/albedo work, not more amplitude.
+3. P4 forest remainder: 8-view atlas billboards, near-tree meshes, understory;
+   night takeoff puff / landing-cloud variants (carried from 119).
+4. Night halation — blocked on the Opus pipeline block.
+5. Parked: height haze (entry 54); crash 2–5 s envelope vs the measured seed
+   floor (entry 112 open question, unanswered).
+6. Athlete items (Opus lane): DoF blur, suit legibility, face features,
+   figure_front residuals above.
+
+**Deliverable added:** `docs/RENDER-FINAL-SUMMARY.md` — what landed per plan
+area with verification pointers, the six standing rules for the next lane
+driver, and the open-item list. ADRs were maintained throughout (0001–0010
+cover the decisions; nothing at 120 changes architecture).
+
+**Open questions for the reviewer:** none new — entry 112's crash-envelope
+question and entry 119's census-re-capture question remain open; the loop ends
+here at 120 as authorized.
