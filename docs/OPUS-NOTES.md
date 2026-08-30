@@ -796,6 +796,164 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 20 (2026-08-30, 03:0x-04:0x)
+
+Nothing to merge: `render-realism-glm` was 0 commits ahead at session start, and
+the tree was clean.
+
+### Item 5 — HALF-ANGLE HELPER BONES at the hips and knees. Commits `28ffa34`, `b51526a`
+
+The reviewer's 02:40 ruling approved these, and session 18 had already proved
+why nothing else would do: with the trunk on three vertebrae and the leg weight
+localised, the worst edge left at the crouch endpoint was the KNEE — 22.1 mm at
+rest, 1.28 mm posed, strain 17.2 — between vertices weighted upperLegR
+0.648/0.352 and 0.506/0.494. **That is the smooth blend, not a defect in it.**
+Babylon averages the two bones' MATRICES; the average of two rotations theta
+apart is that rotation scaled by cos(theta/2), so a ring across a joint closing
+98 deg lands at 0.66 of its radius. No weight edit reaches it.
+
+**Four bones, and a re-projection rather than a re-weighting.** `hlpHip{L,R}`
+and `hlpKnee{L,R}` carry the half-angle of the pair they sit between
+(`game.js: updateJointHelpers`, called at the END of `updateSpineChain` so the
+hip helpers read a `spine_01` that has already moved this frame), and
+`add_joint_helpers` re-expresses the leg skin on the finer lattice
+
+    spine_01 --- hlpHip --- upperLeg --- hlpKnee --- lowerLeg
+       0.0        0.5          1.0         1.5         2.0
+
+by hat functions on each vertex's **weighted-mean chain coordinate**
+`s = sum(w_i * coord_i) / mass`. Two adjacent lattice nodes at most, so the
+worst pair the shader averages is ~49 deg apart and cos(theta/2) is 0.91, not
+0.66. Three properties made this the algorithm rather than a pairwise
+"move twice the minimum onto the helper" (which is the SAME map when only two
+bones are involved, and does not close when three are):
+
+- **identity at every lattice node** — a purely-thigh vertex stays purely thigh;
+- **no extra influence** — it replaces two nodes with two, measured 0 vertices
+  hit the 4-influence cap;
+- **continuous** — `s` is a weighted mean of weights already continuous over the
+  mesh, and the hats are continuous, so it cannot cut a seam.
+
+Inert at rest by construction: bind == driver, so at rest every bone contributes
+`T(c).T(-c)` = identity and ANY partition of unity reproduces the bind mesh
+exactly. Runs last, after the bake and after `localise_weights` — and that order
+is a proof as well as a convenience, since the projection only puts weight where
+a leg bone already had it, inside skin the locality gate has just certified.
+
+| build gate | before the helpers | shipped |
+|---|---|---|
+| JOINTSPAN vertices over half a joint | **604/604** | **0/618** |
+| span p99 / max | 1.00 / 1.00 | **0.50 / 0.50** |
+| WEIGHTSEAM p99 / max / hot | 0.336 / 0.779 / 0 | **0.336 / 0.779 / 0** |
+| LOCALITY offenders | 0/11767 | **0/11816** |
+| chain-mass partition error | — | 1.11e-16 |
+| bind vs driver rest, 17 joints | — | 0.00e+00 |
+
+`hlpKnee{L,R}` carry 83.9/83.4 weight units, `hlpHip{L,R}` only 17.5/18.9 — the
+hip blend is narrow because `localise_weights` already took the leg off the
+trunk. 306 crotch vertices sit on both thighs; `spine_01` is the shared root of
+both chains, so its weight is split between the sides in proportion to the leg
+weight each carries and neither side is privileged.
+
+**THE SEAM METRIC NEEDED A BASIS FIX, and it is not a loosening — this is the
+one judgement call in the commit.** Weight L1 across an edge is a proxy for how
+differently two endpoints move, and it is fair only while every unit of weight
+is one bone apart from every other. Halving the lattice doubles the L1 of the
+same physical gradient: measured, the hip edge at (-0.020,-0.102,-0.300) went
+0.72 -> 1.36 and the gate went red, while those two vertices move *no
+differently* than before, because `hlpHip` is the half-angle of the pair it
+replaced. `weight_seam_report` now folds each helper back onto its two
+neighbours 50/50 before measuring. That fold is the EXACT inverse of the hat
+projection in this metric (the projection preserves the vertex's first moment
+along the chain), and a real discontinuity in the moment survives it. The
+consequence is the strongest single number in the commit: **in that basis the
+shipped skin reads p50 0.000 / p99 0.336 / max 0.779 / 0 hot edges, identical to
+the pre-helper skin.** The projection is provably continuous, measured.
+
+One other thing had to move. `_group_segment` for a helper first returned the
+THIGH axis, and the locality gate flagged four groin weights at 1.80 x reach.
+A half-joint helper's domain is the two half-segments it bridges, so its
+reference now runs from one neighbour's centre to the other's; against the
+torso-centre-to-thigh-centre axis those same vertices sit at 0.6 x, which is
+what they are — hip blend, not a bone driving skin half a body away.
+
+**NEGATIVE CONTROL `BODY_SABOTAGE_HELPERS=1`** skips the pass so the gate
+measures the skin session 19 shipped: 604 spanning vertices, worst 1.00 at
+(+0.061,-0.072,-0.839) lowerLegR 0.964 / upperLegR 0.036 — rejected, build rc=1
+(`scratch/opus/negctl_helpers.log`).
+
+The four `hlp*` driver nodes are excluded from the golden `captureNodes` for
+exactly the reason the spine drivers are, so no trace was re-captured.
+
+### The A/B: what the helpers actually bought (commit `b51526a`)
+
+Both skins measured on this tree with the same probe (`spine.spec.js` MEASURE),
+pre-helper = `28ffa34^` assets + `game.js` checked out and restored:
+
+| in-run crouch | pre-helper | shipped |
+|---|---|---|
+| worst edge, whole body | **17.223** | **11.038** |
+| where it is | **y = -0.628 — THE KNEE** | y = -0.03, the crotch bridge face |
+| >= 10 mm edges p99.9 | 6.191 | **5.614** |
+| p99.9, all edges | 5.161 | 5.047 |
+| p99, all edges | 2.361 | 2.376 |
+
+17.223 is session 18's knee number to three digits. **The knee collapse is
+gone**; the body's worst edge has moved off it onto the crotch bridge face,
+which was already the worst edge in the flight tuck and the pike and which the
+reviewer classified as item 3 (bake geometry), not skinning.
+
+Honest reading: **p99 is a wash** (2.361 -> 2.376) and the tuck and pike maxima
+do not move at all (10.509 and 13.480 both ways), because their worst edge was
+never the knee. What this removed is the knee specifically, which is what it was
+approved to remove.
+
+New gate, `spine.spec.js` › `<pose>: the knee does not collapse`: the strain
+probe buckets a KNEE BAND (rest y -0.72..-0.55; the joint is at -0.635) next to
+the existing upper-back band, and gates its worst edge at **8.0** in all four
+poses. Shipped: neutral 1.000, in-run crouch **5.614**, flight tuck **7.247**,
+pike 1.000. The pre-helper skin's worst edge lies inside that band at 17.223, so
+it fails the gate by more than a factor of two; the primary control remains the
+build's `BODY_SABOTAGE_HELPERS=1`, which makes such a skin unbuildable.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96; 8995 verts, 17 bones
+    unit    81/81      golden 30/30 (no display node changed; no re-capture)
+    drive   spine + rig + chain + ready-stance + inrun-crouch: 34/34 (7.4 m)
+            spine + crash-ragdoll: 16/16 (3.9 m)
+            **crash-ragdoll 3/3 GREEN on this tree** — session 19's settled-tail
+            red does not reproduce here.
+
+`tests/unit/no-physics-in-game.test.js` needed the three new renderer functions
+(`updateJointHelpers`, `_wrapPi`, `_localUp`) added to `ALLOWED_FUNCTIONS` with
+their reasons, same as `updateSpineChain`.
+
+`ASSET_V` 50 -> 51, `game.js?v=` 46 -> 47, preload hrefs `?v=51`.
+`blender/terrain.json` reverted after the drive run's +-1e-7 FP re-extraction,
+as in earlier sessions.
+
+### Open at the end of session 20
+
+- **THE ARMPIT is the same defect and the same fix.** Session 18 measured
+  `upperArmR 0.495 / spine_02 0.490`, 6.9 mm -> 76.3 mm. The lattice that just
+  closed the knee is four lines of table away from closing
+  `spine_03 - hlpShoulder - upperArm - hlpElbow - lowerArm`, and the machinery
+  (`JOINT_HELPERS`, `HELPER_LATTICE`, `updateJointHelpers`, the span gate, the
+  seam fold) is already generic over it. **REVIEWER: the 02:40 ruling names the
+  knees and hips; may this be extended to the shoulders and elbows?** I did not
+  extend it without the approval.
+- The bib back plate's horizontal clipping, with session 19's arbitration
+  request still open (the defect is not a mirror, so the 16:30 gate would pass a
+  plate that still reads wrong).
+- Carried: the THUMB as its own finger group; the flight-tuck re-check; the
+  smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV unwrap + arm
+  stripe last.
+- **The residual strain tail is now entirely item 3 geometry.** The worst edge
+  in all three non-neutral poses is the same crotch bridge face at
+  (y -0.03, z -0.125); the >= 10 mm band carries it, exactly as session 9
+  measured. It will not come down by any skinning change.
+
 ## Session 19 (2026-08-30, 02:3x-03:4x)
 
 ### The merge first (commit 964c7fc)
