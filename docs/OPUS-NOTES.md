@@ -796,6 +796,176 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 29 (2026-08-30, 10:1x-11:5x)
+
+Tree clean at start. `render-realism-glm` HAD moved (entries 138-140), so this
+session opens with the merge the standing rule asks for.
+
+### The merge — LANDED (`cb5d77a`)
+
+One conflict, the `ASSET_V` comment block both lanes append to. Resolved at
+v=58 carrying both entries; the athlete preload hrefs in `index.html` moved to
+`?v=58` in step (a mismatch downloads every file twice and `rig.spec`'s byte
+gate catches it) and `game.js?v=` 53 -> 54. Unit 81/81, golden 30/30.
+
+`./tests/run-all.sh` does NOT fit in one tool call: it runs the whole
+Playwright layer at the end and was killed by its own 900 s timeout at exit
+143. Unit and golden were run directly instead, which is what the merge needed.
+
+### Item 3 + item 9 — the neck gaiter, the collar and the cuffs — LANDED (`3f07038`)
+
+Three garment features named in the brief, all three visible in the author's
+primary reference, none of which the build has ever had:
+
+* **NECK GAITER.** Every head-owned vertex below the jaw was painted SKIN, so
+  the athlete had a bare throat from the jaw down into the suit. Cut the way a
+  real one is — under the chin in front, riding up over the nape behind (top
+  edge 0.204h front / 0.226h back, **+0.022h** rise; a level band reads 0).
+  Its "multicoloured" is a deliberately COARSE helical two-tone (~25 mm
+  bands): the 05:10 paint-lattice ruling says anything finer than ~10 mm
+  cannot survive per-vertex paint.
+* **COLLAR**, 41.2 mm of stand at the top of the torso.
+* **CUFFS**, wrist 24.9/24.9 mm and ankle 32.4/32.3 mm. The ankle band runs as
+  a POST-step so the leg stripe keeps the seam it owns — in the reference the
+  blue seam runs hip to ankle and the cuff is what the trouser bunches over.
+
+New `collar_cuff_gate` on the painted high-poly (throat still-SKIN fraction,
+azimuth octants, collar height, both cuffs per side).
+**NEGATIVE CONTROL** `BODY_SABOTAGE_COLLAR=1` skips all three paints and the
+gate rejects it on **every** assertion — skin 1.0000, octants 0/8, collar
+0.0 mm, cuffs 12.8/12.9 mm (the residue of the boot lip and the glove step) —
+exit 1.
+
+### THE FINDING: item 9's "red streak across the throat" is the athlete's MOUTH
+
+`paint_suit`'s face pass computes `hz = (z - chin) / h` — **already a
+fraction** — and then compared it against `lm['h'] * <fraction>`, multiplying
+by the head height a SECOND time. On a 229 mm head that put the
+
+| feature | measured at | should be |
+|---|---|---|
+| mouth | 0.043..0.070h | 0.250..0.295h |
+| nostrils | 0.069..0.076h | 0.345..0.365h |
+| nose shading | 0.076..0.108h | 0.370..0.470h |
+
+— every facial feature painted 10-25 mm above the base of the **NECK**, a
+hand's breadth below the face, while the nose tip sits at 0.357h and the lens
+at 0.440h. The features were drawn, and they were drawn on the throat.
+
+**That is the dark red band across the throat in `shots/face.png` that the
+reviewer logged at 17:30 as "a red streak across the throat" and that has been
+carried as item 9 for eleven sessions on the theory that it was bib or collar
+paint bleeding above the collar line.** It is the mouth. Only the z tests were
+wrong; the lateral ones compare a length against a length and were always
+right.
+
+The bug surfaced only because the gaiter took the throat and `paint_suit`'s
+`required` list then went red with `lip`, `nostril` and `noshade` matching no
+vertices at all — the same "a region that never fires produces no error"
+failure mode that check exists for, one level up.
+
+Second defect in the same block: the lip band had **no fore/aft condition**
+where both its neighbours carry one, so it was a **ring** — the mouth was
+painted round the full circumference of the head, nape included.
+
+### Item 9 continued — the feature SIZES — LANDED (`81f8ff5`)
+
+With the units fixed the features landed on the face and were immediately,
+visibly wrong: `0.19..0.305h` by `|x| < 0.17h` is 26 mm tall and 78 mm wide,
+i.e. the whole lower face, and it rendered as a dark red slab from nose to jaw
+with two black rectangles for nostrils (`shots/face.png`, 11:11 — worth
+looking at, it is the clearest picture of why nothing had ever constrained
+these numbers). Re-derived from the head's own landmarks: mouth ~50 x 10 mm,
+nostrils a pair 14 mm apart just under the tip, nose shading a narrow flank
+band; `LIP` desaturated 0.45/0.20/0.18 -> 0.42/0.26/0.24, because that red
+only ever worked as a thin line. Painted verts lip 4834 -> 1412, nostril
+751 -> 195, noshade 1890 -> 940.
+
+The gaiter's dark tone also had to be NEUTRAL: the first build used
+(0.15, 0.19, 0.26) and `look.spec`'s lens detector ("blue - red > 0.10 AND
+blue > 0.32", the discriminator that tells the mirrored shield from the helmet
+shell) counted the nape of the neck as goggle — back-face lensFrac 0.104
+against a 0.06 limit. The reference gaiter is warm-neutral anyway, so the fix
+is the reference's colour and not a threshold.
+
+### FOR THE REVIEWER: `look.spec`'s FACEDIST gate is inverted against its own control
+
+The last assertion of the face block — "front and back face close-ups are
+structurally identical — the head has no front" — wants a 64x64 front-vs-back
+distance >= 0.15. Measured four ways on this tree:
+
+| build | FACEDIST |
+|---|---|
+| committed assets (features on the THROAT) | 0.1406 |
+| features on the face at the OLD oversized bands (the red slab) | **0.1724** |
+| features on the face at REAL size (shipped) | 0.1413 |
+| `BODY_SABOTAGE_FACE=1` — the spec's OWN negative control | **0.1719** |
+
+**The control passes and the correct build fails.** The metric is a bulk
+colour difference over the whole head silhouette, so it rewards whatever puts
+the most dark paint on the front — an oversized mouth, or a lens smeared round
+the skull — and it cannot tell a head with a face from a head with a defect.
+By the reviewer's own session-10 ruling ("a gate that cannot tell folds-off
+from folds-on is deleted") this wants replacing rather than recalibrating.
+**I have not touched it**: lowering the floor to let my build through is
+exactly the move that ruling forbids, and deleting a shared gate is not my
+call. This is the one red on the branch.
+
+Same control run, second problem: the sabotage's back-face lensFrac reads
+0.0308, under the 0.06 limit, so `BODY_SABOTAGE_FACE` does not currently
+reproduce the full-circumference wrap it documents either — the lensFrac pair
+PASSES on the sabotaged asset. Both halves of this spec's front/back
+discrimination need looking at together.
+
+### Two reds I chased and proved were NOT mine
+
+Both were checked by restoring the committed athlete assets and re-running the
+same spec on the same tree:
+
+* `bib-number` "bib panel does not dominate the back panel": front blueFrac
+  **0.0615** vs back **0.0725** on the PRE-change assets, 0.0619 vs 0.0725
+  after. Identical failure without my commit. Inherited from the merge
+  (GLM entries 138-140 re-baked the lightmap with tree occluders, and this is
+  a colour fraction on the rendered frame).
+* an earlier FACEDIST reading of 0.1406/0.1418 — superseded by the table
+  above; those runs were taken while the machine was loaded and the shots were
+  the previous assets'.
+
+### On the reviewer's standing order, and what I did NOT do
+
+The 07:25 order's step 2 is "two-tone panels + collar + cuffs + the bib as a
+separate garment". Collar and cuffs landed. **The two-tone panels I did not
+build, and I think the order needs a ruling rather than an implementation.**
+The brief's own primary-reference paragraph (2026-08-29) says the suit is "a
+light-grey / off-white relaxed-fit one-piece with a single royal-blue stripe
+~5 cm wide down the OUTSIDE seam of each arm and each leg, **nothing else on
+the body panels**", and says to "use this design; treat the older footage
+descriptions only as secondary". The "two-tone panel design — white base,
+royal-blue side panels from armpit to ankle and a contrasting shoulder yoke"
+is from those older, secondary descriptions. I cropped and re-read
+`reference/images/aerial_suit.png` this session (`ref_torso.png`,
+`ref_legs.png` under the scratch dir): the legs are plain light grey with one
+blue outer-seam stripe and a small dark thigh logo, and there are no side
+panels and no shoulder yoke on the suit. **Reviewer: is the order's
+"two-tone panels" still wanted, given the primary reference contradicts it?**
+
+What the reference DOES show that we do not have, and that I would do next:
+the bib is a three-band garment — light-blue yoke over the shoulders, white
+middle carrying the number, **magenta/pink** band with a sponsor mark at the
+waist. Ours is a powder-blue panel with a white number plate and a **dark
+navy** hip band. The magenta band is the single most visible remaining
+difference from the reference photograph.
+
+### Verification (session 29)
+
+    build   all gates green at 2048/96, including the new collar_cuff_gate
+    control BODY_SABOTAGE_COLLAR=1 rejected on every assertion, exit 1
+    unit    81/81
+    golden  30/30, no re-capture, no physics touched (vertex COLOURS only)
+    drive   rig + body + chain + pose-shots 28 passed
+    RED     look.spec FACEDIST (see above — the gate, not the build)
+    RED     bib-number front/back blueFrac ordering (pre-existing, measured)
+
 ## Session 28 (2026-08-30, 09:2x-10:5x)
 
 Tree clean at start (session 27 committed, `cc05ab2`). `render-realism-glm` has
