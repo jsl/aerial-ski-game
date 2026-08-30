@@ -126,3 +126,20 @@ test('free-look: after a forced crash settles, orbit works and the follow stays 
     const p = await page.evaluate(() => window._freeLookProbe());
     expect(p.gap).toBeGreaterThanOrEqual(0.99);
 });
+
+// HUMAN TESTING #7 (author, 2026-08-29): "the scene starts in front of the
+// aerialist when the page loads … it was fine before when camera started
+// behind". Root cause: free-look took over on frame 1 before the follow block
+// had framed the athlete, so the orbit target stayed at the origin. Gate: on
+// load the orbit target is the athlete root and the eye sits UPHILL of it.
+test('free-look: on load the camera frames the athlete from behind, not from the front', async ({ page }) => {
+    await loadGame(page);
+    await page.waitForTimeout(800);
+    const p = await page.evaluate(() => window._freeLookProbe());
+    expect(p.active).toBe(true);
+    expect(Math.abs(p.targetZ - p.rootZ)).toBeLessThan(0.5);   // target = athlete, not the origin
+    expect(p.camZ).toBeLessThan(p.rootZ - 3);                   // eye behind (uphill of) the athlete
+    // Negative control: the pre-fix state (target at the origin) fails the same predicate.
+    const bad = await page.evaluate(() => { const c = window._freeLookCam(); c.target.z = 0; c.target.y = 0; return window._freeLookProbe(); });
+    expect(Math.abs(bad.targetZ - bad.rootZ) < 0.5 && bad.camZ < bad.rootZ - 3).toBe(false);
+});
