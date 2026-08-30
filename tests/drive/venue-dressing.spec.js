@@ -298,3 +298,62 @@ test('venue dressing: generic blue/white side panels on the kicker block walls, 
     expect(r.cornerRed[1]).toBeLessThan(0.15);
     expect(r.tubes.every(t => t), 'a kicker edge tube is missing').toBe(true);
 });
+
+// ── Review-125 near-post read defect ──────────────────────────────────────────
+// From the scene camera the near-left fence is nearly edge-on. With the old
+// alphaCutOff 0.5 the tile's mip-averaged alpha (~45% rope coverage) fell
+// below the cutoff and the WHOLE strip was culled — the posts read as a row
+// of floating dark sticks with no net. Gate: from the look.spec scene
+// framing, hiding bnetStrip_L must change a measurable fraction of the frame
+// (the net is actually drawing), and setting the cutoff back to 0.5 in-page
+// must collapse that signal (negative control for the mip-culling fix).
+test('venue dressing: near-side net strip draws at the grazing scene view (review-125)', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bnetSeated === true,
+        null, { timeout: 20000 });
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    const r = await page.evaluate(async () => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const engine = scene.getEngine();
+        const cam = scene.activeCamera;
+        engine.stopRenderLoop();
+        cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;   // look.spec scene framing
+        const stripL = scene.getMeshByName('bnetStrip_L');
+        const grab = async () => {
+            scene.render(); scene.render();
+            return engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
+        };
+        const diffFrac = async () => {
+            const withN = await grab();
+            stripL.setEnabled(false);
+            const without = await grab();
+            stripL.setEnabled(true);
+            let n = 0;
+            const total = withN.length / 4;
+            for (let i = 0; i < withN.length; i += 4) {
+                const d = Math.abs(withN[i] - without[i]) +
+                          Math.abs(withN[i + 1] - without[i + 1]) +
+                          Math.abs(withN[i + 2] - without[i + 2]);
+                if (d >= 12) n++;
+            }
+            return n / total;
+        };
+        const visible = await diffFrac();
+        const mat = stripL.material;
+        const saved = mat.alphaCutOff;
+        mat.alphaCutOff = 0.5;              // the pre-fix value
+        const culled = await diffFrac();
+        mat.alphaCutOff = saved;
+        return { visible, culled };
+    });
+    // Measured 2026-08-30 (swiftshader, scene framing): cutoff 0.3 mask
+    // 0.0151, 0.4 → 0.0092, pre-fix 0.5 → 0.0039 (monotone in the mip
+    // averaging). Gates sit between with ≥ 2x discrimination each way.
+    expect(r.culled, `cutoff-0.5 control still drew mask ${r.culled}`)
+        .toBeLessThan(0.007);
+    expect(r.visible, `net strip mask ${r.visible} at the grazing view`)
+        .toBeGreaterThan(Math.max(0.012, r.culled * 2));
+});

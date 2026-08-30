@@ -217,6 +217,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
+| — | Iteration 133 | **Review-125 B-net near-post read FIXED — `bnetMat.alphaCutOff` 0.5 → 0.3 (the tile's ~45% rope coverage mip-averages BELOW 0.5, so the whole near-side strip was alpha-culled at grazing angles and the fence read as floating dark posts); new venue-dressing test 5 with an in-page negative control at cutoff 0.5** | venue-dressing 5/5 (grazing gate: mask 0.0151 @ 0.3 vs 0.0039 @ 0.5 control, 0.0092 @ 0.4 — monotone); unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); look 4/4; scene.png by eye: near-left net now visible between its posts. See entry 133. |
 | — | Iteration 131 | **Snowing flatness pass (entry-130 item 1, display-only): sun disc + cumulus faded out under overcast (`sunAmount`/`cloudAmount` sky-shader uniforms), cast shadows softened (`setDarkness(0.55)`), ambient fill raised (hemi 0.42→0.58, IBL 0.32→0.42), sun tint neutral-cool; `_nightProbe` gains `hemi/shadow/sunDisc/env`; snowing.spec lum gate replaced with a chroma gate (overcast sky is physically brighter, not darker)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture); snowing.spec 1/1, night.spec 1/1, look 4/4; measured day→snowing: shadow drop 0.027→0.012, sunDisc 1→0, hemi 0.42→0.58, env 0.32→0.42, sky |r−b| −0.055→−0.047. See entry 131. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
@@ -7999,6 +8000,61 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 133 — review-125 B-net near-post read fixed: the grazing-angle strip was
+alpha-culled by mip averaging (cutoff 0.5 → 0.3); new venue-dressing gate
+with an in-page negative control
+
+**Order acted on:** reviewer ruling on entry 131 (129–145 order): after 132's
+mountains follow-up, the "B-net/canopy notes" — review-125 scene note (2):
+"the near-left B-net posts read as a row of floating dark sticks — the net
+mesh is invisible at that grazing angle". No `docs/NEXT.md`.
+
+**Root cause (measured, not guessed):** the net tile's rope coverage is
+~45% of texels, so the HIGH mip levels average alpha to ~0.45 — below
+`alphaCutOff = 0.5` — and the GPU culled the ENTIRE strip once it was small
+or oblique enough in screen space for the mips to engage. The face-on far
+fence kept full-res texels (binary 0/1 alpha) and survived, which is why
+only the near-left side read as bare posts. This session could raster PNGs,
+so the defect was confirmed by eye in `shots/scene.png` before the fix
+(near-left: posts only; far-right: full net).
+
+**Fix (display-only, one line + comment):** `bnetMat.alphaCutOff`
+0.5 → 0.3 (`game.js`). Full-res alpha is unchanged (clearRect + strokes =
+0 or 1), so holes near the camera stay identical; only the mip-collapsed
+distance case differs. `index.html`: `game.js?v=49` → `?v=50`.
+
+**New gate (`venue-dressing.spec.js` test 5):** from the look.spec scene
+framing, hide `bnetStrip_L` and difference the frame (mask = pixels that
+changed ≥ 12/255). Measured (SwiftShader): mask **0.0151** at cutoff 0.3,
+**0.0092** at 0.4, **0.0039** at the pre-fix 0.5 — monotone in the mip
+averaging. Gates: control (cutoff 0.5 set in-page) < 0.007, visible
+> max(0.012, 2×control) — ≥ 2× discrimination each way.
+
+**Verification:** venue-dressing **5/5**; unit **81/81** (fail 0); golden
+**30/30** (verify.js the last command before this commit — display-only
+change, no re-capture); `look` **4/4**, shots regenerated. `scene.png` by
+eye after: the near-left fence now shows net between its posts down the
+in-run; the far fence is unchanged.
+
+**Canopy half of the note (review-125 item 3), by eye at this tip:** the
+tree shadows on the flank in the regenerated `scene.png` read as soft
+canopy blobs, acceptable at this sun angle — no smudge defect visible in
+this view, so no change made. What DOES read as dark smudges is the
+UPPER-LEFT RIDGE/PEAK faces: iter-132's rock band map shows as irregular
+dark blotches on the pale ridge waves rather than structured strata (the
+132 open question 1 by-eye check). Not touched this iteration.
+
+**Open questions for the reviewer:** (1) confirm the 132 peak banding by
+eye — in `scene.png` the dark bands read as camouflage blotches, not rock;
+options if you agree: lower the band-map contrast on the peak materials,
+or stretch the snowline divisor so bands are wider/stratified; (2) the
+grazing gate's absolute mask floor (0.012) is one measurement on a shared
+SwiftShader rig — tighten or loosen as you prefer.
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete-lane files, DoF
+block, nothing added to the scene. Scratch removed from
+`~/aerial-agents/scratch/iter-133/`.
 
 ### 132 — mountains follow-up: peaks de-"glassed" (per-peak banding, tint
 variance, opaque materials)

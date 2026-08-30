@@ -4461,7 +4461,13 @@ void main(void) {
         bnetMat.albedoTexture = bnetTex;
         bnetMat.albedoColor = new BABYLON.Color3(1, 1, 1);
         bnetMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST;
-        bnetMat.alphaCutOff = 0.5;
+        // 0.3, not the usual 0.5: the tile's rope coverage is ~45%, so the
+        // HIGH MIP LEVELS average below 0.5 and the whole strip was alpha-
+        // culled at grazing angles (review-125: the near-side fence read as
+        // floating posts with no net, while the face-on far fence was fine).
+        // Full-res alpha is binary (clearRect + strokes), so holes near the
+        // camera are unchanged; only the mip-collapsed distance case differs.
+        bnetMat.alphaCutOff = 0.3;
         bnetMat.backFaceCulling = false;
         bnetMat.metallic = 0;
         bnetMat.roughness = 0.85;
