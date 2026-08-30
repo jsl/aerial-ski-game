@@ -314,19 +314,37 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
             const j = fbm(u * 5, v * 5, 3, 2.2, 0.5);          // band jitter
             const treeJ = fbm(u * 22, v * 22, 2, 2.1, 0.5);
             let c, h;
-            const snowEdge = 0.66 + (j - 0.5) * 0.12;
-            const forestEdge = 0.42 + (j - 0.5) * 0.12;
+            // STRATA mode (distant cone peaks, iter 134): the default map's
+            // strong outcrop/fracture noise reads as camouflage blotches when
+            // the whole 2π cone circumference maps to one texture width — the
+            // peaks get gentle band-edge jitter, soft rock contrast and
+            // near-horizontal sediment strata keyed on elevation.
+            const strata = o.strata
+                ? Math.sin(v * Math.PI * 2 * 9 + (j - 0.5) * 1.5)
+                : 0;
+            const jitter = o.strata ? 0.04 : 0.12;
+            const snowEdge = 0.66 + (j - 0.5) * jitter;
+            const forestEdge = 0.42 + (j - 0.5) * jitter;
             if (v >= snowEdge) {
                 const d = fbm(u * 12, v * 12, 3, 2.3, 0.5);
                 // Stronger rock outcrops: the snowfields must read as broken
-                // alpine terrain at gameplay distance, not white felt.
-                c = mix(SNOW, ROCK, Math.max(0, d - 0.47) * 3.6);
+                // (Strata mode: contrast halved-plus so the caps' outcrops
+                // read as shading, not blobs.)
+                c = mix(SNOW, ROCK, Math.max(0, d - 0.47) * (o.strata ? 1.6 : 3.6));
                 h = 0.5 + d * 0.3;
+                if (o.strata) {
+                    c = mix(c, ROCK, Math.max(0, strata) * 0.18);
+                    c = mix(c, [0.30, 0.34, 0.40], Math.max(0, -strata) * 0.16);
+                }
             } else if (v >= forestEdge) {
                 // Rock band: sharp fractured facets.
                 const r = 1 - Math.abs(fbm(u * 7, v * 7, 4, 2.1, 0.55) * 2 - 1);
-                c = mix(ROCK, DARK, Math.max(0, r - 0.55) * 0.9);
+                c = mix(ROCK, DARK, Math.max(0, r - 0.55) * (o.strata ? 0.45 : 0.9));
                 h = r * 0.8 + valueNoise(u * 60, v * 60) * 0.12;
+                if (o.strata) {
+                    c = mix(c, [0.52, 0.50, 0.48], Math.max(0, strata) * 0.22);
+                    c = mix(c, [0.26, 0.27, 0.30], Math.max(0, -strata) * 0.22);
+                }
                 // Snow clinging on near the snowline.
                 c = mix(c, SNOW, Math.max(0, (v - snowEdge + 0.10) / 0.10) * 0.5);
             } else {

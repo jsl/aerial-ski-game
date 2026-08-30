@@ -4832,7 +4832,7 @@ void main(void) {
     // ≈ 29 m) sit in the forest band, mid (≈ 50 m) at the rock/snow edge, and
     // only the far/back crests are pure snowfield. At 45 the whole visible
     // face clamped into the snowfield band and read as flat pale felt.
-    const _ridgeMat = (name, mix, tint) => {
+    const _ridgeMat = (name, mix, tint, texOpts) => {
         const m = makePBR(name, scene);
         m.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
         m.metallic = 0;
@@ -4840,7 +4840,7 @@ void main(void) {
         m.backFaceCulling = false;
         const T = AerialEngine && AerialEngine.textures;
         const s = T && T.makeRidgeSurface
-            ? T.makeRidgeSurface(BABYLON, scene, 512, { strength: 3.5 }) : null;
+            ? T.makeRidgeSurface(BABYLON, scene, 512, texOpts || { strength: 3.5 }) : null;
         // Reviewer fix (Fable, 2026-08-29, HUMAN TESTING #4/#6 "mountains
         // flat / lost texture"): with scene fog ON, the ridge materials wash
         // to a single pale fog tint far harder than the EXP2 curve predicts
@@ -4923,8 +4923,14 @@ void main(void) {
     // Baked haze per layer (scene fog is off on these materials — see
     // _ridgeMat): near hills stay saturated, far ridges recede.
     const matNear = _ridgeMat('ridgeMatNear', 0.10, [0.12, 0.18, 0.13]);  // forest green
-    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31]);
-    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55]);
+    // Iter 134: mid/far ridges share the peaks' STRATA map — at their
+    // distance the default map's dark rock fractures read as irregular
+    // blotches (entry-133 by-eye); strata reads as layered rock. The near
+    // hills keep the full-detail forest map (tree-line strokes read there).
+    const matMid  = _ridgeMat('ridgeMatMid',  0.22, [0.24, 0.33, 0.31],
+                              { strength: 2.2, strata: true });
+    const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55],
+                              { strength: 2.2, strata: true });
     [-1, 1].forEach(function (s) {
         _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         // HUMAN TESTING #7 (author): "reduce one or two of the big peaks and
@@ -4956,7 +4962,15 @@ void main(void) {
     // a per-peak snowline so caps sit at varied heights), per-peak tint/haze
     // jitter, and an opaque material (alpha 1, backFaceCulling on — the
     // cones are closed solids).
-    const peakMatBase = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52]);
+    // Iter 134 (entry-133 open item): the shared ridge band map's strong
+    // outcrop/fracture noise reads as irregular dark CAMOUFLAGE BLOTCHES on
+    // the pale peak faces (one texture width spans the whole 2π cone
+    // circumference). The peaks get their own STRATA variant: gentle band
+    // jitter, soft rock contrast, near-horizontal sediment strata keyed on
+    // elevation — bands read as rock strata, not blotches. Softer bump
+    // (strength 2.2) so the relief does not blobble at 200+ m.
+    const peakMatBase = _ridgeMat('peakMat', 0.30, [0.36, 0.45, 0.52],
+                                  { strength: 2.2, strata: true });
     peakMatBase.fogEnabled = true;
     peakMatBase.backFaceCulling = true;
     peakMatBase.alpha = 1;
