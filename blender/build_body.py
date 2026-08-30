@@ -116,6 +116,7 @@ BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
 SABOTAGE_GOGGLES = os.environ.get('BODY_SABOTAGE_GOGGLES') == '1'  # negative control for the goggle-geometry gate
 _GOGGLE_PRE = {}   # OPUS ITEM 1: lens vertex index -> radius from the head axis before goggle_geometry's push
+_TEMPLE_PRE = {}   # AUTHOR 21:55: same, for the temple ARM verts, so the arm gate measures a realised push
 SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative control for the crown gates
 # OPUS ITEM 2 negative control: slide the finished dome fore-aft by N mm (+ = forward,
 # toward the face). BODY_SABOTAGE_DOME_MM=30 and =-30 must both fail the seating gate.
@@ -170,8 +171,26 @@ GOGGLE_RIM = (0.14, 0.15, 0.17)   # dark goggle frame between the lens and the s
 # height. ONE definition — head_region, goggle_geometry, paint_suit and
 # face_helmet_gate all read the landmarks derived from these, so the band can
 # never again be moved in one pass and not the others.
-LENS_LO = float(arg('--lens-lo', '0.40'))   # band bottom (above the nose tip)
+#
+# AUTHOR RULING (2026-08-29 21:55): the eyewear is SHOOTER-STYLE SPORT GLASSES,
+# not goggles — one continuous curved shield ~3.5-4 cm tall, a THIN frame along
+# the top edge only, thin temple arms back over the ears, small nose pads, and
+# NO foam frame and NO strap round the helmet. The band therefore narrows from
+# 0.40..0.57h (a goggle's 17% of head height) to 0.44..0.57h; on this model's
+# 0.243 m head that is the reference's shield height, and the top still lands
+# just under the front rim at 0.58h.
+LENS_LO = float(arg('--lens-lo', '0.44'))   # band bottom (above the nose tip)
 LENS_HI = float(arg('--lens-hi', '0.57'))   # band top (just under the front rim, 0.58)
+
+# The temple ARM (author 21:55: "thin straight temple arms running back over the
+# ears under the helmet rim"). It replaces the goggle strap, which used to be a
+# 0.10h navy band round the whole circumference. Height is a fraction of the
+# head, measured up from the chin; it sits BELOW the side rim (0.55h) so the arm
+# tucks under the shell rather than crossing it, and the arc stops behind the
+# ear instead of closing round the back.
+TEMPLE_Z = 0.520            # arm centreline, head-heights up from the chin
+TEMPLE_HALF_H = 0.016       # half-thickness => ~7.8 mm arm on a 0.243 m head
+TEMPLE_THETA_MAX = 2.45     # rad from straight-ahead: over the ear, not round the back
 
 # OPUS ITEM 12: where the boot starts, in the shin's own `along` coordinate
 # (segment_frame: hip +1 -> ankle -1, CLAMPED, so the whole foot below the shin
@@ -203,6 +222,69 @@ BOOT_HEIGHT_MIN = 0.09      # metres of shell from the sole to the cuff lip
 # Negative control for the boot gate: skip the boot paint and ship the white
 # blob this project shipped up to session 9.
 SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
+# OPUS ITEM 3 (d): the outer-seam stripe is a 5 cm CUT PANEL, so it is measured
+# in metres of arc, not in radians (see paint_suit). STRIPE_DPHI_MAX caps the
+# wrap on a thin segment — a true 50 mm band round a 40 mm-radius forearm would
+# reach 0.63 rad and read as a blue sleeve.
+# Which segments carry the outer-seam stripe.
+#
+# ITEM 3 asks for it on the arms too ("down the OUTSIDE seam of each arm,
+# shoulder to cuff, and each leg, hip to ankle" —
+# reference/images/aerial_suit.png), and the paint branch below does the arms
+# correctly. It is off because the BAKE cannot currently carry it. Measured on
+# tests/drive/body.spec.js's suit-design test, torso triangles selected by the
+# bone that drives them, sampling the baked albedo:
+#
+#                       torso front blue   torso back blue   (gates: back < 0.10)
+#   legs only                    0.086            0.019
+#   + arms                       0.145            0.121   FAIL
+#   + arms, capped at along 0.55 0.117            0.110   FAIL
+#
+# The arm band lands on TORSO texels. Capping the stripe below the shoulder
+# barely moves it (0.121 -> 0.110 for 3% fewer stripe verts), so it is not the
+# shoulder cap wrapping onto the chest — it leaks the whole length of the chest
+# wall, where the arm shell and the torso shell sit against each other since
+# loosen_suit stood the suit off the skin. That is the same armpit/bridge-face
+# geometry the reviewer has queued under item 3, and the stripe is not the
+# place to fix it. Flip this back to include the arms once it is fixed; the
+# body.spec.js numbers above are the test.
+#
+# SESSION 13: the arms are BACK ON.  The reviewer's 21:30 ruling (b) — the
+# footage has the stripe on both arms, and the leak is a paint-OWNERSHIP
+# problem, not a reason to drop the band.  It is fixed where it happens, in
+# stripe_texel_ownership() after the bake; see that function's header.  The
+# torso-back-blue < 0.10 gate in body.spec.js stays, and arm_stripe_presence_gate
+# stops the leak repair from being satisfied by erasing the sleeve seam.
+STRIPE_SEGMENTS = ('upperLeg', 'lowerLeg')
+STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
+# The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
+# fixed angle wraps a thin segment. 0.46 let the 5 cm arc rule govern the whole
+# leg (the shin needs 0.455 at its 55 mm radius) but CAPPED BOTH ARMS, and
+# session 13 measured what that cost: the upper arm's band came out 41.4/39.8 mm
+# — i.e. the cap, not the 5 cm rule, was setting the sleeve width, and it set it
+# just under the reviewer's 4 cm floor. The brief's own description of the
+# reference suit is "a single royal-blue stripe ~5 cm wide down the OUTSIDE seam
+# of each ARM (shoulder -> cuff) and each leg", so the sleeve is meant to be the
+# same panel as the leg. 0.55 lets the arc rule govern the upper arm too (it
+# needs 0.536 at its measured 46.6 mm radius) and still caps the FOREARM, which
+# at 35.5 mm would otherwise wrap 0.70 rad — that is the case the cap exists for.
+# Measured at 0.55: upper arm 42.9/42.3 mm, forearm 37.6/38.3 mm, legs unmoved.
+# It is left at 0.46 WHILE THE ARMS ARE OFF, because it changes nothing on the
+# legs (they are arc-limited at 0.455) and a live constant should describe the
+# build that ships. Restore 0.55 together with STRIPE_SEGMENTS' arms.
+STRIPE_DPHI_MAX = 0.46
+# Straightness of the painted seam (stripe_straight_gate), in metres of
+# fore/aft travel — the direction the old nearest-bucket axis made it stagger.
+# Set on session 11's measurements with margin, to be ratcheted down as the
+# suit geometry improves: worst step 10.8 mm and worst wander 13.1 mm on the
+# fitted axis, against 33.0 mm and 34.7 mm for BODY_SABOTAGE_STRIPE=1.
+# Reviewer 21:30 (b): "an arm-stripe presence gate (outer-seam band >= 4 cm
+# wide on both arms)".  Floored on the UPPER arm, which is thick enough for the
+# 5 cm arc rule to govern; see arm_stripe_presence_gate for why the forearm is
+# reported rather than floored.
+ARM_STRIPE_MIN_W = 0.040
+STRIPE_STEP_MAX = 0.014     # max |change| in seam centre between 2 cm rungs
+STRIPE_WANDER_MAX = 0.020   # max |deviation| from the segment's own straight fit
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -354,14 +436,14 @@ def head_landmarks(body):
 
 def head_region(co, lm):
     """
-    'helmet', 'face', 'lens' or 'strap' for a point in the head's space.
+    'helmet', 'face', 'lens' or 'temple' for a point in the head's space.
 
     The face is a FRONT sector below the brim: goggles wrap only so far round
     the temples. Lateral is X, fore/aft is Y with the chest POSITIVE, up is Z.
     Behind or beside that sector it is shell all the way down — aerials helmets
     cover the ears and the whole back of the head, which is what makes an ear
-    under the rim read correctly instead of like a stray lump. The strap runs
-    round the BACK of the head at eye level, under the shell's side rims.
+    under the rim read correctly instead of like a stray lump. The temple ARMS
+    run back over the ears, under the shell's side rims, and stop behind the ear.
     """
     c = bl('head')
     lx, ly = co.x - c.x, co.y - c.y
@@ -378,11 +460,14 @@ def head_region(co, lm):
         # lens covers the eyes and brow the way the reference does, instead of
         # stopping at the eye line and sitting on the nose.
         return 'lens'
-    if not frontal and abs(co.z - (lm['lens0'] + lm['lens1']) / 2) < lm['h'] * 0.05 \
-            and co.z > lm['chin'] + lm['h'] * 0.30:
-        # OPUS ITEM 1: the strap continues the lens band round the helmet, so
-        # it is centred on the BAND, not on the (now lower) eye line.
-        return 'strap'
+    if not frontal and abs(theta) < TEMPLE_THETA_MAX \
+            and abs((co.z - lm['chin']) / lm['h'] - TEMPLE_Z) < TEMPLE_HALF_H:
+        # AUTHOR 21:55: a TEMPLE ARM, not a strap. It leaves the shield's outer
+        # edge, runs back over the ear and STOPS there (|theta| < 2.45 rad, so
+        # the rear 40 degrees of the skull carry nothing) — the previous 'strap'
+        # was a 0.10h band closing round the full circumference, which is the
+        # goggle the author rejected.
+        return 'temple'
     # RIM (NEXT.md): the shell stops at the occiput line behind and just
     # above the ears at the sides (rim_side, 0.55h); in FRONT it rides 1–2 cm
     # above the brow (brim0, 0.58h). Everything below the local rim is
@@ -2385,7 +2470,7 @@ def goggle_geometry(low, lm):
       lens   lens0..lens1 frontal   +7.0 mm   (the lens sits proud of the face)
       rim    lens band top/bottom 1.5%h edges  +4.5 mm (the frame, between the
              dark lens and the shell/skin it separates)
-      strap  eye level behind      +2.5 mm   (over the shell, not painted on it)
+      temple arms over the ears      +2.5 mm   (over the shell, not painted on it)
 
     Applied on the FINAL low-poly mesh, so the glb the browser loads, the
     high-poly bake source (subdivided from low) and the build gate below all
@@ -2400,6 +2485,7 @@ def goggle_geometry(low, lm):
     # the FINAL mesh instead of inferring it from the skull's front-to-side
     # radius difference. See face_helmet_gate block (6).
     _GOGGLE_PRE.clear()
+    _TEMPLE_PRE.clear()
     for v in low.data.vertices:
         if own[v.index] != 'head':
             continue
@@ -2410,7 +2496,7 @@ def goggle_geometry(low, lm):
             hzl = (p.z - lm['chin']) / lm['h']
             edge = (LENS_HI - hzl) < 0.015 or (hzl - LENS_LO) < 0.015
             push = 0.0045 if edge else 0.0070
-        elif reg == 'strap':
+        elif reg == 'temple':
             push = 0.0025
         if not push:
             continue
@@ -2420,6 +2506,8 @@ def goggle_geometry(low, lm):
             continue
         if reg == 'lens':
             _GOGGLE_PRE[v.index] = n
+        elif reg == 'temple':
+            _TEMPLE_PRE[v.index] = n
         if SABOTAGE_GOGGLES:
             continue
         v.co = p + d * (push / n)
@@ -2637,11 +2725,12 @@ def face_helmet_gate(low, lm):
         elif not _sector(p, c)[0]:
             # OPUS ITEM 1: the reference is the SIDE/BACK of the skull at the
             # same height, whatever region it is classified as. It used to be
-            # region == 'face' only, which excluded the strap band — and the
-            # strap band (band centre +- 0.05h) now covers almost the whole
-            # side of the window, leaving ONE usable slab. Including the strap
-            # costs at most its own 2.5 mm push, i.e. it can only make the
-            # measured step SMALLER; the gate stays conservative.
+            # region == 'face' only, which excluded the strap band — and that
+            # band covered almost the whole side of the window, leaving ONE
+            # usable slab. The strap is gone (author 21:55) and the temple arm
+            # that replaced it is a thin bar, but the rule stays: including a
+            # pushed side vertex can only make the measured step SMALLER, so
+            # the instrument stays conservative.
             s[2] += rad
             s[3] += 1
     diffs = [s[0] / s[1] - s[2] / s[3]
@@ -2672,11 +2761,16 @@ def face_helmet_gate(low, lm):
     # "shift the band down by 0.08 h" negative control) would pass. Reference:
     # reference/images/aerial_suit.png, head crown y=852 px, chin y=1008 px
     # (h=156 px), mirrored lens rows 908..945 -> 0.40h..0.64h. The model's top
-    # is pinned at 0.57h by item 2's front rim at 0.58h, so the required window
-    # is 0.40..0.57 with a +-0.03h build tolerance (the band is assigned per
-    # vertex, so its realised extent lands inside the requested one by up to
-    # one vertex row).
-    LENS_BAND_REF = (0.40, 0.57)
+    # is pinned at 0.57h by item 2's front rim at 0.58h.
+    #
+    # AUTHOR RULING 21:55 (sport glasses, not goggles) with the reviewer's
+    # re-measure "0.44..0.60 h, eye line +- 8%": the shield is THINNER than the
+    # goggle band, so the FLOOR rises 0.40 -> 0.44 while the top stays pinned
+    # under the rim. This is a TIGHTENING of the old window on the side the
+    # ruling constrains (the band may no longer reach down toward the nose),
+    # not a relaxation; the ruling's 0.60 top is above this model's own front
+    # rim (0.58h) and "the top edge just under the brim" governs there.
+    LENS_BAND_REF = (0.44, 0.57)
     LENS_BAND_TOL = 0.03
     lens_z = [(p.z - chin) / h for p in hv
               if head_region(p, lm) == 'lens' and _sector(p, c)[0]]
@@ -2686,7 +2780,75 @@ def face_helmet_gate(low, lm):
         f'(centre {(band_lo + band_hi) / 2:.3f}h) over {len(lens_z)} frontal '
         f'lens verts (gate {LENS_BAND_REF[0]:.2f}..{LENS_BAND_REF[1]:.2f} '
         f'+-{LENS_BAND_TOL:.2f}, measured off the reference still)')
+    # The ruling's "3.5-4 cm shield" is a REAL head's chin-to-crown; `h` here is
+    # chin to HELMET CROWN, so the shield scales with the band fractions, not
+    # with a millimetre literal. Logged so the ratio stays visible.
+    log(f'face gate: lens band height {(band_hi - band_lo) * h * 1000:.1f} mm '
+        f'= {(band_hi - band_lo):.3f}h on a {h * 1000:.0f} mm chin-to-crown '
+        f'(author 21:55: a shield, not a goggle band)')
+    # (7b) AUTHOR 21:55: "no lens/frame pixels below the NOSE TIP". The tip is
+    # the frontal FACE vertex that reaches furthest forward below the shield —
+    # a landmark on the mesh, not a fraction, so this gate cannot be satisfied
+    # by moving the constant that defines the band.
+    # The landmark is measured on the UN-PUSHED SKULL, in a window fixed at
+    # 0.10..0.40h, so it does not move when the band moves. Two earlier
+    # versions could not fail:
+    #   * "max forward reach among FACE verts up to the band edge" found the
+    #     brow ridge one row under the band and passed by 0.002h;
+    #   * excluding lens verts by REGION made the window shrink as the band
+    #     grew downward, so `--lens-lo 0.28` slid the "tip" down to 0.239h with
+    #     it and the gate stayed green on a build that is exactly the defect.
+    # Undoing goggle_geometry's radial push (the pre-push radii it recorded)
+    # gives the skull's own nose, whatever the band is doing on top of it.
+    nose_tip_h, nose_reach = -1.0, -9.0
+    for v in low.data.vertices:
+        if own[v.index] != 'head':
+            continue
+        p = v.co
+        if not (chin + 0.10 * h <= p.z < chin + 0.40 * h) or not _sector(p, c)[0]:
+            continue
+        lx, ly = p.x - c.x, p.y - c.y
+        pre = _GOGGLE_PRE.get(v.index, _TEMPLE_PRE.get(v.index))
+        if pre is not None:
+            n = math.hypot(lx, ly)
+            if n > 1e-6:
+                lx, ly = lx * pre / n, ly * pre / n
+        if ly > nose_reach:
+            nose_reach, nose_tip_h = ly, (p.z - chin) / h
+    log(f'face gate: nose tip at {nose_tip_h:.3f}h, shield bottom at '
+        f'{band_lo:.3f}h (gate: bottom above the tip)')
+    # (7c) TEMPLE ARMS (author 21:55: "thin straight temple arms running back
+    # over the ears under the helmet rim", and no strap). Measured on the final
+    # low-poly: the arm must exist on BOTH sides, stand proud of the skull, and
+    # must NOT close round the back of the head the way the old strap did.
+    temple = [(v.co, v.index) for v in low.data.vertices
+              if own[v.index] == 'head' and head_region(v.co, lm) == 'temple']
+    tL = sum(1 for co, _ in temple if co.x - c.x > 0)
+    tR = len(temple) - tL
+    rear = sum(1 for co, _ in temple
+               if abs(math.atan2(co.x - c.x, co.y - c.y)) > 2.75)
+    tpush = [math.hypot(low.data.vertices[i].co.x - c.x,
+                        low.data.vertices[i].co.y - c.y) - pre
+             for i, pre in _TEMPLE_PRE.items()]
+    tpush_mm = (sum(tpush) / len(tpush) * 1000) if tpush else -1.0
+    log(f'face gate: temple arms {tL} left / {tR} right verts, {rear} behind '
+        f'2.75 rad, realised push {tpush_mm:.2f} mm '
+        f'(gate: >=10 per side, 0 rear, push >=1.5; '
+        f'BODY_SABOTAGE_GOGGLES=1 = 0.00)')
     bad = []
+    if lens_z and nose_tip_h > 0 and band_lo <= nose_tip_h + 0.010:
+        bad.append(f'shield bottom {band_lo:.3f}h is not clear of the nose '
+                   f'tip {nose_tip_h:.3f}h by 0.010h — the glasses sit on '
+                   f'the nose (author 21:55: no lens or frame below the tip)')
+    if tL < 10 or tR < 10:
+        bad.append(f'temple arms {tL}/{tR} verts per side (need >=10 each) — '
+                   f'the sport glasses have no arms')
+    if rear:
+        bad.append(f'{rear} temple verts behind 2.75 rad — the arm closes '
+                   f'round the back of the head, i.e. it is a strap again')
+    if tpush_mm < 1.5:
+        bad.append(f'temple arm realised push {tpush_mm:.2f} mm < 1.5 '
+                   f'(negative control BODY_SABOTAGE_GOGGLES=1 reads 0.00)')
     if not lens_z:
         bad.append('no frontal lens verts on the final mesh')
     else:
@@ -2734,6 +2896,8 @@ def face_helmet_gate(low, lm):
             'rim_front': rim_front_up, 'rim_side_h': (rim_side - chin) / h,
             'rim_back_h': (rim_back - chin) / h, 'dome_off': dome_off,
             'turn_deg': turn, 'goggle_proud': proud, 'goggle_push_mm': push_mm,
+            'nose_tip_h': round(nose_tip_h, 4),
+            'temple_verts': [tL, tR], 'temple_push_mm': round(tpush_mm, 3),
             'lens_band_h': [round(band_lo, 4), round(band_hi, 4)],
             'faceForward': [round(fwd[0], 4), 0.0, round(fwd[2], 4)]}
 
@@ -4730,9 +4894,18 @@ def digit30_mask(u, v):
 
 # ── Limb cross-section frames ───────────────────────────────────────────────
 
+# Spacing of the sampled cross-sections the limb axis is fitted through.
+SLICE_DZ = 0.02
+# NEGATIVE CONTROL for the stripe-straightness gate: reproduce the axis this
+# project shipped up to session 10 — nearest 4 cm bucket, no interpolation, no
+# smoothing, (0,0) wherever a bucket was too sparse to have a centroid.
+SABOTAGE_STRIPE = os.environ.get('BODY_SABOTAGE_STRIPE') == '1'
+
+
 def limb_slice_centroids(obj, owner, names):
     """
-    Per (segment, z-slice) centroid of the MESH's own cross-section.
+    A CONTINUOUS axis per limb segment: the centroid of its own cross-section,
+    resampled on a uniform z ladder, smoothed, and meant to be interpolated.
 
     Stripe/seam angles are azimuths ABOUT the limb axis, but the axis that
     matters is the one the surface actually wraps — not the driver centre in
@@ -4743,28 +4916,235 @@ def limb_slice_centroids(obj, owner, names):
     air beside the leg and the stripe painted only the soles (which cross
     ly=0). Measuring from each slice's own centroid puts the pole back on the
     visible outboard face, whatever the anatomy does.
+
+    OPUS ITEM 3 (d) — why this stopped being a dict of buckets. The old version
+    returned {(segment, round(z/0.04)): centroid} and limb_azim looked the
+    query point's bucket up by NEAREST. Three consequences, all of them
+    visible in shots/figure_side.png as a blue STAIRCASE down the arm and leg
+    rather than a seam:
+
+      * the reference axis is piecewise CONSTANT in z, so every 4 cm the whole
+        angular window jumps sideways by however far the centroid moved —
+        which on a tapering, curving limb is millimetres to a centimetre. The
+        stripe's edge steps by that much, in one row, and the step is the
+        4 cm bucket tall. That is exactly the staircase;
+      * a per-bucket median over as few as five vertices is noisy, and the
+        noise is uncorrelated between adjacent buckets, so the steps alternate
+        direction instead of drifting;
+      * `.get(..., (0.0, 0.0))` silently substituted the DRIVER centre for any
+        bucket with fewer than five vertices — the very failure mode the
+        paragraph above says this function exists to avoid — and the sparse
+        buckets are the segment ends, i.e. the joints, where the seam is most
+        obviously broken.
+
+    So: sample at SLICE_DZ (2 cm), drop sparse rungs, fill the gaps and both
+    ends by holding the nearest measured centroid (never the driver centre),
+    then smooth. limb_azim interpolates between rungs, so the axis it sees is
+    C0 in z and the seam it produces is a line.
     """
     import statistics
-    buckets = {}
+    if SABOTAGE_STRIPE:
+        buckets = {}
+        for i, v in enumerate(obj.data.vertices):
+            nm = owner[i]
+            if nm not in names:
+                continue
+            c = bl(nm)
+            buckets.setdefault((nm, round(v.co.z / 0.04)), []).append(
+                (v.co.x - c.x, v.co.y - c.y))
+        out = {'__staircase__': True}
+        for key, pts in buckets.items():
+            if len(pts) >= 5:
+                out[key] = (statistics.median(p[0] for p in pts),
+                            statistics.median(p[1] for p in pts))
+        log('BODY_SABOTAGE_STRIPE=1: limb axis back to nearest 4 cm bucket '
+            '(negative control for the stripe-straightness gate)')
+        return out
+
+    rungs = {}
     for i, v in enumerate(obj.data.vertices):
         nm = owner[i]
         if nm not in names:
             continue
         c = bl(nm)
-        key = (nm, round(v.co.z / 0.04))
-        buckets.setdefault(key, []).append((v.co.x - c.x, v.co.y - c.y))
-    out = {}
-    for key, pts in buckets.items():
-        if len(pts) >= 5:
-            out[key] = (statistics.median(p[0] for p in pts),
-                        statistics.median(p[1] for p in pts))
-    return out
+        rungs.setdefault(nm, {}).setdefault(
+            int(math.floor(v.co.z / SLICE_DZ)), []).append(
+                (v.co.x - c.x, v.co.y - c.y))
+
+    axes = {}
+    for nm, by_k in rungs.items():
+        # (z, cx, cy, weight) per rung with enough section to have a centroid.
+        obs = [((k + 0.5) * SLICE_DZ,
+                statistics.median(p[0] for p in by_k[k]),
+                statistics.median(p[1] for p in by_k[k]),
+                float(len(by_k[k])))
+               for k in sorted(by_k) if len(by_k[k]) >= 5]
+        if len(obs) < 4:
+            if obs:
+                axes[nm] = (obs[0][0], (obs[0][1], 0.0, 0.0),
+                            (obs[0][2], 0.0, 0.0))
+            continue
+        # A weighted least-squares QUADRATIC in z, not the sampled polyline.
+        # Interpolating the rungs directly — even after several [1 2 1]
+        # passes — still carries the per-rung median noise, and measured, that
+        # noise alone stepped the painted seam 14.5 mm across one 2 cm rung on
+        # the thigh (build log s11_build1). A limb segment's axis is a gently
+        # bowed line: three coefficients describe it, cannot staircase by
+        # construction, and their derivative bounds the seam's step.
+        z0 = sum(o[0] * o[3] for o in obs) / sum(o[3] for o in obs)
+        axes[nm] = (z0, _wls_quad(obs, 1, z0), _wls_quad(obs, 2, z0))
+    return axes
+
+
+def _wls_quad(obs, col, z0):
+    """Weighted least-squares fit of obs[col] to a + b*t + c*t^2, t = z - z0."""
+    n = 3
+    a = [[0.0] * (n + 1) for _ in range(n)]
+    for (z, cx, cy, w) in obs:
+        t = z - z0
+        basis = (1.0, t, t * t)
+        val = (cx, cy)[col - 1]
+        for r in range(n):
+            for c in range(n):
+                a[r][c] += w * basis[r] * basis[c]
+            a[r][n] += w * basis[r] * val
+    for i in range(n):                                   # Gauss-Jordan
+        p = max(range(i, n), key=lambda r: abs(a[r][i]))
+        if abs(a[p][i]) < 1e-18:
+            return (a[i][n] / a[i][i] if abs(a[i][i]) > 1e-18 else 0.0, 0.0, 0.0)
+        a[i], a[p] = a[p], a[i]
+        d = a[i][i]
+        a[i] = [v / d for v in a[i]]
+        for r in range(n):
+            if r != i and a[r][i]:
+                f = a[r][i]
+                a[r] = [v - f * u for v, u in zip(a[r], a[i])]
+    return (a[0][n], a[1][n], a[2][n])
+
+
+def limb_axis_at(z, nm, slices):
+    """The limb axis' (cx, cy) at height z, from its fitted quadratic."""
+    if slices.get('__staircase__'):
+        return slices.get((nm, round(z / 0.04)), (0.0, 0.0))
+    ax = slices.get(nm)
+    if not ax:
+        return (0.0, 0.0)
+    z0, fx, fy = ax
+    t = z - z0
+    return (fx[0] + fx[1] * t + fx[2] * t * t,
+            fy[0] + fy[1] * t + fy[2] * t * t)
 
 
 def limb_azim(lx, ly, z, nm, slices):
     """Azimuth of a point about its slice's own cross-section centroid."""
-    cen = slices.get((nm, round(z / 0.04)), (0.0, 0.0))
-    return math.atan2(ly - cen[1], lx - cen[0])
+    cx, cy = limb_axis_at(z, nm, slices)
+    return math.atan2(ly - cy, lx - cx)
+
+
+def limb_radius(lx, ly, z, nm, slices):
+    """Distance of a point from its slice's own cross-section centroid."""
+    cx, cy = limb_axis_at(z, nm, slices)
+    return math.hypot(lx - cx, ly - cy)
+
+
+def stripe_straight_gate(stripe_dbg):
+    """
+    GATE (brief item 3 (d)): the outer-seam stripe is a straight 5 cm band.
+
+    The author's word for it was "a ragged blob across the shin"; in
+    shots/figure_side.png (session 10) it is a STAIRCASE with treads the
+    height of the old 4 cm axis bucket. So the gate measures the two things
+    that distinguish a seam from a staircase, and it measures them against a
+    reference the painting code does not use — each vertex's fore/aft offset
+    from its DRIVER centre, `ly`, which is what segment_frame already handed
+    paint_suit. (Measuring against the smoothed axis the paint used would be
+    circular: any axis makes its own band look centred.)
+
+      step   the seam centre's fore/aft move between adjacent 2 cm rungs.
+             A smooth axis drifts; a bucketed one jumps by the whole distance
+             the centroid moved, in one rung. This is the staircase metric.
+      wander the seam centre's deviation from a straight least-squares fit up
+             the segment. Catches a seam that spirals or slides off the
+             outboard face even if every individual step is small.
+      width  the band's fore/aft extent. For a band centred on the lateral
+             pole this IS its width, with no trigonometry and no axis: the
+             brief asks for ~5 cm and this reads it in metres.
+
+    Both the centre and the width are read off the band's EDGES at the 5th and
+    95th percentile of ly, not off its mean or its extremes. The mean is the
+    wrong estimator here and the first version of this gate used it: the suit
+    mesh's vertices come in rows, so how many of them land inside a 43 mm band
+    varies rung to rung, and the mean of a clumpy sample moves several
+    millimetres on its own. Measured, that noise made the metric read 14.4 mm
+    on a smooth axis and 14.5 mm on the bucketed one — it could not tell the
+    staircase from the fix, which is the definition of a gate not worth
+    having. The band's edges are geometric, so percentiles of them are stable.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_STRIPE=1 restores the nearest-4 cm-bucket
+    axis and must fail `step`.
+    """
+    def pct(vals, q):
+        s = sorted(vals)
+        i = q * (len(s) - 1)
+        lo = int(i)
+        return s[lo] + (s[min(lo + 1, len(s) - 1)] - s[lo]) * (i - lo)
+
+    per = {}
+    for (x, y, z, lx, ly, nm) in stripe_dbg:
+        per.setdefault(nm, {}).setdefault(
+            int(math.floor(z / SLICE_DZ)), []).append(ly)
+    if not per:
+        raise SystemExit('stripe straightness gate: no stripe verts at all')
+    worst_step = worst_wander = 0.0
+    per_seg_w = {}
+    worst_step_seg = worst_wander_seg = '-'
+    widths = []
+    for nm in sorted(per):
+        rungs = sorted(k for k, v in per[nm].items() if len(v) >= 12)
+        if len(rungs) < 4:
+            continue
+        edges = {k: (pct(per[nm][k], 0.05), pct(per[nm][k], 0.95)) for k in rungs}
+        cen = {k: 0.5 * (edges[k][0] + edges[k][1]) for k in rungs}
+        wid = {k: edges[k][1] - edges[k][0] for k in rungs}
+        step = max((abs(cen[b] - cen[a])
+                    for a, b in zip(rungs, rungs[1:]) if b == a + 1),
+                   default=0.0)
+        n = len(rungs)
+        mz = sum(rungs) / n
+        mc = sum(cen[k] for k in rungs) / n
+        sxx = sum((k - mz) ** 2 for k in rungs)
+        slope = (sum((k - mz) * (cen[k] - mc) for k in rungs) / sxx) if sxx else 0.0
+        wander = max(abs(cen[k] - (mc + slope * (k - mz))) for k in rungs)
+        med_w = sorted(wid[k] for k in rungs)[n // 2]
+        widths.append(med_w)
+        per_seg_w[nm] = med_w
+        log(f'stripe straight {nm:10s} rungs={n:3d} step={step * 1000:6.1f} mm '
+            f'wander={wander * 1000:6.1f} mm width={med_w * 1000:5.1f} mm')
+        if step > worst_step:
+            worst_step, worst_step_seg = step, nm
+        if wander > worst_wander:
+            worst_wander, worst_wander_seg = wander, nm
+    if not widths:
+        raise SystemExit('stripe straightness gate: no segment had enough '
+                         'stripe verts to measure')
+    log(f'stripe straight gate: worst step {worst_step * 1000:.1f} mm '
+        f'({worst_step_seg}, max {STRIPE_STEP_MAX * 1000:.0f}), worst wander '
+        f'{worst_wander * 1000:.1f} mm ({worst_wander_seg}, max '
+        f'{STRIPE_WANDER_MAX * 1000:.0f}), median width '
+        f'{sorted(widths)[len(widths) // 2] * 1000:.1f} mm'
+        + (' [SABOTAGED]' if SABOTAGE_STRIPE else ''))
+    if worst_step > STRIPE_STEP_MAX:
+        raise SystemExit(
+            f'stripe straightness gate: {worst_step_seg} steps '
+            f'{worst_step * 1000:.1f} mm between 2 cm rungs (max '
+            f'{STRIPE_STEP_MAX * 1000:.0f}) — the seam is a staircase, not a '
+            f'seam (negative control: BODY_SABOTAGE_STRIPE=1)')
+    if worst_wander > STRIPE_WANDER_MAX:
+        raise SystemExit(
+            f'stripe straightness gate: {worst_wander_seg} wanders '
+            f'{worst_wander * 1000:.1f} mm off a straight seam (max '
+            f'{STRIPE_WANDER_MAX * 1000:.0f})')
+    arm_stripe_presence_gate(per_seg_w)
 
 
 # ── Fabric folds (task 3, folds slice) ──────────────────────────────────────
@@ -4787,28 +5167,29 @@ def limb_azim(lx, ly, z, nm, slices):
 #   glove-cuff (forearm, above the cuff step at along -0.80),
 #   boot-cuff (shin, above the cuff step at along -0.74).
 SUIT_FOLDS = {
-    'upperArm': [('elbow', -0.86, 0.26, 0.0016, 2.0, None),
-                 ('armpit', 0.86, 0.20, 0.0013, 1.5, None)],
-    'lowerArm': [('elbow', 0.74, 0.22, 0.0018, 2.0, None),
-                 ('glove-cuff', -0.70, 0.18, 0.0015, 2.0, None)],
-    'upperLeg': [('knee', -0.88, 0.24, 0.0019, 2.0, None),
-                 ('hip', 0.86, 0.22, 0.0014, 2.0, 0.25)],
-    # OPUS ITEM 12 tried to raise 'boot-cuff' to (-0.26, 0.13) so the crease
-    # bunches ABOVE the new boot shell instead of creasing rigid plastic, and
-    # REVERTED it — not because the placement was wrong, but because measuring
-    # it showed the move is worth nothing and costs a gate. rig.spec.js's
-    # crease-band variance gate reads 57159 with this band and 43692 with the
-    # raised one, and the 13600 difference is not fold relief: a folds-OFF bake
-    # (BODY_SABOTAGE_FOLDS=1) scores 43095 and a weave-OFF bake
-    # (BODY_SABOTAGE_WEAVE=1) scores 42362, i.e. everything displace_suit
-    # writes moves that metric by under 3%. The old window's extra 62732 texels
-    # carry mean |Laplacian| ~100000, double any cloth band — they are the
-    # BOOT's hard geometry edges. So the gate's dynamic range is the boot, the
-    # fold placement is invisible either way, and moving the band only blinds
-    # the gate. Reviewer question in docs/OPUS-NOTES.md; the placement belongs
-    # with item 3's fold design, once folds are deep enough to measure.
-    'lowerLeg': [('knee', 0.80, 0.22, 0.0017, 2.0, None),
-                 ('boot-cuff', -0.62, 0.18, 0.0015, 2.0, None)],
+    'upperArm': [('elbow', -0.74, 0.24, 0.0080, 2.0, None),
+                 ('armpit', 0.86, 0.20, 0.0050, 1.5, None)],
+    'lowerArm': [('elbow', 0.74, 0.22, 0.0075, 2.4, None),
+                 ('glove-cuff', -0.70, 0.18, 0.0050, 1.1, None)],
+    'upperLeg': [('knee', -0.76, 0.22, 0.0085, 2.2, None),
+                 ('hip', 0.74, 0.22, 0.0060, 2.2, 0.25)],
+    # OPUS ITEM 12 tried to raise 'boot-cuff' so the crease bunches ABOVE the
+    # boot shell instead of creasing rigid plastic, and reverted it because the
+    # only gate that could see it was rig.spec.js's crease-band variance test —
+    # whose dynamic range turned out to BE the boot. That gate is gone (session
+    # 12; see fold_ripple_gate), so the placement is measurable now and worth
+    # revisiting; boot-cuff is not in FOLD_MASK_ZONES, so nothing gates it yet.
+    'lowerLeg': [('knee', 0.80, 0.22, 0.0085, 2.0, None),
+                 ('boot-cuff', -0.62, 0.18, 0.0050, 1.6, None)],
+    # THE LOWER BACK HAD NO FOLDS AT ALL. The author's complaint from the very
+    # first review — "suit doesn't seem to fold over the back" — was reported
+    # against a SUIT_FOLDS table with four keys, none of them the torso: every
+    # crease in this suit was on an arm or a leg. The lumbar band is where a
+    # one-piece bunches when the athlete folds forward, so it is also where the
+    # tuck should show it. Back-biased (fbias < 0 ⇒ 1 + fbias·front is 1.7 at
+    # the back, 0.3 at the belly), and seated above the waistband step at
+    # along −0.72 so the two reliefs do not stack.
+    'torso': [('lower-back', -0.44, 0.20, 0.0090, 2.8, -0.70)],
 }
 
 # NEGATIVE CONTROL for rig.spec.js's crease-band variance gate ("fabric folds
@@ -4842,6 +5223,7 @@ def displace_suit(obj, lm):
     normals = [v.normal.copy() for v in verts]
     moved = 0
     fold_hit = {}
+    fold_amp = {}
     for i, v in enumerate(verts):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
@@ -4869,12 +5251,13 @@ def displace_suit(obj, lm):
                 if reg == 'lens':
                     # The goggle frame sits ~1.6 mm proud of the face.
                     d += 0.0016
-                else:
-                    # Goggle strap groove round the head at eye level; across
-                    # the front it cancels against nothing because the lens
-                    # band is handled above — net effect: frame proud, strap
-                    # recessed into the shell on the sides/back.
-                    d -= 0.0011 * math.exp(-((z - lm['eyes']) / 0.009) ** 2)
+                elif reg == 'temple':
+                    # AUTHOR 21:55: the temple ARM stands PROUD of the skull —
+                    # a thin bar laid over the skin/shell — where the old strap
+                    # was a groove RECESSED into it. A groove round the head at
+                    # eye level is exactly the goggle silhouette the ruling
+                    # removed, so the sign flips with the part.
+                    d += 0.0014
         else:
             # WEAVE AMPLITUDE 1.1 -> 2.1 mm peak-to-peak (session 7). Not a free tuning
             # knob: with the shard faces gone the suit's NM variance fell
@@ -4912,11 +5295,20 @@ def displace_suit(obj, lm):
                 a = amp * env * ridge * jit
                 if fbias is not None:
                     a *= 1.0 + fbias * front         # flexor side reads more
+                if name == 'torso':
+                    # The bib is a SEPARATE loose garment hanging off the suit
+                    # (item 3), so it does not crease with the back underneath
+                    # it: the lumbar folds run on the bare suit around the bib,
+                    # not through it. Without this the bib's own surface picks
+                    # up the suit's wrinkles and the two garments read as one.
+                    a *= 1.0 - bib_mask(name, along, front, lx)
                 if a > fold:
                     fold, fold_zone = a, zone
             if fold > 0.0002:
                 d += fold
                 fold_hit[fold_zone] = fold_hit.get(fold_zone, 0) + 1
+                pk = fold_amp.get(fold_zone, (0.0, 0.0))
+                fold_amp[fold_zone] = (max(pk[0], fold), pk[1] + fold)
             else:
                 # Fabric bunches where a limb bends, so the wrinkles
                 # concentrate near the ends of each segment and run around it
@@ -4938,10 +5330,16 @@ def displace_suit(obj, lm):
                 outward = 0.0 if out > 0 else math.pi
                 dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
                 d -= 0.0016 * math.exp(-((dphi / 0.13) ** 2))
-                if is_leg and dphi < 0.30:
-                    # The blue stripe is a printed panel, very slightly proud of
-                    # the fabric — enough for the light to catch its edge.
-                    d += 0.0009 * (1.0 - (dphi / 0.30) ** 6)
+                # The blue stripe is a printed panel, very slightly proud of
+                # the fabric — enough for the light to catch its edge. Its
+                # relief has to use the SAME arc-width band the paint uses
+                # (item 3 (d)), or the lit edge and the colour edge part
+                # company; and it now runs on the arms too.
+                if name.startswith(STRIPE_SEGMENTS):
+                    rad = limb_radius(lx, ly, z, name, slices)
+                    halfphi = min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX)
+                    if dphi < halfphi:
+                        d += 0.0009 * (1.0 - (dphi / halfphi) ** 6)
             if name == 'torso':
                 dphi = abs(math.atan2(math.sin(azim - math.pi), math.cos(azim - math.pi)))
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
@@ -4965,6 +5363,9 @@ def displace_suit(obj, lm):
             v.co = (x + normals[i].x * d, y + normals[i].y * d, z + normals[i].z * d)
             moved += 1
     log(f'suit displacement applied to {moved}/{len(verts)} high-poly verts')
+    log('FOLD amplitude (mm): ' + ', '.join(
+        f'{z} peak {fold_amp[z][0]*1000:.1f} mean {fold_amp[z][1]/fold_hit[z]*1000:.1f}'
+        for z in sorted(fold_amp)))
     log('FOLD summary: ' + (', '.join(
         f'{z} {fold_hit[z]} verts' for z in sorted(fold_hit))
         + ' | bands: ' + ', '.join(
@@ -4980,8 +5381,13 @@ def displace_suit(obj, lm):
     # band move was reverted, so this reference is back to the measured 3312.
     # The gate caught that move exactly as designed, at 34% of the floor.)
     FOLD_GATE = 0.40
-    fold_ref = {'armpit': 836, 'boot-cuff': 3312, 'elbow': 1612,
-                'glove-cuff': 621, 'hip': 496, 'knee': 1806}
+    # Re-baselined in session 12: four bands were re-seated INSIDE their
+    # segments (see SUIT_FOLDS) because `along` clamps at +-1, so a band centred
+    # at 0.86 with a half-width of 0.22 had half its window off the end of the
+    # mesh and every vertex beyond the joint piled onto its edge.
+    fold_ref = {'armpit': 4636, 'boot-cuff': 7275, 'elbow': 2894,
+                'glove-cuff': 1291, 'hip': 1080, 'knee': 2980,
+                'lower-back': 705}
     missing = [z for z, n in fold_ref.items()
                if fold_hit.get(z, 0) < n * FOLD_GATE]
     if missing and SABOTAGE_FOLDS:
@@ -5022,7 +5428,8 @@ def paint_suit(obj, lm):
     owner = dominant_segments(obj)
     paint_slices = limb_slice_centroids(obj, owner,
                                         ('upperLegL', 'lowerLegL', 'upperLegR',
-                                         'lowerLegR'))
+                                         'lowerLegR', 'upperArmL', 'lowerArmL',
+                                         'upperArmR', 'lowerArmR'))
     attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     stripe_dbg = []
@@ -5039,15 +5446,20 @@ def paint_suit(obj, lm):
             # level. Same function that splits the material slots on the low poly. that splits the material slots on the low poly.
             reg = head_region(Vector((x, y, z)), lm)
             if reg == 'lens':
-                # Face pass 2: light frame along the lens's top and bottom
-                # edges so the dark lens separates from the navy shell above
-                # and the skin below (face pass 1's lens merged into the
-                # shell — the whole eye zone read as one dark beret).
+                # AUTHOR 21:55: a shooter-style shield carries a THIN FRAME
+                # ALONG THE TOP EDGE ONLY (the brow bar). The bottom edge is
+                # frameless — it is the lens itself, tapering away over the
+                # cheekbone — so the lower rim stroke that used to draw a dark
+                # line under the eyes is gone; what remains at the bottom is
+                # the NOSE BRIDGE/PADS, a short dark notch at the centre where
+                # the shield clears the nose.
                 hzl = (z - lm['chin']) / lm['h']
                 lens_top = LENS_HI
                 lens_bot = LENS_LO
-                if lens_top - hzl < 0.015 or hzl - lens_bot < 0.015:
-                    col, tag = GOGGLE_RIM, 'rim'
+                if lens_top - hzl < 0.015:
+                    col, tag = GOGGLE_RIM, 'browbar'
+                elif hzl - lens_bot < 0.020 and abs(x - hx) < lm['h'] * 0.055:
+                    col, tag = GOGGLE_RIM, 'bridge'
                 else:
                     # MIRROR TINT (brief item 1: "a subtle blue/orange mirror
                     # tint"). A mirrored lens is not one flat colour — it
@@ -5082,8 +5494,10 @@ def paint_suit(obj, lm):
                     col, tag = SKIN_SHADE, 'noshade'
                 else:
                     col, tag = SKIN, 'face'
-            elif reg == 'strap':
-                col, tag = WAIST, 'strap'
+            elif reg == 'temple':
+                # Moulded plastic arm, the same dark as the brow bar — NOT the
+                # navy fabric the strap used to be painted in.
+                col, tag = GOGGLE_RIM, 'temple'
             else:
                 col, tag = HELMET, 'helmet'
         elif name.startswith('lowerArm') and along < -0.78:
@@ -5110,18 +5524,32 @@ def paint_suit(obj, lm):
             # below paint it would have run royal blue down the shell.
             col, tag = ((BOOT_CUFF, 'bootlip') if along >= BOOT_LIP_ALONG
                         else (BOOT, 'boot'))
-        elif name.startswith(('upperLeg', 'lowerLeg')):
+        elif name.startswith(STRIPE_SEGMENTS):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
             # cross-section centroid so the stripe tracks the visible face of
             # the calf/thigh rather than a pole in empty air beside the axis.
+            #
+            # OPUS ITEM 3 (d): the band is now a fixed ARC WIDTH, not a fixed
+            # angle. A constant dphi is a constant fraction of the
+            # circumference, so the same 0.32 rad that made a 5.4 cm panel on
+            # an 85 mm-radius thigh made a 3.5 cm pinstripe on a 55 mm shin and
+            # 2.9 cm on the forearm — the stripe narrowed exactly where the
+            # limb did, which is not what a cut-and-sewn 5 cm panel does. The
+            # angular cap survives from entry-75: on a thin segment a true
+            # 5 cm band would wrap most of the way round, so STRIPE_DPHI_MAX
+            # holds the wrap and the band narrows only there.
+            #
+            # ITEM 3 also wants the stripe on the ARMS. It is built and it
+            # works, and it is OFF — see STRIPE_SEGMENTS for the measurement
+            # that turned it off. The glove and boot branches sit above this
+            # one, so whichever segments are enabled, each band stops at its
+            # own cuff, which is where the reference's do.
             azim = limb_azim(lx, ly, z, name, paint_slices)
             outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
-            # Entry-75 item 2: 0.26 read as a pinstripe at 3 m; 0.32 is a
-            # broad panel. Kept under the 0.38 that wrapped most of the way
-            # round the shin and made the leg read all blue.
-            if dphi < 0.32:
+            rad = limb_radius(lx, ly, z, name, paint_slices)
+            if dphi < min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX):
                 col, tag = STRIPE, 'stripe'
 
         # A real competition numeral: dark navy "30" on the white plate, on
@@ -5152,7 +5580,7 @@ def paint_suit(obj, lm):
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
         counts[tag] = counts.get(tag, 0) + 1
         if tag == 'stripe':
-            stripe_dbg.append((x, y, z, lx, ly))
+            stripe_dbg.append((x, y, z, lx, ly, name))
     log(f'suit painted: {counts}')
     if stripe_dbg:
         zs = sorted(p[2] for p in stripe_dbg)
@@ -5160,6 +5588,7 @@ def paint_suit(obj, lm):
         lys = sorted(p[4] for p in stripe_dbg)
         log(f'stripe dbg: n={len(zs)} z {zs[0]:+.3f}..{zs[-1]:+.3f} '
             f'lx {lxs[0]:+.3f}..{lxs[-1]:+.3f} ly {lys[0]:+.3f}..{lys[-1]:+.3f}')
+    stripe_straight_gate(stripe_dbg)
     seg_counts, arm_along = {}, []
     for i, v in enumerate(mesh.vertices):
         nm, al, _r, _o, _f, _l = segment_frame(v.co, owner[i])
@@ -5176,8 +5605,13 @@ def paint_suit(obj, lm):
     # condition never fires produces no error and no warning — the bake simply
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
-    required = ['suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
-                'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
+    # AUTHOR 21:55: 'rim' (the goggle frame drawn on BOTH edges of the band)
+    # is gone — a shooter-style shield has a brow bar on the top edge only.
+    # The three parts that replaced it are required in its place, so the
+    # sport glasses cannot silently lose an arm or the brow bar either.
+    required = ['suit', 'helmet', 'face', 'goggle', 'nostril',
+                'browbar', 'bridge', 'temple', 'waist', 'bib', 'number',
+                'stripe', 'glove',
                 'lip', 'noshade']
     if not SABOTAGE_BOOT:
         required += ['boot', 'bootlip']
@@ -5689,6 +6123,7 @@ def make_highpoly(low, lm):
     log(f'high-poly: {len(high.data.vertices)} verts before displacement')
 
     displace_suit(high, lm)
+    fold_ripple_gate(high)
     paint_suit(high, lm)
     boot_paint_gate(high)
 
@@ -5761,7 +6196,7 @@ def bake_maps(low, high, out_dir):
     bake = bpy.context.scene.render.bake
     bake.use_selected_to_active = True
     bake.cage_extrusion = 0.02
-    bake.margin = 16
+    bake.margin = BAKE_MARGIN
     # use_clear wipes the target image to black before baking, which would undo
     # the background fill below — the whole point of which is that the atlas must
     # NOT be black where nothing is baked.
@@ -6221,32 +6656,31 @@ def patch_skin_binds_verify(path, want):
 SUIT_NM_FLOOR = 6.3   # 85% of the measured 7.48; pre-lane bake was 4.73
 
 
-def suit_nm_variance_gate(low, out_dir):
-    """Log and hard-floor the suit-region normal-map high-frequency energy."""
-    uvl = low.data.uv_layers.active.data
-    own = dominant_segments(low)
-    suit = {'torso', 'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
-            'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
-    tris = []
-    for poly in low.data.polygons:
-        vs_ = poly.vertices
-        if all(own[v] in suit for v in vs_):
-            uvs = [uvl[li].uv for li in poly.loop_indices]
-            for k in range(1, len(uvs) - 1):
-                tris.append((uvs[0], uvs[k], uvs[k + 1]))
+def _load_normal_laplacian(out_dir, sigma=None):
+    """(Laplacian field of the normal map's R channel, width, height).
+
+    `sigma` pre-blurs, turning the high-pass Laplacian into a band-pass centred
+    on ~4·sigma texels — see the fold gate's header for why that matters.
+    """
     img = bpy.data.images.load(os.path.join(out_dir, 'athlete_normal.png'))
     w, h = img.size
     buf = np.empty(w * h * 4, dtype=np.float32)
     img.pixels.foreach_get(buf)
     bpy.data.images.remove(img)
     R = buf[0::4].reshape(h, w)
+    if sigma:
+        R = _blur(R, sigma)
     lap = (4 * R[1:-1, 1:-1] - R[:-2, 1:-1] - R[2:, 1:-1]
            - R[1:-1, :-2] - R[1:-1, 2:])
+    return lap, w, h
+
+
+def _rasterize_uv(tris, w, h):
+    """Boolean (h, w) mask of the texels covered by a list of UV triangles."""
     mask = np.zeros((h, w), bool)
-    rs_x, rs_y = float(w - 1), float(h - 1)
+    rs = np.array([float(w - 1), float(h - 1)])
     for a, b, c in tris:
-        p = np.array([a, b, c], dtype=np.float64) \
-            * np.array([rs_x, rs_y])
+        p = np.array([a, b, c], dtype=np.float64) * rs
         x0, x1 = int(p[:, 0].min()), int(np.ceil(p[:, 0].max()))
         y0, y1 = int(p[:, 1].min()), int(np.ceil(p[:, 1].max()))
         x1, y1 = min(x1, w - 1), min(y1, h - 1)
@@ -6263,7 +6697,316 @@ def suit_nm_variance_gate(low, out_dir):
               + (p[0, 0] - p[2, 0]) * (ys - p[2, 1])) / d
         inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
         mask[ys[inside], xs[inside]] = True
-    m = mask[1:-1, 1:-1]
+    return mask
+
+
+def _poly_uv_tris(low, keep):
+    """UV triangles of every polygon whose vertex indices all satisfy `keep`."""
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if not all(keep(v) for v in poly.vertices):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+# ── OPUS ITEM 3 (b): the arm stripe, and TEXEL OWNERSHIP ────────────────────
+# The reviewer's 21:30 ruling (b): the arm stripe must ship, and the band must
+# be painted "only on texels whose triangle's heaviest skin weight is an arm
+# bone, never by a spatial band that crosses the chest wall".
+#
+# paint_suit already obeys the vertex half of that: it colours a vertex by
+# `dominant_segments`, i.e. by the bone that moves it, so no torso VERTEX ever
+# receives STRIPE.  Session 11 measured the leak anyway (torso-back blue 0.019
+# legs-only -> 0.121 with the arms) and blamed the BAKE, on the theory that the
+# low-poly torso's 2 cm cage rays cross the chest wall and record high-poly ARM
+# colour into TORSO texels.
+#
+# SESSION 13 MEASURED THAT AND IT IS NOT THE CAUSE.  The instrument below
+# rebuilds the ownership question on the finished atlas and probes the exact
+# texels body.spec.js flags — gltf uv (0.6462, 0.8405), (0.6527, 0.8410),
+# (0.9485, 0.5870), all reading sRGB (0.325, 0.518, 0.800), which is STRIPE to
+# three decimals.  Each of them is covered, in Blender's own UV layout and with
+# ZERO mask dilation, by a low-poly polygon whose every vertex is ARM-owned,
+# while the exported triangle whose centroid lands on the same texel is
+# torso-owned.  Two polygons with different owners share the texel: THE ARM AND
+# TRUNK UV ISLANDS OVERLAP.
+#
+# That is why no repair works and why session 11's shoulder cap barely moved
+# the number (0.121 -> 0.110).  A subtractive pass cannot separate the two
+# surfaces, because at those texels there is only one texel to give: erasing
+# the leak erases the sleeve, and painting the sleeve paints the trunk.  The
+# fix is in the UNWRAP — the islands must not overlap — and that is item 3
+# geometry, not a paint rule.  The stripe stays on the legs until it is done;
+# everything needed to switch the arms back on is one constant away
+# (STRIPE_SEGMENTS, plus STRIPE_DPHI_MAX 0.46 -> 0.55).
+BAKE_MARGIN = 16            # bake.margin
+# How far the ownership repair grows the licensed mask before subtracting it.
+# Its job is to not cut a hard edge into the antialiased rim of a licensed
+# region, so it wants to be a few texels — NOT the bake margin. Dilating by the
+# full 16 re-licensed the neighbouring island: the 57 leaking triangles
+# body.spec.js reports sit inside a trunk island whose packing gap is under
+# that, so a 16-texel skirt swallowed exactly the texels the pass exists to
+# repair, and the measured leak went unrepaired at 0.117.
+OWNERSHIP_DILATE = 0
+# The repair is OFF by default and the pass ships as an INSTRUMENT — see its
+# header for the measurement that says a repair cannot fix this leak.
+REPAIR_STRIPE_LEAK = os.environ.get('BODY_REPAIR_STRIPE_LEAK') == '1'
+
+
+def _dilate(mask, r):
+    """Grow a boolean mask by `r` texels (r passes of a 4-neighbour max)."""
+    m = mask
+    for _ in range(int(r)):
+        n = m.copy()
+        n[1:, :] |= m[:-1, :]
+        n[:-1, :] |= m[1:, :]
+        n[:, 1:] |= m[:, :-1]
+        n[:, :-1] |= m[:, 1:]
+        m = n
+    return m
+
+
+def _owned_uv_tris(low, owners):
+    """
+    UV triangles of every polygon UNANIMOUSLY owned by `owners`.
+
+    Ownership per vertex is its single heaviest skin weight, over EVERY bone
+    group — not only the ones named in SEGMENTS.  That matters after
+    add_spine_chain has split the trunk onto spine_01..03: filtering to
+    SEGMENTS made a spine-weighted vertex look weightless, and a face of them
+    then fell through to whichever arm bone held its residue.
+
+    Unanimity, rather than a majority, because the polygons here are QUADS and
+    the consumer of this mask is the exported TRIANGLE soup.  body.spec.js
+    assigns each exported triangle the majority of its three vertices' heaviest
+    bones; a quad all four of whose vertices agree cannot produce a triangle
+    that disagrees, so a mask built this way never licenses a texel the test
+    would call somebody else's.  It is deliberately the conservative side of
+    the ambiguity: a boundary quad goes unlicensed and gets repaired, rather
+    than licensed and left leaking.
+    """
+    names = {g.index: g.name for g in low.vertex_groups}
+    per_vert = []
+    for v in low.data.vertices:
+        best, bw = None, -1.0
+        for g in v.groups:
+            if g.weight > bw:
+                best, bw = names.get(g.group), g.weight
+        per_vert.append(best)
+
+    def keep(poly):
+        return all(per_vert[vi] in owners for vi in poly.vertices)
+
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if not keep(poly):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+def _srgb(v):
+    """Linear -> sRGB, the transfer bakeutil.save_bake writes the PNG with."""
+    v = np.clip(np.asarray(v, dtype=np.float64), 0.0, 1.0)
+    return np.where(v <= 0.0031308, v * 12.92,
+                    1.055 * np.power(v, 1.0 / 2.4) - 0.055)
+
+
+# THE ALBEDO IS READ AND WRITTEN IN sRGB, NOT LINEAR — measured, not assumed.
+# bpy hands back the RAW file values for a loaded BYTE image: a texel written
+# from linear (0.07, 0.24, 0.62) comes back as (0.294, 0.525, 0.808), which is
+# that colour's sRGB encoding to three decimals.  (A freshly BAKED float image,
+# which is what bake_maps saves, is scene-linear — hence save_bake's srgb=True
+# there.)  The first version of this pass assumed linear on the way in and let
+# save_bake encode on the way out, so every texel it touched went through the
+# transfer twice and the whole map came back at mean 0.883 with NOTHING below
+# half: the helmet, the boots and the gloves all turned pale.  So the repair
+# compares raw values against sRGB constants and writes back with srgb=False.
+SUIT_SRGB = tuple(float(x) for x in _srgb(SUIT))
+
+
+def _stripe_blue_mask(R, B):
+    """(h, w) boolean: texels carrying the royal-blue STRIPE, not the bib.
+
+    Measured in sRGB, and on the same axis body.spec.js measures, because this
+    repair and that gate have to agree about what "blue" is.  Four blues live
+    on the trunk's half of the atlas, and in sRGB their blue-minus-red spread
+    is not close:
+
+        STRIPE     (0.09, 0.24, 0.62) linear -> sRGB b-r = 0.48
+        BIB        (0.55, 0.72, 0.88) linear -> sRGB b-r = 0.18   (belongs there)
+        WAIST      (0.08, 0.11, 0.20) linear -> sRGB b-r = 0.17   (belongs there)
+        NUM_INK    (0.07, 0.10, 0.18) linear -> sRGB b-r = 0.15   (belongs there)
+
+    0.30 sits at 1.7x the bib's and the waistband's figure and 0.62x the
+    stripe's, so neither a bake blend nor 8-bit quantisation can walk one into
+    the other, and the two blues that BELONG on the trunk are never erased.
+    Note the test's own cut is 0.15, i.e. the bib and the waistband both count
+    as blue there — which is why its back-of-torso reading was 0.019 and not
+    zero with the stripe on the legs only.  Repairing down to 0.30 removes the
+    sleeve leak and leaves that floor where it was.
+    """
+    return B - R > 0.30
+
+
+def _owned_uv_tris_excluding(low, excluded):
+    """UV triangles of every polygon no vertex of which is owned by `excluded`."""
+    names = {g.index: g.name for g in low.vertex_groups}
+    per_vert = []
+    for v in low.data.vertices:
+        best, bw = None, -1.0
+        for g in v.groups:
+            if g.weight > bw:
+                best, bw = names.get(g.group), g.weight
+        per_vert.append(best)
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if any(per_vert[vi] in excluded for vi in poly.vertices):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+def stripe_texel_ownership(low, out_dir):
+    """
+    Repair, and report, stripe colour baked onto texels that do not own it.
+
+    The rule is stated POSITIVELY — the stripe may appear only where an arm or
+    a leg triangle owns the texel — and not as "wipe the torso", because the
+    torso mask is the one that cannot be trusted here.  Session 13 built the
+    negative form first and it reported a clean 0/237259 while body.spec.js was
+    reading 57 leaking triangles at sRGB (0.325, 0.518, 0.800), which is STRIPE
+    to three decimals: only 924 low-poly triangles come out torso-dominant on
+    the Blender side against thousands in the exported skin, so the "torso"
+    mask was missing the very band the leak lives in.  The arm and leg masks
+    have no such problem — they are what the paint itself is keyed to — and the
+    complement of a mask that is right is right.
+
+    The head is licensed too, and must be: the goggle LENS is (0.09, 0.28,
+    0.55), whose sRGB blue-minus-red is 0.44 and would otherwise be erased by
+    the same threshold that catches the stripe.
+
+    The mask is dilated by a few texels (OWNERSHIP_DILATE) so the repair stops
+    just outside the licensed region's antialiased rim rather than cutting a
+    hard edge into it.
+    """
+    arm_leg = _owned_uv_tris(low, {'upperArmL', 'upperArmR', 'lowerArmL',
+                                   'lowerArmR', 'upperLegL', 'upperLegR',
+                                   'lowerLegL', 'lowerLegR', 'head'})
+    img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
+    w, h = img.size
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    R = buf[0::4].reshape(h, w)
+    G = buf[1::4].reshape(h, w)
+    B = buf[2::4].reshape(h, w)
+    allowed = _dilate(_rasterize_uv(arm_leg, w, h), OWNERSHIP_DILATE)
+    n = int(allowed.sum())
+    if n < 100000:
+        bpy.data.images.remove(img)
+        raise SystemExit(
+            f'[body] stripe ownership pass FAILED: the arm/leg/head texel mask '
+            f'covers only {n} texels — the ownership zoning collapsed and the '
+            f'pass would erase the whole design')
+    blue = _stripe_blue_mask(R, B)
+    # THE MEASUREMENT THAT LOCATES THE LEAK: how much of the atlas is claimed
+    # by an arm polygon AND by a polygon that is not arm, leg or head. In a
+    # sound unwrap this is zero — every texel has one owner. Anything else is
+    # two surfaces sharing texels, and no amount of repainting separates them.
+    arm_m = _rasterize_uv(_owned_uv_tris(low, {'upperArmL', 'upperArmR',
+                                               'lowerArmL', 'lowerArmR'}), w, h)
+    rest = _rasterize_uv(_owned_uv_tris_excluding(
+        low, {'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR',
+              'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'head'}),
+        w, h)
+    ov = int((arm_m & rest).sum())
+    log(f'STRIPE OWNERSHIP overlap: {ov} texels are claimed by an ARM polygon '
+        f'and by a trunk polygon at once ({ov / max(1, int(arm_m.sum())):.4f} '
+        f'of the arm mask) — a sound unwrap gives zero')
+    bad = blue & ~allowed
+    leak = int(bad.sum())
+    total_blue = int(blue.sum())
+    # Context for this second number: it is NOT a leak count. Most of it is the
+    # bake's 16-texel margin skirt plus the boundary quads unanimity excludes,
+    # both of which are outside the mask by construction. The overlap above is
+    # the diagnostic; this one is the ceiling on what a repair could ever touch.
+    log(f'STRIPE OWNERSHIP: {leak} stripe-blue texels sit outside the '
+        f'{n}-texel arm/leg/head mask, out of {total_blue} blue in all '
+        f'({leak / max(1, total_blue):.4f})'
+        + ('' if REPAIR_STRIPE_LEAK else ' [instrument: not repairing]'))
+    if not REPAIR_STRIPE_LEAK:
+        bpy.data.images.remove(img)
+        return leak / max(1, total_blue)
+    if leak:
+        R[bad], G[bad], B[bad] = SUIT_SRGB[0], SUIT_SRGB[1], SUIT_SRGB[2]
+        buf[0::4] = R.reshape(-1)
+        buf[1::4] = G.reshape(-1)
+        buf[2::4] = B.reshape(-1)
+        img.pixels.foreach_set(buf)
+        bakeutil.save_bake(img, os.path.join(out_dir, 'athlete_albedo.png'),
+                           srgb=False, log=log)
+        left = int((_stripe_blue_mask(R, B) & ~allowed).sum())
+        log(f'STRIPE OWNERSHIP: repaired, {left} unowned texels left blue')
+        if left:
+            bpy.data.images.remove(img)
+            raise SystemExit(
+                f'[body] stripe ownership repair did not converge: {left} '
+                f'unowned texels still read stripe blue')
+    bpy.data.images.remove(img)
+    return leak / max(1, total_blue)
+
+
+def arm_stripe_presence_gate(widths):
+    """
+    GATE (reviewer 21:30 (b)): the stripe is actually ON both arms.
+
+    The leak repair above is a subtractive pass, and a subtractive pass has an
+    obvious degenerate solution — erase the band and every leak gate goes
+    green.  This is the gate that makes that solution fail: the painted seam,
+    measured on the geometry by stripe_straight_gate, must be present and wide
+    enough on the upper arm of BOTH sides.
+
+    The forearm is measured and logged but not floored at the same width: the
+    5 cm arc rule is capped by STRIPE_DPHI_MAX, so on a ~33 mm-radius forearm
+    the band is angular-limited to ~30 mm by construction — which is what the
+    reference suit does, its sleeve stripe being visibly narrower than its leg
+    stripe.  Flooring the forearm at 40 mm would be a gate on a constant.
+    """
+    if not any(seg.startswith('upperArm') for seg in STRIPE_SEGMENTS):
+        return          # the arms are not striped in this build; nothing to floor
+    for seg in ('upperArmL', 'upperArmR'):
+        wmm = widths.get(seg)
+        if wmm is None:
+            raise SystemExit(
+                f'[body] arm stripe presence gate FAILED: {seg} carries no '
+                f'measurable stripe band at all — the sleeve seam is missing')
+        if wmm < ARM_STRIPE_MIN_W:
+            raise SystemExit(
+                f'[body] arm stripe presence gate FAILED: {seg} band is '
+                f'{wmm * 1000:.1f} mm wide (min {ARM_STRIPE_MIN_W * 1000:.0f})')
+    log('arm stripe presence: ' + ' '.join(
+        f'{k}={widths[k] * 1000:.1f} mm' for k in sorted(widths)
+        if k.endswith(('ArmL', 'ArmR'))))
+
+
+def suit_nm_variance_gate(low, out_dir):
+    """Log and hard-floor the suit-region normal-map high-frequency energy."""
+    own = dominant_segments(low)
+    suit = {'torso', 'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
+            'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
+    tris = _poly_uv_tris(low, lambda v: own[v] in suit)
+    lap, w, h = _load_normal_laplacian(out_dir)
+    m = _rasterize_uv(tris, w, h)[1:-1, 1:-1]
     n = int(m.sum())
     if n < 10000:
         raise SystemExit(
@@ -6278,6 +7021,364 @@ def suit_nm_variance_gate(low, out_dir):
         raise SystemExit(
             f'[body] suit NM variance gate FAILED: {v:.2f} < {SUIT_NM_FLOOR:.2f}'
             f' — the fabric relief was erased from the bake')
+
+
+# ── Fold relief gate (reviewer ruling on session 10, (a)) ───────────────────
+#
+# The old gate — rig.spec.js's "fabric folds read at the creases" — was deleted
+# rather than recalibrated, on the reviewer's instruction, because it could not
+# tell a folds-OFF bake from a folds-ON one: it scored 57159 shipped against
+# 43095 with BODY_SABOTAGE_FOLDS=1, and the whole of that dynamic range was the
+# BOOT. Its crease windows included 'boot-cuff' and 'glove-cuff', whose texels
+# straddle the hard shell edge of a moulded plastic boot; those edges carry mean
+# |Laplacian| around 100000, double any cloth band, so the boot's contribution
+# swamped everything displace_suit writes.
+#
+# This gate measures the same physical quantity — normal-map Laplacian energy —
+# over the mask the ruling names: elbow, knee, groin (the upperLeg 'hip' band)
+# and the lower back. No cuffs, no armpit, no boot, and with the bib's border
+# lip and the stripe's relief band cut out, because both are hard steps this
+# gate is not asking about. What is left inside the mask is weave plus folds,
+# and the gate's job is that folds are a large enough share of it to SEE:
+# switching them off must drop the metric by at least FOLD_DROP_MIN.
+#
+# ONE MORE THING THE MEASUREMENT FORCED, and it is the reason the first two
+# attempts at this gate failed. A RAW per-texel Laplacian is a high-pass filter
+# whose response peaks at the Nyquist limit, so on this atlas (1 texel ≈ 1 mm of
+# suit) it is dominated by whatever has the SHORTEST wavelength — and that is
+# always the woven micro-normal, at λ ≈ 15 mm. The folds started at λ ≈ 50 mm
+# and moved 2.1% of the metric; deepening them to 8 mm and tightening them to
+# λ ≈ 20 mm still only reached 7.9%, because at λ 20 vs 15 the two features are
+# barely a factor 1.5 apart in scale and the weave still wins on a 1/λ² weighting.
+# Chasing that with more amplitude would have ended with a suit of corrugated
+# iron, measured by an instrument that still mostly reports the weave.
+#
+# So the gate BAND-PASSES to the fold's own scale: blur the normal map with a
+# Gaussian of FOLD_SIGMA texels first, then take the Laplacian. At σ = 4 the
+# 15 mm weave is attenuated to ~0.11 of its amplitude and a 40 mm fold passes at
+# ~0.74, which is the separation the raw operator never had. The folds are also
+# now placed where real cloth puts them — 3-5 cm apart, not 2 cm — which is both
+# what reference/images/aerial_suit.png shows at the knee and what the 3.5 mm
+# high-poly vertex spacing can actually resolve without aliasing the crest away.
+FOLD_MASK_ZONES = ('elbow', 'knee', 'hip', 'lower-back')
+FOLD_BAND_KEEP = 0.85     # fraction of each band's half-width kept in the mask
+FOLD_SIGMA = 4.0          # texels of pre-blur: the band-pass centre, ~4 cm
+FOLD_ERODE = 10           # texels trimmed off the mask, so island edges do not
+                          # leak their (build-invariant, dilutive) step into it
+# Floors are set on the measured numbers with margin, in the reviewer's 19:15
+# shape ("ship at an honest number and ratchet"). See docs/OPUS-NOTES.md.
+FOLD_RELIEF_FLOOR = None      # calibrated below, after the first measurement
+FOLD_DROP_MIN = 0.40          # ruling (b): folds-off must cost >= 40%
+
+
+def fold_region_mask(low):
+    """UV triangles of the crease regions the fold gate measures."""
+    own = dominant_segments(low)
+    slices = limb_slice_centroids(low, own,
+                                  ('upperLegL', 'lowerLegL', 'upperLegR',
+                                   'lowerLegR', 'upperArmL', 'lowerArmL',
+                                   'upperArmR', 'lowerArmR'))
+    ok = {}
+
+    def keep(vi):
+        hit = ok.get(vi)
+        if hit is not None:
+            return hit
+        co = low.data.vertices[vi].co
+        name = own[vi]
+        name, along, radial, out, front, local = segment_frame(co, name)
+        lx, ly, lz = local
+        base = name[:-1] if name[-1] in 'LR' else name
+        inband = any(
+            zone in FOLD_MASK_ZONES and abs((along - a0) / w) < FOLD_BAND_KEEP
+            for (zone, a0, w, amp, cyc, fb) in SUIT_FOLDS.get(base, ()))
+        if inband:
+            is_limb = name.startswith(('upperLeg', 'lowerLeg',
+                                       'upperArm', 'lowerArm'))
+            if is_limb and name.startswith(STRIPE_SEGMENTS):
+                # Cut the stripe out: its 0.9 mm printed-panel step and its
+                # seam groove are hard edges, not cloth. 1.6x the paint's own
+                # half-width so the ramp goes too.
+                azim = limb_azim(lx, ly, co.z, name, slices)
+                outward = 0.0 if out > 0 else math.pi
+                dphi = abs(math.atan2(math.sin(azim - outward),
+                                      math.cos(azim - outward)))
+                rad = limb_radius(lx, ly, co.z, name, slices)
+                if dphi < 1.6 * min(STRIPE_HALF_W / max(rad, 1e-4),
+                                    STRIPE_DPHI_MAX):
+                    inband = False
+            if inband and is_limb:
+                # ...and the panel seam groove up the outboard side.
+                azim = limb_azim(lx, ly, co.z, name, slices)
+                outward = 0.0 if out > 0 else math.pi
+                dphi = abs(math.atan2(math.sin(azim - outward),
+                                      math.cos(azim - outward)))
+                if dphi < 0.26:
+                    inband = False
+            if inband and name == 'torso':
+                # Anything the bib touches: its border lip is a hard step, and
+                # under it displace_suit suppresses the lumbar fold anyway
+                # (the bib is a separate garment). Neither is cloth crease.
+                if bib_mask(name, along, front, lx) > 0.01:
+                    inband = False
+                azim = math.atan2(ly, lx)
+                dphi = abs(math.atan2(math.sin(azim - math.pi),
+                                      math.cos(azim - math.pi)))
+                if dphi < 0.32:          # the spine seam groove
+                    inband = False
+        ok[vi] = inband
+        return inband
+
+    return _poly_uv_tris(low, keep)
+
+
+def _blur(img, sigma):
+    r = int(3 * sigma)
+    x = np.arange(-r, r + 1, dtype=np.float64)
+    k = np.exp(-x * x / (2.0 * sigma * sigma))
+    k /= k.sum()
+    out = img.astype(np.float64)
+    for axis in (0, 1):
+        out = np.apply_along_axis(
+            lambda v: np.convolve(v, k, mode='same'), axis, out)
+    return out
+
+
+def _erode(mask, r):
+    e = mask
+    for _ in range(r):
+        e = (e & np.roll(e, 1, 0) & np.roll(e, -1, 0)
+             & np.roll(e, 1, 1) & np.roll(e, -1, 1))
+    return e
+
+
+def fold_relief_instrument(low, out_dir):
+    """
+    Fold-band normal-map energy. AN INSTRUMENT, NOT THE GATE — and the reason
+    why is the session-12 finding.
+
+    The reviewer's session-10 ruling (a) asked for exactly this: Laplacian
+    energy of the baked normal map inside a crease mask, with folds-OFF failing.
+    The mask works — measured against a matched BODY_SABOTAGE_FOLDS=1 bake, the
+    normal map inside it changes by mean 13.98/255 while everything outside it
+    changes by 2.13/255, a 6.6x concentration, so the crease region is exactly
+    where this says it is. What does NOT work is the metric on top of it:
+
+        band-pass sigma   0     1     2     3     4     6     8
+        folds ON        6.28  2.83  1.58  1.29  1.17  1.04  0.97
+        folds OFF       6.07  2.73  1.53  1.28  1.16  1.06  1.00
+        drop             3.5%  3.2%  2.7%  1.3%  0.9% -2.7% -2.7%
+
+    and a difference-of-Gaussians band-pass over sigma pairs 2/10 through 6/24
+    tops out at 3.7%. Two reasons, both structural. A Laplacian measures
+    CURVATURE, and a 4 cm fabric fold is a smooth undulation whose curvature is
+    small next to a 1.5 cm woven grain no matter how deep the fold is — chasing
+    40% here means a suit of corrugated iron. And the mask's texels are thin
+    strips in a fragmented atlas, so at fold scale the baseline inside them is
+    dominated by build-invariant bake and island-seam structure, roughly 4x the
+    fold's own contribution, which dilutes any ratio taken against it.
+
+    So the enforcing gate moved to the GEOMETRY (fold_relief_gate below), where
+    the crease is measured directly and folds-off separates by an order of
+    magnitude. This function stays because the number above is the evidence for
+    that move, and because if the crease region ever stops being where the mask
+    says it is, the concentration ratio is what will show it.
+    """
+    tris = fold_region_mask(low)
+    lap, w, h = _load_normal_laplacian(out_dir, sigma=FOLD_SIGMA)
+    raw = _rasterize_uv(tris, w, h)
+    m = _erode(raw, FOLD_ERODE)[1:-1, 1:-1]
+    n = int(m.sum())
+    if os.environ.get('BODY_FOLD_DEBUG') == '1':
+        dbg = bpy.data.images.new('fold_mask', width=w, height=h)
+        px = np.zeros((h, w, 4), dtype=np.float32)
+        px[..., 0] = raw.astype(np.float32)
+        px[..., 1][1:-1, 1:-1] = m.astype(np.float32)
+        px[..., 3] = 1.0
+        dbg.pixels.foreach_set(px.ravel())
+        dbg.filepath_raw = os.path.join(out_dir, 'fold_mask.png')
+        dbg.file_format = 'PNG'
+        dbg.save()
+        log(f'BODY_FOLD_DEBUG: mask written to {dbg.filepath_raw} '
+            f'(R = raw, G = eroded)')
+    if n < 4000:
+        raise SystemExit(
+            f'[body] fold relief gate FAILED: the crease mask covers only '
+            f'{n} texels after erosion — a fold band was re-placed or a segment renamed')
+    v = float(np.abs(lap[m]).mean()) * 255.0
+    log(f'FOLD RELIEF: {v:.2f} mean|Laplacian|R over {n} crease texels '
+        f'(zones {"/".join(FOLD_MASK_ZONES)}, floor {FOLD_RELIEF_FLOOR})')
+    if SABOTAGE_FOLDS:
+        log('BODY_SABOTAGE_FOLDS=1: this is the NEGATIVE CONTROL reading — it '
+            'must sit below the floor above')
+        return v
+    if FOLD_RELIEF_FLOOR is not None and v < FOLD_RELIEF_FLOOR:
+        raise SystemExit(
+            f'[body] fold relief gate FAILED: {v:.2f} < {FOLD_RELIEF_FLOOR:.2f}'
+            f' — the creases flattened out of the bake')
+    return v
+
+
+# Ripple depth, peak-to-peak in mm, that each crease zone must show on the
+# displaced high-poly. Set on this build's measured numbers with margin — see
+# docs/OPUS-NOTES.md for the folds-on/folds-off table and the negative control.
+FOLD_RIPPLE_MIN_MM = 1.90      # measured: 2.31 mm shipped, 1.35 mm folds-OFF
+FOLD_RIPPLE_BIN = 0.004        # axial bin width in metres
+
+
+def _solve3(a, b):
+    """Gaussian elimination on a 3x3 normal-equation system."""
+    m = [list(a[i]) + [b[i]] for i in range(3)]
+    for c in range(3):
+        piv = max(range(c, 3), key=lambda r: abs(m[r][c]))
+        if abs(m[piv][c]) < 1e-18:
+            return [0.0, 0.0, 0.0]
+        m[c], m[piv] = m[piv], m[c]
+        for r in range(3):
+            if r == c:
+                continue
+            f = m[r][c] / m[c][c]
+            for k in range(c, 4):
+                m[r][k] -= f * m[c][k]
+    return [m[i][3] / m[i][i] for i in range(3)]
+
+
+def fold_ripple_report(high, tag):
+    """
+    Peak-to-peak axial ripple of each crease band, measured on the geometry.
+
+    The fold is a ring-shaped compression ridge, so it shows as an oscillation
+    of the segment's MEAN RADIUS along its axis: bin the band's vertices by
+    `along`, average the radius in each bin (which averages the weave and any
+    azimuthal asymmetry away), fit and remove the segment's own taper, and read
+    the peak-to-peak of what is left. A build with the folds switched off has
+    only the taper and a fraction of a millimetre of residual, so the two states
+    separate by an order of magnitude instead of the 3.5% the normal map gave.
+    """
+    owner = dominant_segments(high)
+    slices = limb_slice_centroids(high, owner,
+                                  ('upperLegL', 'lowerLegL', 'upperLegR',
+                                   'lowerLegR', 'upperArmL', 'lowerArmL',
+                                   'upperArmR', 'lowerArmR'))
+    prof = {}
+    for i, v in enumerate(high.data.vertices):
+        name = owner[i]
+        base = name[:-1] if name[-1] in 'LR' else name
+        bands = SUIT_FOLDS.get(base, ())
+        if not bands:
+            continue
+        nm, along, radial, out, front, local = segment_frame(v.co, name)
+        lx, ly, lz = local
+        # ONE AZIMUTH WINDOW, not the whole ring. The mean radius of a whole
+        # cross-section is only meaningful if the section is round and evenly
+        # sampled, and neither is true here: a limb's radius varies by
+        # centimetres between its anterior and outboard poles, so a bin that
+        # happens to hold more outboard vertices reads centimetres bigger for
+        # reasons that have nothing to do with cloth. Reading ONE narrow stripe
+        # down the segment removes that entirely — and the anterior pole also
+        # avoids the outboard panel seam and the blue stripe's relief.
+        if abs(lz) > SEGMENTS[name]['h'] * 0.51:
+            # `along` is CLAMPED to +-1, so every vertex beyond a segment's end
+            # keeps reading as its end and lands inside whichever band sits
+            # there. Without this the hip band swallowed 156 mm of leg.
+            continue
+        if nm == 'torso':
+            if front > 0:
+                continue                       # the lumbar band is the BACK
+            # THE FLANK, not the back pole. displace_suit suppresses the
+            # lumbar fold under the bib (a separate loose garment does not
+            # crease with the suit beneath it), and the bib's back panel covers
+            # the back pole out to |lat| = 0.10 m — so a window centred there
+            # measures the one place on the lower back that is deliberately
+            # smooth. The crease lives on the bare suit beside it.
+            dphi = math.atan2(abs(lx), -ly)
+            if not (0.85 < dphi < 1.25):
+                continue
+            r = math.hypot(lx, ly)
+        else:
+            # Azimuth AND radius about the limb's own quadratic axis (item
+            # 3 (d)), not about the segment centre: near a knee the two are a
+            # centimetre apart, which is enough to put the "anterior" window
+            # somewhere else entirely.
+            azim = limb_azim(lx, ly, v.co.z, name, slices)
+            dphi = math.atan2(math.sin(azim - math.pi / 2),
+                              math.cos(azim - math.pi / 2))
+            if abs(dphi) > 0.45:
+                continue
+            r = limb_radius(lx, ly, v.co.z, name, slices)
+        for (zone, a0, w, amp, cyc, fbias) in bands:
+            if zone not in FOLD_MASK_ZONES:
+                continue
+            if abs((along - a0) / w) >= FOLD_BAND_KEEP:
+                continue
+            key = (zone, name)
+            # BIN IN METRES. Binning on the dimensionless `along` at 0.002
+            # makes a 0.36 mm bin on a leg — finer than the vertex spacing, so
+            # most bins hold one or two vertices and the profile is sampling
+            # noise, not a profile.
+            b = int(round(lz / FOLD_RIPPLE_BIN))
+            st = prof.setdefault(key, {}).setdefault(b, [0.0, 0])
+            st[0] += r
+            st[1] += 1
+    out_rows = []
+    for (zone, name), bins in sorted(prof.items()):
+        pts = [(b * FOLD_RIPPLE_BIN, s[0] / s[1])
+               for b, s in sorted(bins.items()) if s[1] >= 6]
+        if len(pts) < 8:
+            continue
+        # Remove the segment's own shape. A straight line is NOT enough: a
+        # knee band sits on the anatomical bulge, and a linear detrend leaves
+        # 40 mm of thigh in the residual, which is what a fold-free build then
+        # scores too. A quadratic describes the limb over a 7 cm band, and the
+        # fold — two to three cycles across that band — survives it.
+        n = len(pts)
+        mx = sum(p[0] for p in pts) / n
+        cols = [[1.0, p[0] - mx, (p[0] - mx) ** 2] for p in pts]
+        ata = [[sum(c[i] * c[j] for c in cols) for j in range(3)]
+               for i in range(3)]
+        atb = [sum(c[i] * p[1] for c, p in zip(cols, pts)) for i in range(3)]
+        coef = _solve3(ata, atb)
+        res = [p[1] - sum(k * c[i] for i, k in enumerate(coef))
+               for c, p in zip(cols, pts)]
+        # RMS, NOT PEAK-TO-PEAK. p2p is the wrong statistic where anatomy is
+        # bigger than the fold: at the knee the residual is dominated by the
+        # patella bump, and a crease that lands in antiphase with it makes p2p
+        # go DOWN — measured, the folds-on shin read 11.98 mm against a
+        # folds-off 13.86. Uncorrelated signals add in quadrature, so an RMS
+        # can only rise when relief is added, whatever its phase.
+        rms = math.sqrt(sum(r * r for r in res) / n)
+        out_rows.append((zone, name, rms * 1000.0, n))
+    log(f'FOLD RIPPLE [{tag}]: ' + ', '.join(
+        f'{z}/{nm} {rms:.2f} mm ({n} bins)' for z, nm, rms, n in out_rows))
+    return out_rows
+
+
+def fold_ripple_gate(high):
+    """Every crease zone must actually crease. Negative control: folds OFF."""
+    rows = fold_ripple_report(high, 'high-poly')
+    if not rows:
+        raise SystemExit(
+            '[body] fold ripple gate FAILED: no crease band produced a profile '
+            '— a band was re-placed or a segment renamed')
+    mean_rms = sum(r[2] for r in rows) / len(rows)
+    worst = min(rows, key=lambda r: r[2])
+    zones = sorted({r[0] for r in rows})
+    if sorted(FOLD_MASK_ZONES) != zones:
+        raise SystemExit(
+            f'[body] fold ripple gate FAILED: measured zones {zones} are not '
+            f'the declared {sorted(FOLD_MASK_ZONES)}')
+    log(f'FOLD RIPPLE mean {mean_rms:.2f} mm over {len(rows)} bands, worst '
+        f'{worst[0]}/{worst[1]} {worst[2]:.2f} mm (floor {FOLD_RIPPLE_MIN_MM})')
+    if SABOTAGE_FOLDS:
+        log('BODY_SABOTAGE_FOLDS=1: NEGATIVE CONTROL — the worst zone above '
+            'must sit below the floor')
+        return mean_rms
+    if FOLD_RIPPLE_MIN_MM is not None and mean_rms < FOLD_RIPPLE_MIN_MM:
+        raise SystemExit(
+            f'[body] fold ripple gate FAILED: the crease bands carry only '
+            f'{mean_rms:.2f} mm RMS of relief (floor {FOLD_RIPPLE_MIN_MM:.2f} '
+            f'mm) — the suit stopped folding')
+    return mean_rms
 
 
 def main():
@@ -6573,6 +7674,7 @@ def main():
             f'from the baked albedo — the stripe is not landing on the legs '
             f'(paint azimuth or bake transfer)')
     suit_nm_variance_gate(low, out_dir)
+    fold_relief_instrument(low, out_dir)
 
     # Every build gate above has now measured the LOSSLESS bake. Only after
     # that does the delivery encoder run: it rewrites the three PNGs as WebP
@@ -6581,21 +7683,10 @@ def main():
     # the format choices and the measured numbers behind them; the athlete's
     # texture payload goes 8.1 MB -> ~1.0 MB, which is the author's "the skis
     # appear before the skier".
-    packed = pack_delivery_maps(out_dir)
-
     # The high-poly has done its job. Leaving it in would export a second body.
     bpy.data.objects.remove(high, do_unlink=True)
 
     equip = add_equipment()
-
-    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
-        json.dump({
-            'normal': 'assets/athlete_normal.webp',
-            'ao': 'assets/athlete_ao.webp',
-            'albedo': 'assets/athlete_albedo.webp',
-            'res': RES, 'stats': stats, 'delivery': packed,
-            'faceForward': face['faceForward'],
-        }, f, indent=1)
 
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.
@@ -6613,6 +7704,25 @@ def main():
     else:
         smooth_blend_rings(low)
     weight_seam_gate(low, 'shipped skin')
+
+    # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
+    # position is the whole point.  add_spine_chain and smooth_blend_rings both
+    # move ownership — measured, the arm's share of the low-poly went from 5254
+    # triangles at bake time to 5738 after the rings were relaxed — so a mask
+    # built at bake time is a mask of a skin that is not the one shipped, and
+    # body.spec.js reads the shipped one.  Everything above has already
+    # measured the LOSSLESS bake; the delivery encode and the maps manifest
+    # follow the repair, so the WebP the browser downloads is the repaired map.
+    stats['stripe_leak'] = round(stripe_texel_ownership(low, out_dir), 5)
+    packed = pack_delivery_maps(out_dir)
+    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
+        json.dump({
+            'normal': 'assets/athlete_normal.webp',
+            'ao': 'assets/athlete_ao.webp',
+            'albedo': 'assets/athlete_albedo.webp',
+            'res': RES, 'stats': stats, 'delivery': packed,
+            'faceForward': face['faceForward'],
+        }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
