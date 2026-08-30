@@ -6777,7 +6777,11 @@ void main(void) {
     // (corridor, skirt, backdrop) — the corridor centreline profile ignored
     // the flanks and the knoll — and (2) runs on every rendered frame via
     // onBeforeRender, so paused/replay/menu states are covered too.
-    const _camGroundRe = /^(terrainCorridor|wUpperMtn|terrainSkirt)/;
+    // wUpperMtn is the steep paper-mountain BACKDROP behind the start: a ray
+    // hitting it reports a "ground" far above the eye of a perfectly fine
+    // camera (the default behind-the-athlete view), so it is not a clamp
+    // surface — the corridor + skirt are, with the physics profile as fallback.
+    const _camGroundRe = /^(terrainCorridor|terrainSkirt)/;
     function _groundUnderCamera(cp) {
         try {
             if (typeof scene.pickWithRay === 'function' && BABYLON.Ray) {
@@ -7056,18 +7060,6 @@ void main(void) {
             matLanded = false; matLandSpringY = 0; matLandSpringVY = 0;
             state.crashAngle  = 0.0;
             state.stopped     = false;
-            // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
-            // doesn't seem to work". The state DID reset — but free-look was
-            // active after the crash, so the follow block stood down and the
-            // camera stayed parked at the crash site looking at empty snow.
-            // Re-frame behind the athlete once the reset has finished.
-            setTimeout(() => {
-                try {
-                    camera.target.set(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0, state.rootY, state.posZ);
-                    camera.alpha = Math.PI * 1.5; camera.beta = CAM_BETA_BACK; camera.radius = 10;
-                    _camTargetAlpha = null;
-                } catch (err) { /* never let a camera nicety break the reset */ }
-            }, 0);
             state.perFlipTwists   = [];
             state.lastFlipInt     = 0;
             state.spinAtFlipStart = 0.0;
@@ -7148,6 +7140,22 @@ void main(void) {
             }
 
             readyState = true; readyTurnT = 0.0;
+            // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
+            // doesn't seem to work". The state DID reset — but free-look was
+            // active after the crash, so the follow block stood down and the
+            // camera stayed parked at the crash site looking at empty snow.
+            // Re-frame behind the athlete, synchronously, as the last step of
+            // the reset (anything that places the camera after R keeps it).
+            try {
+                // state.rootY is only re-derived from the terrain on the next
+                // update tick (it still holds the crash-site value here — measured
+                // -2.2 m vs a 6.7 m start), so take the root height from the
+                // profile directly.
+                camera.target.set(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0,
+                    _poolDiveMode ? state.rootY : terrainRootY(state.posZ), state.posZ);
+                camera.alpha = Math.PI * 1.5; camera.beta = CAM_BETA_BACK; camera.radius = 10;
+                _camTargetAlpha = null;
+            } catch (err) { /* never let a camera nicety break the reset */ }
             return;
         }
         if (_keyIsLetter(e, 'c')) {

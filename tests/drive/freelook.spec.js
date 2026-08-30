@@ -176,8 +176,8 @@ test('free-look: after a crash and an orbit, R re-frames the athlete from behind
     const before = await page.evaluate(() => window._freeLookProbe());
     await page.keyboard.press('r');              // …then resets to the top
     await page.waitForTimeout(800);
-    const p = await page.evaluate(() => window._freeLookProbe());
-    console.log('R re-frame', JSON.stringify({ before: { targetZ: before.targetZ, rootZ: before.rootZ }, after: { targetZ: p.targetZ, rootZ: p.rootZ, camZ: p.camZ } }));
+    const p = await page.evaluate(() => { const c = window._freeLookCam(); const g = window._camGroundUnder(); return Object.assign(window._freeLookProbe(), { beta: c.beta, radius: c.radius, camY: c.position.y, targetY: c.target.y, groundUnderCam: g.ground }); });
+    console.log('R re-frame', JSON.stringify({ before: { targetZ: before.targetZ, rootZ: before.rootZ }, after: { targetZ: p.targetZ, rootZ: p.rootZ, camZ: p.camZ, beta: +p.beta.toFixed(3), radius: p.radius, camY: +p.camY.toFixed(2), targetY: +p.targetY.toFixed(2), ground: +p.groundUnderCam.toFixed(2) } }));
     expect(Math.abs(p.targetZ - p.rootZ)).toBeLessThan(0.5);   // camera target is the athlete again
     expect(p.camZ).toBeLessThan(p.rootZ - 3);                   // and the eye is behind (uphill of) it
 });
