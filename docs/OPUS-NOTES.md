@@ -796,6 +796,439 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 24 (2026-08-30, 05:5x-07:0x)
+
+Merged `render-realism-glm` first (4 commits: GLM's snowing flatness pass).
+Both conflicts were version counters where this lane is ahead — ASSET_V 53 vs
+51, `game.js?v=` 49 vs 48 — so ours stood. Committed `698c3d0` on unit 81/81 +
+golden 30/30 before touching anything else.
+
+### Item 5 — THE REACH CEILING LANDS (`ae97fd8`, `08dd4ed`)
+
+Session 23's stated next move was "the residual is the ramp BOUNDARY at
+`LOCALITY_MAX_R`". **That was wrong, and measuring it is what unblocked the
+item.** Three corrections, in the order they were found.
+
+#### 1. The residual hinge was not the rescue branch, and not the ramp's end
+
+New `_rescue_boundary_report` labels every hot seam edge by whether its
+endpoints went through the rescue. On the capped build it reads:
+
+    12 hot edges — 0 straddle the rescue branch, 0 both-rescued, 12 both-ramped
+
+All twelve at the left armpit. So the rescue was exonerated outright, and the
+cut was in the ordinary ramped path. The cause is the pipeline ORDER:
+`localise -> relax -> localise`. The relax diffuses weight back out past a
+bone's reach; the localise cuts it off again inside a single ~25 mm low-poly
+edge; and the last cut has nothing after it to smooth it. A 0 -> 1 transition
+compressed into one edge reads as a hinge whether or not the underlying field
+is continuous — smoothstep is C1 in POSITION, but the mesh only samples it
+about twice.
+
+`smooth_blend_rings` now takes the ramp as a CONSTRAINT (`locality=` from the
+new `_locality_factors`) and projects onto it after every iteration, instead of
+being followed by a cut. Relax-then-ramp eight times rather than eight relaxes
+then one ramp. **Both-ramped hot edges 11 -> 0.**
+
+Two bugs were found inside that projection and are worth recording because both
+were invisible to the seam number alone: the first cut ran the rescue over the
+WHOLE weight vector, which dropped the non-bone `reduce` mask (`reduce` drives
+the Decimate modifier) and put a 1.58 hinge at `[reduce|lowerLegR]`; and
+`_locality_factors` initially covered only the bones a vertex already had, so
+weight the relax diffused onto a NEW bone was unconstrained. The projection now
+touches the bone block only, and the field covers every joint.
+
+#### 2. The rescue kept the FAR bones
+
+Coverage measured over the whole mesh: **only 2 of 8995 vertices have no bone
+within 1.70 x reach**, yet 935 were landing in the rescue. So the near bone
+nearly always exists and simply is not in the vertex's weight list — the BIND
+put that skin on the wrong bones. Both previous rescues kept those far bones
+(session 23's `min()` winner-take-all, then its soft `(e_min/e)^4` share-out),
+which is why the locality gate could never have read an honest zero: every
+rescued weight is beyond reach by construction.
+
+The rescue now rebuilds from the bones that ARE near, kernel `f(e)/e^4`, which
+vanishes exactly where the ramp does — so a bone entering or leaving the
+candidate set does so continuously and no ordering can step.
+
+#### 3. 1.00 x the cross-section is below what the geometry allows
+
+The remaining hot edges were all at the ankle. Probing them settles it:
+
+    v7510 co=(-0.119,-0.161,-0.800)  W0 = lowerLegL 0.937, upperLegL 0.063
+          nearest e: upperLegL 1.62, lowerLegL 1.73
+
+Ordinary calf skin, 94% on its own bone, sitting at e = 1.61-1.76 with
+`upperLegL` TIED at the same distance and both straddling the 1.70 cutoff. A
+millimetre of position then decides which bone a vertex keeps and neighbours
+land on opposite sides. That is the suit and boot girth passes having made the
+calf thicker than the shin BOX, not mis-weighting. Min-over-bones excess reads
+p99 1.508 / p100 1.713 at cap 1.00, so the ceiling has to clear ~1.71/1.25.
+**`LOCALITY_REACH_CAP = 1.40`.**
+
+The cross-section is now a FLOOR as well, for the same reason it is a ceiling:
+`spine_01` dominates almost nothing, self-certifies at 78 mm against a 175 mm
+torso cross-section, and then fails its own pelvis skin at 1.84 x reach. Skin
+within one cross-section of a segment is that segment's, whoever dominates it.
+
+#### 4. The forearm's segment stopped at the wrist (`08dd4ed`)
+
+Caught by `rig.spec.js`, not by a build gate: hand/forearm ratio **0.468**
+(gate >= 0.65) and the glove no longer clearing the leg. The forearm bone
+drives the hand and there is no hand bone, but `seg_ends('lowerArmL')` runs
+elbow to WRIST — so hand skin measures t = 1.75 of that segment, **187 mm past
+the wrist, with the median already at 1.32**. The ceiling ramped the whole hand
+off the forearm, and the geometric rescue, in a rest pose where the hands hang
+beside the thighs, handed the glove to `upperLeg`. The seam log had been saying
+so in plain sight: worst edges `[upperLegL|lowerArmL]` at (-0.154,+0.003,-0.525).
+
+`FOREARM_HAND_T = 1.80` runs the segment elbow-to-fingertips. This is a model
+correction that was always owed. It also makes the rescue unnecessary:
+**368 -> 0 vertices rescued**, so the ramp alone carries the repair and the
+rescue branch is unreachable on the shipped asset.
+
+#### Shipped numbers
+
+| | before (self-certified) | shipped |
+|---|---|---|
+| reach lowerArm | 180 / 179 mm | **85 / 82** |
+| reach upperArm | 146 / 148 mm | **109** |
+| reach lowerLeg | 155 / 152 mm | **129** |
+| reach spine_01 | 78 mm | **175** |
+| LOCALITY offenders | 0 *of its own metric* | **0 of the honest one** |
+| d/reach p99 / max | — | 1.34 / 1.58 |
+| WEIGHTSEAM max / hot | 0.779 / 0 | **0.892 / 0** (limit 1.10 / 6) |
+| WEIGHTSEAM after helpers | — | 0.925 / 0 |
+| weight units off distant bones | 94 | 49 |
+
+**NEGATIVE CONTROL `BODY_LOCALITY_NOCAP=1`** restores the self-certifying
+reach: **310 offenders, worst `lowerArmL` w=1.000 at 2.14 x reach.** This is a
+real control now, not a second opinion from the same witness —
+`weight_locality_report`'s reference is ALWAYS the clamped reach, whatever the
+repair was allowed to use (`_locality_frame(..., honest=True)`). Under the old
+arrangement both sides of the argument moved together and the gate read zero on
+skin carrying 0.68 of a belly vertex on `upperArmR`.
+
+#### New tooling
+
+`BODY_WEIGHT_DUMP=<path>` writes the whole weight problem (positions, edges,
+weights, segment frames) to JSON. The locality and relax passes are pure
+functions of those, but they run AFTER the bake, so every experiment on them
+otherwise costs a full build. Off by default, nothing downstream reads it.
+The replay harness lives in `~/aerial-agents/scratch/opus/replay.py` (scratch,
+not in the tree) — **and it does NOT reproduce the build's absolute numbers, so
+it was used only to find candidates, never to certify one.** Every number above
+is from a real build.
+
+### Verification
+
+    build   rc=0, 2048/96, every gate green
+    unit    81/81      golden 30/30 (no display node changed, no re-capture)
+    drive   rig 11/11, spine + chain + crash-ragdoll 27/27, body 4/4
+    ASSET_V 53 -> 54, game.js?v=50, preloads ?v=54
+
+### Open at the end of session 24
+
+- The prize this bought is not yet MEASURED: the flight-tuck strain that
+  session 23 recorded at p99 2.613 / max 10.345 (the shard fan over the hip and
+  lower back) should now be much lower, because `upperArmR` can no longer hold
+  0.68 of a lower-belly vertex. **First thing next session: re-run the flight
+  tuck probe and, if the number has come down, set the honest tuck strain gate
+  the brief's item 5 asks for.** I did not get to it this session.
+- Then, in the reviewer's order: the smoothed suit shell (author #7 — still the
+  author's most visible open item), panels / collar / cuffs, the THUMB, and the
+  UV unwrap + arm stripe last (in TEXTURE space, per the 05:10 ruling).
+- `reclaim_chest_wall` still runs on the R side only (`upperArmR` hard-coded).
+  Carried from session 23, still not acted on.
+- The paint-lattice ceiling from session 22 still governs any feature under
+  ~10 mm.
+
+### For the reviewer (session 24)
+
+1. **Session 23's "the residual is the ramp boundary" was wrong**, and the
+   instrumentation that says so is in the tree and runs every build. The
+   self-certification you were asked to confirm is now fixed on BOTH sides (a
+   ceiling and a floor), and the gate's reference is independent of the repair,
+   so the negative control is real.
+2. `LOCALITY_REACH_CAP = 1.40` is calibrated on a measurement (calf skin at
+   e = 1.61-1.76), not chosen to make a red go green — at 1.00 the seam gate
+   passes too (max 0.886) and it is the LOCALITY gate that fails there, on
+   legitimate calf skin. Both numbers are above.
+3. No physics changes, no golden rebaselines, no gate loosened. No asset gate
+   was touched; the two rig hand gates that went red were fixed at the cause.
+
+## Session 23 (2026-08-30, 06:3x-08:0x)
+
+Merged `render-realism-glm` first (1 commit, docs only). Reviewer's 05:10 ruling
+on the brief puts the **flight tuck re-check** first, and that is this session.
+
+### Item 5 — the flight-tuck re-check: the tuck POSE is fixed, the SKIN is not
+
+Regenerated the pose shots and looked at `shots/pose_tuck_side.png`. Against
+session 3's reading of the same shot ("the whole BACK has become one blank white
+sail ... the NECK is a long bare skin tube ... the arms are absorbed into the
+mass under the chest") the pose itself is now **right**: back a continuous
+curve, head up on a short neck, both arms visible with the hands down at the
+shins, knees to the chest. The spine chain, the closed hip gap and the
+half-angle helpers did their job.
+
+What is left is a **fan of long silvery shards over the hip and lower back** —
+thin stretched triangles radiating from the waist. `spine.spec.js` is green
+(25/25) because it gates strain at NEUTRAL only; the flight tuck reads
+`p99 2.613, p999 5.759, max 10.345` (LBSDOSE).
+
+### The root cause, and it is a defect in the METRIC as much as in the skin
+
+The strain buckets by rest-edge length say where to look:
+
+| rest edge | p99 | max |
+|---|---|---|
+| <= 2 mm | 1.14 | 1.43 |
+| <= 5 mm | 1.10 | 3.47 |
+| **>= 10 mm** | **1.65** | **12.93** |
+
+A browser probe over every edge with strain > 3 at tuck = 1 (322 edges) with the
+full 4-influence weight vector of both endpoints:
+
+```
+s=10.34 restMm 6.9  upperArmR:0.68, spine_02:0.31   at (+0.081,-0.030,-0.125)
+s= 6.82 restMm 39.7 upperLegR:0.67, spine_02:0.33   at (+0.158,-0.153,-0.044)
+s= 6.64 restMm 22.1 spine_02:0.75, upperLegR:0.25   at (+0.117,-0.075,+0.041)
+s= 6.46 restMm 12.4 spine_02:0.53, upperArmL:0.44   at (-0.131,-0.053,-0.098)
+```
+
+**`upperArmR` owns 0.68 of a vertex on the lower belly.** The arm bind axis is
+at x = +/-0.175 running down the side; that vertex is **150 mm** from it, 2.7x
+the upper arm's own radius. In the flight tuck the arm swings ~150 deg and takes
+the belly with it. Histogram of the 322: `spine_02|spine_02` 116 (both endpoints
+trunk-dominant but with arm/leg secondaries 0.18-0.44 apart), `spine_02|upperArm*`
+38, `upperLeg*` 22.
+
+**And `weight_locality_gate` reads 0 offenders on exactly this skin.** Its
+quantity is `d / reach`, where a bone's `reach` is *the p98 distance of the skin
+it already drives at >= 0.5*. That is **self-certifying**: skin a bone has
+wrongly grabbed sets the reach that then declares the grab local, and the pass
+converges on a fixed point around its own bleed. New `_locality_reach_log`
+prints each bone's self-certified reach beside its **own cross-section**
+half-diagonal, which is a property of the box the segment was built from and
+cannot be inflated by mis-weighting:
+
+| bone | self-certified reach | own cross-section | ratio |
+|---|---|---|---|
+| lowerArmL / R | 180 / 179 mm | 64 mm | **2.81x** |
+| upperArmL / R | 146 / 148 mm | 78 mm | **1.90x** |
+| lowerLegL / R | 155 / 152 mm | 92 mm | 1.68x |
+| upperLegL / R | 154 / 152 mm | 141 mm | 1.09x |
+| spine_02 (torso) | 190 mm | 175 mm | 1.09x |
+| head | 132 mm | 163 mm | 0.81x |
+
+The arms are the outliers by a factor of two, and the arms are the bones whose
+swing tears the tuck. That is the whole diagnosis, and it is independent of the
+strain probe that found it.
+
+### The fix is written but does NOT ship, and the reason is measured
+
+`LOCALITY_REACH_CAP` caps reach at the segment's own cross-section
+(`BODY_LOCALITY_CAP=1`); `BODY_LOCALITY_NOCAP=1` forces the old reach so the two
+can be measured in one session. With the cap on, LOCALITY goes 24 -> 1244
+offenders before the repair and `localise_weights` takes off **1237 weight
+units** instead of 94 — it sees the bleed for the first time. But it then fails
+`weight_seam_gate` at **max 1.632** (limit 1.10, 24 hot edges), and the cause is
+specific: capping pushes **1105 vertices** through the pass's `tot < 0.20`
+rescue branch, which assigns a **hard weight of 1.0** to one bone. A rigid
+island beside blended skin is precisely the hinge that gate exists to catch.
+Widening the ramp (RAMP0 1.25 -> 0.90) makes it worse, not better: 1659 units
+removed, seam max 1.643. The two `localise -> relax -> localise` passes also stop
+converging (1237 then 1026 units) — with a tight cap the relax diffuses weight
+back into the ramp band as fast as the localise takes it out.
+
+**So the rescue branch has to become a soft renormalisation onto the nearest
+segments before the ceiling can land.** Nothing was loosened and no fudged
+constant was shipped to make a red go green: the ceiling is in the tree, off,
+with both controls and the numbers above.
+
+### The soft rescue, written and measured — half the hinge, not all of it
+
+The replacement is continuous in position: each bone keeps its original weight
+scaled by `(e_min / e) ** RESCUE_P` (P = 4), so the nearest bone still
+dominates, a bone twice as far contributes 2^-4, and nothing steps as the
+ordering changes — at a crossing the two terms are equal and the blend passes
+through smoothly. The old `min()` winner-take-all was discontinuous exactly
+there: two neighbouring vertices whose excesses cross swapped bones outright and
+the hinge landed between them.
+
+Measured with the cap on, everything else equal:
+
+| | hard rescue | soft rescue | limit |
+|---|---|---|---|
+| WEIGHTSEAM max at the shipped skin | 1.632 | **1.382** | 1.10 |
+| hot edges over 1.0 | 24 | **12** | 6 |
+
+Half the defect, and the right half — but still red, so the cap stays off. The
+residual is not the rescue branch: it is the ramp BOUNDARY itself at
+`LOCALITY_MAX_R`, where a weight goes to zero while its neighbour's does not.
+The next move is to make the ramp end at a bone's own reach rather than at a
+fixed multiple of it, or to re-relax only the ramp band. With the cap OFF the
+pass reports **0 vertices reassigned**, so this branch is unreachable on the
+shipped asset and the change is inert there by construction.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96 (the change is log-only;
+            the rebuilt assets differed from the shipped ones by 10 bytes of
+            WebP bake noise, so they were restored and ASSET_V is NOT bumped)
+    unit    81/81      golden 30/30 (no display node changed, no re-capture)
+    drive   spine 25/25, chain 11/11, pose-shots 1/1 before the change; the
+            change cannot reach the shipped asset (cap off by default)
+
+### Open at the end of session 23
+
+- **First item next session: the last 1.382 -> 1.10 of seam hinge, then turn
+  `LOCALITY_REACH_CAP` on.** The soft rescue landed half of it; the residual is
+  the ramp boundary at `LOCALITY_MAX_R`, not the rescue. The measured prize is
+  the shard fan in the tuck and a flight-tuck strain gate that can finally be
+  set at an honest number (today it would have to be p999 5.76).
+- Then, in the reviewer's order: the smoothed suit shell (author #7 — still the
+  author's most visible open item), panels / collar / cuffs, the THUMB, and the
+  UV unwrap + arm stripe last (in TEXTURE space, per the 05:10 ruling).
+- `reclaim_chest_wall` runs on the **R side only** (`upperArmR` hard-coded).
+  Noticed while reading it, not acted on; the L-side chest wall has never had
+  the same repair, and `upperArmL` measures the same 1.90x over-reach as R.
+- The paint-lattice ceiling from session 22 still governs any feature under
+  ~10 mm.
+
+### For the reviewer (session 23)
+
+1. **The weight-locality gate has been self-certifying since session 18.** Its
+   "24 offenders -> 0" was true of its own metric and false of the skin. The
+   honest reference is in the tree and logged every build; please confirm the
+   plan above (soft rescue, then cap) rather than any loosening of the seam gate.
+2. No physics changes, no golden rebaselines, no gate loosened, no asset change.
+
+## Session 22 (2026-08-30, 05:0x-06:3x)
+
+Merged `render-realism-glm` first (9 commits: GLM's iter 127-129 crash-determinism
+parking, the day-time Snowing mode and its spec). Clean auto-merge, unit 81/81 +
+golden 30/30 on it before going further (`d719534`).
+
+### Item 3 — THE BIB BACK PLATE. Commits `41d641b`, `2bb164b`
+
+The 03:05 ruling asks for the back plate laid out exactly like the front, with
+≥ 10 % margins each side, gated on the horizontal ink profile. Session 21
+refused to lay it out against session 19's instrument, having just shown that
+instrument to be too thin. This session built the replacement and then found
+the defect was neither of the two things three sessions had called it.
+
+**The instrument: `_rect_plate`.** A fixed 96×64 grid in PATCH space,
+rasterised from the same low triangles with the atlas UV interpolated per cell
+and the baked albedo fetched there. Two differences from the point sampler
+carry the whole result:
+
+- **partial triangles are CLIPPED, not dropped.** The old test threw away
+  every triangle with a corner outside the plate — the entire border ring — so
+  the sampled region was the plate's *interior*, its extent set by wherever the
+  triangulation happened to fall. "Ink hard against the plate edge" could have
+  been, and was, an artefact of a sampled window that is not the plate. Patch
+  coordinates are affine in the triangle, so a corner outside [0,1]² is
+  interpolated through perfectly well; only the CELLS outside are dropped.
+- **the grid is the plate**, so an empty bucket is visibly empty instead of
+  silently renormalised. 96/96 columns covered on both faces, against ~1.2
+  samples per cell and whole empty columns before.
+
+**THE FINDING, and it retires three sessions of verdicts:**
+
+> Both plates carry a correctly-oriented "30". Neither is mirrored and neither
+> is edge-clipped. What differs is **STROKE WIDTH** — the front's vertical
+> stems render ~5 of 96 columns, the back's ~1.
+
+**The cause is a units bug in `_GLYPH_RECTS`.** The rects are normalised to
+[0,1] in BOTH axes of a cell measuring 5.6 × 12.3 cm, so `0.16` meant a
+19.6 mm horizontal bar but a 9.0 mm vertical stem. The paint is per-VERTEX on
+the high poly and then baked, so the plate has the torso lattice's resolution
+— measured here for the first time (new `plate paint` instrument):
+
+| face | plate verts | patch-u vertex gap median | p90 | p90 in mm |
+|---|---|---|---|---|
+| front | 892 | 0.0052 | 0.0478 | 7.2 |
+| back | 679 | 0.0036 | **0.0641** | **9.6** |
+
+The bars sat at twice the gap and always resolved. The stems sat AT it and
+survived on the front only by the lattice's phase. **Nothing about U, the bake
+or the atlas was ever wrong** — session 21's equal texel densities (83.0 vs
+82.9 texels/cm²) were right, and they pointed here.
+
+**The fix**: stems as thick in METRES as the bars, and the pair inset by
+`NUM_MARGIN = 0.10` so the ruling's margins hold identically on both faces.
+Shipped at stems 0.25 of cell width / bars 0.14 of cell height = 14.1 and
+15.9 mm, both ~1.5× the back's 9.6 mm gap. Ink band narrowed 0.24–0.76 →
+0.27–0.75 so the digit aspect stays a numeral's: 5.6 × 11.4 cm, aspect 0.497
+in the 0.45–0.75 gate.
+
+**The gate the ruling specifies — `_bib_layout_gate`:**
+
+| | shipped | negative control `BODY_SABOTAGE_BIBLAYOUT=1` | gate |
+|---|---|---|---|
+| ink in the outer 1/12 of the plate, front | **0.000** | 0.092 | ≤ 0.02 |
+| ink in the outer 1/12 of the plate, back | **0.000** | 0.081 | ≤ 0.02 |
+| back-vs-front column profile L1 | **0.232** | 0.502 | ≤ 0.40 |
+| back-vs-MIRRORED-front L1 | 0.426 | 0.496 | must exceed the row above |
+
+The negative control restores the pre-session-22 layout exactly and fails all
+three. Note its last row: **the old back plate matched the MIRRORED front
+marginally better than the front (0.496 vs 0.502)** — which is precisely the
+reading that produced "the back is mirrored" three times.
+`bib_orientation_report`'s DEFECT line clears on its own.
+
+### Two reds the first commit caused, and the A/B that pinned each
+
+**(1) `body.spec.js` front-minus-back torso blue 0.028 against its 0.03
+floor.** Checking out `HEAD~1`'s assets and re-running the same test is what
+pinned it to the commit rather than the merge: **0.070 / 0.015 before,
+0.062 / 0.034 after**. That gate calls a torso texel blue at `b - r > 0.15`
+in the SHIPPED sRGB atlas, and `NUM_INK` (0.07, 0.10, 0.18) linear encodes to
+b − r = **0.174** — every numeral texel was being counted as competition-bib
+blue. Harmless while the stems were 9 mm and half of them dissolved; resolving
+them doubled the back's blue. The bib is what that test is about and the
+number is not, and `reference/images/aerial_suit.png` has black numerals, so
+the ink is now near-black (0.05, 0.05, 0.06), b − r = 0.023 in sRGB.
+**front 0.070 → 0.040, back 0.015 → 0.004, margin 0.036 > 0.03.**
+
+**(2) then `bib-number.spec`'s dark-slab ceiling, front navyFrac 0.2540
+against < 0.25.** The 0.30/0.16 table draws a genuinely legible "30", but the
+gate asks whether the plate reads as a slab and 0.254 is its answer, so the
+STROKES came down and the gate did not: **navyFrac front 0.2540 → 0.2134,
+back 0.2008 → 0.1711** (band 0.02–0.25).
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96
+    unit    81/81      golden 30/30 (no display node changed; no re-capture)
+    drive   body 4/4, bib-number 1/1, rig 11/11, spine + chain + ready-stance 15/15
+            ATHLETE WIRE total 1 817 213 B (budget 2.5 MB maps / 3 MB athlete)
+
+`ASSET_V` 52 → 53, `game.js?v=` 48 → 49, preload hrefs `?v=53`.
+
+### Open at the end of session 22
+
+- **The paint lattice is now a known, measured ceiling on ALL suit detail**, not
+  just the bib: any painted feature narrower than ~10 mm is at or under the
+  high-poly vertex gap on the back of the torso and will render as the bib
+  stems did. Worth carrying into the panels/collar/cuffs work — a 3 cm collar
+  and a 5 cm stripe are safe, a seam line is not, and seams should stay in the
+  normal map where they already are.
+- Carried, in the reviewer's order: the flight-tuck re-check; the smoothed suit
+  shell (author #7 — still the author's most visible open item); panels /
+  collar / cuffs; the THUMB as its own finger group; the UV unwrap + arm stripe
+  last.
+- The residual strain tail is item 3 bake geometry on two independent
+  measurements (session 21): the crotch bridge face and the armpit band.
+- Not re-run this session: `crash-ragdoll.spec.js` (green on this tree in
+  session 20/GLM's iter 128 recorded 5/5; nothing in these commits reaches the
+  crash path) and the shot regeneration — the bib change is visible in the
+  rectified ASCII dumps (`BODY_BIB_ASCII=1`), which is a denser read of the
+  plates than any shot.
+
 ## Session 21 (2026-08-30, 04:0x-05:0x)
 
 Merged `render-realism-glm` first (2 commits, no conflicts; GLM's iter-126 PBD

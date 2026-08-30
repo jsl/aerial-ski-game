@@ -2235,7 +2235,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=54';   // 54: merge — GLM 131 snowing flatness pass + Opus shoulder/elbow helpers; bumped past both sides
+    const ASSET_V = '?v=56';   // 56: merge — camera R re-frame + hard lock (reviewer), Opus sessions 22-24, GLM 132-134
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive

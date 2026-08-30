@@ -130,6 +130,10 @@ SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
 # Negative control for the weight-LOCALITY gate: skip localise_weights, so the
 # gate measures the skin that put upperLeg weight on the ribcage.
 SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
+# NEGATIVE CONTROL for the reach ceiling (see LOCALITY_REACH_CAP): forces the
+# old self-certifying reach, where the skin a bone wrongly grabbed sets the
+# reach that then declares the grab local. Numbers in docs/OPUS-NOTES.md.
+LOCALITY_NOCAP = os.environ.get('BODY_LOCALITY_NOCAP') == '1'
 # Negative control for the bib-number ORIENTATION gate: mirrors the BACK
 # plate's reading direction. The gate must reject it.
 SABOTAGE_BIBMIRROR = os.environ.get('BODY_SABOTAGE_BIBMIRROR') == '1'
@@ -957,8 +961,23 @@ BLEND_RING_RATE = 0.5
 BLEND_RING_FALLOFF = (1.00, 0.78, 0.52, 0.28, 0.10)
 
 
-def smooth_blend_rings(obj):
-    """Spread each ownership seam across >= 4 rings of vertices."""
+def smooth_blend_rings(obj, locality=None):
+    """
+    Spread each ownership seam across >= 4 rings of vertices.
+
+    With `locality` (the field from `_locality_factors`) the smoothing is
+    PROJECTED: every iteration is relax-then-ramp rather than eight relaxes
+    followed by one ramp. That ordering is the whole fix for the residual
+    hinge. Run in sequence the two passes undo each other — the relax diffuses
+    weight back out past a bone's reach and the localise cuts it off again in
+    one edge, so the last cut always lands unsmoothed, and the transition from
+    full weight to none has to happen inside a single ~25 mm low-poly edge
+    (measured: 12 hot edges at the left armpit, all of them both-ramped, none
+    straddling the rescue branch). Interleaved, the ramp is a constraint the
+    diffusion equilibrates against instead of a cut applied after it, and the
+    fixed point is a field that is smooth ACROSS the boundary and still zero
+    beyond it.
+    """
     ng = len(obj.vertex_groups)
     names = {g.index: g.name for g in obj.vertex_groups}
     W = _vertex_weights(obj, cap=ng)          # full vectors while smoothing
@@ -1029,6 +1048,35 @@ def smooth_blend_rings(obj):
                 val = (1.0 - a) * cur.get(k, 0.0) + a * (acc.get(k, 0.0) / n)
                 if val > 1e-6:
                     new[k] = val
+            if locality is not None:
+                # ONLY the bone block. The mesh also carries mask groups that
+                # are not bones — `reduce` drives the Decimate modifier — and
+                # the first cut of this projection ran the rescue over the
+                # whole vector, which DROPPED that mask and put a 1.58 hinge at
+                # [reduce|lowerLegR]. The ramp changes how a vertex's bone
+                # weight is DISTRIBUTED, never how much of it there is (the
+                # write-back renormalises regardless), so the block keeps its
+                # own mass and everything else is left alone.
+                fev = locality[v]
+                jw = {k: w for k, w in new.items() if k in fev}
+                s_in = sum(jw.values())
+                if s_in > 1e-9:
+                    # NORMALISE the bone block before ramping it. Inside the
+                    # relax the vector carries the mask groups too and is
+                    # normalised as a whole, so a vertex whose `reduce` mask
+                    # holds 0.4 has a bone block summing to 0.6 — and the
+                    # rescue's `tot < RESCUE_TOT_LO` test, which is calibrated
+                    # on a block that sums to 1, then fires on skin the ramp
+                    # barely touched. That is what put the projected relax
+                    # BEHIND the sequenced order on its first build (seam max
+                    # 1.438 against 1.382) while the same algebra replayed on
+                    # raw Blender weights read 0.883.
+                    jn = {k: w / s_in for k, w in jw.items()}
+                    jw2, _, _ = _apply_locality(jn, fev)
+                    s_out = sum(jw2.values())
+                    if s_out > 1e-9:
+                        new = {k: w for k, w in new.items() if k not in fev}
+                        new.update({k: w * s_in / s_out for k, w in jw2.items()})
             tot = sum(new.values())
             nxtW[v] = {k: w / tot for k, w in new.items()} if tot > 1e-9 else cur
         for v in range(nv):
@@ -1093,6 +1141,13 @@ LOCALITY_MAX_R = 1.70      # d/reach above which a weight is removed outright
 LOCALITY_RAMP0 = 1.25      # d/reach below which a weight is left alone
 
 
+# The forearm's locality segment runs past the wrist to the fingertips, because
+# the forearm bone is what drives the hand. 1.80 covers the measured t = 1.75 of
+# hand skin with a small margin.
+FOREARM_NAMES = ('lowerArmL', 'lowerArmR')
+FOREARM_HAND_T = 1.80
+
+
 def _group_segment(name):
     """
     (head, tail) in the driver frame for any skin group, spine included.
@@ -1114,12 +1169,183 @@ def _group_segment(name):
         # are — hip blend, not a bone driving skin half a body away.
         ea, eb = (_group_segment(n) for n in JOINT_HELPERS[name])
         return ((ea[0] + ea[1]) / 2.0, (eb[0] + eb[1]) / 2.0)
+    if name in FOREARM_NAMES:
+        # THE FOREARM DRIVES THE HAND, and there is no hand bone — but its
+        # SEGMENT stops at the wrist, so every hand vertex reads as far from
+        # its own bone. Measured on this build: skin weighted >= 0.5 to
+        # `lowerArmL` runs to t = 1.75 of the elbow-wrist segment, 187 mm past
+        # the wrist, with the MEDIAN already at 1.32. Left uncorrected, the
+        # reach ceiling ramps the whole hand off the forearm and the rescue —
+        # which is geometric, in a rest pose where the hands hang beside the
+        # thighs — hands the glove to `upperLeg`. That is how the hand/forearm
+        # ratio fell to 0.468 (gate >= 0.65) and the glove stopped clearing the
+        # leg. The segment now runs elbow to fingertips.
+        a, b = seg_ends(name)
+        return (a, a + (b - a) * FOREARM_HAND_T)
     if name in SEGMENTS:
         return seg_ends(name)
     return None
 
 
-def _locality_frame(obj, arm):
+def _segment_halfdiag(name):
+    """
+    Half-diagonal of a segment's own cross-section, in metres.
+
+    This is a property of the MODEL — the box each limb was built from — so no
+    amount of mis-weighting can inflate it. The spine bones report the torso's;
+    a helper reports the larger of the two segments it bridges, since its
+    domain really does straddle both.
+    """
+    if name in SPINE_NAMES:
+        name = 'torso'
+    if name in JOINT_HELPERS:
+        return max(_segment_halfdiag(n) for n in JOINT_HELPERS[name])
+    s = SEGMENTS.get(name)
+    if not s:
+        return None
+    return math.hypot(s['w'] / 2.0, s['d'] / 2.0)
+
+
+# THE REACH CEILING (session 23) — MEASURED, INSTRUMENTED, NOT YET SHIPPED.
+#
+# The p98 of the skin a bone already owns is a SELF-CERTIFYING measure: if a
+# bone has grabbed skin that is not its own, that same skin sets the reach
+# which then declares the grab local, and the pass converges on a fixed point
+# that legitimises its own bleed. Measured on the shipped skin: `upperArmR`
+# holds **0.68** of a vertex on the lower belly (game-space
+# (+0.081, -0.030, -0.125)), 150 mm from its own bone axis and 2.7x the upper
+# arm's own radius — and LOCALITY reads 0 offenders. In the flight tuck the arm
+# swings ~150 deg and takes that belly with it: that is the fan of silvery
+# shards over the hip and lower back in `shots/pose_tuck_side.png`, and it is
+# why the >= 10 mm rest-edge bucket tops out at strain 12.9 at tuck = 1 while
+# the <= 5 mm bucket stays at 3.5.
+#
+# The cross-section of the box a segment was BUILT from cannot be inflated by
+# mis-weighting, so it is the honest reference. `_locality_reach_log` prints
+# both numbers for every bone each build; on this build the ratio owned/own
+# cross-section is 2.81x lowerArm, 1.90x upperArm, 1.68x lowerLeg against
+# 1.09x upperLeg, 1.09x spine and 0.81x head — the arms are the outliers and
+# they are the bones whose swing tears the tuck.
+#
+# IT SHIPS AS OF SESSION 24, at 1.40 x the cross-section, and what unblocked it
+# was three measured corrections rather than a looser gate:
+#
+#   1. The residual hinge was NOT the rescue branch. `_rescue_boundary_report`
+#      says 0 of the 12 hot edges straddled it — all 12 were both-ramped, at
+#      the left armpit. What cut them was running the relax and the ramp in
+#      SEQUENCE: the relax diffuses weight back out past a bone's reach and the
+#      localise cuts it off again inside one ~25 mm edge, with nothing after it
+#      to smooth the cut. Passing the ramp into the relax as a constraint
+#      (`smooth_blend_rings(locality=...)`) takes the both-ramped hot edges to 0.
+#   2. The rescue kept the FAR bones. Only 2 of 8995 vertices have no bone
+#      within 1.70 x reach, so the near bone nearly always exists and simply is
+#      not in the vertex's weight list; rebuilding from the near bones instead
+#      is local by construction, which is what lets the locality gate read a
+#      true zero rather than a zero of its own metric.
+#   3. 1.00 x the cross-section was below what the model's own geometry allows.
+#      Calf skin weighted 0.94 to `lowerLegL` measured e = 1.61-1.76 with
+#      `upperLegL` tied at the same distance, both straddling the 1.70 cutoff.
+#      That is the suit and boot girth passes, not mis-weighting.
+#
+RESCUE_P = 4.0                  # nearness exponent in the soft rescue above
+RESCUE_TOT_LO = 0.20            # ramped weight below which the soft rescue takes over
+
+# {vertex index: (ramped total before any rescue, went through the rescue)} —
+# filled by the last `localise_weights` run so the boundary report can ask
+# whether the hot seam edges are the rescue BRANCH rather than the ramp.
+_LOCALISE_TRACE = {}
+
+
+def _weight_probe_dump(obj, arm):
+    """
+    Dump the whole weight problem to JSON when BODY_WEIGHT_DUMP is set.
+
+    The locality and relax passes are pure functions of (vertex positions,
+    edges, weights, segment frames), but they run AFTER the bake, so every
+    experiment on them otherwise costs a full build. With this dump the same
+    algebra can be replayed in seconds outside Blender, and only the chosen
+    variant is paid for at build resolution. Diagnostic only — off unless the
+    environment variable is set, and nothing downstream reads it.
+    """
+    path = os.environ.get('BODY_WEIGHT_DUMP')
+    if not path:
+        return
+    import json
+    bones = {b.name for b in arm.data.bones}
+    names = {g.index: g.name for g in obj.vertex_groups}
+    segs = _locality_frame(obj, arm)
+    data = {
+        'names': {str(k): v for k, v in names.items()},
+        'joints': sorted(g.index for g in obj.vertex_groups if g.name in bones),
+        'segs': {str(gi): [nm, list(a), list(b), reach]
+                 for gi, (nm, a, b, reach) in segs.items()},
+        'helpers': {k: list(v) for k, v in JOINT_HELPERS.items()},
+        'co': [list(v.co) for v in obj.data.vertices],
+        'edges': [list(e.vertices) for e in obj.data.edges],
+        'W': [{str(g.group): g.weight for g in v.groups if g.weight > 1e-6}
+              for v in obj.data.vertices],
+    }
+    with open(path, 'w') as fh:
+        json.dump(data, fh)
+    log(f'weight probe dumped to {path}: {len(data["co"])} verts, '
+        f'{len(data["edges"])} edges, {len(data["joints"])} joints')
+
+
+def _rescue_boundary_report(obj, tag):
+    """
+    Do the hot seam edges straddle the rescue branch?
+
+    `localise_weights` switches a vertex between two entirely different weight
+    vectors at `tot == RESCUE_TOT_LO`. Both are continuous in position on their
+    own side, but the SWITCH is a step: a vertex at tot 0.199 is renormalised
+    by nearness and its neighbour at 0.201 by the ramp, and the two disagree by
+    whatever the two rules disagree by. If the residual hinge is that branch,
+    the hot edges will sit on the boundary rather than being scattered.
+    """
+    W = _vertex_weights(obj)
+    names = {g.index: g.name for g in obj.vertex_groups}
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W = [_collapse_helpers(w, names) for w in W]
+    straddle = same_resc = same_ramp = 0
+    hot = []
+    for e in obj.data.edges:
+        i, j = e.vertices
+        a, b = W[i], W[j]
+        d = sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in set(a) | set(b))
+        if d <= WEIGHT_SEAM_HOT:
+            continue
+        ri = _LOCALISE_TRACE.get(i, (1.0, False))[1]
+        rj = _LOCALISE_TRACE.get(j, (1.0, False))[1]
+        hot.append(d)
+        if ri != rj:
+            straddle += 1
+        elif ri:
+            same_resc += 1
+        else:
+            same_ramp += 1
+    n = len(hot)
+    log(f'RESCUEBOUNDARY {tag}: {n} hot edges — {straddle} straddle the '
+        f'rescue branch, {same_resc} both-rescued, {same_ramp} both-ramped; '
+        f'{sum(1 for _, r in _LOCALISE_TRACE.values() if r)} verts rescued of '
+        f'{len(_LOCALISE_TRACE)} rewritten')
+    return {'hot': n, 'straddle': straddle, 'resc': same_resc, 'ramp': same_ramp}
+
+# Calibrated, not chosen: at 1.00 the CALF fails. Measured on the capped build,
+# ordinary calf skin weighted 0.94 to `lowerLegL` sits at e = 1.61-1.76 of a
+# 92 mm reach with `upperLegL` tied at the same distance — both straddling the
+# 1.70 cutoff, so a millimetre of position decides whether a vertex keeps its
+# own bone, and neighbours land on opposite sides. That is not mis-weighting;
+# it says the cross-section half-diagonal of the shin BOX understates the girth
+# the suit and boot passes gave the calf. The min-over-bones excess reads p99
+# 1.508 and p100 1.713 at cap 1.00, so the ceiling has to clear ~1.71/1.25 to
+# put legitimate skin inside the full-weight zone.
+LOCALITY_REACH_CAP = float(os.environ.get('BODY_LOCALITY_CAP_K', '1.40'))
+# ON by default since session 24. BODY_LOCALITY_NOCAP=1 restores the old
+# self-certifying reach, and is the negative control for the ceiling.
+LOCALITY_CAP_ON = True
+
+
+def _locality_frame(obj, arm, honest=False):
     """{group index: (name, head, tail, reach)} for every skin joint with a segment."""
     bones = {b.name for b in arm.data.bones}
     segs = {}
@@ -1140,14 +1366,49 @@ def _locality_frame(obj, arm):
         if not ds:
             continue                     # a bone with no core owns no skin
         ds.sort()
-        segs[gi][3] = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        owned = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        hd = _segment_halfdiag(segs[gi][0])
+        # The cross-section bounds the reach from BOTH sides, and for the same
+        # reason. Above, because skin a bone wrongly grabbed must not be
+        # allowed to certify the grab. Below, because a bone that dominates
+        # almost nothing gets an artificially TINY p98 and then fails its own
+        # legitimate skin: `spine_01` self-certifies at 78 mm against a 175 mm
+        # torso cross-section, and pelvis skin 143 mm out reads 1.84 x reach.
+        # Skin within one cross-section of a segment is that segment's by
+        # definition, whoever else happens to dominate it.
+        if hd and LOCALITY_CAP_ON and (honest or not LOCALITY_NOCAP):
+            segs[gi][3] = min(max(owned, hd), LOCALITY_REACH_CAP * hd)
+        else:
+            segs[gi][3] = owned
         out[gi] = tuple(segs[gi])
     return out
 
 
+def _locality_reach_log(obj, arm):
+    """Both reaches side by side, so the cap's effect is on the record."""
+    bones = {b.name for b in arm.data.bones}
+    idx = {g.index: g.name for g in obj.vertex_groups if g.name in bones}
+    frame = _locality_frame(obj, arm)
+    rows = []
+    for gi, (nm, a, b, reach) in sorted(frame.items(), key=lambda kv: kv[1][0]):
+        hd = _segment_halfdiag(nm)
+        rows.append(f'{nm} {reach*1000:.0f}'
+                    + (f'/{LOCALITY_REACH_CAP*hd*1000:.0f}' if hd else ''))
+    log('LOCALITY reach (mm, capped/cap): ' + ', '.join(rows))
+
+
 def weight_locality_report(obj, arm, tag, verbose=True):
-    """How far each weight sits from its own bone, in units of that bone's reach."""
-    segs = _locality_frame(obj, arm)
+    """
+    How far each weight sits from its own bone, in units of that bone's reach.
+
+    The reference is ALWAYS the clamped reach, whatever the repair was allowed
+    to use. That is what makes `BODY_LOCALITY_NOCAP=1` a real negative control
+    rather than a second opinion from the same witness: sabotaging the repair
+    back to the self-certifying reach leaves a skin the honest reference
+    rejects, where before both sides of the argument moved together and the
+    gate read zero on skin carrying 0.68 of a belly vertex on `upperArmR`.
+    """
+    segs = _locality_frame(obj, arm, honest=True)
     ds = []
     worst = []
     per_group = {}
@@ -1181,6 +1442,92 @@ def weight_locality_report(obj, arm, tag, verbose=True):
     return r
 
 
+def _locality_factors(obj, arm):
+    """
+    Per-vertex {group index: (ramp factor in [0,1], excess d/reach)} — the
+    attenuation `localise_weights` applies, as a field, so other passes can
+    respect it.
+
+    Separated out because the ramp is the only part of the locality repair that
+    is a function of POSITION alone. That makes it a constraint the relax can
+    be projected onto, rather than a cut the relax has to be followed by.
+    """
+    bones = {b.name for b in arm.data.bones}
+    segs = _locality_frame(obj, arm)
+    joints = {g.index for g in obj.vertex_groups if g.name in bones}
+    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    out = []
+    for v in obj.data.vertices:
+        f = {}
+        for gi in joints:
+            if gi not in segs:
+                f[gi] = (1.0, None)    # boots and anything without a segment
+                continue
+            _, a, b, reach = segs[gi]
+            e = _seg_dist(v.co, a, b) / reach
+            if e <= d0:
+                f[gi] = (1.0, e)
+            elif e >= d1:
+                f[gi] = (0.0, e)
+            else:
+                t = (e - d0) / (d1 - d0)
+                f[gi] = (1.0 - t * t * (3.0 - 2.0 * t), e)
+        out.append(f)
+    return out
+
+
+def _apply_locality(cur, fe):
+    """
+    One vertex's weights put through the locality ramp, rescued if the ramp
+    took nearly everything, renormalised. Returns (vector, removed, rescued).
+
+    Shared by `localise_weights` and by the projected relax, so the constraint
+    the relax is projected onto is the SAME ramp the gate measures — if the two
+    ever drifted apart, the relax would be smoothing toward a field the gate
+    does not accept.
+    """
+    new_w = {}
+    excess = {}
+    removed = 0.0
+    for gi, w in cur.items():
+        fac = fe.get(gi)
+        if fac is None:
+            new_w[gi] = w
+            continue
+        f, e = fac
+        if e is not None:
+            excess[gi] = e
+        if f < 1.0:
+            removed += w * (1.0 - f)
+        if w * f > 1e-6:
+            new_w[gi] = w * f
+    tot = sum(new_w.values())
+    if tot >= RESCUE_TOT_LO or not excess:
+        return new_w, removed, False
+    # Everything this vertex was weighted to is far away — which says the BIND
+    # put this skin on the wrong bones, not that the ramp is too tight. Measured
+    # on the capped build: only 2 of 8995 vertices have no bone within
+    # 1.70 x reach, yet 935 land here, so the near bone almost always exists and
+    # simply is not in `cur`.
+    #
+    # So the vertex is rebuilt from the bones that are NEAR it rather than from
+    # the ones it happened to have. The kernel is the ramp factor itself over
+    # e^RESCUE_P: it vanishes exactly where the ramp does, so a bone entering or
+    # leaving the candidate set does so continuously and no ordering can step,
+    # and it falls off steeply enough that the nearest bone still dominates.
+    #
+    # Both predecessors kept the far bones: the first handed the vertex WHOLLY
+    # to the nearest of them (a rigid 1.0 beside blended skin — the hinge
+    # `weight_seam_gate` exists to catch, seam max 1.632), the second shared
+    # them out by nearness (1.382, and still every weight beyond reach, so the
+    # locality gate could never read zero). This one is local by construction.
+    soft = {gi: f / max(e, 1e-6) ** RESCUE_P
+            for gi, (f, e) in fe.items() if e is not None and f > 0.0}
+    if sum(soft.values()) <= 1e-9:
+        return new_w, removed, False
+    return soft, removed, True
+
+
 def localise_weights(obj, arm):
     """
     Take each bone's influence off skin that does not belong to it.
@@ -1199,10 +1546,9 @@ def localise_weights(obj, arm):
     # the bone weights rewrites a mask, which the first cut of this pass did:
     # it cut a 1.52 hinge at [reduce|upperLegR] and the seam gate caught it.
     bones = {b.name for b in arm.data.bones}
-    segs = _locality_frame(obj, arm)
     joints = {g.index for g in obj.vertex_groups if g.name in bones}
     groups = [g for g in obj.vertex_groups if g.name in bones]
-    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    fe = _locality_factors(obj, arm)
     changed = 0
     removed = 0.0
     rescued = 0
@@ -1211,36 +1557,14 @@ def localise_weights(obj, arm):
                if g.weight > 1e-6 and g.group in joints}
         if not cur:
             continue
-        new_w = {}
-        excess = {}
-        for gi, w in cur.items():
-            if gi not in segs:
-                new_w[gi] = w          # boots and anything without a segment
-                continue
-            nm, a, b, reach = segs[gi]
-            e = _seg_dist(v.co, a, b) / reach
-            excess[gi] = e
-            if e <= d0:
-                f = 1.0
-            elif e >= d1:
-                f = 0.0
-            else:
-                t = (e - d0) / (d1 - d0)
-                f = 1.0 - t * t * (3.0 - 2.0 * t)     # smoothstep
-            if f < 1.0:
-                removed += w * (1.0 - f)
-            if w * f > 1e-6:
-                new_w[gi] = w * f
+        new_w, took, was_rescued = _apply_locality(cur, fe[v.index])
+        removed += took
         tot = sum(new_w.values())
-        if tot < 0.20:
-            # Everything this vertex was weighted to is far away. Give it
-            # wholly to the nearest segment rather than divide by nothing.
-            gi = min(excess, key=excess.get) if excess else None
-            if gi is None:
-                continue
-            new_w = {gi: 1.0}
-            tot = 1.0
+        if tot <= 1e-9:
+            continue
+        if was_rescued:
             rescued += 1
+        _LOCALISE_TRACE[v.index] = (tot, was_rescued)
         if abs(tot - 1.0) < 1e-9 and len(new_w) == len(cur):
             continue
         ws = sorted(new_w.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
@@ -5457,17 +5781,68 @@ def bib_mask(name, along, front, lat):
 
 NUM_W = 0.075                    # patch half-width in metres (15 cm wide)
 NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
+
+# ── SESSION 22: the layout the 03:05 ruling asks for, and WHY it is a stroke
+# ── width and not a flip.
+#
+# The ruling asks for the back plate laid out exactly like the front, with
+# margins ≥ 10% of the plate width each side and both glyphs fully inside.
+# Session 21 refused to do it against an instrument it had just shown to be
+# too thin; the rectified sampler (`_rect_plate`) replaces that instrument,
+# and with 96 columns of the actual plate it says something the ten-bucket
+# profile could not:
+#
+#   BOTH plates carry a correctly-oriented "30". Neither is mirrored and
+#   neither is clipped. What differs is STROKE WIDTH: the front's vertical
+#   stems render ~5 of 96 columns, the back's ~1.
+#
+# The cause is in this block, and it is a units bug rather than a mapping
+# one. The paint is per-VERTEX on the high poly and then baked, so the plate
+# has the resolution of the torso lattice — measured, a median patch-u vertex
+# gap of 0.0036 with a p90 of 0.0641 on the back (0.0478 on the front, which
+# is why the front survived). The glyph rects are in a cell normalised to
+# [0,1] in BOTH axes, and a cell is 5.6 x 12.3 cm — so "0.16" meant 19.6 mm
+# for a horizontal bar and 9.0 mm for a vertical stem. The bars sat at twice
+# the lattice gap and always resolved; the stems sat AT it, and survived on
+# the front only by the lattice's phase.
+#
+# So the stems are now as thick in METRES as the bars (0.25 of cell width vs
+# 0.14 of cell height: 14.1 mm vs 15.9 mm), which is also what a sans-serif
+# competition numeral actually looks like, and the pair is inset by
+# NUM_MARGIN so the ruling's margins hold on both faces.
+#
+# NEGATIVE CONTROL for both new gates: BODY_SABOTAGE_BIBLAYOUT=1 restores the
+# pre-session-22 layout exactly — no margin, 9 mm stems — which is the bake
+# the ruling says must fail.
+SABOTAGE_BIBLAYOUT = os.environ.get('BODY_SABOTAGE_BIBLAYOUT') == '1'
+
+# Blank bib either side of the glyph pair, as a fraction of the plate width.
+NUM_MARGIN = 0.0 if SABOTAGE_BIBLAYOUT else 0.10
+# Cell width and the gap between the two cells, in plate-u units.
+NUM_CELL_W = 0.47 * (1 - 2 * NUM_MARGIN)
+NUM_CELL_GAP = 0.06 * (1 - 2 * NUM_MARGIN)
+
 # Negative control for the digit-aspect gate: the pre-fix full-height ink
 # band, which made each digit 7.0 x 21.3 cm (aspect 0.33 — a vertical bar).
+# The band narrows with the cell so the aspect stays a numeral's, not a bar's.
 NUM_DV0, NUM_DV1 = ((0.06, 0.96)
                     if os.environ.get('BODY_SABOTAGE_BIBASPECT') == '1'
-                    else (0.24, 0.76))   # ink's vertical share of the patch
-NUM_INK = (0.07, 0.10, 0.18)     # dark navy on the white plate
+                    else (0.24, 0.76) if SABOTAGE_BIBLAYOUT
+                    else (0.27, 0.75))   # ink's vertical share of the patch
+# NEAR-BLACK on the white plate, not navy — and the reason is a measurement,
+# not taste. body.spec.js calls a torso texel blue at b - r > 0.15 in the
+# SHIPPED sRGB atlas, and (0.07, 0.10, 0.18) linear encodes to b - r = 0.174:
+# every numeral texel was being counted as competition-bib blue. That was
+# harmless while the stems were 9 mm and half of them dissolved, and it stops
+# being harmless the moment they resolve — bolding them took the back of the
+# torso from blueFrac 0.015 to 0.034 and closed the front-minus-back margin
+# that gate exists to defend to 0.028 against its 0.03 floor. The bib is what
+# that test is about; the number is not, and reference/images/aerial_suit.png
+# has black numerals on the bib anyway. b - r = 0.023 in sRGB now.
+NUM_INK = (0.05, 0.05, 0.06)     # near-black numeral ink on the white plate
 
 # Glyph outlines as (u0,u1,v0,v1) rectangles in a per-digit cell [0,1]².
-# Stroke ≈ 0.14 of cell height — bib numerals are narrow, and the plate must
-# stay well under half ink or the white "30" reads as a dark slab.
-_GLYPH_RECTS = {
+_GLYPH_RECTS_THIN = {           # pre-session-22: 9 mm stems, under the lattice
     '3': ((0.08, 0.90, 0.82, 0.98),   # top bar
           (0.12, 0.84, 0.45, 0.58),   # middle bar
           (0.08, 0.90, 0.02, 0.18),   # bottom bar
@@ -5477,6 +5852,23 @@ _GLYPH_RECTS = {
           (0.20, 0.80, 0.84, 1.00),   # top shoulder
           (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
 }
+# Stems 0.25 of cell WIDTH = 14.1 mm against bars 0.14 of cell HEIGHT =
+# 15.9 mm: the point is that the two are now within 12% of each other in
+# METRES, both clear of the back lattice's 9.6 mm p90 gap by ~1.5x. The first
+# cut of this table used 0.30/0.16 (16.9 / 18.2 mm) and drew a genuinely
+# legible "30", but bib-number.spec's dark-slab ceiling measured navyFrac
+# 0.2540 against its 0.25 — so the strokes came down, not the gate.
+_GLYPH_RECTS_BOLD = {
+    '3': ((0.06, 0.94, 0.86, 1.00),   # top bar
+          (0.10, 0.90, 0.43, 0.57),   # middle bar
+          (0.06, 0.94, 0.00, 0.14),   # bottom bar
+          (0.69, 0.94, 0.00, 1.00)),  # right stem joins all three
+    '0': ((0.06, 0.31, 0.00, 1.00),   # left stem
+          (0.69, 0.94, 0.00, 1.00),   # right stem
+          (0.20, 0.80, 0.86, 1.00),   # top shoulder
+          (0.20, 0.80, 0.00, 0.14)),  # bottom shoulder
+}
+_GLYPH_RECTS = _GLYPH_RECTS_THIN if SABOTAGE_BIBLAYOUT else _GLYPH_RECTS_BOLD
 
 
 def in_number_patch(name, along, front, lx):
@@ -5517,14 +5909,21 @@ def number_uv(front, lx, along):
 
 
 def digit30_mask(u, v):
-    """Ink coverage of '30' in patch space; cells [0,0.47]=3, [0.53,1]=0."""
+    """Ink coverage of '30' in patch space.
+
+    The two cells are inset by NUM_MARGIN from each plate edge, so the glyph
+    pair is centred with blank bib either side on BOTH faces — the layout the
+    03:05 ruling specifies, and the same construction for front and back.
+    """
     if not (NUM_DV0 <= v <= NUM_DV1):
         return 0.0
     vd = (v - NUM_DV0) / (NUM_DV1 - NUM_DV0)
-    if u < 0.47:
-        ch, uc = '3', u / 0.47
-    elif u >= 0.53:
-        ch, uc = '0', (u - 0.53) / 0.47
+    u3 = NUM_MARGIN                                  # '3' cell left edge
+    u0 = NUM_MARGIN + NUM_CELL_W + NUM_CELL_GAP      # '0' cell left edge
+    if u3 <= u < u3 + NUM_CELL_W:
+        ch, uc = '3', (u - u3) / NUM_CELL_W
+    elif u0 <= u <= u0 + NUM_CELL_W:
+        ch, uc = '0', (u - u0) / NUM_CELL_W
     else:
         return 0.0
     uc = min(max(uc, 0.0), 1.0)
@@ -6073,6 +6472,7 @@ def paint_suit(obj, lm):
     attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     stripe_dbg = []
+    _plate_paint = {'front': [], 'back': []}
     for i, v in enumerate(mesh.vertices):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
@@ -6218,10 +6618,59 @@ def paint_suit(obj, lm):
                 col = (col[0] * (1 - 0.18 * f), col[1] * (1 - 0.15 * f),
                        col[2] * (1 - 0.10 * f))
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
+        if tag == 'number':
+            _u, _v = number_uv(front, lx, along)
+            _plate_paint['front' if front > 0 else 'back'].append(
+                (_u, _v, col is NUM_INK, x, y, z))
         counts[tag] = counts.get(tag, 0) + 1
         if tag == 'stripe':
             stripe_dbg.append((x, y, z, lx, ly, name))
     log(f'suit painted: {counts}')
+    # PAINT-SIDE view of the number plates: the high-poly vertices that carry
+    # plate colour, splatted into patch space. This is what the bake is given;
+    # comparing it with `bib rect ascii` (which reads the bake back through
+    # the low-poly UVs) says whether a thin stroke was never painted or was
+    # painted and then lost.
+    for _f in ('front', 'back'):
+        _d = _plate_paint[_f]
+        if not _d:
+            continue
+        _xs = sorted(p_[3] for p_ in _d)
+        log(f'plate paint [{_f}]: {len(_d)} high-poly verts, '
+            f'{sum(1 for p_ in _d if p_[2])} ink '
+            f'({sum(1 for p_ in _d if p_[2]) / len(_d):.3f}), '
+            f'world x {_xs[0]:+.4f}..{_xs[-1]:+.4f}')
+        # Mean nearest-neighbour spacing along the patch-u direction, per row:
+        # the resolution the paint actually has where a vertical stroke lives.
+        _rows = {}
+        for _u, _v, _k, _x, _y, _z in _d:
+            _rows.setdefault(int(_v * 16), []).append(_u)
+        _gaps = []
+        for _r, _us in _rows.items():
+            _us.sort()
+            _gaps += [b - a for a, b in zip(_us, _us[1:]) if b - a > 1e-9]
+        _gaps.sort()
+        if _gaps:
+            log(f'plate paint [{_f}]: patch-u vertex gap median '
+                f'{_gaps[len(_gaps) // 2]:.4f} p90 '
+                f'{_gaps[int(len(_gaps) * 0.9)]:.4f} '
+                f'(stroke width {0.14 * 0.47:.4f} of the plate)')
+    if os.environ.get('BODY_BIB_ASCII') == '1':
+        for _f in ('front', 'back'):
+            NU, NV = 96, 64
+            g = [[[0, 0] for _ in range(NU)] for _ in range(NV)]
+            for _u, _v, _k, _x, _y, _z in _plate_paint[_f]:
+                _i = min(NU - 1, max(0, int(_u * NU)))
+                _j = min(NV - 1, max(0, int(_v * NV)))
+                g[_j][_i][1] += 1
+                g[_j][_i][0] += 1 if _k else 0
+            log(f'plate paint ascii [{_f}] (patch u across, v up):')
+            for _j in range(NV - 1, -1, -1):
+                _row = ''
+                for _i in range(NU):
+                    _k2, _t2 = g[_j][_i]
+                    _row += ' ' if not _t2 else '.:*#'[min(3, int(_k2 / _t2 * 4))]
+                log(f'  |{_row}|')
     if stripe_dbg:
         zs = sorted(p[2] for p in stripe_dbg)
         lxs = sorted(p[3] for p in stripe_dbg)
@@ -6468,6 +6917,199 @@ def bib_orientation_report(viewer):
     return lead
 
 
+# ── The RECTIFIED plate sampler (session 22) ────────────────────────────────
+#
+# Session 21 refused to lay the back plate out against session 19's profile
+# because the instrument behind it is too thin: it samples only the low
+# triangles that lie WHOLLY inside a plate, on a 16-point barycentric grid, so
+# ~45 triangles produce ~700 point samples over a 200-300 cm2 plate — 3 per
+# cm2, binned into a 30x18 grid at ~1.2 samples per cell, with whole columns
+# empty. Structure read off that is noise.
+#
+# This is the replacement the reviewer's ruling needs a measurement from: a
+# fixed grid in PATCH space, rasterised from the same triangles, with the
+# atlas UV interpolated per cell and the baked albedo fetched there. Two
+# things change the answer, and both matter:
+#
+#   * partial triangles are CLIPPED, not dropped. The old test threw away
+#     every triangle with a corner outside the plate, i.e. exactly the border
+#     ring — so the sampled region was the plate's interior, its extent set by
+#     wherever the triangulation happened to fall, and "ink hard against the
+#     plate edge" could be an artefact of a sampled window that is not the
+#     plate. Patch coordinates are affine in the triangle, so a corner outside
+#     [0,1]^2 is interpolated through perfectly well; only the CELLS outside
+#     are dropped.
+#   * the grid is the plate, not the samples. Every cell of the NU x NV grid
+#     is either covered by some triangle or recorded as a hole, so a profile
+#     bucket that is empty is visibly empty instead of silently renormalised.
+
+RECT_NU, RECT_NV = 96, 64
+
+
+def _rect_plate(low, px, w, h, owner, uvl, nu=RECT_NU, nv=RECT_NV):
+    """Rectified ink coverage of both number plates, in patch space.
+
+    Returns {face: (ink, cov)} where each is an nv x nu grid of floats/ints:
+    `ink` counts dark sub-samples, `cov` counts sub-samples of any colour.
+    """
+    import mathutils
+
+    def patch_of(vi):
+        """Patch (u, v) for a torso vertex, VALID OUTSIDE the plate too."""
+        if owner[vi] != 'torso':
+            return None
+        nm, along, _r, _o, front, local = segment_frame(
+            low.data.vertices[vi].co, 'torso')
+        u, v = number_uv(front, local[0], along)
+        return front, u, v
+
+    def classify(ptr):
+        o = 4 * ptr
+        lum = 0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]
+        return lum < 0.45 and abs(px[o] - NUM_INK[0]) < 0.30
+
+    out = {}
+    for fname, fsign in (('front', 1.0), ('back', -1.0)):
+        ink = [[0] * nu for _ in range(nv)]
+        cov = [[0] * nu for _ in range(nv)]
+        for poly in low.data.polygons:
+            vids = list(poly.vertices)
+            if len(vids) < 3:
+                continue
+            pp = [patch_of(vi) for vi in vids]
+            if any(d is None or d[0] != fsign for d in pp):
+                continue
+            # Cheap reject: a triangle none of whose corners come within half
+            # a plate of the patch cannot cover a cell, and iterating its
+            # clamped bbox would cost 96x64 barycentric tests for nothing.
+            if not any(-0.5 < d[1] < 1.5 and -0.5 < d[2] < 1.5 for d in pp):
+                continue
+            cuv = [tuple(uvl[li].uv) for li in poly.loop_indices]
+            if len(cuv) != len(vids):
+                continue
+            # Same UV-seam rejection as the point sampler: a triangle that
+            # spans a seam interpolates through unrelated texels.
+            seam = False
+            for k in range(len(vids)):
+                k2 = (k + 1) % len(vids)
+                du = mathutils.Vector(
+                    (cuv[k][0] - cuv[k2][0], cuv[k][1] - cuv[k2][1])).length
+                dp = (low.data.vertices[vids[k]].co
+                      - low.data.vertices[vids[k2]].co).length
+                if du > 0.10 and dp > 1e-6:
+                    seam = True
+                    break
+            if seam:
+                continue
+            for (a, b, c3) in [(0, k, k + 1) for k in range(1, len(vids) - 1)]:
+                (_f, ua, va) = pp[a]
+                (_f, ub, vb) = pp[b]
+                (_f, uc, vc) = pp[c3]
+                det = (ub - ua) * (vc - va) - (uc - ua) * (vb - va)
+                if abs(det) < 1e-12:
+                    continue
+                # Only the part of the triangle that lands ON the plate.
+                i0 = max(0, int(math.floor(min(ua, ub, uc) * nu)))
+                i1 = min(nu - 1, int(math.ceil(max(ua, ub, uc) * nu)))
+                j0 = max(0, int(math.floor(min(va, vb, vc) * nv)))
+                j1 = min(nv - 1, int(math.ceil(max(va, vb, vc) * nv)))
+                for j in range(j0, j1 + 1):
+                    py_ = (j + 0.5) / nv
+                    for i in range(i0, i1 + 1):
+                        pu = (i + 0.5) / nu
+                        l1 = ((pu - ua) * (vc - va) - (uc - ua) * (py_ - va)) / det
+                        l2 = ((ub - ua) * (py_ - va) - (pu - ua) * (vb - va)) / det
+                        l0 = 1.0 - l1 - l2
+                        if l0 < -1e-9 or l1 < -1e-9 or l2 < -1e-9:
+                            continue
+                        tu = (l0 * cuv[a][0] + l1 * cuv[b][0]
+                              + l2 * cuv[c3][0]) % 1.0
+                        tv = (l0 * cuv[a][1] + l1 * cuv[b][1]
+                              + l2 * cuv[c3][1]) % 1.0
+                        ptr = (min(h - 1, int(tv * h)) * w
+                               + min(w - 1, int(tu * w)))
+                        cov[j][i] += 1
+                        if classify(ptr):
+                            ink[j][i] += 1
+        out[fname] = (ink, cov)
+    return out
+
+
+def _rect_profile(ink, cov):
+    """Ink fraction per plate COLUMN, and the covered-column mask."""
+    nv, nu = len(ink), len(ink[0])
+    prof, seen = [], []
+    for i in range(nu):
+        t = sum(cov[j][i] for j in range(nv))
+        k = sum(ink[j][i] for j in range(nv))
+        seen.append(t > 0)
+        prof.append(k / t if t else 0.0)
+    return prof, seen
+
+
+RECT_GROUPS = 12                 # column groups the plate profile is read in
+
+# The 03:05 ruling's two acceptance questions, on the rectified plates.
+#
+#   MARGIN  — "both glyphs fully inside, ≥ 10 % of the plate width each side".
+#             Measured as the share of each face's total ink that falls in the
+#             outer NUM_MARGIN of the plate. Zero by construction with the
+#             inset cells; the gate is what stops a later widening of the
+#             glyph rects from quietly walking the ink back to the edge.
+#   MATCH   — "the back plate's horizontal ink profile matches the front's
+#             within tolerance". L1 between the two NORMALISED column
+#             profiles, so it is a shape comparison and not an amount one
+#             (the faces carry different ink fractions: 0.135 / 0.166).
+#
+# Both thresholds are set from the measurement plus margin, and both have the
+# same negative control: BODY_SABOTAGE_BIBLAYOUT=1, the pre-session-22 layout,
+# which fails MARGIN at 0.093/0.082 (no margins exist in it) and MATCH at
+# L1 0.511 (its back stems do not resolve, so the shapes differ).
+BIB_MARGIN_INK_MAX = 0.02
+BIB_PROFILE_L1_MAX = 0.40
+
+
+def _norm(g):
+    t = sum(g)
+    return [x / t for x in g] if t > 1e-9 else list(g)
+
+
+def _bib_layout_gate(groups):
+    """Same layout on both faces: glyphs inside the margins, profiles alike."""
+    edge = max(1, int(round(NUM_MARGIN * RECT_GROUPS)))
+    fails = []
+    for f in ('front', 'back'):
+        g = groups[f]
+        tot = sum(g)
+        if tot <= 1e-9:
+            fails.append(f'{f}: no ink on the rectified plate at all')
+            continue
+        m = (sum(g[:edge]) + sum(g[-edge:])) / tot
+        log(f'bib layout [{f}]: ink in the outer {edge}/{RECT_GROUPS} of the '
+            f'plate = {m:.3f} (max {BIB_MARGIN_INK_MAX})')
+        if m > BIB_MARGIN_INK_MAX:
+            fails.append(f'{f}: {m:.3f} of its ink is in the outer '
+                         f'{edge}/{RECT_GROUPS} of the plate, which must be '
+                         f'blank bib')
+    pf, pb = _norm(groups['front']), _norm(groups['back'])
+    l1 = sum(abs(a - b) for a, b in zip(pf, pb))
+    l1m = sum(abs(a - b) for a, b in zip(pf[::-1], pb))
+    log(f'bib layout: back-vs-front profile L1 {l1:.3f} '
+        f'(max {BIB_PROFILE_L1_MAX}), back-vs-mirrored-front {l1m:.3f}')
+    if l1 > BIB_PROFILE_L1_MAX:
+        fails.append(f'back-vs-front profile L1 {l1:.3f} > '
+                     f'{BIB_PROFILE_L1_MAX}')
+    if l1 >= l1m:
+        fails.append(f'the back matches the MIRRORED front at least as well '
+                     f'({l1:.3f} vs {l1m:.3f})')
+    if fails:
+        raise SystemExit(
+            '[body] bib plate layout gate FAILED: ' + '; '.join(fails)
+            + ' — the two plates must be laid out identically (negative '
+              'control: BODY_SABOTAGE_BIBLAYOUT=1)')
+    return l1
+
+
 def bib_number_gate(low, out_dir):
     """
     The P7 acceptance question, asked of the SAVED albedo at build time: do
@@ -6697,12 +7339,45 @@ def bib_number_gate(low, out_dir):
                         row += '.:*#'[min(3, int(ink_n / tot_n * 4))]
                 log(f'  |{row}|')
 
+    # The rectified plates: dense, clipped, and gridded on the PLATE.
+    rect = _rect_plate(low, px, w, h, owner, uvl)
+    groups = {}
+    for _f in ('front', 'back'):
+        _ink, _cov = rect[_f]
+        _prof, _seen = _rect_profile(_ink, _cov)
+        _nc = sum(1 for s_ in _seen if s_)
+        _tot = sum(sum(r) for r in _cov)
+        _ti = sum(sum(r) for r in _ink)
+        _g = [sum(_prof[k * RECT_NU // RECT_GROUPS:
+                        (k + 1) * RECT_NU // RECT_GROUPS])
+              / (RECT_NU // RECT_GROUPS) for k in range(RECT_GROUPS)]
+        groups[_f] = _g
+        log(f'bib rect [{_f}]: {RECT_NU}x{RECT_NV} grid, {_nc}/{RECT_NU} '
+            f'columns covered, {_tot} sub-samples, ink fraction '
+            f'{_ti / max(1, _tot):.3f}')
+        log(f'bib rect [{_f}]: ink by plate column ({RECT_GROUPS} groups) '
+            + ' '.join(f'{x:.2f}' for x in _g))
+    if os.environ.get('BODY_BIB_ASCII') == '1':
+        for _f in ('front', 'back'):
+            _ink, _cov = rect[_f]
+            log(f'bib rect ascii [{_f}] (patch u across, v up, '
+                f'{RECT_NU}x{RECT_NV}):')
+            for _j in range(RECT_NV - 1, -1, -1):
+                _row = ''
+                for _i in range(RECT_NU):
+                    _t = _cov[_j][_i]
+                    _row += ' ' if not _t else '.:*#'[
+                        min(3, int(_ink[_j][_i] / _t * 4))]
+                log(f'  |{_row}|')
+
+    _bib_layout_gate(groups)
+
     bib_orientation_report(viewer)
 
     # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
     # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
     # numeral is near 0.58.
-    cell_w = 0.47 * 2 * NUM_W
+    cell_w = NUM_CELL_W * 2 * NUM_W
     cell_h = (NUM_DV1 - NUM_DV0) * (NUM_A1 - NUM_A0) * (SEGMENTS['torso']['h'] / 2)
     aspect = cell_w / cell_h
     log(f'bib digit cell: {cell_w * 100:.1f} x {cell_h * 100:.1f} cm, '
@@ -8935,9 +9610,18 @@ def main():
         # out, so the localisation runs once more to take it off again. The
         # second pass is small by construction and the two gates below are what
         # say so.
+        _locality_reach_log(low, arm)
+        _weight_probe_dump(low, arm)
         localise_weights(low, arm)
-        smooth_blend_rings(low)
-        localise_weights(low, arm)
+        # The second half used to be `smooth_blend_rings(low)` followed by
+        # another `localise_weights(low, arm)`, and that ORDER was the residual
+        # hinge: the relax diffused weight back past each bone's reach and the
+        # second localise cut it off again in a single edge, with nothing after
+        # it to smooth the cut. Passing the ramp INTO the relax makes it a
+        # constraint the diffusion equilibrates against, so the two stop
+        # undoing each other and the boundary is smooth by construction.
+        smooth_blend_rings(low, locality=_locality_factors(low, arm))
+        _rescue_boundary_report(low, 'after the projected relax')
     weight_seam_gate(low, 'shipped skin')
     weight_locality_gate(low, arm, 'shipped skin')
 
