@@ -348,7 +348,45 @@ SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 # stripe_texel_ownership() after the bake; see that function's header.  The
 # torso-back-blue < 0.10 gate in body.spec.js stays, and arm_stripe_presence_gate
 # stops the leak repair from being satisfied by erasing the sleeve seam.
-STRIPE_SEGMENTS = ('upperLeg', 'lowerLeg')
+# Shared-texel ceiling for the arm/trunk masks (see stripe_texel_ownership's
+# gate and unwrap_zones). Zero, because the zoned unwrap measures zero.
+UV_ZONE_OVERLAP_MAX = 0
+# THE ARM BAND IS STILL OFF, and session 31 moved the reason.
+#
+# The 23:10 ruling parked it behind the unwrap: "the arm and trunk UV islands
+# share texels, so no paint-side fix can work". unwrap_zones has now taken that
+# sharing to zero (10 301 texels -> 0, gated), and the leak did not move:
+#
+#   body.spec.js 'suit design', torso back blueFrac      gate < 0.10
+#     zoned unwrap, legs only  (BODY_STRIPE_ARMS=1 off)         0.030
+#     zoned unwrap, arms on                                     0.135
+#     old global unwrap, arms on (session 13)                   0.121
+#
+# So the overlap was real, and it was not this. Two more causes ruled OUT by
+# measurement this session: bake-margin bleed between the now-more-numerous
+# islands (BAKE_MARGIN 16 -> 6, under the 8-texel pack gap: back stayed 0.135
+# to three decimals), and the paint keying off a spatial band, which the
+# reviewer's 21:30 (b) ruling asked be replaced by skin ownership — it already
+# is, `segment_frame(co, force=owner[i])` with owner from dominant_segments.
+#
+# WHAT IT ACTUALLY IS: the paint is keyed to the skin weights that exist WHEN
+# THE HIGH-POLY IS PAINTED, and body.spec.js reads the weights that SHIP. Four
+# passes run between them — add_spine_chain, add_joint_helpers,
+# localise_weights and smooth_blend_rings — and every one of them re-partitions
+# ownership across the shoulder. A vertex the stripe paints because it is
+# heaviest on upperArmR is, by the time it is exported, heaviest on torso or
+# spine_01, and the blue it carries is then torso blue by the only definition
+# the shipped asset has. The probe puts the 76 offending back-torso triangles at
+# bones torso 59 / spine_01 9 / spine_02 8, spread over the whole trunk width
+# (|lat| 0.011..0.234) — not a band along one seam.
+#
+# That is a build-ORDER question (run the weight passes before the bake, or
+# re-derive the paint from the final weights), not a stripe question, and it is
+# left for the reviewer rather than guessed at. BODY_STRIPE_ARMS=1 ships the
+# sleeve band and reproduces the 0.135 for whoever picks it up.
+STRIPE_SEGMENTS = (('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm')
+                   if os.environ.get('BODY_STRIPE_ARMS') == '1'
+                   else ('upperLeg', 'lowerLeg'))
 STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
 # fixed angle wraps a thin segment. 0.46 let the 5 cm arc rule govern the whole
@@ -365,7 +403,7 @@ STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # It is left at 0.46 WHILE THE ARMS ARE OFF, because it changes nothing on the
 # legs (they are arc-limited at 0.455) and a live constant should describe the
 # build that ships. Restore 0.55 together with STRIPE_SEGMENTS' arms.
-STRIPE_DPHI_MAX = 0.46
+STRIPE_DPHI_MAX = 0.55 if os.environ.get('BODY_STRIPE_ARMS') == '1' else 0.46
 # Straightness of the painted seam (stripe_straight_gate), in metres of
 # fore/aft travel — the direction the old nearest-bucket axis made it stagger.
 # Set on session 11's measurements with margin, to be ratcheted down as the
@@ -8662,6 +8700,158 @@ def region_shares(body, lm):
     return {k: v / total for k, v in counts.items()}, counts
 
 
+# SESSION 31 — the unwrap that parked the arm stripe.
+#
+# The reviewer's 23:10 ruling: "the arm and trunk UV islands share texels, so no
+# paint-side fix can work. The stripe is therefore parked until the unwrap is
+# fixed (separate, non-overlapping islands for each arm, trunk, each leg —
+# gate: zero shared texels between arm and trunk masks)."
+#
+# WHERE THE SHARING COMES FROM, measured rather than assumed.  pack_islands
+# packs disjoint AABBs, so two whole islands cannot land on top of each other;
+# and _rasterize_uv tests texel CENTRES against triangle interiors, so two
+# triangles merely sharing an edge share ~no texels.  The 10 301 shared texels
+# the ownership pass reported (3.48% of the arm mask, build s31_build_base.log)
+# are therefore neither of those things: they are ONE island FOLDING OVER
+# ITSELF.  smart_project groups faces by normal within its 66 deg angle limit and
+# projects each group onto a single plane; since loosen_suit stood the suit off
+# the skin, the shoulder region's arm faces and chest-wall faces are within
+# that limit of each other, land in one group, and the plane that fits both
+# has the arm folding back across the chest.  Arm texels and trunk texels then
+# occupy the same place in the atlas by construction, and every paint-side
+# repair since session 12 has been fighting that.
+#
+# The fix is to deny the projector the chance: run smart_project once PER ZONE
+# (each arm, each leg, each hand, the skull, the trunk), so no projection group
+# can contain faces from two zones.  Zones are cut on the skin weights, which is
+# also what the ownership masks and body.spec.js are keyed to, so the gate and
+# the layout agree about where an arm stops.
+#
+# THE AREA WEIGHTING HAS TO BE PUT BACK BY HAND.  smart_project's area_weight
+# allocates island area from world area across the faces it is given, and it
+# normalises to its own call — so seven separate calls give seven zones the same
+# atlas area regardless of size, which would obliterate both HEAD_GROW and
+# UV_SHRINK.  Each zone is therefore rescaled afterwards to the trunk's texel
+# density (uv area per unit of world area) before the single global pack, which
+# is exactly the allocation one global area_weight=1.0 call would have made.
+SABOTAGE_UVZONES = os.environ.get('BODY_SABOTAGE_UVZONES') == '1'
+
+
+def _poly_world_area(poly, verts):
+    """Newell area of a polygon (quads included)."""
+    a = Vector((0, 0, 0))
+    n = len(poly.vertices)
+    for k in range(n):
+        a = a + verts[poly.vertices[k]].co.cross(verts[poly.vertices[(k + 1) % n]].co)
+    return a.length * 0.5
+
+
+def _poly_uv_area(poly, uvl):
+    uvs = [uvl[li].uv for li in poly.loop_indices]
+    a = 0.0
+    for k in range(len(uvs)):
+        x1, y1 = uvs[k]
+        x2, y2 = uvs[(k + 1) % len(uvs)]
+        a += x1 * y2 - x2 * y1
+    return abs(a) * 0.5
+
+
+def unwrap_zones(body, vzone):
+    """
+    Project each body zone separately, then repack the lot into one atlas.
+
+    `vzone` is per VERTEX; a face takes the zone most of its corners agree on
+    (ties alphabetically, so the layout is reproducible).  Boundary quads are
+    non-unanimous and _owned_uv_tris excludes them from every ownership mask
+    anyway, so which side they fall on changes no gate.
+    """
+    me = body.data
+    if SABOTAGE_UVZONES:
+        # NEGATIVE CONTROL: one global projection — the layout every build up to
+        # session 30 shipped. uv_zone_gate must reject it.
+        log('[body] BODY_SABOTAGE_UVZONES=1 — one global smart_project '
+            '(the pre-session-31 layout; the arm/trunk overlap gate must fail)')
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.0,
+                                 area_weight=1.0, correct_aspect=True,
+                                 scale_to_bounds=False)
+        bpy.ops.uv.pack_islands(rotate=True, scale=True, merge_overlap=False,
+                                margin_method='FRACTION', margin=0.004,
+                                shape_method='AABB')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        return
+
+    fzone = []
+    for poly in me.polygons:
+        c = {}
+        for vi in poly.vertices:
+            z = vzone[vi]
+            c[z] = c.get(z, 0) + 1
+        fzone.append(max(sorted(c), key=lambda z: c[z]))
+    zones = sorted(set(fzone))
+
+    # Face select mode, everything off, before any flag is written by hand.
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='FACE')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    for z in zones:
+        n = 0
+        for e in me.edges:
+            e.select = False
+        for v in me.vertices:
+            v.select = False
+        for i, poly in enumerate(me.polygons):
+            hit = fzone[i] == z
+            poly.select = hit
+            if hit:
+                n += 1
+                for vi in poly.vertices:
+                    me.vertices[vi].select = True
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.0,
+                                 area_weight=1.0, correct_aspect=True,
+                                 scale_to_bounds=False)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        log(f'[body] uv zone {z:6s}: {n} faces projected')
+
+    # Put the relative texel budgets back (see the header): every zone to the
+    # trunk's density, measured on the SCALED geometry smart_project just saw.
+    uvl = me.uv_layers.active.data
+    au, aw = {}, {}
+    for i, poly in enumerate(me.polygons):
+        z = fzone[i]
+        au[z] = au.get(z, 0.0) + _poly_uv_area(poly, uvl)
+        aw[z] = aw.get(z, 0.0) + _poly_world_area(poly, me.vertices)
+    ref = 'trunk' if 'trunk' in zones else zones[0]
+    dens = au[ref] / max(1e-12, aw[ref])
+    for z in zones:
+        if au[z] <= 1e-12 or aw[z] <= 1e-12:
+            continue
+        s = math.sqrt(dens * aw[z] / au[z])
+        cu = cv = 0.0
+        loops = [li for i, poly in enumerate(me.polygons) if fzone[i] == z
+                 for li in poly.loop_indices]
+        for li in loops:
+            cu += uvl[li].uv[0]
+            cv += uvl[li].uv[1]
+        cu /= len(loops)
+        cv /= len(loops)
+        for li in loops:
+            uvl[li].uv[0] = cu + (uvl[li].uv[0] - cu) * s
+            uvl[li].uv[1] = cv + (uvl[li].uv[1] - cv) * s
+        log(f'[body] uv zone {z:6s}: rescaled x{s:.3f} to the {ref} texel density')
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.pack_islands(rotate=True, scale=True, merge_overlap=False,
+                            margin_method='FRACTION', margin=0.004,
+                            shape_method='AABB')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+
 def finish_lowpoly(body, lm):
     """
     Decimate, unwrap and split the helmet into its own material slot — spending
@@ -8733,12 +8923,28 @@ def finish_lowpoly(body, lm):
     # gloved hand carries no detail worth texels.
     groups = {'skull': [], 'hand': []}
     scales = {'skull': HEAD_GROW, 'hand': UV_SHRINK}
+    # UV ZONES (session 31). The zone a vertex unwraps WITH — not the same thing
+    # as the texel budget it gets. See unwrap_zones below for why the projection
+    # is run per zone.
+    vzone = []
     for i, v in enumerate(body.data.vertices):
         r = region_of(v.co, own2[i], lm)
         if r in ('head', 'face'):
             groups['skull'].append(i)
         elif r == 'hand':
             groups['hand'].append(i)
+        nm = own2[i] or ''
+        side = nm[-1] if nm[-1:] in ('L', 'R') else 'L'
+        if r in ('head', 'face'):
+            vzone.append('skull')
+        elif r == 'hand':
+            vzone.append('hand' + side)
+        elif nm.startswith(('upperArm', 'lowerArm')):
+            vzone.append('arm' + side)
+        elif nm.startswith(('upperLeg', 'lowerLeg')):
+            vzone.append('leg' + side)
+        else:
+            vzone.append('trunk')
     for r, idxs in groups.items():
         if not idxs:
             continue
@@ -8751,15 +8957,7 @@ def finish_lowpoly(body, lm):
             v.co = p + (v.co - p) * scales[r]
 
     bpy.context.scene.tool_settings.use_uv_select_sync = True
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.0,
-                             area_weight=1.0, correct_aspect=True,
-                             scale_to_bounds=False)
-    bpy.ops.uv.pack_islands(rotate=True, scale=True, merge_overlap=False,
-                            margin_method='FRACTION', margin=0.004,
-                            shape_method='AABB')
-    bpy.ops.object.mode_set(mode='OBJECT')
+    unwrap_zones(body, vzone)
 
     # Put the geometry back. Only the UVs keep the reweighting.
     for i, co in enumerate(saved):
@@ -10056,9 +10254,24 @@ def stripe_texel_ownership(low, out_dir):
               'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'head'}),
         w, h)
     ov = int((arm_m & rest).sum())
+    ov_frac = ov / max(1, int(arm_m.sum()))
     log(f'STRIPE OWNERSHIP overlap: {ov} texels are claimed by an ARM polygon '
-        f'and by a trunk polygon at once ({ov / max(1, int(arm_m.sum())):.4f} '
+        f'and by a trunk polygon at once ({ov_frac:.4f} '
         f'of the arm mask) — a sound unwrap gives zero')
+    # GATE (reviewer 23:10, session 13): "separate, non-overlapping islands for
+    # each arm, trunk, each leg — gate: zero shared texels between arm and trunk
+    # masks on the shipped weights". The zoned unwrap (unwrap_zones) delivers
+    # literally zero, so the gate is written at zero rather than at a tolerance
+    # nobody measured. NEGATIVE CONTROL: BODY_SABOTAGE_UVZONES=1 restores the
+    # single global projection and must fail here (it measured 10 301).
+    if ov > UV_ZONE_OVERLAP_MAX:
+        bpy.data.images.remove(img)
+        raise SystemExit(
+            f'[body] UV ZONE gate: {ov} texels ({ov_frac:.4f} of the arm mask) '
+            f'are claimed by an arm polygon and a trunk polygon at once '
+            f'(max {UV_ZONE_OVERLAP_MAX}). The arm and trunk share atlas space, '
+            f'so no paint on one can be kept off the other — the arm stripe '
+            f'cannot ship over this layout. See unwrap_zones.')
     bad = blue & ~allowed
     leak = int(bad.sum())
     total_blue = int(blue.sum())
