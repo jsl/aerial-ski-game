@@ -1428,11 +1428,46 @@ def weight_locality_report(obj, arm, tag, verbose=True):
     r = {'n': len(ds), 'bad': len(worst), 'max': ds[-1] if ds else 0.0,
          'p99': ds[int(0.99 * (n - 1))] if ds else 0.0,
          'per_group': per_group, 'worst': worst[:8]}
+    # THE HELPERS, BROKEN OUT. Session 25: the four helper pairs are the one
+    # family of bones whose locality nobody had ever looked at on its own, and
+    # the aggregate cannot show it — `hlpShoulder` bridges `spine_03`, so
+    # `_segment_halfdiag` hands it the TORSO's 175 mm cross-section and its
+    # segment runs from the torso centre to the upper-arm centre. Skin at the
+    # small of the back is inside that by construction, whatever weight it
+    # carries. The browser probe measures 0.28 of a lumbar vertex on
+    # `hlpShoulderL` and 0.51 of a buttock vertex on `hlpKneeR` in the flight
+    # tuck, and both are inside the aggregate's 0 offenders.
+    hp = {}
+    for v in obj.data.vertices:
+        for g in v.groups:
+            if g.weight < LOCALITY_MIN_W or g.group not in segs:
+                continue
+            nm, a, b, reach = segs[g.group]
+            if nm not in JOINT_HELPERS:
+                continue
+            hp.setdefault(nm, []).append(
+                (_seg_dist(v.co, a, b) / reach, g.weight))
+    r['helpers'] = {}
+    for nm, rows in sorted(hp.items()):
+        rows.sort(key=lambda t: -t[0])
+        rr = [t[0] for t in rows]
+        rr_s = sorted(rr)
+        r['helpers'][nm] = {
+            'n': len(rr), 'reach_mm': segs[[gi for gi, e in segs.items()
+                                            if e[0] == nm][0]][3] * 1000,
+            'p99': rr_s[int(0.99 * (len(rr_s) - 1))], 'max': rr_s[-1],
+            'over': sum(1 for x in rr if x > LOCALITY_MAX_R),
+            'worst_w': rows[0][1]}
     if verbose:
         log(f'LOCALITY {tag}: {r["bad"]}/{r["n"]} weights >= {LOCALITY_MIN_W} '
             f'sit further than {LOCALITY_MAX_R:.2f} x their bone\'s own reach '
             f'| d/reach p50 {ds[n//2]:.2f} p90 {ds[int(0.90*(n-1))]:.2f} '
             f'p99 {r["p99"]:.2f} max {r["max"]:.2f}')
+        for nm, h in r.get('helpers', {}).items():
+            log(f'  HELPER {nm}: {h["n"]} weights, reach {h["reach_mm"]:.0f} mm, '
+                f'd/reach p99 {h["p99"]:.2f} max {h["max"]:.2f}, '
+                f'{h["over"]} over {LOCALITY_MAX_R:.2f} '
+                f'(worst carries w={h["worst_w"]:.3f})')
         if worst:
             top = sorted(per_group.items(), key=lambda kv: -kv[1])[:5]
             log('  by group: ' + ', '.join(f'{k} {v}' for k, v in top))

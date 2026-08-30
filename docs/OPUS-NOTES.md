@@ -796,6 +796,160 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 25 (2026-08-30, 07:1x-08:2x)
+
+Merged `render-realism-glm` first (9 commits: GLM's 132-134 peak de-glassing,
+the B-net grazing alpha cutoff, the STRATA ridge band map). Both conflicts were
+version counters again — `ASSET_V` is 54 on both sides so this lane's comment
+stands, and `index.html`'s `game.js?v=` takes GLM's 51 (they are ahead there).
+Committed `9fcbd1f` on unit 81/81 + golden 30/30 before touching anything else.
+
+### Item 5 — the reach ceiling did NOT buy the tuck, and here is the number
+
+Session 24's single open question was whether the locality repair had brought
+the flight-tuck strain down from session 23's p99 2.613 / max 10.345. It has
+not:
+
+| flight tuck | session 23 | session 25 (shipped) |
+|---|---|---|
+| p99 | 2.613 | **2.536** |
+| p99.9 | — | 6.182 |
+| max | 10.345 | **13.593** |
+
+p99 moved by 3%; the max went UP. `upperArmR` can no longer hold 0.68 of a
+lower-belly vertex, and the tuck does not care. **So the tuck strain is not
+what the reach ceiling was limiting, and item 5's gate still cannot be set at
+the brief's 1.35.** The prize session 24 expected is not there, and saying so
+is the useful result.
+
+By rest-edge length, on the same run (`STRAINTABLE`):
+
+| bucket | n | p99 | max |
+|---|---|---|---|
+| 2-5 mm | 6922 | 1.047 | 1.218 |
+| 5-10 mm | 21038 | 1.086 | 10.194 |
+| >= 10 mm | 25982 | **3.376** | 13.593 |
+
+The short edges are essentially rigid. The residue is on the LONG edges, which
+is the opposite of what a sliver population would do.
+
+### What the hot population actually is
+
+New anatomy probe (scratch, deleted before the commit; every number below is
+from the browser, on the shipped asset), counting unique mesh edges over 1.35:
+
+| pose | hot / n | share | weight-flat (dw < 0.10) |
+|---|---|---|---|
+| neutral | **0 / 30953** | 0.00% | — |
+| flight tuck | 1655 / 30953 | 5.35% | 125 |
+| pike | 1432 / 30953 | 4.63% | 66 |
+
+Two things fall out of that table.
+
+1. **At rest the skin is exact** — zero edges over 1.35 out of 30953. Whatever
+   is wrong is a function of the POSE, not of the bake. That is a change of
+   verdict: the standing reading since session 20 has been "the residue is
+   item 3 bake geometry, it does not move when the lattice under it is
+   halved". A bake defect would be there at rest too. It is not.
+2. **92% of the hot edges have a real weight difference across them**
+   (1530 of 1655 have per-endpoint weight-vector L1 >= 0.10; only 125 are
+   weight-flat). The `dw` histogram is
+   `[0.05, 0.1, 0.2, 0.4, 0.8, 2] -> [22, 125, 305, 852, 1523, 1655]` — the
+   mass of it sits at dw 0.4-0.8, i.e. neighbouring vertices whose weight
+   vectors differ by half. So this is a SKIN problem after all, and the seam
+   gate does not see it because the seam gate measures weight L1 per edge
+   (max 0.925, limit 1.10) without asking what the bones it names DO in a
+   pose. Two bones a half-weight apart are harmless if they rotate together
+   and a tear if they do not.
+
+Where they are, in rest coordinates (flight tuck): hip/crotch 479,
+torso-upper 414, thigh 324, shin 319, hand 63, arm-lower 35, arm-upper 21.
+
+### The trap that ate an hour, recorded so it does not eat another
+
+The probe first reported that a lumbar vertex carried 0.51 on `hlpKneeR` and
+0.28 on `hlpShoulderL` — a knee helper driving the small of the back, which
+would have been the whole answer. It is not true. **`skeleton.bones` is not
+the joint list the vertex buffer indexes.** On this asset it is 22 entries and
+starts with `AthleteRig`, the armature root node, whose `getIndex()` is -1;
+`getTransformMatrices()` returns 23 matrices; `MatricesIndices` runs over the
+21 real joints. So `skeleton.bones[mi[k]].name` names the bone alphabetically
+BEFORE the real one, for every vertex. Skinning is unaffected (it only ever
+indexes the matrix array, which is what the shader does), so the strain
+numbers above all stand — only the names were wrong. The note is now in
+`tests/drive/spine.spec.js` above `MEASURE`, which is where the next such probe
+will be written.
+
+What settled it was measuring the same claim on the build side, which is the
+half of this that ships.
+
+### Shipped: the per-helper locality breakdown (`blender/build_body.py`)
+
+The four helper pairs are the one family of bones whose locality nobody had
+looked at on its own, and the aggregate cannot show them — `_segment_halfdiag`
+hands `hlpShoulder` the TORSO's 175 mm cross-section (its neighbour is
+`spine_03`), so its capped reach is 245 mm and skin at the small of the back is
+inside it by construction, whatever weight it carries. That was a real gap in
+the argument even though the answer came back clean. `weight_locality_report`
+now breaks the eight helpers out by name, always, and the build logs:
+
+    HELPER hlpElbowL:    164 weights, reach  78 mm, d/reach p99 1.03 max 1.10, 0 over 1.70
+    HELPER hlpElbowR:    162 weights, reach  78 mm, d/reach p99 1.01 max 1.03, 0 over 1.70
+    HELPER hlpHipL:      185 weights, reach 175 mm, d/reach p99 0.97 max 0.99, 0 over 1.70
+    HELPER hlpHipR:      185 weights, reach 175 mm, d/reach p99 0.92 max 0.95, 0 over 1.70
+    HELPER hlpKneeL:     252 weights, reach 141 mm, d/reach p99 1.18 max 1.21, 0 over 1.70
+    HELPER hlpKneeR:     248 weights, reach 141 mm, d/reach p99 1.17 max 1.18, 0 over 1.70
+    HELPER hlpShoulderL: 188 weights, reach 245 mm, d/reach p99 1.15 max 1.17, 0 over 1.70
+    HELPER hlpShoulderR: 252 weights, reach 245 mm, d/reach p99 1.14 max 1.16, 0 over 1.70
+
+Every helper is local, with margin, on the honest capped reach. The helpers are
+exonerated by measurement rather than by the comment that asserted it.
+
+It is an INSTRUMENT, not a gate, and it is behaviour-neutral: the rebuild it
+came from produced a byte-identical-length GLB differing only in bake float
+noise, so the assets were reverted and `ASSET_V` is NOT bumped. Nothing the
+browser downloads changed this session.
+
+### Verification
+
+    build   rc=0, 2048/96, every gate green (LOCALITY 0/12524 after helpers,
+            WEIGHTSEAM max 0.925 / 0 hot, JOINTSPAN 0/1816)
+    unit    81/81      golden 30/30 (no display node changed, no re-capture)
+    drive   spine 14/14
+    assets  UNCHANGED (instrument only) — ASSET_V stays 54
+
+### Open at the end of session 25, and what I would do next
+
+- **Item 5's next move is a POSED weight metric, not another rest-pose one.**
+  Every gate in the build measures the skin at rest; the defect is 0 edges at
+  rest and 1655 at tuck. The measurement that would find it is: for each edge
+  over 1.35 in the tuck, the ANGLE between the two endpoints' blended
+  transforms — a large weight difference between bones that rotate together is
+  fine, the same difference between bones 100 deg apart is the tear. That is
+  computable in the build (the pose endpoints are known) and would be the first
+  gate in this lane that measures what the author actually sees.
+- The hip/crotch cluster (479 edges) and torso-upper (414) are the two biggest
+  and they are the author's "back separating". They are worth attacking before
+  the thigh/shin.
+- Unchanged from session 24, in the reviewer's order: the smoothed suit shell
+  (author #7, still the author's most visible open item), panels / collar /
+  cuffs, the THUMB, and the UV unwrap + arm stripe last (texture space).
+- `reclaim_chest_wall` still runs on the R side only (`upperArmR` hard-coded).
+  Carried from sessions 23 and 24, still not acted on.
+
+### For the reviewer (session 25)
+
+1. **The reach ceiling did not move the tuck** (p99 2.613 -> 2.536, max
+   10.345 -> 13.593). Session 24 hoped it would; it did not. Item 5's 1.35 gate
+   remains unshippable and I have not set it.
+2. **The "it is bake geometry" verdict standing since session 20 is wrong**:
+   the skin is exact at rest (0 / 30953 edges over 1.35) and 92% of the tuck's
+   hot edges carry a real weight difference. Item 5 is still a skin problem.
+   I did not fix it this session — I established what it is.
+3. Shipped change is one instrument in `build_body.py`. No physics change, no
+   golden rebaseline, no gate loosened, no asset changed, no gate added that I
+   cannot control negatively.
+
 ## Session 24 (2026-08-30, 05:5x-07:0x)
 
 Merged `render-realism-glm` first (4 commits: GLM's snowing flatness pass).
