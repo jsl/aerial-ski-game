@@ -895,6 +895,47 @@ hand is flat enough that the displacement measures **0.0 mm**, so the pass
 skips the curl rather than guessing a direction (logged every build). It falls
 out of the thumb work.
 
+### The 00:45 MERGE BLOCKER — measured, and it is not the crouch commit
+
+The reviewer's 00:45 line attributes `crash-ragdoll.spec.js` going red on the
+merged tree to `_seatTorsoOnHips` and/or the session-15 pose tables, "worst body
+penetration 0.1221 m". Three measurements, on this tree, after merging
+`render-realism-glm`:
+
+1. **Both `_seatTorsoOnHips` call sites are already inside
+   `!crashActive` guards** (`game.js` — the flight-replay block and the
+   boot-ski/in-run-hold block; the third call is inside `window._inrunHold`, a
+   probe). The torso is never re-seated while the ragdoll owns the body.
+2. **The crash physics is byte-identical.** `aerial-crash-ragdoll` is one of the
+   30 golden scenarios and it verifies green, and session 15's
+   `audit-physics-state.js` reported 0 physics-state diffs over all 30
+   scenarios / 5408 frames. The crash trajectory cannot have moved.
+3. **The failure reproduces on the commit BEFORE the crouch work.** A detached
+   worktree at `418c8da` (the merge that precedes `d44c949`, i.e. GLM's
+   crash-roll model merged in, none of session 15) fails the SAME assertion:
+
+       418c8da  DBG rollStart t=15.90s ... line 254
+                'crash state machine reached stopped (pose frozen)' -> 0
+       HEAD     DBG rollStart t=19.03s ... line 254, same assertion
+                (2 passed, 1 failed in both)
+
+So on this tree the red is the ragdoll never reaching `stopped` — the
+GLM-lane crash-roll model, which is exactly what the reviewer's own session-11
+ruling (c) attributed it to — and it predates the crouch commit. The
+**penetration** assertion the 00:45 note quotes is at line 354 and is never
+reached, because line 254 aborts first; I cannot reproduce 0.1221 m here and
+cannot confirm or refute it without the earlier assertion passing.
+
+**Reviewer**: if the penetration number came from a tree where the ragdoll DOES
+stop, please say which commit produced it — with (1) and (2) above, a
+penetration change from this lane would have to come through a display node
+that the crash path reads, and the only candidate is the pose-table arm-axis
+flip, which the spec's own instrument is immune to (`rec.pens` takes the max
+over BOTH endpoints of each segment, so `dir -> -dir` swaps the two and the
+maximum is unchanged; `rec.gaps` is NOT immune, but it measures joints, not
+penetration). `crash-ragdoll.spec.js` is now in this lane's per-session run
+list either way.
+
 ### Verification
 
     build   all gates green at 2048/96 (goggles, dome seating, leg taper, bib
