@@ -2385,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=66";   // 66: knee-band shell fix (iter 147) — suit-shell move fades to zero by |along| 0.70 on the legs; assets re-baked
+    const ASSET_V = "?v=67";   // 67: NEXT.md step 2 — shell curvature gates extended to upper arms/thighs (chest-wall + fit exclusions, smoothing 20 iters); thigh iron freed to 16 mm per the garment thigh_depth ruling; assets re-baked
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what

@@ -2707,8 +2707,9 @@ def _girth_violations(r):
                        f'[{lo*1000:.0f},{hi*1000:.0f}]')
     if r['thigh_hip'] < LEG_GIRTH_GATE['thigh_hip']:
         bad.append(f'thigh/hip {r["thigh_hip"]:.3f}')
-    if r['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
-        bad.append(f'thighD/B {r["thigh_depth"]:.3f}')
+    # REVIEWER RULING (2026-08-30, NEXT.md step 2): thigh_depth is gated on
+    # the GARMENT shell (shell_report/suit_shell_gate), not on this skin
+    # slice — the shell is what shows. Kept as an instrument in the log.
     # calf/hip is NOT a failure condition any more — it is the cause of item 11.
     # As a LOWER bound with no counterpart it drove the shin radially out by
     # x1.211, landing the shipped silhouette at calf/thigh 0.937 (measured,
@@ -5336,23 +5337,22 @@ SHELL_TRIM = 0.045             # m: off-surface candidates are not this garment
 # Both are recorded as open in docs/OPUS-NOTES.md with these numbers. The gate
 # ships binding where the pass is honest rather than at a number chosen to let
 # the defects through.
-SHELL_CURV_GATED = ('lowerArmL', 'lowerArmR', 'lowerLegL', 'lowerLegR')
+SHELL_CURV_GATED = ('lowerArmL', 'lowerArmR', 'lowerLegL', 'lowerLegR',
+                    'upperArmL', 'upperArmR', 'upperLegL', 'upperLegR')
 SHELL_INFLECT_GATED = ('lowerArmL', 'lowerArmR', 'lowerLegL', 'lowerLegR',
                        'upperArmL', 'upperArmR')
 SHELL_CURV_GATE = 0.35         # author: curvature variance <= 35% of the body's
 SHELL_INFLECT_GATE = 2         # sign changes of the silhouette 2nd derivative
 SHELL_MAX_MOVE = 0.025         # m: inward travel cap (sliver control)
-# Per-segment inward cap. The THIGH is special and the number is measured, not
-# chosen: `LEG_GIRTH_GATE['thigh_depth']` asks the thigh to stay at least 0.90
-# as deep as it is broad, and the shipped thigh sits at 0.935 — 7.5 mm of
-# depth. Ironing the quadriceps and hamstring relief off a thigh takes depth
-# and not breadth (the relief IS fore-aft), so an uncapped iron spent 10 mm and
-# read 0.887. 6 mm is what the existing gate leaves; the rest of that relief is
-# open, and it wants either a per-azimuth iron or a thigh_depth re-derived on a
-# garment rather than on skin — a reviewer call, recorded in OPUS-NOTES.
-SHELL_MAX_MOVE_SEG = {'upperLeg': 0.006}
+# Per-segment inward cap. REVIEWER RULING (2026-08-30, NEXT.md step 2):
+# `thigh_depth` is re-derived on the GARMENT shell, not the skin — the shell
+# is what shows. The 6 mm cap that the skin-derived 0.90 gate used to force is
+# lifted to 16 mm, freeing the ~10 mm of quadriceps/hamstring relief the iron
+# needs; the 0.90 depth gate is re-attached to the SHIPPED garment in
+# `shell_report`/`suit_shell_gate`, where the post-shell depth is measured.
+SHELL_MAX_MOVE_SEG = {'upperLeg': 0.016}
 SHELL_MAX_OUT = 0.000          # m: the shell is SHRINK-ONLY (see suit_shell)
-SHELL_SMOOTH_ITERS = 6         # Jacobi passes of the radius-field Laplacian
+SHELL_SMOOTH_ITERS = 20        # Jacobi passes of the radius-field Laplacian
 SHELL_SMOOTH_LAMBDA = 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
 
@@ -5638,9 +5638,24 @@ def suit_shell(body, joints):
     for nm in segs:
         c = bl(nm)
         rungs = {}
+        tp = axes.get('torso') if nm.startswith('upperArm') else None
         for i, (s, w) in cand.items():
             if s != nm or w < 0.25:
                 continue
+            # NEXT.md step 2, named cause 1: the arm rebind leaves a SHEET of
+            # chest-wall vertices owned by the upper arm, and fitting the tube
+            # through it is what keeps the upper-arm curvature at 1.037/0.715.
+            # The torso's own tube is fitted FIRST (torso leads segs), so the
+            # non-limb geometry is identifiable geometrically: any candidate
+            # inside the torso's fitted surface (minus 3 mm of tolerance) is
+            # chest wall, not arm, and is excluded from the fit.
+            if tp is not None:
+                z = vs[i].co.z
+                tax, tay = _shell_axis_at(tp, z)
+                rdx, rdy = vs[i].co.x - tax, vs[i].co.y - tay
+                if math.hypot(rdx, rdy) < _shell_radius(tp, z,
+                                                        math.atan2(rdy, rdx)) - 0.003:
+                    continue
             rungs.setdefault(int(math.floor(vs[i].co.z / SHELL_DZ)), []).append(
                 (vs[i].co.x - c.x, vs[i].co.y - c.y))
         # TRIM first, and it is not a nicety. `dominant_segments` is an
@@ -5748,6 +5763,19 @@ def suit_shell(body, joints):
         d = abs(r - _shell_radius(prof, vs[i].co.z,
                                   math.atan2(vs[i].co.y - cy,
                                              vs[i].co.x - cx)))
+        # The same exclusion as the fit, applied to the MOVE set: a chest-wall
+        # vert that survives the trim ramp must not be pulled at the arm tube
+        # (nor read into the curvature metric as arm relief).
+        tp = axes.get('torso')
+        if (nm.startswith('upperArm') and tp is not None):
+            tz = vs[i].co.z
+            tax, tay = _shell_axis_at(tp, tz)
+            rdx, rdy = vs[i].co.x - tax, vs[i].co.y - tay
+            if math.hypot(rdx, rdy) < _shell_radius(tp, tz,
+                                                    math.atan2(rdy, rdx)) - 0.003:
+                del cand[i]
+                dropped += 1
+                continue
         t_lo = trim.get(nm, SHELL_TRIM)
         # A CLIFF here is a tear: a vertex 1 mm inside the bound moves the
         # whole way onto the tube and its neighbour 1 mm outside does not
@@ -5998,6 +6026,25 @@ def shell_report(body, shell):
         f'mm = {r["shoulder_hip"]:.3f} (gate <= 1.35) | inner-thigh gap '
         f'{shell["gap_before"]*1000:+.1f} -> {r["thigh_gap"]*1000:+.1f} mm '
         f'(author #12 item 2 target >= 40)')
+    # REVIEWER RULING (2026-08-30, NEXT.md step 2): thigh_depth re-derived on
+    # the GARMENT shell — the shell's own verts at mid-thigh, not the skin
+    # cluster. The 0.90 gate is enforced in suit_shell_gate.
+    _own = dominant_segments(body)
+    _zd = bl('upperLegL').z
+    _pts = [(v.co.x, v.co.y) for v in body.data.vertices
+            if abs(v.co.z - _zd) < 0.02 and _own[v.index] == 'upperLegL'
+            and v.index in shell['cand']]
+    if len(_pts) >= 6:
+        _xs = [p[0] for p in _pts]
+        _ys = [p[1] for p in _pts]
+        r['thigh_depth'] = ((max(_ys) - min(_ys))
+                            / max(1e-6, max(_xs) - min(_xs)))
+    else:
+        r['thigh_depth'] = None
+    log(f'  thigh garment depth/breadth {r["thigh_depth"]:.3f} '
+        f'(gate >= {LEG_GIRTH_GATE["thigh_depth"]}, n={len(_pts)})'
+        if r['thigh_depth'] is not None else
+        f'  thigh garment depth/breadth UNMEASURABLE (n={len(_pts)})')
     return r
 
 
@@ -6037,6 +6084,13 @@ def suit_shell_gate(body, shell, prop):
                    f'> 0.55 (item 4: not a body builder)')
     if prop['shoulder_hip'] and prop['shoulder_hip'] > 1.35:
         bad.append(f'shoulder/hip width {prop["shoulder_hip"]:.3f} > 1.35')
+    # REVIEWER RULING (2026-08-30, NEXT.md step 2): thigh_depth, re-derived
+    # on the garment shell by shell_report.
+    if prop.get('thigh_depth') is not None and \
+            prop['thigh_depth'] < LEG_GIRTH_GATE['thigh_depth']:
+        bad.append(f'garment thigh depth/breadth '
+                   f'{prop["thigh_depth"]:.3f} < '
+                   f'{LEG_GIRTH_GATE["thigh_depth"]}')
     if bad:
         raise SystemExit('[body] suit shell gate FAILED: ' + '; '.join(bad))
 

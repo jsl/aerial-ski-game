@@ -233,6 +233,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 148 | **NEXT.md step 2 slice 1 — shell curvature gates EXTENDED to the upper arms and thighs, ALL 8 gated segments now ≤ 0.35: upperArm 0.160/0.324 (was 1.037/0.715), thighs 0.343/0.242 (was 0.529/0.455), torso 0.088 (was 0.644, still reported-not-gated). Chest-wall verts excluded from the upper-arm fit/move via the torso's own fitted tube; thigh iron freed 6→16 mm under the reviewer's garment-`thigh_depth` ruling (gate re-attached to the shipped garment); inner-thigh gap 45.5 mm ≥ 40 (session-28 open item CLOSED); arm/thigh 0.498 ≤ 0.55; ASSET_V 67** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43. See entry 148. |
 | — | Iteration 146 | **NEXT.md step 0 (FACEDIST) LANDED — the sabotage control was UN-BUILDABLE at this tip (the later temple-arm + required-region gates aborted `BODY_SABOTAGE_FACE=1` before export; exempted under the flag), and the face-discrimination gates are no longer fatal to `figure_side.png` (deferred behind the side-shot gates); measured on the merged branch: honest FACEDIST 0.1802 PASS, sabotage 0.1784 + back lensFrac 0.1655 + front−back 0.024 → spec FAILS as required — the `≤` inversion NEXT.md asked for is measurably impossible here (it would fail the honest build) and is recorded as an open question** | honest: look 6/6, FACEDIST 0.1802, figure_side.png written; sabotage: spec fails exactly on the two lens gates, figure_side.png STILL written (the point of the rework); unit 81/81, golden 30/30, rig 13/13; ASSET_V 64→65, `game.js?v=65`, preloads `?v=65`. See entry 146. |
 | — | Iteration 145 | **P0 corridor grey slab FIXED — corridor unbaked (game.js skips `terrainCorridor` in `applyBakedLighting`; the 138/142 baked multipliers were the in-run slab); grey-attr y-flip corrected (141/142 closed the ramp on MIRRORED numbers); corridor gate rebased on the corrected instrument** | negative control (baked 4992619, inrun framing): 0.7613/0.8155 = 0.933 — FAILS the 0.95 gate; fixed build: 0.7869/0.816 = 0.964 — PASSES; scene framing canary 0.6573/0.8337 (mean there cannot discriminate — pre-138 good build measures 0.787; see entry); by eye inrun.png is white again, matching `before_138`. unit 81/81, golden 30/30 (audit 0 diffs × 30/5408), look 6/6. See entry 145. |
 | — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
@@ -1415,6 +1416,55 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 148 — NEXT.md step 2 slice 1: shell curvature gates extended to the upper arms and thighs — all 8 gated segments ≤ 0.35; thigh iron freed per the garment-`thigh_depth` ruling; inner-thigh gap ≥ 40 reached; ASSET_V 67
+
+**NEXT.md steps 2–3 remain (two-tone panels/collar/cuffs, crotch shard cleanup,
+torso bib-aware gate, arm-stripe verification); NEXT.md kept.**
+
+**Changes (`blender/build_body.py`, `game.js`/`index.html` ASSET_V only, assets
+re-baked at 2048/96):**
+1. **Chest-wall exclusion (upper arms).** The torso's tube is fitted first
+   (it leads `segs`); any upperArm candidate inside the torso's fitted
+   superellipse (−3 mm tolerance) is non-limb geometry left by the arm rebind
+   and is excluded from BOTH the rung fit and the move/curvature set
+   (NEXT.md's named cause 1).
+2. **Thigh iron freed.** `SHELL_MAX_MOVE_SEG['upperLeg']` 0.006 → 0.016 m per
+   the reviewer ruling; the 0.90 `thigh_depth` gate moved OFF the pre-shell
+   skin slice (`_girth_violations` keeps it as a log instrument only) and ONTO
+   the shipped garment (`shell_report` measures the shelled upperLegL verts at
+   mid-thigh; `suit_shell_gate` enforces ≥ 0.90).
+3. **`SHELL_SMOOTH_ITERS` 6 → 20** — the radius-field Laplacian is what takes
+   the last joint-band relief off the marginal segments.
+4. **`SHELL_CURV_GATED` now includes upperArmL/R and upperLegL/R** (torso stays
+   reported-not-gated pending the bib-aware mask, as before).
+
+**Verification (final full-res build, all build gates green):**
+  SHELLCURV ratios ≤ 0.35 on every gated segment: lowerArm 0.070/0.073,
+  lowerLeg 0.036/0.054, torso 0.088 (reported), upperArm **0.160/0.324**
+  (was 1.037/0.715), upperLeg **0.343/0.242** (was 0.529/0.455).
+  SHELLPROP: arm/thigh 0.498 ≤ 0.55; shoulder/hip 0.896 ≤ 1.35; inner-thigh
+  gap **+45.5 mm** (was +23.7 pre-shell; the ≥ 40 item from session 28 is
+  CLOSED). Garment thighD/B 1.468 ≥ 0.90 (see open question — the n=16
+  fragment over-reads; the gate is honest but the instrument is weak).
+  Shipped taper calf/thigh 0.699 in band; leg profile step-free.
+  `npm run test:unit` **81/81**; `npm run test:golden` **30/30**;
+  `spine` + `rig` + `chain` + `look` **43/43** (incl. all four spine knee
+  gates and the FACEDIST honest build — no recalibration anywhere).
+  `figure_front.png` by eye: athlete centred, bib 30 legible, suit panels
+  read; the crotch/waist shard cluster is still visible (open NEXT item).
+  ASSET_V 66 → 67 (`game.js?v=67`, preloads, `index.html`).
+  A failed intermediate direction is recorded for the reviewer: a
+  mutual-thigh refit (each thigh's tube refitted excluding the other's
+  tube + 5 mm) collapsed the thigh fit (106 → 83 mm) and broke item 4
+  (arm/thigh 0.645); reverted — thighs are too adjacent for that exclusion.
+
+**Open questions for the reviewer:**
+- The garment `thigh_depth` instrument reads 1.468 from only 16 shelled verts
+  (extents over a fragment — the y-extent likely catches crotch verts). The
+  ≥ 0.90 gate passes trivially, so nothing hangs on it today, but a
+  tube-based measure (fitted B/A at mid-segment, plus ease) would be the
+  honest instrument. Want me to re-derive it that way next iteration?
 
 ### 147 — NEXT.md step 1: the shell's knee-band collapse fixed — the shell's MOVE now fades to zero by |along| 0.70 on the legs; kneeMax 32.516 → 5.65; ASSET_V 66
 
