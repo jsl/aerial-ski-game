@@ -370,40 +370,34 @@ def unwrap_for_lightmap(receivers):
         # into whatever that untouched layer happens to contain.
         lm.active_render = True
 
-    # UV selection has to follow mesh selection, or pack_islands finds nothing
-    # selected in a headless session and silently does nothing.
-    bpy.context.scene.tool_settings.use_uv_select_sync = True
-
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in receivers:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = receivers[0]
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.smart_project(
-        angle_limit=math.radians(66.0),
-        island_margin=0.0,
-        area_weight=1.0,
-        correct_aspect=True,
-        scale_to_bounds=False,
-    )
-
-    # smart_project alone lays the islands out at WORLD scale and leaves them
-    # wherever they land: measured on this scene it filled 0.7% of a 2048 atlas,
-    # a strip along the top edge, wasting 99% of the texels. pack_islands with
-    # scale=True grows them all by one common factor until they fill the square,
-    # which keeps the area-proportional relationship smart_project established
-    # (big hill, big island) while actually using the atlas.
-    #
-    # margin is in UV units: 0.004 at 2048 is ~8 texels, enough that bilinear
-    # filtering and mipmaps cannot pull a neighbouring island across a seam and
-    # leave a bright fringe along a ridge.
-    bpy.ops.uv.pack_islands(
-        rotate=True, scale=True, merge_overlap=False,
-        margin_method='FRACTION', margin=0.004, shape_method='AABB',
-    )
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # ── Entry-138: deterministic planar atlas instead of smart_project ──────
+    # The corridor is now per-triangle UNshared (entry-137/138: per-vertex uv2
+    # must be representable). smart_project on that topology degenerates every
+    # one-triangle island — measured per-face UV area ~9e-15, pack_islands then
+    # has nothing to pack and the fill guard aborts the bake. All receivers are
+    # terrain-draped heightfields anyway, so a top-down world-xz projection IS
+    # the correct lightmap: no seams, area-proportional texels, one UV per
+    # vertex by construction. Each receiver gets its own u-range slice of the
+    # atlas so footprint overlaps in xz cannot blend one mesh's lighting into
+    # another's texels.
+    xs = [v.co.x for o in receivers for v in o.data.vertices]
+    zs = [v.co.z for o in receivers for v in o.data.vertices]
+    minx, maxx = min(xs), max(xs)
+    minz, maxz = min(zs), max(zs)
+    spanx = max(maxx - minx, 1e-6)
+    spanz = max(maxz - minz, 1e-6)
+    slice_u = 1.0 / max(len(receivers), 1)
+    for si, o in enumerate(receivers):
+        lm = o.data.uv_layers['Lightmap']
+        u0 = si * slice_u
+        loops = o.data.loops
+        for li in range(len(loops)):
+            vert = o.data.vertices[loops[li].vertex_index]
+            lm.data[li].uv = (
+                u0 + slice_u * 0.98 * (vert.co.x - minx) / spanx
+                     + slice_u * 0.01,
+                0.98 * (vert.co.z - minz) / spanz + 0.01,
+            )
 
     fill = atlas_fill(receivers)
     log(f'atlas unwrapped and packed: {fill * 100:.1f}% of UV space used')

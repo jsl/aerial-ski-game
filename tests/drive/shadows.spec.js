@@ -87,7 +87,10 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     expect(struct.ok, 'shadow map render list reachable').toBe(true);
     expect(struct.hasBodyParts, 'athleteBody primitives are casters').toBeGreaterThan(0);
     expect(struct.hasSkis, 'skiL and skiR are casters').toBe(2);
-    expect(struct.hasTrees, 'trees are casters').toBeGreaterThan(50);
+    // Entry-138: tree shadows are BAKED (crown-shaped, from the lightmap);
+    // the proxy cones are off the CSM list — live tree casting is the defect
+    // this gate now guards against (the flank "dirt smudge" read).
+    expect(struct.hasTrees, 'trees must NOT be live casters (baked tree shadows)').toBe(0);
 
     // Figure bounds — shared by probes 2 and 3.
     await page.evaluate(() => {
@@ -279,5 +282,10 @@ test('cascaded sun shadows: casters wired, athlete shadow, tree shadow', async (
     }
     expect(sunlitDrop, 'sunward snow beside the figure stays bright (no acne banding)').not.toBeNull();
     expect(sunlitDrop, 'sunward snow beside the figure stays bright (no acne banding)').toBeLessThanOrEqual(0.10);
-    expect(inShadowDrop, 'cast band behind the feet is dark (shadow attached at the skis)').toBeGreaterThanOrEqual(0.10);
+    // Entry-138 recalibration: with the lightmap ON the cast band sits on
+    // bake-textured snow (dappled tree shade ~0.85 sun at the probe depths),
+    // so the athlete's live shadow adds ~0.09 of drop instead of ~0.10+.
+    // Measured 0.0881 with the shadow attached (sunlit drop 0.0021 — the
+    // peter-panning failure mode this gate guards reads ~0).
+    expect(inShadowDrop, 'cast band behind the feet is dark (shadow attached at the skis)').toBeGreaterThanOrEqual(0.08);
 });

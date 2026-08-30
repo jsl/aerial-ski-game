@@ -8,22 +8,17 @@
 //                          with useLightmapAsShadowmap so it multiplies rather
 //                          than adds
 //
-// TEMPORARY CONTRACT (iteration 13, reviewer order): the bake is switched OFF at
-// applyBakedLighting. The maps on disk were baked for the pre-P1 slab terrain;
-// after the corridor ribbon landed they describe removed geometry, and their
-// stale zero multipliers painted a full-width black band across the ready view
-// (9.29% of frame black; 0.09% with the clones stripped). The rebake itself is
-// blocked on a post-unwrap vertex-split fixup for the shared-vertex heightfield
-// (RENDER-PROGRESS entry 12) — surgery across the uv2 sidecar contract.
-//
-// So this file currently asserts:
-//   1. the bake stays OFF and no _baked clone leaks onto any terrain material,
+// CONTRACT since entry 138 (the rebake landed): the bake is ON at
+// applyBakedLighting. The 08-30 rebake path-traces the forest as alpha-cutout
+// crossed-card occluders (152 trees from blender/trees.json) onto two
+// receivers — terrainCorridor (whose vertices are per-triangle unshared so a
+// per-vertex uv2 sidecar can describe it) and wUpperMtn; terrainSkirt/Base and
+// the ridges are occluder-only. This file asserts:
+//   1. the sidecar applies to BOTH receivers (uv2 + _baked materials),
 //   2. the ready view carries NO stale-map black band (black8 < 0.5%; black32
 //      < 3.5% over the dark impostor forest's ~1.68% steady state — iter 60),
-// When the rebake lands: flip window._bakeLightmapEnabled back to true and
-// restore the pre-iter-13 assertions (git history has them) — receivers ≥ 20,
-// uv2 length/span per receiver, ambient/lightmap slot wiring, invertY, and the
-// "both baked slots reach the shader" black-map probe.
+//   3. trees are NOT live casters any more (the crown-shaped shadows are
+//      baked; live cone casting was the flank "dirt smudge" defect).
 
 const { test, expect } = require('@playwright/test');
 
@@ -44,12 +39,14 @@ async function boot(page) {
         null, { timeout: 30_000 });
 }
 
-test('the stale lightmap stays OFF and no _baked material reaches terrain', async ({ page }) => {
+test('the rebaked lightmap applies to both receivers and no map leaks off-terrain', async ({ page }) => {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('response', r => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); });
 
     await boot(page);
+    // The application is a fetch + texture load; wait for the count to settle.
+    await page.waitForFunction(() => window._bakedApplied !== 0, null, { timeout: 30_000 });
 
     const info = await page.evaluate((names) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
@@ -59,28 +56,26 @@ test('the stale lightmap stays OFF and no _baked material reaches terrain', asyn
             bakedNamedMaterials: scene.materials.filter(m => /_baked$/.test(m.name))
                 .map(m => m.name),
             meshMats: {},
+            uv2Lens: {},
         };
         for (const n of names) {
             const m = scene.getMeshByName(n);
             out.meshMats[n] = m && m.material ? m.material.name : null;
+            out.uv2Lens[n] = (m &&
+                m.getVerticesData(BABYLON.VertexBuffer.UV2Kind) || []).length;
         }
         return out;
-    // slice 2 retired the w*/corner_ flank fills and human item 3 (iter 44)
-    // retired the buried kickerFill/kickerBackFace block interiors; the block
-    // is the corridor ribbon's own geometry now. wUpperMtn is the only
-    // remaining non-corridor static terrain — none may carry a _baked
-    // material while OFF.
+    // Entry-138 receivers: the corridor ribbon + wUpperMtn (the bake's only
     }, ['terrainCorridor', 'wUpperMtn']);
 
-    expect(info.enabled, 'the temporary bake off-switch was flipped without the ' +
-        'rebake landing — restore baked.spec.js\'s on-state assertions first').toBe(false);
-    expect(info.applied, 'uv2/sidecar application ran while the switch is OFF').toBe(0);
-    expect(info.bakedNamedMaterials, '_baked material clones exist while the bake ' +
-        'is disabled').toEqual([]);
-    for (const [n, matName] of Object.entries(info.meshMats)) {
+    expect(info.enabled, 'the bake switch is off').toBe(true);
+    expect(info.applied, 'both bake receivers must receive uv2 + materials').toBe(2);
+    for (const n of Object.keys(info.meshMats)) {
+        const matName = info.meshMats[n];
         expect(matName, `"${n}" is missing`).not.toBeNull();
         expect(String(matName).endsWith('_baked'),
-            `"${n}" carries a _baked material while the bake is OFF`).toBe(false);
+            `"${n}" must carry a _baked material`).toBe(true);
+        expect(info.uv2Lens[n], `"${n}" must carry a uv2 buffer`).toBeGreaterThan(0);
     }
     expect(errors, 'errors or missing assets while booting').toEqual([]);
 });
@@ -172,8 +167,10 @@ test('only the athlete and the trees cast real-time shadows, and the VISIBLE ath
     expect(r.otherCasters, `${r.otherCasters} non-tree non-athlete casters — ` +
         `unrelated scenery leaked into the shadow map`)
         .toBeLessThan(60);
-    expect(r.treesCasting, 'trees are not casting (P2: all trees cast under the CSM)')
-        .toBeGreaterThan(50);
+    // Entry-138: the bake now path-traces the tree shadows (alpha-cutout card
+    // occluders) — the gate flips to assert trees are NOT live casters.
+    expect(r.treesCasting, 'trees must NOT be live casters (baked tree shadows)')
+        .toBe(0);
     expect(r.bodyCasting, 'the skinned body is not a shadow caster — it loads after ' +
         'the caster list is built, so it has to register itself').toBeGreaterThan(0);
     expect(r.skisCasting, 'skiL and skiR must both cast (P2)').toBe(2);

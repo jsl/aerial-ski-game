@@ -2237,7 +2237,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=56';   // 56: merge — camera R re-frame + hard lock (reviewer), Opus sessions 22-24, GLM 132-134
+    const ASSET_V = '?v=57';   // 57: entry-138 rebake — corridor unshared + lightmap with tree occluders applied
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
@@ -2267,24 +2267,18 @@ void main(void) {
     // once per material while uv2 is assigned per mesh.
     window._bakedApplied = 0;
 
-    // TEMPORARY OFF SWITCH (iteration 13, reviewer order 1 of 23:50): the maps on
-    // disk were baked for the PRE-P1 slab terrain. The corridor ribbon replaced
-    // those meshes, so every atlas sample taken on wInrun's newly-exposed top face
-    // reads a stale zero multiplier — a full-width black band across the ready
-    // view (measured: black coverage 9.29% of frame; 0.09% with these clones
-    // stripped). Until the rebake lands (blocked on the post-unwrap vertex-split
-    // fixup across the uv2 sidecar contract — see RENDER-PROGRESS entries 12/13),
-    // the statics render on their plain snow/ls materials. FLIP TO true WITH THE
-    // REBAKE COMMIT; baked.spec.js asserts the off-state meanwhile.
-    window._bakeLightmapEnabled = false;
+    // Entry-138: REBAKE LANDED — the iteration-13 off switch flips back ON.
+    // The bake is current (blender/bake_lightmap.py now path-traces the forest
+    // as alpha-cutout card occluders, and the corridor's vertices are unshared
+    // so the per-vertex uv2 sidecar can describe it). baked.spec.js asserts
+    // the applied state.
+    window._bakeLightmapEnabled = true;
     (function applyBakedLighting() {
         if (!window._bakeLightmapEnabled) return;
         try {
             fetch('assets/terrain_uv2.json' + ASSET_V)
                 .then(r => r.ok ? r.json() : null)
                 .then(function (data) {
-                    if (!data || !data.meshes) { window._bakedApplied = 0; return; }
-
                     // gammaSpace = false on both: these are DATA, not colour. An
                     // sRGB decode would bend every value and quietly change the
                     // shape of the occlusion.
@@ -2313,9 +2307,28 @@ void main(void) {
                         if (!mat) return null;
                         if (baked.has(mat.uniqueId)) return baked.get(mat.uniqueId);
                         const clone = mat.clone(mat.name + '_baked') || mat;
-                        clone.ambientTexture = skyvis;
-                        clone.lightmapTexture = shadow;
-                        clone.useLightmapAsShadowmap = true;
+                        // Entry-138: the corridor is a MultiMaterial (snow +
+                        // chopped-landing sub-materials); the maps live on the
+                        // SUB-materials for those, on the material itself otherwise.
+                        // MultiMaterial.clone shares its sub-materials — assign
+                        // the maps to clones of THOSE, or the shared snowMat
+                        // would lightmap the 43 uncovered meshes sampling
+                        // uv2 (0, 0) (the exact regression the clone avoids).
+                        const isMulti = clone.getClassName && clone.getClassName() === 'MultiMaterial';
+                        const targets = isMulti
+                            ? clone.subMaterials.map((s) => {
+                                if (!s) return s;
+                                const sc = s.clone(s.name + '_baked');
+                                return sc || s;
+                            })
+                            : [clone];
+                        if (isMulti) clone.subMaterials = targets;
+                        for (const t of targets) {
+                            if (!t) continue;
+                            t.ambientTexture = skyvis;
+                            t.lightmapTexture = shadow;
+                            t.useLightmapAsShadowmap = true;
+                        }
                         baked.set(mat.uniqueId, clone);
                         return clone;
                     };
@@ -3826,7 +3839,7 @@ void main(void) {
         zs.push(...JOINS);
         zs.sort((a, b) => a - b);
 
-        const positions = [], indices = [], uvs = [];
+        let positions = [], indices = [], uvs = [];
         const DEG = Math.PI / 180;
         const eps = 0.01;
         const slopeAt = (z) => Math.atan(
@@ -3872,10 +3885,34 @@ void main(void) {
         const vd = new BABYLON.VertexData();
         vd.positions = positions;
         vd.indices = indices;
-        const normals = [];
+        let normals = [];
         BABYLON.VertexData.ComputeNormals(positions, indices, normals);
         vd.normals = normals;
         vd.uvs = uvs;
+        // ── Entry-137 proposal, step 1: unshare the corridor's vertices ──────
+        // A per-vertex uv2 cannot describe the bake's per-face lightmap UVs
+        // wherever vertices are shared across faces (the bake rejected the
+        // shared grid with 2204 per-vertex conflicts). Duplicate every
+        // triangle's vertices so each vertex belongs to exactly ONE triangle,
+        // while COPYING the averaged normals from the shared computation —
+        // shading is bit-identical, only the vertex/index layout changes.
+        {
+            const fPos = [], fNrm = [], fUV = [], fIdx = [];
+            for (let t = 0; t < indices.length; t += 3) {
+                for (let k = 0; k < 3; k++) {
+                    const vi = indices[t + k] * 3;
+                    fPos.push(positions[vi], positions[vi + 1], positions[vi + 2]);
+                    fNrm.push(normals[vi], normals[vi + 1], normals[vi + 2]);
+                    fUV.push(uvs[indices[t + k] * 2], uvs[indices[t + k] * 2 + 1]);
+                }
+                fIdx.push(t, t + 1, t + 2);
+            }
+            positions = fPos; normals = fNrm; uvs = fUV; indices = fIdx;
+            vd.positions = positions;
+            vd.indices = indices;
+            vd.normals = normals;
+            vd.uvs = uvs;
+        }
         // ── P5 slice: the chopped landing (blender/bake_landing.py tiles) ───
         // The landing zone gets its own material — the baked chop albedo +
         // normal, 8 m tile over the ribbon's metre UVs — and, once the height
@@ -9159,14 +9196,13 @@ void main(void) {
                 }
             }
         }
-        // Trees all cast — the CSM frustum follows the camera, so only trees near
-        // it ever enter a cascade's depth pass; the auto-fit explosion that made
-        // this impossible with the single-map generator cannot recur. (The static
-        // terrain keeps its bake; far peaks are past shadowMaxZ and are culled.)
-        scene.meshes.forEach((m) => {
-            if (!m.name || !m.getTotalVertices || m.getTotalVertices() === 0) return;
-            if (/^(tr_|fl_)$/.test(m.name) || m.name === 'treeShadowProxy') casters.add(m);
-        });
+        // Trees NO LONGER cast at runtime (entry-138): the rebaked lightmap
+        // path-traces crown-shaped, dappled tree shadows onto the terrain via
+        // the alpha-cutout card occluders in blender/bake_lightmap.py, so the
+        // solid treeShadowProxy cone wedges (the "dirt smudge" read) and the
+        // legacy tr_/fl_ meshes are off the CSM caster list. The proxy MESH
+        // stays in the scene hidden (display census unchanged); the athlete
+        // keeps its real-time contact shadow.
         // B-net fencing casts as well: the thin posts render through their
         // source caster, and the alpha-cut strip throws a cutout shadow via
         // ALPHATEST in the depth pass (a solid-quad shadow here means that
