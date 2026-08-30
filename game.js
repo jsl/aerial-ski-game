@@ -2237,7 +2237,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=54';   // 54: merge — GLM 131 snowing flatness pass + Opus shoulder/elbow helpers; bumped past both sides
+    const ASSET_V = '?v=56';   // 56: merge — camera R re-frame + hard lock (reviewer), Opus sessions 22-24, GLM 132-134
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
@@ -6868,12 +6868,41 @@ void main(void) {
     // (plan P10 "never see under the terrain"). Applied every frame on the
     // orbit camera; on the steep pitch it clamps beta (camera up) rather than
     // fighting the orbit target.
+    // HUMAN TESTING #10 (author): "a hard lock on camera rotation below the
+    // surface of the earth at all points of game". The clamp now (1) samples
+    // the REAL ground under the eye with a ray against the terrain meshes
+    // (corridor, skirt, backdrop) — the corridor centreline profile ignored
+    // the flanks and the knoll — and (2) runs on every rendered frame via
+    // onBeforeRender, so paused/replay/menu states are covered too.
+    // wUpperMtn is the steep paper-mountain BACKDROP behind the start: a ray
+    // hitting it reports a "ground" far above the eye of a perfectly fine
+    // camera (the default behind-the-athlete view), so it is not a clamp
+    // surface — the corridor + skirt are, with the physics profile as fallback.
+    const _camGroundRe = /^(terrainCorridor|terrainSkirt)/;
+    function _groundUnderCamera(cp) {
+        try {
+            if (typeof scene.pickWithRay === 'function' && BABYLON.Ray) {
+                const pred = (m) => !!(m.name && _camGroundRe.test(m.name));
+                // Cast DOWN from the eye: only surfaces below the camera count
+                // (a ray from far above hits the upper backdrop mountain mesh
+                // over the corridor and would "raise" the ground under a
+                // camera that is fine — the look spec's pose shots caught it).
+                const down = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, -1, 0), 400), pred);
+                if (down && down.hit && down.pickedPoint) return down.pickedPoint.y;
+                // Nothing below: the eye is already under a surface — find it
+                // just above and treat that as the ground to climb out of.
+                const up = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, 1, 0), 60), pred);
+                if (up && up.hit && up.pickedPoint) return up.pickedPoint.y;
+            }
+        } catch (e) { /* fall through */ }
+        return terrainRootY(cp.z) - FOOT_OFFSET;
+    }
     function _clampCameraAboveTerrain() {
         try {
             if (!camera || camera.mode !== BABYLON.Camera.PERSPECTIVE_CAMERA) return;
             const cp = camera.position;
             if (!cp || !isFinite(cp.z)) return;
-            const minY = terrainRootY(cp.z) - FOOT_OFFSET + 1.0;
+            const minY = _groundUnderCamera(cp) + 1.0;
             if (cp.y >= minY) return;
             const r  = camera.radius || 10;
             const ty = camera.target ? camera.target.y : 0;
@@ -6888,6 +6917,17 @@ void main(void) {
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
+    // Every rendered frame, in every state (the update-loop call below still
+    // runs first when the sim is active; this catches paused/replay/menus).
+    // Only while the engine's own render loop is running: every real game
+    // state (play, pause, replay, menus) has it running; shot harnesses that
+    // stop the loop and drive the camera by hand for a still are left alone.
+    if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(() => {
+        const eng = scene.getEngine();
+        if (eng && eng.activeRenderLoops && eng.activeRenderLoops.length === 0) return;
+        _clampCameraAboveTerrain();
+    });
+    window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
     window._freeLookProbe = function () {
         try {
             const cp = camera.position;
@@ -7197,6 +7237,22 @@ void main(void) {
             }
 
             readyState = true; readyTurnT = 0.0;
+            // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
+            // doesn't seem to work". The state DID reset — but free-look was
+            // active after the crash, so the follow block stood down and the
+            // camera stayed parked at the crash site looking at empty snow.
+            // Re-frame behind the athlete, synchronously, as the last step of
+            // the reset (anything that places the camera after R keeps it).
+            try {
+                // state.rootY is only re-derived from the terrain on the next
+                // update tick (it still holds the crash-site value here — measured
+                // -2.2 m vs a 6.7 m start), so take the root height from the
+                // profile directly.
+                camera.target.set(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0,
+                    _poolDiveMode ? state.rootY : terrainRootY(state.posZ), state.posZ);
+                camera.alpha = Math.PI * 1.5; camera.beta = CAM_BETA_BACK; camera.radius = 10;
+                _camTargetAlpha = null;
+            } catch (err) { /* never let a camera nicety break the reset */ }
             return;
         }
         if (_keyIsLetter(e, 'c')) {
