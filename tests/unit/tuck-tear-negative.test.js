@@ -47,8 +47,15 @@ function endpointGaps(model) {
     return {
         hip:      gap(t.bot, ul.top),
         knee:     gap(ul.bot, ll.top),
-        shoulder: gap(t.top, ua.top),
-        elbow:    gap(ua.bot, la.top),
+        // The arm's +Y runs toward the WRIST (POSE_UNTUCKED, armSweep,
+        // applyGamepadLateral, and the armature's head->tail), so the shoulder
+        // is the upper arm's -Y end and the elbow is its +Y end. This read
+        // (t.top, ua.top)/(ua.bot, la.top) until the author's 23:40 crouch
+        // ruling — the sign matched the two pose tables that were themselves
+        // rolled 180 deg out of the bind axis, so a table could close this gate
+        // with every arm bone inverted. Same 15 mm limit, opposite ends.
+        shoulder: gap(t.top, ua.bot),
+        elbow:    gap(ua.top, la.bot),
     };
 }
 

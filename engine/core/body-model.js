@@ -50,27 +50,40 @@ const POSE_UNTUCKED = {
     skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
-// In-run tuck (APPROVED: adjust POSE_INRUN_TUCK, reviewer 22:25 / FABLE-80
-// finding 6). Rebuilt kinematically so the chain is CONTINUOUS at the tuck=1
-// endpoint (the old table tore: torso hip 13 cm off the thigh top, knee 17 cm).
-// Forward = −z. Conventions (match applyPose/P13 reconciliation): a segment's
-// +Y end sits at position + (h/2)·(cos rx, sin rx) in (y, z).
-// Targets (progress file, 22:25): hips back over the heels (hip joint above
-// the ankle ±10 cm along the ski), knees flexed 90–110°, shins ~25° forward,
-// hip→shoulder line 63° from vertical (back near-horizontal), head up-forward,
-// hands forward at knee height below the shoulders.
-// Chain: ski centre (−0.660, 0) → ankle (−0.645, 0) → knee (−0.319, −0.152)
-// → hip (−0.069, 0.107) → shoulder (0.181, −0.383); every joint gap ≤ 3 mm.
+// In-run tuck. REBUILT for the author's 23:40 ruling (HUMAN TESTING, screenshot
+// reference/shots/author_inrun_crouch_2026-08-29.png): "the skier tucking is
+// still really weird". Three defects in that shot, all in this table:
+//   (a) the back was a flat PLANK — torso rx -1.10 is 27 deg above horizontal;
+//       the ruling asks for a back at 40-50 deg. Now rx -0.8029 = 44 deg.
+//   (b) the head HUNG DOWN — head rx -0.80 continues the back line, i.e. the
+//       athlete stared at the snow. Now rx -0.30: the gaze is 28.8 deg above
+//       the back line (ruling: >= 25 deg), head up down the in-run.
+//   (c) the arms were "zombie arms" — and the cause is a CONVENTION BUG, not a
+//       placement one. The old table put the SHOULDER at the upper arm's +Y
+//       end, i.e. every arm bone was rolled 180 deg out of its bind axis
+//       (POSE_UNTUCKED, armSweep, applyGamepadLateral and the armature itself
+//       all run +Y toward the WRIST). Rebuilt in the bind convention:
+//       shoulder at the -Y end, the arm straight, aimed at knee height 0.20 m
+//       ahead of the knee (ruling: hand within +-0.10 m of knee height,
+//       0.10-0.30 m ahead of it). Reach is 0.636 m against a 0.55 m arm, so
+//       the straight arm lands 0.086 m above the knee, inside the band.
+// Earlier target (reviewer 22:25 / FABLE-80 finding 6, "back near-horizontal")
+// is SUPERSEDED by the author's 40-50 deg.
+// Forward = -z. Conventions (match applyPose/P13 reconciliation): a segment's
+// +Y end sits at position + (h/2)*(cos rx, sin rx) in (y, z).
+// Chain: ski centre (-0.660, 0) -> ankle (-0.645, 0) -> knee (-0.320, -0.149)
+// -> hip (-0.069, 0.107) -> shoulder (0.313, -0.289) -> elbow -> wrist
+// (-0.234, -0.341); every joint gap <= 3 mm.
 const POSE_INRUN_TUCK = {
-    torso:     { x:  0.000, y:  0.055, rx: -1.10, rz:  0.00, dz: -0.14 },  // back near-horizontal, hips stay over heels
-    head:      { x:  0.000, y:  0.270, rx: -0.80, rz:  0.00, dz: -0.47 },  // head up-forward at the end of the back curve
-    upperArmL: { x: -0.175, y:  0.075, rx:  0.80, rz:  0.00, dz: -0.49 },
-    upperArmR: { x:  0.175, y:  0.075, rx:  0.80, rz:  0.00, dz: -0.49 },
-    lowerArmL: { x: -0.175, y: -0.145, rx:  0.30, rz:  0.00, dz: -0.64 },  // slight elbow bend, hands at knee height
-    lowerArmR: { x:  0.175, y: -0.145, rx:  0.30, rz:  0.00, dz: -0.64 },
+    torso:     { x:  0.000, y:  0.122, rx: -0.8029, rz:  0.00, dz: -0.0908 },  // back 44 deg above horizontal, hips over the heels
+    head:      { x:  0.000, y:  0.4325, rx: -0.30, rz:  0.00, dz: -0.3256 },  // head UP, gaze 28.8 deg above the back line
+    upperArmL: { x: -0.175, y:  0.1637, rx: -3.0464, rz:  0.00, dz: -0.3029 },  // shoulder at the -Y end (bind axis)
+    upperArmR: { x:  0.175, y:  0.1637, rx: -3.0464, rz:  0.00, dz: -0.3029 },
+    lowerArmL: { x: -0.175, y: -0.1100, rx: -3.0464, rz:  0.00, dz: -0.3290 },  // straight elbow, hand at knee height ahead of the knee
+    lowerArmR: { x:  0.175, y: -0.1100, rx: -3.0464, rz:  0.00, dz: -0.3290 },
     upperLegL: { x: -0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },  // thighs back down to the flexed knees
     upperLegR: { x:  0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },
-    lowerLegL: { x: -0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },  // shins ~25° forward over the ankles
+    lowerLegL: { x: -0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },  // shins ~25 deg forward over the ankles
     lowerLegR: { x:  0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },
     skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
     skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
@@ -110,10 +123,18 @@ const POSE_INRUN_TUCK = {
 const POSE_TUCKED = {
     torso:     { x:  0.000, y:  0.000, rx: -0.436, rz:  0.00, dz:  0.000 },  // trunk 25 deg forward
     head:      { x:  0.000, y:  0.338, rx: -0.785, rz:  0.00, dz: -0.205 },  // chin toward chest
-    upperArmL: { x: -0.130, y:  0.120, rx:  0.497, rz:  0.20, dz: -0.186 },  // reaching down-forward
-    upperArmR: { x:  0.130, y:  0.120, rx:  0.497, rz: -0.20, dz: -0.186 },
-    lowerArmL: { x: -0.070, y: -0.121, rx: -0.426, rz:  0.20, dz: -0.206 },  // hands on the shins
-    lowerArmR: { x:  0.070, y: -0.121, rx: -0.426, rz: -0.20, dz: -0.206 },
+    // Arms: SAME segment centres as before, bone axis un-inverted (Opus, author
+    // 23:40). The rebuild put the shoulder at the arm's +Y end, which rolls the
+    // bone 180 deg out of its bind axis: the drawn hand then lands at the far
+    // end from the one the table aims (session 3 by eye: "the arms are absorbed
+    // into the mass under the chest"). dir = (-sin rz, cos rz cos rx,
+    // cos rz sin rx), so dir -> -dir is exactly rx -> rx -+ pi, rz -> -rz; the
+    // drawn primitives are unchanged (a capsule is symmetric about its centre)
+    // and only the skinned axis moves. Shoulder is the -Y end again.
+    upperArmL: { x: -0.130, y:  0.120, rx: -2.6446, rz: -0.20, dz: -0.186 },  // reaching down-forward
+    upperArmR: { x:  0.130, y:  0.120, rx: -2.6446, rz:  0.20, dz: -0.186 },
+    lowerArmL: { x: -0.070, y: -0.121, rx:  2.7156, rz: -0.20, dz: -0.206 },  // hands on the shins
+    lowerArmR: { x:  0.070, y: -0.121, rx:  2.7156, rz:  0.20, dz: -0.206 },
     upperLegL: { x: -0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },  // knees up and FORWARD
     upperLegR: { x:  0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },
     lowerLegL: { x: -0.075, y: -0.283, rx: -0.785, rz:  0.00, dz: -0.104 },  // heels folded under
