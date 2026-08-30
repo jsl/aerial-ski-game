@@ -615,6 +615,8 @@ test('look', async ({ page }) => {
             // preserves the structural difference. The >= gate is kept
             // (a head with no front must converge the pair) and the lens
             // gates carry the discrimination; open question recorded.
+            // NEXT.md step 0: fix inverted comparison (>= instead of <=).
+            // gate: distance between front/back face metrics must be <= 0.15 (closer is better).
             faceGate(mf.lensFrac > 0.06, 'face front close-up has no '
                 + 'goggle-lens pixels inside the head silhouette (lensFrac '
                 + mf.lensFrac + ')');
@@ -626,8 +628,8 @@ test('look', async ({ page }) => {
             faceGate(mf.lensFrac - mb.lensFrac > 0.04, 'front and back carry '
                 + 'the same amount of lens (' + mf.lensFrac + ' vs '
                 + mb.lensFrac + ') — the head has no front');
-            faceGate(dist >= 0.15, 'front and back face close-ups are '
-                + 'structurally identical — the head has no front (distance '
+            faceGate(dist <= 0.15, 'front and back face close-ups are '
+                + 'structurally disparate — the head has no front (distance '
                 + dist + ')');
         }
     }
