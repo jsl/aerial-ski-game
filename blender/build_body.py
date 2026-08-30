@@ -116,6 +116,7 @@ BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 SABOTAGE_FACE = os.environ.get('BODY_SABOTAGE_FACE') == '1'   # negative control for the face gates
 SABOTAGE_GOGGLES = os.environ.get('BODY_SABOTAGE_GOGGLES') == '1'  # negative control for the goggle-geometry gate
 _GOGGLE_PRE = {}   # OPUS ITEM 1: lens vertex index -> radius from the head axis before goggle_geometry's push
+_TEMPLE_PRE = {}   # AUTHOR 21:55: same, for the temple ARM verts, so the arm gate measures a realised push
 SABOTAGE_CROWN = os.environ.get('BODY_SABOTAGE_CROWN') == '1'  # negative control for the crown gates
 # OPUS ITEM 2 negative control: slide the finished dome fore-aft by N mm (+ = forward,
 # toward the face). BODY_SABOTAGE_DOME_MM=30 and =-30 must both fail the seating gate.
@@ -170,8 +171,26 @@ GOGGLE_RIM = (0.14, 0.15, 0.17)   # dark goggle frame between the lens and the s
 # height. ONE definition — head_region, goggle_geometry, paint_suit and
 # face_helmet_gate all read the landmarks derived from these, so the band can
 # never again be moved in one pass and not the others.
-LENS_LO = float(arg('--lens-lo', '0.40'))   # band bottom (above the nose tip)
+#
+# AUTHOR RULING (2026-08-29 21:55): the eyewear is SHOOTER-STYLE SPORT GLASSES,
+# not goggles — one continuous curved shield ~3.5-4 cm tall, a THIN frame along
+# the top edge only, thin temple arms back over the ears, small nose pads, and
+# NO foam frame and NO strap round the helmet. The band therefore narrows from
+# 0.40..0.57h (a goggle's 17% of head height) to 0.44..0.57h; on this model's
+# 0.243 m head that is the reference's shield height, and the top still lands
+# just under the front rim at 0.58h.
+LENS_LO = float(arg('--lens-lo', '0.44'))   # band bottom (above the nose tip)
 LENS_HI = float(arg('--lens-hi', '0.57'))   # band top (just under the front rim, 0.58)
+
+# The temple ARM (author 21:55: "thin straight temple arms running back over the
+# ears under the helmet rim"). It replaces the goggle strap, which used to be a
+# 0.10h navy band round the whole circumference. Height is a fraction of the
+# head, measured up from the chin; it sits BELOW the side rim (0.55h) so the arm
+# tucks under the shell rather than crossing it, and the arc stops behind the
+# ear instead of closing round the back.
+TEMPLE_Z = 0.520            # arm centreline, head-heights up from the chin
+TEMPLE_HALF_H = 0.016       # half-thickness => ~7.8 mm arm on a 0.243 m head
+TEMPLE_THETA_MAX = 2.45     # rad from straight-ahead: over the ear, not round the back
 
 # OPUS ITEM 12: where the boot starts, in the shin's own `along` coordinate
 # (segment_frame: hip +1 -> ankle -1, CLAMPED, so the whole foot below the shin
@@ -417,14 +436,14 @@ def head_landmarks(body):
 
 def head_region(co, lm):
     """
-    'helmet', 'face', 'lens' or 'strap' for a point in the head's space.
+    'helmet', 'face', 'lens' or 'temple' for a point in the head's space.
 
     The face is a FRONT sector below the brim: goggles wrap only so far round
     the temples. Lateral is X, fore/aft is Y with the chest POSITIVE, up is Z.
     Behind or beside that sector it is shell all the way down — aerials helmets
     cover the ears and the whole back of the head, which is what makes an ear
-    under the rim read correctly instead of like a stray lump. The strap runs
-    round the BACK of the head at eye level, under the shell's side rims.
+    under the rim read correctly instead of like a stray lump. The temple ARMS
+    run back over the ears, under the shell's side rims, and stop behind the ear.
     """
     c = bl('head')
     lx, ly = co.x - c.x, co.y - c.y
@@ -441,11 +460,14 @@ def head_region(co, lm):
         # lens covers the eyes and brow the way the reference does, instead of
         # stopping at the eye line and sitting on the nose.
         return 'lens'
-    if not frontal and abs(co.z - (lm['lens0'] + lm['lens1']) / 2) < lm['h'] * 0.05 \
-            and co.z > lm['chin'] + lm['h'] * 0.30:
-        # OPUS ITEM 1: the strap continues the lens band round the helmet, so
-        # it is centred on the BAND, not on the (now lower) eye line.
-        return 'strap'
+    if not frontal and abs(theta) < TEMPLE_THETA_MAX \
+            and abs((co.z - lm['chin']) / lm['h'] - TEMPLE_Z) < TEMPLE_HALF_H:
+        # AUTHOR 21:55: a TEMPLE ARM, not a strap. It leaves the shield's outer
+        # edge, runs back over the ear and STOPS there (|theta| < 2.45 rad, so
+        # the rear 40 degrees of the skull carry nothing) — the previous 'strap'
+        # was a 0.10h band closing round the full circumference, which is the
+        # goggle the author rejected.
+        return 'temple'
     # RIM (NEXT.md): the shell stops at the occiput line behind and just
     # above the ears at the sides (rim_side, 0.55h); in FRONT it rides 1–2 cm
     # above the brow (brim0, 0.58h). Everything below the local rim is
@@ -2448,7 +2470,7 @@ def goggle_geometry(low, lm):
       lens   lens0..lens1 frontal   +7.0 mm   (the lens sits proud of the face)
       rim    lens band top/bottom 1.5%h edges  +4.5 mm (the frame, between the
              dark lens and the shell/skin it separates)
-      strap  eye level behind      +2.5 mm   (over the shell, not painted on it)
+      temple arms over the ears      +2.5 mm   (over the shell, not painted on it)
 
     Applied on the FINAL low-poly mesh, so the glb the browser loads, the
     high-poly bake source (subdivided from low) and the build gate below all
@@ -2463,6 +2485,7 @@ def goggle_geometry(low, lm):
     # the FINAL mesh instead of inferring it from the skull's front-to-side
     # radius difference. See face_helmet_gate block (6).
     _GOGGLE_PRE.clear()
+    _TEMPLE_PRE.clear()
     for v in low.data.vertices:
         if own[v.index] != 'head':
             continue
@@ -2473,7 +2496,7 @@ def goggle_geometry(low, lm):
             hzl = (p.z - lm['chin']) / lm['h']
             edge = (LENS_HI - hzl) < 0.015 or (hzl - LENS_LO) < 0.015
             push = 0.0045 if edge else 0.0070
-        elif reg == 'strap':
+        elif reg == 'temple':
             push = 0.0025
         if not push:
             continue
@@ -2483,6 +2506,8 @@ def goggle_geometry(low, lm):
             continue
         if reg == 'lens':
             _GOGGLE_PRE[v.index] = n
+        elif reg == 'temple':
+            _TEMPLE_PRE[v.index] = n
         if SABOTAGE_GOGGLES:
             continue
         v.co = p + d * (push / n)
@@ -2700,11 +2725,12 @@ def face_helmet_gate(low, lm):
         elif not _sector(p, c)[0]:
             # OPUS ITEM 1: the reference is the SIDE/BACK of the skull at the
             # same height, whatever region it is classified as. It used to be
-            # region == 'face' only, which excluded the strap band — and the
-            # strap band (band centre +- 0.05h) now covers almost the whole
-            # side of the window, leaving ONE usable slab. Including the strap
-            # costs at most its own 2.5 mm push, i.e. it can only make the
-            # measured step SMALLER; the gate stays conservative.
+            # region == 'face' only, which excluded the strap band — and that
+            # band covered almost the whole side of the window, leaving ONE
+            # usable slab. The strap is gone (author 21:55) and the temple arm
+            # that replaced it is a thin bar, but the rule stays: including a
+            # pushed side vertex can only make the measured step SMALLER, so
+            # the instrument stays conservative.
             s[2] += rad
             s[3] += 1
     diffs = [s[0] / s[1] - s[2] / s[3]
@@ -2735,11 +2761,16 @@ def face_helmet_gate(low, lm):
     # "shift the band down by 0.08 h" negative control) would pass. Reference:
     # reference/images/aerial_suit.png, head crown y=852 px, chin y=1008 px
     # (h=156 px), mirrored lens rows 908..945 -> 0.40h..0.64h. The model's top
-    # is pinned at 0.57h by item 2's front rim at 0.58h, so the required window
-    # is 0.40..0.57 with a +-0.03h build tolerance (the band is assigned per
-    # vertex, so its realised extent lands inside the requested one by up to
-    # one vertex row).
-    LENS_BAND_REF = (0.40, 0.57)
+    # is pinned at 0.57h by item 2's front rim at 0.58h.
+    #
+    # AUTHOR RULING 21:55 (sport glasses, not goggles) with the reviewer's
+    # re-measure "0.44..0.60 h, eye line +- 8%": the shield is THINNER than the
+    # goggle band, so the FLOOR rises 0.40 -> 0.44 while the top stays pinned
+    # under the rim. This is a TIGHTENING of the old window on the side the
+    # ruling constrains (the band may no longer reach down toward the nose),
+    # not a relaxation; the ruling's 0.60 top is above this model's own front
+    # rim (0.58h) and "the top edge just under the brim" governs there.
+    LENS_BAND_REF = (0.44, 0.57)
     LENS_BAND_TOL = 0.03
     lens_z = [(p.z - chin) / h for p in hv
               if head_region(p, lm) == 'lens' and _sector(p, c)[0]]
@@ -2749,7 +2780,75 @@ def face_helmet_gate(low, lm):
         f'(centre {(band_lo + band_hi) / 2:.3f}h) over {len(lens_z)} frontal '
         f'lens verts (gate {LENS_BAND_REF[0]:.2f}..{LENS_BAND_REF[1]:.2f} '
         f'+-{LENS_BAND_TOL:.2f}, measured off the reference still)')
+    # The ruling's "3.5-4 cm shield" is a REAL head's chin-to-crown; `h` here is
+    # chin to HELMET CROWN, so the shield scales with the band fractions, not
+    # with a millimetre literal. Logged so the ratio stays visible.
+    log(f'face gate: lens band height {(band_hi - band_lo) * h * 1000:.1f} mm '
+        f'= {(band_hi - band_lo):.3f}h on a {h * 1000:.0f} mm chin-to-crown '
+        f'(author 21:55: a shield, not a goggle band)')
+    # (7b) AUTHOR 21:55: "no lens/frame pixels below the NOSE TIP". The tip is
+    # the frontal FACE vertex that reaches furthest forward below the shield —
+    # a landmark on the mesh, not a fraction, so this gate cannot be satisfied
+    # by moving the constant that defines the band.
+    # The landmark is measured on the UN-PUSHED SKULL, in a window fixed at
+    # 0.10..0.40h, so it does not move when the band moves. Two earlier
+    # versions could not fail:
+    #   * "max forward reach among FACE verts up to the band edge" found the
+    #     brow ridge one row under the band and passed by 0.002h;
+    #   * excluding lens verts by REGION made the window shrink as the band
+    #     grew downward, so `--lens-lo 0.28` slid the "tip" down to 0.239h with
+    #     it and the gate stayed green on a build that is exactly the defect.
+    # Undoing goggle_geometry's radial push (the pre-push radii it recorded)
+    # gives the skull's own nose, whatever the band is doing on top of it.
+    nose_tip_h, nose_reach = -1.0, -9.0
+    for v in low.data.vertices:
+        if own[v.index] != 'head':
+            continue
+        p = v.co
+        if not (chin + 0.10 * h <= p.z < chin + 0.40 * h) or not _sector(p, c)[0]:
+            continue
+        lx, ly = p.x - c.x, p.y - c.y
+        pre = _GOGGLE_PRE.get(v.index, _TEMPLE_PRE.get(v.index))
+        if pre is not None:
+            n = math.hypot(lx, ly)
+            if n > 1e-6:
+                lx, ly = lx * pre / n, ly * pre / n
+        if ly > nose_reach:
+            nose_reach, nose_tip_h = ly, (p.z - chin) / h
+    log(f'face gate: nose tip at {nose_tip_h:.3f}h, shield bottom at '
+        f'{band_lo:.3f}h (gate: bottom above the tip)')
+    # (7c) TEMPLE ARMS (author 21:55: "thin straight temple arms running back
+    # over the ears under the helmet rim", and no strap). Measured on the final
+    # low-poly: the arm must exist on BOTH sides, stand proud of the skull, and
+    # must NOT close round the back of the head the way the old strap did.
+    temple = [(v.co, v.index) for v in low.data.vertices
+              if own[v.index] == 'head' and head_region(v.co, lm) == 'temple']
+    tL = sum(1 for co, _ in temple if co.x - c.x > 0)
+    tR = len(temple) - tL
+    rear = sum(1 for co, _ in temple
+               if abs(math.atan2(co.x - c.x, co.y - c.y)) > 2.75)
+    tpush = [math.hypot(low.data.vertices[i].co.x - c.x,
+                        low.data.vertices[i].co.y - c.y) - pre
+             for i, pre in _TEMPLE_PRE.items()]
+    tpush_mm = (sum(tpush) / len(tpush) * 1000) if tpush else -1.0
+    log(f'face gate: temple arms {tL} left / {tR} right verts, {rear} behind '
+        f'2.75 rad, realised push {tpush_mm:.2f} mm '
+        f'(gate: >=10 per side, 0 rear, push >=1.5; '
+        f'BODY_SABOTAGE_GOGGLES=1 = 0.00)')
     bad = []
+    if lens_z and nose_tip_h > 0 and band_lo <= nose_tip_h + 0.010:
+        bad.append(f'shield bottom {band_lo:.3f}h is not clear of the nose '
+                   f'tip {nose_tip_h:.3f}h by 0.010h — the glasses sit on '
+                   f'the nose (author 21:55: no lens or frame below the tip)')
+    if tL < 10 or tR < 10:
+        bad.append(f'temple arms {tL}/{tR} verts per side (need >=10 each) — '
+                   f'the sport glasses have no arms')
+    if rear:
+        bad.append(f'{rear} temple verts behind 2.75 rad — the arm closes '
+                   f'round the back of the head, i.e. it is a strap again')
+    if tpush_mm < 1.5:
+        bad.append(f'temple arm realised push {tpush_mm:.2f} mm < 1.5 '
+                   f'(negative control BODY_SABOTAGE_GOGGLES=1 reads 0.00)')
     if not lens_z:
         bad.append('no frontal lens verts on the final mesh')
     else:
@@ -2797,6 +2896,8 @@ def face_helmet_gate(low, lm):
             'rim_front': rim_front_up, 'rim_side_h': (rim_side - chin) / h,
             'rim_back_h': (rim_back - chin) / h, 'dome_off': dome_off,
             'turn_deg': turn, 'goggle_proud': proud, 'goggle_push_mm': push_mm,
+            'nose_tip_h': round(nose_tip_h, 4),
+            'temple_verts': [tL, tR], 'temple_push_mm': round(tpush_mm, 3),
             'lens_band_h': [round(band_lo, 4), round(band_hi, 4)],
             'faceForward': [round(fwd[0], 4), 0.0, round(fwd[2], 4)]}
 
@@ -5150,12 +5251,13 @@ def displace_suit(obj, lm):
                 if reg == 'lens':
                     # The goggle frame sits ~1.6 mm proud of the face.
                     d += 0.0016
-                else:
-                    # Goggle strap groove round the head at eye level; across
-                    # the front it cancels against nothing because the lens
-                    # band is handled above — net effect: frame proud, strap
-                    # recessed into the shell on the sides/back.
-                    d -= 0.0011 * math.exp(-((z - lm['eyes']) / 0.009) ** 2)
+                elif reg == 'temple':
+                    # AUTHOR 21:55: the temple ARM stands PROUD of the skull —
+                    # a thin bar laid over the skin/shell — where the old strap
+                    # was a groove RECESSED into it. A groove round the head at
+                    # eye level is exactly the goggle silhouette the ruling
+                    # removed, so the sign flips with the part.
+                    d += 0.0014
         else:
             # WEAVE AMPLITUDE 1.1 -> 2.1 mm peak-to-peak (session 7). Not a free tuning
             # knob: with the shard faces gone the suit's NM variance fell
@@ -5344,15 +5446,20 @@ def paint_suit(obj, lm):
             # level. Same function that splits the material slots on the low poly. that splits the material slots on the low poly.
             reg = head_region(Vector((x, y, z)), lm)
             if reg == 'lens':
-                # Face pass 2: light frame along the lens's top and bottom
-                # edges so the dark lens separates from the navy shell above
-                # and the skin below (face pass 1's lens merged into the
-                # shell — the whole eye zone read as one dark beret).
+                # AUTHOR 21:55: a shooter-style shield carries a THIN FRAME
+                # ALONG THE TOP EDGE ONLY (the brow bar). The bottom edge is
+                # frameless — it is the lens itself, tapering away over the
+                # cheekbone — so the lower rim stroke that used to draw a dark
+                # line under the eyes is gone; what remains at the bottom is
+                # the NOSE BRIDGE/PADS, a short dark notch at the centre where
+                # the shield clears the nose.
                 hzl = (z - lm['chin']) / lm['h']
                 lens_top = LENS_HI
                 lens_bot = LENS_LO
-                if lens_top - hzl < 0.015 or hzl - lens_bot < 0.015:
-                    col, tag = GOGGLE_RIM, 'rim'
+                if lens_top - hzl < 0.015:
+                    col, tag = GOGGLE_RIM, 'browbar'
+                elif hzl - lens_bot < 0.020 and abs(x - hx) < lm['h'] * 0.055:
+                    col, tag = GOGGLE_RIM, 'bridge'
                 else:
                     # MIRROR TINT (brief item 1: "a subtle blue/orange mirror
                     # tint"). A mirrored lens is not one flat colour — it
@@ -5387,8 +5494,10 @@ def paint_suit(obj, lm):
                     col, tag = SKIN_SHADE, 'noshade'
                 else:
                     col, tag = SKIN, 'face'
-            elif reg == 'strap':
-                col, tag = WAIST, 'strap'
+            elif reg == 'temple':
+                # Moulded plastic arm, the same dark as the brow bar — NOT the
+                # navy fabric the strap used to be painted in.
+                col, tag = GOGGLE_RIM, 'temple'
             else:
                 col, tag = HELMET, 'helmet'
         elif name.startswith('lowerArm') and along < -0.78:
@@ -5496,8 +5605,13 @@ def paint_suit(obj, lm):
     # condition never fires produces no error and no warning — the bake simply
     # comes out without it, which is indistinguishable from a design that never
     # included it. That is exactly how the gloves went missing.
-    required = ['suit', 'helmet', 'face', 'goggle', 'rim', 'nostril',
-                'strap', 'waist', 'bib', 'number', 'stripe', 'glove',
+    # AUTHOR 21:55: 'rim' (the goggle frame drawn on BOTH edges of the band)
+    # is gone — a shooter-style shield has a brow bar on the top edge only.
+    # The three parts that replaced it are required in its place, so the
+    # sport glasses cannot silently lose an arm or the brow bar either.
+    required = ['suit', 'helmet', 'face', 'goggle', 'nostril',
+                'browbar', 'bridge', 'temple', 'waist', 'bib', 'number',
+                'stripe', 'glove',
                 'lip', 'noshade']
     if not SABOTAGE_BOOT:
         required += ['boot', 'bootlip']
