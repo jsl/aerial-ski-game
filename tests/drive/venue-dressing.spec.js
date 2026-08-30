@@ -379,3 +379,58 @@ test('venue dressing: three static coach figures in red jackets at the knoll, se
         expect(Math.abs(s.z - r.d.stations[0].z)).toBeLessThan(3.0);
     }
 });
+
+test('venue dressing: generic blue/white side panels on the kicker block walls, red edge paint intact', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._kickerPanels && window._kickerPanels.count >= 4,
+        null, { timeout: 20000 });
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const kp = window._kickerPanels;
+        const meshes = scene.meshes.filter(m => (m.name || '').indexOf('kickerPanel') === 0);
+        // Wall seating: every panel path point hugs x = ±(halfW − 0.02) and sits
+        // above the table top (the panels hang on the block's side walls).
+        let worstX = 0, minPanelY = Infinity;
+        for (const m of meshes) {
+            const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            for (let i = 0; i < pos.length; i += 3) {
+                worstX = Math.max(worstX, Math.abs(Math.abs(pos[i]) - kp.halfW));
+                minPanelY = Math.min(minPanelY, pos[i + 1]);
+            }
+        }
+        // Materials: two blues (field) + one white (band), generic.
+        const mats = [...new Set(meshes.map(m => m.material.name))].sort();
+        const blue = scene.getMaterialByName('kickerPanelBlue');
+        const white = scene.getMaterialByName('kickerPanelWhite');
+        // Red edge paint (author ruling) untouched: cornerMat still red, all
+        // six edge tubes present.
+        const cm = scene.getMaterialByName('cornerMat');
+        const tubes = ['kickerTopL', 'kickerTopR', 'kickerBotL', 'kickerBotR',
+            'kickerEdgeL', 'kickerEdgeR'].map(n => !!scene.getMeshByName(n));
+        return {
+            kp, meshCount: meshes.length, mats,
+            worstX: +worstX.toFixed(4), minPanelY: +minPanelY.toFixed(3),
+            blue: blue ? [blue.diffuseColor.r, blue.diffuseColor.g, blue.diffuseColor.b] : null,
+            white: white ? [white.diffuseColor.r, white.diffuseColor.g, white.diffuseColor.b] : null,
+            cornerRed: cm ? [+cm.diffuseColor.r.toFixed(2), +cm.diffuseColor.g.toFixed(2), +cm.diffuseColor.b.toFixed(2)] : null,
+            tubes,
+        };
+    });
+    expect(r.meshCount, 'expected 6 panel ribbons (2 sides × 3 spans)').toBe(6);
+    expect(r.mats).toEqual(['kickerPanelBlue', 'kickerPanelWhite']);
+    // Blue is blue (b channel dominant), white is near-white, generic: no mark geometry.
+    expect(r.blue[2]).toBeGreaterThan(r.blue[0]);
+    expect(Math.min(...r.white)).toBeGreaterThan(0.85);
+    // Panels hug the wall planes.
+    expect(r.worstX, `panel off wall plane by ${r.worstX}`).toBeLessThan(0.005);
+    // Span the kicker curve only (KICKER_START_Z..KICKER_END_Z window).
+    expect(r.kp.minZ).toBeGreaterThan(10);
+    expect(r.kp.maxZ).toBeLessThan(25);
+    // Author ruling 2026-08-29: red edge paint intact.
+    expect(r.cornerRed[0]).toBeGreaterThan(0.7);
+    expect(r.cornerRed[1]).toBeLessThan(0.15);
+    expect(r.tubes.every(t => t), 'a kicker edge tube is missing').toBe(true);
+});
