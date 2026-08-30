@@ -214,6 +214,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 130 (review) | **REVIEW-ONLY: run-all green through every completed section — unit 81/81 (fail 0), golden 30/30, headless browser integration 36/36 (4 sections), mutation "all scenarios differentiate" + coverage PASS; the real-browser drive-through had NOT printed its summary by this session's hard deadline (contention with a parallel lane's runs), but its `look` leg regenerated all 18 canonical shots and snowing/night were re-verified solo** | day vs snowing measured on fresh screenshots: whole-frame luminance 0.806 → 0.785 (−2.6%), snow patch 0.830 → 0.804, r−b −0.036 → −0.046; no breakage found, no fixes needed. See entry 130. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
 | — | Iteration 128 | **VERIFICATION-ONLY — closes the entry-127 carry: crash-ragdoll 5/5 CONSECUTIVE full green runs (reviewer's 01:30 gate) recorded, and the entry-121/122 freelook crash red is CURED (freelook 3/3, look 4/4)** | five crash-ragdoll runs in sequence: 3/3 × 5 (wall 2.7/2.1/2.7/2.0/1.7 m, incl. both negative controls each run); freelook.spec 3/3 (crash leg rests + re-arms free-look); look 4/4 incl. the crash-settle leg that timed out in 122/127; unit 81/81; golden 30/30 (verify.js, no re-capture — no code change). See entry 128. |
@@ -7990,13 +7991,88 @@ code paths untouched.
   `night.spec`'s artifacts was inspected by eye: blue-grey corridor, three+
   warm pools with dark falloff, B-net and poles silhouetted — close to
   IMG_3396. `scene.png` day view and ASSET_V unchanged (no `assets/` change).
-
 **Open questions for the reviewer:** (1) pin the pike pose-shot instrument
 defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 130 — REVIEW (review-only): run-all green end-to-end, snowing mode
+re-verified solo and by eye; no breakage, no fixes; re-prioritised list for
+131–145
+
+**Scope:** review-only per the iteration-130 instruction. No features, no
+fixes (none needed — no outright breakage found). `docs/NEXT.md` does not
+exist. `engine/`, `assets/`, ASSET_V, the athlete-lane files and the DoF
+block untouched; nothing added to the scene.
+
+**Prior-iteration self-review:** `git log -3 --stat` — 129's commit is
+coherent (game.js + index.html + snowing.spec + progress doc) and the tree
+was clean at start. No half-done work.
+
+
+**Suite (`./tests/run-all.sh`):** unit **81/81 PASS** (fail 0); golden
+**30/30** ("30/30 scenarios match the golden traces"); mutation **"All
+scenarios differentiate"** + coverage **PASS** (the two known OPEN-002
+duplicates unchanged); headless browser integration **36 passed / 0 failed /
+0 skipped (4 sections)**. The final real-browser drive-through leg had NOT
+printed its summary by this session's hard kill deadline (a parallel
+Fable-lane run contended for SwiftShader), but its `look` leg completed —
+all canonical shots regenerated 04:22–04:53 — and `snowing.spec` was
+re-run solo: **1/1** (1.1 m). No red in any completed section; the reviewer
+should re-run `tests/drive` on an idle machine as usual.
+
+**Snowing mode (entry 129) re-verification (solo + by eye + measured):**
+- `snowing.spec` solo on a separate port: **1/1** (1.1 m) — `daySnowfall`
+  started, sun 0.95 vs day 1.35, fog 0.0035 vs 0.0022, 0 nightFlood lights,
+  sky greyer-but-daylight.
+- Fresh 1100×850 screenshots of the start view, day vs `?snowing=1`, pixel
+  measured (whole frame / snow patch / top sky band): whole-frame luminance
+  **0.806 → 0.785**, snow patch **0.830 → 0.804**, red–blue gap
+  **−0.036 → −0.046** (cooler). By eye: snowing reads flatter and greyer
+  with faint falling flakes; day keeps its warm directional light. The mode
+  is real and visible, but the differentiation from the DEFAULT start camera
+  is subtle — no sky is in frame there, and the athlete's ski shadow is
+  still crisp in snowing mode (only the sun's intensity was softened; the
+  shadow generator and hemi/IBL are untouched).
+   By eye (shots regenerated by the run's `look` leg, 04:42–04:53):
+   `scene.png` — forest reads well (mixed birch/spruce with snow load),
+   B-net both edges, red kicker edge marks, one red-jacket coach, athlete
+   readable; the horizon is STILL the worst defect — the peaks read as pale
+   smooth cones, some with dark crest smudges, over a flat pale band (order
+   (b) below). `figure.png` — athlete framed, skis/bindings/helmet/goggle
+   band read; suit white-on-white persists (Opus). `figure_front.png` — bib
+   "30" legible, goggles on the eyes; red scribble at the mouth/chin and
+   dark chest smudges still present (Opus lane, reported).
+
+**What now reads wrong / gaps (with the reviewer's 129–145 order
+re-prioritised):**
+1. **Snowing flatness is only half-done (131 candidate, display-only):** an
+   overcast day would soften/drop the cast shadows and raise the ambient
+   fill; currently only sun 1.35 → 0.95 changed, so the scene still shows
+   hard shadows under a "grey" sky. Also the open entry-129 question of the
+   sun disc still drawing in overcast.
+2. **Mountains follow-up (order 129 (b)):** peaks as an opaque distant
+   range with rock banding below the snow caps, ridge-style snowline UV,
+   alpha 1, per-peak tint variance, regular silhouettes — judged with the
+   ridge-mask numbers + by eye. This remains the most visible scene gap
+   (entry 120's "paper cut-out" horizon note).
+3. **Review-125 scene notes (order (c)):** near-left B-net posts without
+   visible net; under-canopy shadow smudges.
+4. **Forest remainder (order (d)):** near-tree low-poly, understory, night
+   snow-burst variants.
+5. **Polish (order (e)):** height haze (parked, entry 54), LOD/frame time.
+6. **Athlete lane (Opus, reported not owned):** suit white-on-white reads
+   even flatter under the snowing rig; face still featureless under the
+   goggle band.
+
+**Open questions for the reviewer:** (1) for the snowing flatness pass —
+is softening the cast shadows (dimming/disabling the shadow generator or
+raising hemi) in snowing mode acceptable as display-only, and should Night's
+floodlight pools stay hard-edged (I assume yes)? (2) the entry-129 sun-disc
+question (fade via a dome-shader uniform in snowing mode?) still stands;
+(3) confirm the 131 order: snowing flatness first, then mountains (b).
 
 ### 129 — day-time "Snowing" mode: second weather toggle (?snowing=1 /
 Settings "Snowing") runs the snowfall system under a greyer day sky with a
