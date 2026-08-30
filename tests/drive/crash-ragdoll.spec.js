@@ -187,6 +187,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                 if (tp) {
                     const last = window._cr.trace[window._cr.trace.length - 1];
                     rec.torso = [tp.x, tp.y, tp.z];
+                    rec.frozen = mesh('torso').isWorldMatrixFrozen === true;
                     rec.tSpeed = last && last.torso
                         ? Math.hypot(tp.x - last.torso[0], tp.y - last.torso[1], tp.z - last.torso[2])
                         / Math.max(1e-3, (now - last.t) / 1000) : null;
@@ -321,7 +322,8 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     const maxTailSpeed = settledTail.length ? Math.max(...settledTail.map(r => r.tSpeed)) : 0;
     settledTail.forEach((r, i) => { if (r.tSpeed > 0.01)
         console.log('TAIL i=' + (i + 1) + ' t=' + (r.t / 1000).toFixed(2) + ' spd=' + r.tSpeed.toFixed(4)
-            + ' phase=' + (r.probe && r.probe.phase) + ' resting=' + (r.probe && r.probe.resting)); });
+            + ' phase=' + (r.probe && r.probe.phase) + ' resting=' + (r.probe && r.probe.resting)
+            + ' frozen=' + r.frozen); });
     expect(maxTailSpeed, `settled: post-stop rendered speed ${maxTailSpeed.toFixed(3)} m/s < 0.06`)
         .toBeLessThan(0.06);
     // Skis at rest on the surface at the end.

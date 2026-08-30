@@ -417,6 +417,13 @@
                 </div>
                 <button class="toggleBtn" id="nightModeBtn">OFF</button>
             </div>
+            <div class="settingRow">
+                <div>
+                    <div class="settingLabel">Snowing</div>
+                    <div class="settingDesc">Day-time snowfall under a grey sky (applied on reload)</div>
+                </div>
+                <button class="toggleBtn" id="snowingModeBtn">OFF</button>
+            </div>
             <div style="margin-top:14px; border-top:1px solid #1a2a3a; padding-top:14px;">
                 <div style="font-size:12px;color:#778899;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">Skier Colours</div>
                 <div class="settingRow">
@@ -1256,6 +1263,19 @@
                     nightModeBtn.addEventListener('click', function() {
                         var on = _lsGet('aerialNight') === '1';
                         _lsSet('aerialNight', on ? '0' : '1');
+                        // The mode is decided at scene build — reload to apply.
+                        location.reload();
+                    });
+                    var snowingModeBtn = document.getElementById('snowingModeBtn');
+                    function updateSnowingModeBtn() {
+                        var on = _lsGet('aerialSnowing') === '1';
+                        snowingModeBtn.textContent = on ? 'ON' : 'OFF';
+                        snowingModeBtn.classList.toggle('on', on);
+                    }
+                    updateSnowingModeBtn();
+                    snowingModeBtn.addEventListener('click', function() {
+                        var on = _lsGet('aerialSnowing') === '1';
+                        _lsSet('aerialSnowing', on ? '0' : '1');
                         // The mode is decided at scene build — reload to apply.
                         location.reload();
                     });

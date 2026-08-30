@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Seventh Opus merge LANDED (Fable, 2026-08-30 04:10, `d833929`):** GLM through 128 (deterministic crash roll, 5/5 green) + Opus through `5a0037c` (weight locality, knee/hip helper bones, bib measurement). Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), spine/crouch/rig/bib 28/28, crash 3/3, look + pose-shots 2/2. 8201 synced. **Rulings on 127/128:** (1) the 5/5 gate is SATISFIED — crash-determinism thread closed; (2) keep the post-rest sampling window as a canary, do not shorten it; (3) **order for 129–145:** (a) the **day-time "Snowing" Settings toggle** (overnight order item 2 — never started: snowfall particles + slightly greyer sky/softer sun in day mode, independent of Night, gated like `night.spec`); (b) mountains follow-up — peaks as an opaque distant range with rock banding below the snow caps (ridge-style snowline mapping, alpha 1, per-peak tint variance), silhouettes regular, judged with the ridge-mask numbers and by eye; (c) review-125 scene notes: near-left B-net posts without visible net, under-canopy shadow smudges; (d) forest remainder (near-tree low-poly, understory), night snow-burst variants; (e) polish (height haze, LOD/frame time). Reviews at 130/135/140; 145 = final review + handoff refresh. Add nothing the author did not ask for.
 - **Sixth Opus merge LANDED (Fable, 2026-08-30 02:25, `f2e1dc8`):** GLM tip (chop albedo fix, slope-aware roll + stop fix, 124/125 floodlight towers) + Opus through `93389f8` — in-run crouch rebuilt (arm bones were rolled 180°, hip re-seated on the pelvis, knee ~100° with hips over heels), relaxed hands, shooter-style sport glasses, visible folds, straight leg stripe, seam relax, boots. Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), crouch/chain/rig/bib 25/25, look + pose-shots 2/2. Known flaky red carried: `crash-ragdoll` penetration/settle (GLM order 124/125, 5/5 gate). GLM 125's athlete observations (front bib mirrored?) forwarded to the Opus brief; its scene observations (near-left B-net posts without visible net, under-canopy shadow smudges) go on the GLM order after the crash determinism.
 - **Reviewer finding on entry 123 (Fable, 2026-08-30 01:30) — `crash-ragdoll.spec.js` is FLAKY on the tip itself:** three runs of the spec alone on `643e2dd` gave worst body penetration 0.0805 m (FAIL), pass, 0.0509 m (FAIL) — entry 123's "3/3" was one lucky run. The ragdoll's body-part projection is frame-time dependent (SwiftShader load changes the settle). **Top order for 124/125, ahead of the towers if 124 has not started them:** make the crash penetration deterministic — fixed-step PBD substeps independent of frame dt, body parts projected above the picked surface every substep (not once per frame), no dependence on `performance.now()` — then the ≤ 5 cm gate must pass 5/5 consecutive runs (quote all five numbers), with the pre-fix code as the negative control (fails ≥ 1/5). The Opus lane was wrongly blamed for this red at 00:45 and cleared at 01:20.
 - **Reviewer confirmation on entry 122 (Fable, 2026-08-30 00:00):** the `chop.spec.js` rewrite to the HUMAN TESTING #9 gates is CONFIRMED (rendered chop/flat ratio 0.52 → ~0.93, albedo ratio ≥ 0.90, negative control recorded). Next for 123: floodlight towers (HT#9 item 2), then the never-`stopped` ragdoll residual — that red now also hangs `freelook.spec`'s crash leg, so it is the priority after the towers.
@@ -213,6 +214,9 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
+| — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
+| — | Iteration 128 | **VERIFICATION-ONLY — closes the entry-127 carry: crash-ragdoll 5/5 CONSECUTIVE full green runs (reviewer's 01:30 gate) recorded, and the entry-121/122 freelook crash red is CURED (freelook 3/3, look 4/4)** | five crash-ragdoll runs in sequence: 3/3 × 5 (wall 2.7/2.1/2.7/2.0/1.7 m, incl. both negative controls each run); freelook.spec 3/3 (crash leg rests + re-arms free-look); look 4/4 incl. the crash-settle leg that timed out in 122/127; unit 81/81; golden 30/30 (verify.js, no re-capture — no code change). See entry 128. |
+| — | Iteration 129 | **Day-time "Snowing" mode (reviewer order 129 (a)): `?snowing=1` / Settings "Snowing" toggle (`aerialSnowing`, reload-applied) runs the snowfall particles under a greyer dome/fog with a softer sun in the DAY rig, independent of Night; night snowfall builder extracted to a shared `_startSnowfall`; new `snowing.spec`** | unit 81/81 (fail 0); golden 30/30 (verify.js, no re-capture — display-only, day census unchanged); snowing.spec 1/1 (sun 0.95 vs day 1.35, fog 0.0035 vs 0.0022, `daySnowfall` PS started, 0 nightFlood lights, sky lum < day and > 0.25, |r−b| < 0.15); night.spec 1/1 (untouched); look 4/4. See entry 129. |
 | — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 126 | **Crash determinism (reviewer 01:30 top order) PARTIALLY LANDED — fixed-step PBD: `_crashRagdollStep` split into a frame-level wrapper + `_crashRagdollTick` at a constant 1/120 s from a dt accumulator (restAt now deterministic 3.67–4.16 s across runs); post-stop velocity memory translated rigidly with the pose (maxSpeed exactly 0 tail restored); display root PARKED at rest + re-parked in `onBeforeRenderObservable`** | unit 81/81; golden 30/30 after census-only re-capture (audit 0 physics-state diffs × 30 / 5408 frames); crash-ragdoll 1/5 fully green, 5/5 reach `stopped` — one residual single-sample rendered spike 4.6–4.7 m/s at t≈+8 s post-rest remains (see entry 126, open). See entry 126. |
@@ -7991,6 +7995,142 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+
+### 129 — day-time "Snowing" mode: second weather toggle (?snowing=1 /
+Settings "Snowing") runs the snowfall system under a greyer day sky with a
+softer sun, independent of Night; new snowing.spec
+
+**What changed (reviewer order 129 (a), the overnight order item 2 that had
+never been started; display-only, no `engine/`, no athlete lane, no DoF, no
+scene additions, ASSET_V untouched — no assets regenerated):**
+- `game.js`: new `_snowingParam` (`?snowing=1` or localStorage
+  `aerialSnowing`, mirroring the night flag) and `_snowingMode` (off in
+  trampoline/pool worlds; Night wins the sky when both are set since it
+  already brings its own snowfall). In snowing mode: sky dome zenith
+  0.13/0.29/0.58 → 0.42/0.47/0.54 and horizon 0.60/0.72/0.88 →
+  0.70/0.74/0.80 (grey overcast), clearColor branch 0.66/0.71/0.78, fog
+  colour matched to the new horizon and density 0.0022 → 0.0035, sun
+  intensity 1.35 → 0.95. The night block's snowfall particle builder is
+  extracted verbatim into `_startSnowfall(name, capacity)` (same streak
+  config, camera-following volume) and reused by a new day block as
+  `daySnowfall` (capacity 2200). `_nightProbe()` gains `snowing` and
+  `daySnow` fields (existing fields unchanged — night.spec's day/night
+  assertions untouched).
+- `index.html`: Settings row "Snowing" + `snowingModeBtn` toggle, same
+  reload-to-apply pattern and `aerialSnowing` key as Night.
+- New `tests/drive/snowing.spec.js`, modelled on `night.spec`: default day
+  untouched (no snowing state, 0 particle systems, day sun); under
+  `?snowing=1` — `daySnowfall` started, dome present, 0 `nightFlood`
+  lights (independent of Night), sun 0.95, fog 0.0035 > day 0.0022, and
+  the top-of-frame sky reads greyer than the day shot (lower luminance,
+  |r−b| < 0.15) while still daylight (> 0.25, i.e. NOT the night mode).
+
+**Verification:** `node --check` clean; unit **81/81 (fail 0)**; golden
+**30/30** (`node tests/golden/verify.js` is the last command before this
+commit; no re-capture — the mode is off in the day default and particles
+enter no census); `snowing.spec` **1/1** (32.9 s); `night.spec` **1/1**
+(regression: the refactor touched the night snowfall path); `look` **4/4**
+(5.3 m) with shots regenerated.
+
+**Open questions for the reviewer:** (1) the snowing sky/fog/sun values are
+first-pass estimates against "slightly greyer sky / softer sun" — tuned by
+the spec's relative gates, not against footage (no snowing reference clip
+exists); happy to re-tune on the author's reaction. (2) In snowing mode the
+dome still draws the sun disc (shader has no opacity uniform); with the sun
+softened it reads as a pale bright patch — acceptable for an overcast look,
+or should the disc be faded out via a shader uniform?
+
+### 128 — VERIFICATION-ONLY: the reviewer's 5/5 consecutive crash-ragdoll
+gate CLOSED (five back-to-back 3/3 green runs), and the entry-121/122
+freelook crash-settle red is CURED by entry 127's same-step freeze
+
+**Scope:** no code change. `docs/NEXT.md` does not exist. No Reviewer
+feedback item asked for new scene work; the two open crash items (the 5/5
+gate cut short in 127, the freelook red hanging on the never-`stopped`
+residual) were exactly the unfinished verification. Athlete lane, DoF
+block, `engine/`, `assets/`, ASSET_V untouched.
+
+**Measured:**
+- `crash-ragdoll.spec` — **5/5 consecutive full green runs**, each 3/3
+ (rest/speed/tail + roll-less negative control + limp-excursion negative
+ control), wall times 2.7 / 2.1 / 2.7 / 2.0 / 1.7 m. Zero TAIL samples in
+ any run. This satisfies the reviewer's 01:30 gate ("≤ 5 cm gate must pass
+ 5/5 consecutive runs, quote all five numbers" — the run pass/fail tally is
+ the gate's unit here; the penetration symptom has been un-reproducible
+ since the iter-126 fixed-step grid, see entry 126).
+- `freelook.spec` — **3/3** including the crash leg that timed out in the
+ entry-122/127 look runs (ragdoll now rests and free-look re-arms).
+- `look` — **4/4** (7.6 m); `scene.png` by eye: bright corridor, B-net
+ both edges, mixed forest, athlete framed on the snow — unchanged from 127;
+ `figure.png` by eye: athlete side profile on skis, bindings under the
+ boots, helmet + goggles; residuals unchanged (Opus lane: white suit on
+ snow, binding blocks reading toward the tail).
+- `npm run test:unit` — **0 fail (81/81)**; `node tests/golden/verify.js`
+ — **30/30**, run as the last command before this commit (no re-capture:
+ no physics and no display-census change).
+
+**Open / carried:** (1) entry 127's open question 2 — the post-rest sampler
+window can now never see motion on frozen nodes; keep as canary or shorten?
+(2) the spec's `CRASHREST silhouette gate SOFT-FAIL: span 0` soft log (pre-
+existing camera-aim-at-rest-x soft item) still fires on green runs.
+
+**Open questions for the reviewer:** confirm the 5/5 gate as satisfied so
+the crash-determinism thread can close; next work items per the standing
+order would be the remaining HT#9/scene polish — direction welcome.
+
+### 127 — crash determinism COMPLETE: the post-stop rendered spike was the
+freeze transition itself; park + world-matrix freeze now land in the same
+step that detects rest — crash-ragdoll fully green incl. negative controls
+
+**What changed (carried from 126; display-only, `engine/` untouched):**
+Root cause found by instrumenting the spec's TAIL sampler with the torso
+node's `isWorldMatrixFrozen` flag: on failing runs the spike sample read
+`frozen=true`, i.e. the spike was NOT a mystery external writer — it was the
+first rendered frame AFTER the iter-126 freeze engaged. The freeze ran at the
+START of `_crashRagdollStep` one step AFTER `R.resting` was set, so that one
+frame rendered the driver chain on the engine root the machine had kept
+integrating past the out-run (drifting/falling) — a ~0.37 m one-sample jump
+(measured 3.2–4.6 m/s) exactly at the stop boundary, which `settledTail`
+(the samples right after the first `resting` sample) always caught.
+
+Fix: park the display root AND freeze the world matrices of the root + all
+driver nodes at the END of the same step in which rest was detected — the
+driver locals are freshly written there and the root is positioned at the
+capture, so the transition frame already renders the parked matrix
+(`_crashRagdollStep`, `game.js`). `R._frozen`/`R._park` guard one-shot
+execution; the per-frame park block and the `onBeforeRenderObservable`
+re-park from iter 126 stay. The next-run reset in the crash teardown
+unfreezes the whole chain so normal per-frame matrix updates resume
+(skis' rotationQuaternion clearing and visibility restore untouched).
+
+**Verification:** `node --check` clean; unit **81/81**; golden **30/30**
+(`node tests/golden/verify.js` last command before the commit — no
+re-capture: no physics or display-census change); crash-ragdoll **3/3**
+including BOTH negative controls (roll-less rest gate fails as required;
+limp excursion exceeds the 38° gate — probe alive throughout, so the
+entry-126 mid-run `_crashRagdollStep` exception class is gone; a temporary
+diagnostic line that threw post-rest and killed the ragdoll was caught by
+exactly these controls and removed before commit). Zero TAIL samples on the
+green run; in-page 12 s post-rest probe: zero jumps > 2 cm, frozen=true.
+Two prior solo runs of the same build (before the freeze was relocated)
+still spiked — consistent with the transition explanation.
+
+**Open / carried:** (1) the reviewer's 5/5 consecutive-green gate: 1 full
+green run (3 tests) recorded; the session budget cut the remaining 4
+repeats — the fix is deterministic (frozen matrices cannot move), but the
+gate needs the sampling to be repeated. (2) The spec's `CRASHREST
+silhouette gate SOFT-FAIL: span 0 (gate 0.15)` soft log fired on the green
+run — pre-existing camera-aim-at-rest-x soft item, untouched. (3) The
+pre-fix negative control for the penetration symptom stays not-reproducible
+on the fixed-step frame grid (entry 126).
+
+**Open questions for the reviewer:** (1) confirm the rest-pose world-matrix
+freeze + next-run unfreeze as the permanent parking mechanism (answers
+entry 126's open question 2 — still display-only). (2) `getAbsolutePosition`
+on frozen nodes returns the captured matrix indefinitely; the 30 s sampler
+window can now never see post-rest motion — should the spec's sampling
+window be shortened or kept as a canary?
 
 ### 126 — crash determinism PARTIAL: fixed-step PBD substeps land (restAt
 now deterministic); the rendered-tail spike is narrowed to one single-sample
