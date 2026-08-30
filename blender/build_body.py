@@ -1141,6 +1141,13 @@ LOCALITY_MAX_R = 1.70      # d/reach above which a weight is removed outright
 LOCALITY_RAMP0 = 1.25      # d/reach below which a weight is left alone
 
 
+# The forearm's locality segment runs past the wrist to the fingertips, because
+# the forearm bone is what drives the hand. 1.80 covers the measured t = 1.75 of
+# hand skin with a small margin.
+FOREARM_NAMES = ('lowerArmL', 'lowerArmR')
+FOREARM_HAND_T = 1.80
+
+
 def _group_segment(name):
     """
     (head, tail) in the driver frame for any skin group, spine included.
@@ -1162,6 +1169,19 @@ def _group_segment(name):
         # are — hip blend, not a bone driving skin half a body away.
         ea, eb = (_group_segment(n) for n in JOINT_HELPERS[name])
         return ((ea[0] + ea[1]) / 2.0, (eb[0] + eb[1]) / 2.0)
+    if name in FOREARM_NAMES:
+        # THE FOREARM DRIVES THE HAND, and there is no hand bone — but its
+        # SEGMENT stops at the wrist, so every hand vertex reads as far from
+        # its own bone. Measured on this build: skin weighted >= 0.5 to
+        # `lowerArmL` runs to t = 1.75 of the elbow-wrist segment, 187 mm past
+        # the wrist, with the MEDIAN already at 1.32. Left uncorrected, the
+        # reach ceiling ramps the whole hand off the forearm and the rescue —
+        # which is geometric, in a rest pose where the hands hang beside the
+        # thighs — hands the glove to `upperLeg`. That is how the hand/forearm
+        # ratio fell to 0.468 (gate >= 0.65) and the glove stopped clearing the
+        # leg. The segment now runs elbow to fingertips.
+        a, b = seg_ends(name)
+        return (a, a + (b - a) * FOREARM_HAND_T)
     if name in SEGMENTS:
         return seg_ends(name)
     return None
