@@ -216,6 +216,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
 | — | Iteration 128 | **VERIFICATION-ONLY — closes the entry-127 carry: crash-ragdoll 5/5 CONSECUTIVE full green runs (reviewer's 01:30 gate) recorded, and the entry-121/122 freelook crash red is CURED (freelook 3/3, look 4/4)** | five crash-ragdoll runs in sequence: 3/3 × 5 (wall 2.7/2.1/2.7/2.0/1.7 m, incl. both negative controls each run); freelook.spec 3/3 (crash leg rests + re-arms free-look); look 4/4 incl. the crash-settle leg that timed out in 122/127; unit 81/81; golden 30/30 (verify.js, no re-capture — no code change). See entry 128. |
+| — | Iteration 129 | **Day-time "Snowing" mode (reviewer order 129 (a)): `?snowing=1` / Settings "Snowing" toggle (`aerialSnowing`, reload-applied) runs the snowfall particles under a greyer dome/fog with a softer sun in the DAY rig, independent of Night; night snowfall builder extracted to a shared `_startSnowfall`; new `snowing.spec`** | unit 81/81 (fail 0); golden 30/30 (verify.js, no re-capture — display-only, day census unchanged); snowing.spec 1/1 (sun 0.95 vs day 1.35, fog 0.0035 vs 0.0022, `daySnowfall` PS started, 0 nightFlood lights, sky lum < day and > 0.25, |r−b| < 0.15); night.spec 1/1 (untouched); look 4/4. See entry 129. |
 | — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 126 | **Crash determinism (reviewer 01:30 top order) PARTIALLY LANDED — fixed-step PBD: `_crashRagdollStep` split into a frame-level wrapper + `_crashRagdollTick` at a constant 1/120 s from a dt accumulator (restAt now deterministic 3.67–4.16 s across runs); post-stop velocity memory translated rigidly with the pose (maxSpeed exactly 0 tail restored); display root PARKED at rest + re-parked in `onBeforeRenderObservable`** | unit 81/81; golden 30/30 after census-only re-capture (audit 0 physics-state diffs × 30 / 5408 frames); crash-ragdoll 1/5 fully green, 5/5 reach `stopped` — one residual single-sample rendered spike 4.6–4.7 m/s at t≈+8 s post-rest remains (see entry 126, open). See entry 126. |
@@ -7994,6 +7995,51 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+
+### 129 — day-time "Snowing" mode: second weather toggle (?snowing=1 /
+Settings "Snowing") runs the snowfall system under a greyer day sky with a
+softer sun, independent of Night; new snowing.spec
+
+**What changed (reviewer order 129 (a), the overnight order item 2 that had
+never been started; display-only, no `engine/`, no athlete lane, no DoF, no
+scene additions, ASSET_V untouched — no assets regenerated):**
+- `game.js`: new `_snowingParam` (`?snowing=1` or localStorage
+  `aerialSnowing`, mirroring the night flag) and `_snowingMode` (off in
+  trampoline/pool worlds; Night wins the sky when both are set since it
+  already brings its own snowfall). In snowing mode: sky dome zenith
+  0.13/0.29/0.58 → 0.42/0.47/0.54 and horizon 0.60/0.72/0.88 →
+  0.70/0.74/0.80 (grey overcast), clearColor branch 0.66/0.71/0.78, fog
+  colour matched to the new horizon and density 0.0022 → 0.0035, sun
+  intensity 1.35 → 0.95. The night block's snowfall particle builder is
+  extracted verbatim into `_startSnowfall(name, capacity)` (same streak
+  config, camera-following volume) and reused by a new day block as
+  `daySnowfall` (capacity 2200). `_nightProbe()` gains `snowing` and
+  `daySnow` fields (existing fields unchanged — night.spec's day/night
+  assertions untouched).
+- `index.html`: Settings row "Snowing" + `snowingModeBtn` toggle, same
+  reload-to-apply pattern and `aerialSnowing` key as Night.
+- New `tests/drive/snowing.spec.js`, modelled on `night.spec`: default day
+  untouched (no snowing state, 0 particle systems, day sun); under
+  `?snowing=1` — `daySnowfall` started, dome present, 0 `nightFlood`
+  lights (independent of Night), sun 0.95, fog 0.0035 > day 0.0022, and
+  the top-of-frame sky reads greyer than the day shot (lower luminance,
+  |r−b| < 0.15) while still daylight (> 0.25, i.e. NOT the night mode).
+
+**Verification:** `node --check` clean; unit **81/81 (fail 0)**; golden
+**30/30** (`node tests/golden/verify.js` is the last command before this
+commit; no re-capture — the mode is off in the day default and particles
+enter no census); `snowing.spec` **1/1** (32.9 s); `night.spec` **1/1**
+(regression: the refactor touched the night snowfall path); `look` **4/4**
+(5.3 m) with shots regenerated.
+
+**Open questions for the reviewer:** (1) the snowing sky/fog/sun values are
+first-pass estimates against "slightly greyer sky / softer sun" — tuned by
+the spec's relative gates, not against footage (no snowing reference clip
+exists); happy to re-tune on the author's reaction. (2) In snowing mode the
+dome still draws the sun disc (shader has no opacity uniform); with the sun
+softened it reads as a pale bright patch — acceptable for an overcast look,
+or should the disc be faded out via a shader uniform?
 
 ### 128 — VERIFICATION-ONLY: the reviewer's 5/5 consecutive crash-ragdoll
 gate CLOSED (five back-to-back 3/3 green runs), and the entry-121/122
