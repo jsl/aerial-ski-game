@@ -6,32 +6,32 @@
  "stats": {
   "normal": {
    "p99": 1.0,
-   "mean": 0.6532,
-   "belowHalf": 0.0072,
+   "mean": 0.6529,
+   "belowHalf": 0.0081,
    "srgb": false
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8966,
-   "belowHalf": 0.0774,
+   "mean": 0.896,
+   "belowHalf": 0.078,
    "srgb": false
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7894,
-   "belowHalf": 0.1446,
+   "mean": 0.7888,
+   "belowHalf": 0.1452,
    "srgb": true
   },
   "face": {
-   "nose_out": 0.0249,
+   "nose_out": 0.0247,
    "chin_relief": 0.0342,
    "rim_front": 0.0184,
    "rim_side_h": 0.5538,
    "rim_back_h": 0.5574,
    "dome_off": 0.0009,
-   "turn_deg": -0.3145,
+   "turn_deg": -0.3557,
    "goggle_proud": 0.0432,
-   "goggle_push_mm": 6.3548,
+   "goggle_push_mm": 6.3513,
    "nose_tip_h": 0.3565,
    "temple_verts": [
     16,
@@ -44,41 +44,41 @@
    ]
   },
   "faceForward": [
-   -0.0055,
+   -0.0062,
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.4464
+  "stripe_leak": 0.44332
  },
  "delivery": {
   "athlete_albedo": {
    "mean_abs": 0.0034,
    "p99_abs": 0.0235,
-   "png": 969269,
-   "ratio": 3.32,
+   "png": 973487,
+   "ratio": 3.29,
    "res": 2048,
-   "web": 292046
+   "web": 295808
   },
   "athlete_ao": {
-   "mean_abs": 0.0112,
-   "p99_abs": 0.1529,
-   "png": 2332934,
-   "ratio": 17.47,
+   "mean_abs": 0.0114,
+   "p99_abs": 0.1569,
+   "png": 2347226,
+   "ratio": 17.52,
    "res": 1024,
-   "web": 133570
+   "web": 133962
   },
   "athlete_normal": {
-   "mean_deg": 1.287,
-   "p95_deg": 3.502,
-   "png": 4850560,
-   "ratio": 8.66,
+   "mean_deg": 1.29,
+   "p95_deg": 3.563,
+   "png": 4879707,
+   "ratio": 8.65,
    "res": 2048,
-   "web": 560332
+   "web": 563846
   },
-  "total_web": 985948
+  "total_web": 993616
  },
  "faceForward": [
-  -0.0055,
+  -0.0062,
   0.0,
   -1.0
  ]

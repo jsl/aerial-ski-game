@@ -796,6 +796,118 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 16 (2026-08-30, 01:0x-02:0x)
+
+### The merge first (commit 09af510)
+
+Session 15 ended committed, so the session opened on `git merge --no-edit
+render-realism-glm`. One conflict, `ASSET_V`'s comment block: the GLM lane had
+bumped it to 43 for the landing-chop rebake, this lane to 45 for the sport
+glasses and the folds. Resolved to **46**, both histories kept, and the
+`index.html` preload hrefs moved with it (a `?v=` that does not track `ASSET_V`
+downloads every athlete file twice). Verified on the merge before committing:
+**unit 81/81, golden 30/30 (no re-capture), browser 36/36**.
+
+Two things worth recording about the verification, because they cost time:
+
+- `./tests/run-all.sh` piped into `tail` produces NOTHING until it finishes, and
+  it did not finish inside 900 s; the three stages run in ~2 minutes when
+  started separately with their own logs. Run them separately.
+- when that run was killed it left its `python3 -m http.server 8399` behind, and
+  the next `playwright` invocation died on `Address already in use` — the
+  webServer block does not reuse a stale server. `ss -lptn | grep 8399`.
+
+`blender/terrain.json` had also been regenerated in the tree by an earlier run;
+it is a GLM-lane artefact and was restored to the merged version rather than
+shipped as a 6.8 MB spurious diff.
+
+### Reviewer ruling 00:15, item (a) — RELAXED HANDS. Commit below.
+
+The author's 23:40 note ends "hands relaxed (fingers together, slight curl —
+never splayed)" and session 15 left it open as the most visible thing in
+`shots/pose_inrun_side.png`. It is hand GEOMETRY: the CC0 base figure ships a
+flat, fully-abducted starfish hand and nothing in `build_body.py` ever closed
+it, so every pose in the game has claws on the ends of the arms.
+
+`relax_hands` (new, runs right after `scale_hands`, on the posed and settled
+mesh so the hand it measures is the hand that ships):
+
+1. **The digits are found by CONNECTIVITY, not by coordinates.** Below the
+   finger crotch each finger is its own connected component of the mesh, so
+   cutting the glove cluster at a plane and taking components of the induced
+   sub-mesh names the fingers with nothing guessed. The cut depth is laddered
+   (0.45, 0.55, 0.62, 0.70, 0.78 of the hand's length) and the SHALLOWEST depth
+   that parts the most digits wins — the shallowest, because the lever every
+   later step works with is the length below the cut. On this mesh 0.50 parts
+   **two** components and 0.70 parts **four**.
+2. **The fan closes** — each finger swings about its own base until it is
+   within `FINGER_RESIDUAL` (2 deg) of the digits' vertex-weighted mean
+   direction, with a smoothstep fade over the top of the finger so the palm
+   stays continuous with it.
+3. **The tips are packed** — a lateral shear along the hand's width axis until
+   consecutive fingers are 2 mm apart, capped at `FINGER_TILT_MAX` (7 deg) of
+   induced tilt, because pulling four splayed fingers all the way together just
+   replaces a fan with fingers CROSSING at the tips: measured, an uncapped pack
+   read 24 deg on the same angle gate as the 34.7 deg splay it replaced.
+
+Two measurement findings inside step 3, both of which made a wrong answer look
+plausible:
+
+- **A shear that starts at the identification cut has a 4 cm lever** and buys
+  3 mm of a 14.6 mm gap before it is tilting the fingers more than it is
+  closing them. The shear is therefore applied as a FIELD over the whole glove
+  from 0.35 of the hand's length, so the web between the fingers stretches with
+  them instead of tearing.
+- **Interpolating that field THROUGH a finger squashes the finger instead of
+  moving it**: its far edge gets most of its neighbour's shift, so the gap
+  barely closes (measured: 14.6 -> 12.1 mm). The field is constant across each
+  finger's own width and interpolates only in the gaps (14.6 -> **7.7 mm**).
+
+| | before | after | gate |
+|---|---|---|---|
+| widest pair of digit axes | **34.7 / 33.0 deg** | **7.7 / 8.4** | <= 15 |
+| widest gap between digits | **14.6 / 14.7 mm** | **6.5 / 6.6** | <= 8 |
+| sliver faces | 49/10590 | **49/10590** | unchanged |
+| hand/forearm ratio | 0.75 | 0.75 | 0.65-0.85 |
+
+`hand_spread_gate` measures both on the FINAL geometry, after girth, boots and
+everything else, so no later pass can quietly re-splay the glove.
+**NEGATIVE CONTROL**: `BODY_SABOTAGE_HANDS=1` skips the pass and ships the
+starfish hand — **29.3 deg / 13.6 mm, both gates fail** and the build aborts
+before it writes an asset (`scratch/opus/negctl_hands.log`).
+
+### Open, and measured — the THUMB is still out
+
+`shots/pose_inrun_side.png` after the pass shows four parallel fingers and a
+thumb still standing ~45 deg off the hand. The thumb is **never a component at
+any cut depth**: it parts from the hand higher than any finger but it also ENDS
+higher, so at 0.70 there is no thumb left to find, and at 0.45 its web still
+joins it to the palm mass that carries the fingers. A shallow sweep for
+components disjoint from the deep set was added for exactly this and reports
+`0 short` digits, which is the measurement that proves the point rather than a
+pass that silently did nothing. The next handle is a lateral-protrusion test
+(glove verts outboard of the outermost finger's span, below the shallow plane)
+rather than connectivity — worth a session start, not a tail end.
+
+The **curl** is also not applied: the palm side is inferred from the thumb's
+base displacement out of the plane of the other digits, and this base mesh's
+hand is flat enough that the displacement measures **0.0 mm**, so the pass
+skips the curl rather than guessing a direction (logged every build). It falls
+out of the thumb work.
+
+### Verification
+
+    build   all gates green at 2048/96 (goggles, dome seating, leg taper, bib
+            number, stripe, folds, suit normal variance, atlas share, hand
+            ratio, and the new hand spread/gap)
+    unit    81/81      golden 30/30 (no re-capture)   browser 36/36
+    drive   rig + body + chain + athlete + athlete-wired + ready-stance +
+            bib-number + spine + inrun-crouch + inrun-contact: **46 passed**
+            (13.4 m), 0 failed; pose-shots 1/1
+    shots   pose_{tuck,inrun,pike}_{side,front}.png regenerated, figure 448 px
+
+`ASSET_V` 46 -> 47, `index.html` preload hrefs `?v=47`, `game.js?v=` 40 -> 41.
+
 ## Session 15 (2026-08-30, 00:0x-01:0x)
 
 ### AUTHOR 23:40 — the in-run crouch. Commit below. THE ARM BONES WERE INVERTED.
