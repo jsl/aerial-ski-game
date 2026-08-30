@@ -963,6 +963,52 @@ lower-back 705) at the same 40% floor.
 - `crash-ragdoll.spec.js:57` still red and still not this lane's (physics),
   bisected to `d638150` in session 11.
 
+### RULINGS THAT ARRIVED DURING THIS SESSION — read these first next time
+
+`docs/OPUS-BODY-BRIEF.md` gained three entries at 21:30-21:55, i.e. after this
+session's work was already under way. They reorder everything below.
+
+1. **AUTHOR, HUMAN TESTING #7 (21:45) — now TOP PRIORITY for item 3.** "The body
+   shape still seems too muscular under the suit... should really cover over
+   contours of body rather than seeing all the curves of muscles." The suit must
+   become a SMOOTHED SHELL: low-pass the suit surface over ≥ 3 cm to kill
+   muscle-frequency relief, then offset 8-15 mm on the legs and 6-10 mm on
+   arms/torso, with NO anatomical detail in the suit normal map. Note this
+   interacts directly with what landed today: the suit normal map is to carry
+   "only weave + folds + seams", which is exactly the three things
+   `displace_suit` writes — the folds shipped here are wanted, the muscle relief
+   under them is not. The gate the author specifies (suit curvature variance
+   ≤ 35% of the bare body's, 1-4 cm normal-map energy on thigh/calf/upper-arm
+   ≤ 20% of today's) is measurable with the machinery this session added:
+   `_poly_uv_tris` + `_rasterize_uv` + `_load_normal_laplacian(sigma=...)` give
+   a UV-masked band-passed energy in three lines, and `fold_ripple_report`'s
+   binning is the curvature-variance instrument with the azimuth window widened.
+   **Careful:** the 1-4 cm band the author caps is the same band the folds live
+   in. Mask the thigh/calf/upper-arm PATCHES away from the crease bands, or the
+   two gates will fight.
+2. **AUTHOR (21:55): the eyewear is SHOOTER-STYLE SPORT GLASSES, not goggles.**
+   Supersedes item 1's wording and its strap: one continuous curved shield
+   ~3.5-4 cm tall, thin brow bar only, thin temple arms over the ears under the
+   helmet rim, nose pads, no foam frame, no band round the helmet. Keep the
+   mirrored blue tint and the eye-line placement; re-measure the band gate for
+   the thinner lens (0.44-0.60 h) and add "no lens pixels below the nose tip"
+   and "temple arms present in the side view". This is `goggle_geometry` plus
+   the `paint_suit` face pass plus `face_helmet_gate`'s band.
+3. **Reviewer ruling on session 11 (21:30):** (a) leg stripe straightness
+   ACCEPTED. (b) **the arm stripe MUST ship** — paint the band only on texels
+   whose triangle's heaviest skin weight is an arm bone, never by a spatial band
+   that crosses the chest wall; keep the torso-back-blue < 0.10 gate and add an
+   arm-stripe presence gate (outer-seam band ≥ 4 cm on both arms). That is a
+   direct answer to session 11's held-off `STRIPE_SEGMENTS` question and it is
+   a contained change. (d) the `body.spec.js` torso selector fix is accepted.
+   (c) **`crash-ragdoll.spec.js` is confirmed NOT this lane's** — it is the
+   GLM-lane crash-roll model from entry 112, never implemented. Ignoring it in
+   verification from here, as instructed.
+
+Suggested order for session 13: the arm stripe (3 (b), contained, gated), then
+the smoothed shell (author #7, the largest and most visible), then the sport
+glasses, then 3's panels/collar/cuffs/bib, then 10, 2, 9, 6, 7.
+
 ### For the reviewer (session 12)
 
 1. **Ruling (a) was not implementable as written, and the evidence is above.**
