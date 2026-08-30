@@ -6575,7 +6575,7 @@ def bib_number_gate(low, out_dir):
                                 + su * low.data.vertices[vids[b]].co
                                 + sv * low.data.vertices[vids[c3]].co)
                         viewer[fname].append((wpos.dot(rhat), dark))
-                        _diag[fname].append((rhat.x, wpos.x, dark, vv))
+                        _diag[fname].append((rhat.x, wpos.x, dark, vv, uu))
                         key = (min(GRID_U - 1, int(uu * GRID_U)),
                                min(GRID_V - 1, int(vv * GRID_V)))
                         e = bins.setdefault(key, [0, 0])
@@ -6617,9 +6617,9 @@ def bib_number_gate(low, out_dir):
 
     for _f in ('front', 'back'):
         d = _diag[_f]
-        pos = sum(1 for rx, _x, _k, _v in d if rx > 0)
-        xs = [x for _r, x, _k, _v in d]
-        ink = [x for _r, x, k, _v in d if k]
+        pos = sum(1 for rx, _x, _k, _v, _u in d if rx > 0)
+        xs = [x for _r, x, _k, _v, _u in d]
+        ink = [x for _r, x, k, _v, _u in d if k]
         log(f'bib diag [{_f}]: samples {len(d)}, rhat.x>0 {pos} '
             f'({100.0 * pos / max(1, len(d)):.0f}%), x span '
             f'{min(xs):+.4f}..{max(xs):+.4f}, ink x mean '
@@ -6627,7 +6627,7 @@ def bib_number_gate(low, out_dir):
         lo, hi = min(xs), max(xs)
         bk = [0] * 10
         tt = [0] * 10
-        for _r, x, k, _v in d:
+        for _r, x, k, _v, _u in d:
             i = min(9, int((x - lo) / max(1e-9, hi - lo) * 10))
             tt[i] += 1
             bk[i] += 1 if k else 0
@@ -6638,7 +6638,7 @@ def bib_number_gate(low, out_dir):
         d = _diag[_f]
         vb = [0] * 10
         vt = [0] * 10
-        for _r, _x, k, v in d:
+        for _r, _x, k, v, _u in d:
             i = min(9, max(0, int(v * 10)))
             vt[i] += 1
             vb[i] += 1 if k else 0
@@ -6646,6 +6646,56 @@ def bib_number_gate(low, out_dir):
             f'{(vb[i] / vt[i] if vt[i] else 0):.2f}' for i in range(10)))
         log(f'bib diag [{_f}]: samples-per-v ' + ' '.join(
             str(vt[i]) for i in range(10)))
+
+    if os.environ.get('BODY_BIB_ASCII') == '1':
+        # Where each plate LIVES in the atlas, and how many texels it gets.
+        # A plate whose island is tiny, stretched or shared with another
+        # island cannot render a legible glyph however the paint is drawn.
+        for fname, fsign in (('front', 1.0), ('back', -1.0)):
+            uvs, area_uv, area_w = [], 0.0, 0.0
+            for poly in low.data.polygons:
+                vids = list(poly.vertices)
+                vis = [patch_pos_of(vi) for vi in vids]
+                if any(d is None or d[0] != fsign for d in vis):
+                    continue
+                cuv = [tuple(uvl[li].uv) for li in poly.loop_indices]
+                uvs.extend(cuv)
+                for k in range(1, len(vids) - 1):
+                    a, b, c3 = cuv[0], cuv[k], cuv[k + 1]
+                    area_uv += abs((b[0]-a[0])*(c3[1]-a[1])
+                                   - (c3[0]-a[0])*(b[1]-a[1])) / 2.0
+                    pa = low.data.vertices[vids[0]].co
+                    pb = low.data.vertices[vids[k]].co
+                    pc = low.data.vertices[vids[k + 1]].co
+                    area_w += (pb - pa).cross(pc - pa).length / 2.0
+            if not uvs:
+                continue
+            us = [u for u, _ in uvs]
+            vs = [v for _, v in uvs]
+            log(f'bib atlas [{fname}]: uv bbox u {min(us):.4f}..{max(us):.4f} '
+                f'({(max(us)-min(us))*w:.0f} px) v {min(vs):.4f}..{max(vs):.4f} '
+                f'({(max(vs)-min(vs))*h:.0f} px), island area '
+                f'{area_uv * w * h:.0f} texels over {area_w * 1e4:.0f} cm2 '
+                f'= {area_uv * w * h / max(1e-9, area_w * 1e4):.1f} texels/cm2')
+
+        for _f in ('front', 'back'):
+            NU, NV = 30, 18
+            g = [[[0, 0] for _ in range(NU)] for _ in range(NV)]
+            for _r, _x, k, v, u in _diag[_f]:
+                iu = min(NU - 1, max(0, int(u * NU)))
+                iv = min(NV - 1, max(0, int(v * NV)))
+                g[iv][iu][1] += 1
+                g[iv][iu][0] += 1 if k else 0
+            log(f'bib ascii [{_f}] (patch u across, v up):')
+            for iv in range(NV - 1, -1, -1):
+                row = ''
+                for iu in range(NU):
+                    ink_n, tot_n = g[iv][iu]
+                    if not tot_n:
+                        row += ' '
+                    else:
+                        row += '.:*#'[min(3, int(ink_n / tot_n * 4))]
+                log(f'  |{row}|')
 
     bib_orientation_report(viewer)
 
@@ -7319,18 +7369,42 @@ def add_spine_chain(low, arm):
 # exactly. The helpers change deformation only. Like add_spine_chain and
 # localise_weights this therefore runs LAST, after the bake and after every
 # geometry gate.
+#
+# EXTENDED TO THE SHOULDERS AND ELBOWS, reviewer ruling 2026-08-30 03:40. The
+# armpit is the same defect one joint up (session 18: upperArmR 0.495 /
+# spine_02 0.490 on an edge that goes 6.9 mm at rest to 76.3 mm posed), and
+# the machinery is generic over the chain — what the arms add is that their
+# drivers BIND FLIPPED (rx = -pi, the armSweep hang pose), so game.js takes
+# the half-angle between each bone's delta from its own bind rather than
+# between raw Euler angles. Nothing about that reaches this file: the helper
+# bind stays translation-only for the arms exactly as it is for the legs.
 JOINT_HELPERS = {
     'hlpHipL':  ('spine_01',  'upperLegL'),
     'hlpHipR':  ('spine_01',  'upperLegR'),
     'hlpKneeL': ('upperLegL', 'lowerLegL'),
     'hlpKneeR': ('upperLegR', 'lowerLegR'),
+    'hlpShoulderL': ('spine_03', 'upperArmL'),
+    'hlpShoulderR': ('spine_03', 'upperArmR'),
+    'hlpElbowL': ('upperArmL', 'lowerArmL'),
+    'hlpElbowR': ('upperArmR', 'lowerArmR'),
 }
-# The lattice, per side. Coordinates are half-joints; the helpers are the
-# half-integers.
-HELPER_LATTICE = [
-    ('spine_01', 0.0), ('hlpHip', 0.5), ('upperLeg', 1.0),
-    ('hlpKnee', 1.5), ('lowerLeg', 2.0),
+# The lattices, per limb and per side. Coordinates are half-joints; the helpers
+# are the half-integers. Each chain has its OWN root vertebra — the legs hang
+# off spine_01 (the lumbar third), the arms off spine_03 (the thoracic).
+HELPER_CHAINS = [
+    ('leg', [('spine_01', 0.0), ('hlpHip', 0.5), ('upperLeg', 1.0),
+             ('hlpKnee', 1.5), ('lowerLeg', 2.0)]),
+    ('arm', [('spine_03', 0.0), ('hlpShoulder', 0.5), ('upperArm', 1.0),
+             ('hlpElbow', 1.5), ('lowerArm', 2.0)]),
 ]
+# helper stem -> (proximal segment stem, distal segment stem, which end of the
+# proximal segment the helper sits on).
+HELPER_LIMB = {
+    'hlpHip':      ('upperLeg', 'lowerLeg', 'outer'),
+    'hlpKnee':     ('upperLeg', 'lowerLeg', 'joint'),
+    'hlpShoulder': ('upperArm', 'lowerArm', 'outer'),
+    'hlpElbow':    ('upperArm', 'lowerArm', 'joint'),
+}
 HELPER_MIN_W = 0.02        # below this a weight moves a vertex by microns
 HELPER_SPAN_MAX = 0.5      # half a joint, the whole point of the pass
 SABOTAGE_HELPERS = os.environ.get('BODY_SABOTAGE_HELPERS') == '1'
@@ -7339,28 +7413,44 @@ SABOTAGE_HELPERS = os.environ.get('BODY_SABOTAGE_HELPERS') == '1'
 def _helper_rest_translation(name):
     """The helper driver's REST position in the BABYLON axes seg_matrix uses.
 
-    Both helpers on a side are ends of the SAME segment — the thigh — so this
-    needs nothing from the spine or the shin: the hip is the thigh's top, the
-    knee is the thigh's bottom, and game.js walks to exactly those two points
-    from the thigh driver every frame.
+    Both helpers on a limb are ends of the SAME proximal segment — the thigh,
+    the upper arm — so this needs nothing from the spine or the distal bone:
+    the hip is the thigh's top, the knee its bottom, the shoulder the upper
+    arm's top, the elbow its bottom, and game.js walks to exactly those points
+    from the proximal driver every frame.
+
+    The ARMS bind at armSweep(armDrop = 1) — hanging, rx = -pi — so their
+    lateral/vertical centre comes from ARM_BIND rather than from POSE, which
+    holds the arms-up untucked pose. The vertical offset is still +half for the
+    outer end: at rest the left shoulder is 0.15 m ABOVE the upper-arm centre
+    (ARM_BIND y = 0.150 - 0.150 = 0), which is the anchor the mesh was built
+    around.
     """
     side = name[-1]
-    leg = 'upperLeg' + side
-    p = POSE[leg]
-    half = SEGMENTS[leg]['h'] / 2.0
-    sgn = 1.0 if name.startswith('hlpHip') else -1.0
-    return Vector((p.get('x', 0.0), p.get('y', 0.0) + sgn * half,
-                   BASE_Z.get(leg, 0.0) + p.get('dz', 0.0)))
+    prox = HELPER_LIMB[name[:-1]][0] + side
+    end = HELPER_LIMB[name[:-1]][2]
+    p = POSE[prox]
+    half = SEGMENTS[prox]['h'] / 2.0
+    sgn = 1.0 if end == 'outer' else -1.0
+    lat, up = (ARM_BIND[prox] if is_arm(prox)
+               else (p.get('x', 0.0), p.get('y', 0.0)))
+    return Vector((lat, up + sgn * half,
+                   BASE_Z.get(prox, 0.0) + p.get('dz', 0.0)))
 
 
 def _helper_chain_of(vname):
-    """(side, lattice coordinate) for a group name, or None if it is off-chain."""
-    for stem, c in HELPER_LATTICE:
-        if stem == 'spine_01':
-            continue
-        for side in ('L', 'R'):
-            if vname == stem + side:
-                return side, c
+    """(chain tag, side, lattice coordinate), or None if the group is off-chain.
+
+    Roots report side '*': `spine_01` is on both legs' chains at coordinate 0
+    and `spine_03` on both arms', which is correct — they are the shared roots.
+    """
+    for tag, lat in HELPER_CHAINS:
+        if vname == lat[0][0]:
+            return tag, '*', 0.0
+        for stem, c in lat[1:]:
+            for side in ('L', 'R'):
+                if vname == stem + side:
+                    return tag, side, c
     return None
 
 
@@ -7378,28 +7468,27 @@ def joint_span_report(obj, arm, tag, verbose=True):
     for g in obj.vertex_groups:
         if g.name not in bones:
             continue
-        if g.name == 'spine_01':
-            coord[g.index] = ('*', 0.0)
-        else:
-            c = _helper_chain_of(g.name)
-            if c is not None:
-                coord[g.index] = c
+        c = _helper_chain_of(g.name)
+        if c is not None:
+            coord[g.index] = c
+    keys = [(tag, s) for tag, _ in HELPER_CHAINS for s in ('L', 'R')]
     bad = 0
     worst = []
     spans = []
     for v in obj.data.vertices:
-        per = {'L': [], 'R': []}
+        per = {k: [] for k in keys}
         for g in v.groups:
             if g.weight < HELPER_MIN_W or g.group not in coord:
                 continue
-            side, c = coord[g.group]
+            ctag, side, c = coord[g.group]
             for s in (('L', 'R') if side == '*' else (side,)):
-                per[s].append((c, g.weight, obj.vertex_groups[g.group].name))
-        for s in ('L', 'R'):
-            e = per[s]
+                per[(ctag, s)].append(
+                    (c, g.weight, obj.vertex_groups[g.group].name))
+        for k in keys:
+            e = per[k]
             if len(e) < 2:
                 continue
-            # spine_01 alone on a side is not a leg blend; it needs a real leg
+            # A root alone on a side is not a limb blend; it needs a real limb
             # bone opposite it to span anything.
             if all(c == 0.0 for c, _, _ in e):
                 continue
@@ -7450,17 +7539,22 @@ def add_joint_helpers(low, arm):
     eb = arm.data.edit_bones
     for nm in JOINT_HELPERS:
         side = nm[-1]
-        uh = arm.data.bones['upperLeg' + side].head_local.copy()
-        lh = arm.data.bones['lowerLeg' + side].head_local.copy()
+        prox, dist, end = HELPER_LIMB[nm[:-1]]
+        uh = arm.data.bones[prox + side].head_local.copy()
+        lh = arm.data.bones[dist + side].head_local.copy()
         # pose_onto_segments has already moved every bone's HEAD onto its
-        # segment CENTRE, so these two heads are the thigh and shin centres and
-        # the joints are their midpoint and its reflection. The edit-bone rest
-        # is cosmetic — patch_skin_binds writes the binding from
-        # _helper_rest_translation — but a bone whose rest disagrees with its
-        # bind is a trap for the next reader, so it is placed honestly.
-        head = (uh + lh) / 2.0 if nm.startswith('hlpKnee') else uh + (uh - lh) / 2.0
+        # segment CENTRE, so these two heads are the proximal and distal
+        # centres and the joint is half the PROXIMAL segment down from the
+        # first. (The midpoint of the two centres is the same point on the leg,
+        # where both segments are 0.36 long, and is NOT on the arm, where they
+        # are 0.30 and 0.25.) The edit-bone rest is cosmetic — patch_skin_binds
+        # writes the binding from _helper_rest_translation — but a bone whose
+        # rest disagrees with its bind is a trap for the next reader, so it is
+        # placed honestly.
         d = (lh - uh)
         d = d.normalized() if d.length > 1e-6 else Vector((0.0, 0.0, -1.0))
+        half = SEGMENTS[prox + side]['h'] / 2.0
+        head = uh + d * (half if end == 'joint' else -half)
         if nm in eb:
             eb.remove(eb[nm])
         b = eb.new(nm)
@@ -7485,57 +7579,70 @@ def add_joint_helpers(low, arm):
     joints = {g.index for g in vgs if g.name in bone_names}
     bone_groups = [g for g in vgs if g.name in bone_names]
     idx = {g.name: g.index for g in vgs}
-    lattice = {}                       # side -> [(group index, coord)]
-    for side in ('L', 'R'):
-        lattice[side] = [(idx['spine_01'], 0.0)] + [
-            (idx[stem + side], c) for stem, c in HELPER_LATTICE
-            if stem != 'spine_01']
-    all_chain = {gi for s in lattice for gi, _ in lattice[s]}
+    # chain tag -> (root group index, {side: [(group index, coord)]})
+    chains = []
+    for ctag, lat in HELPER_CHAINS:
+        ri = idx[lat[0][0]]
+        chains.append((ctag, ri, {
+            side: [(ri, 0.0)] + [(idx[stem + side], c) for stem, c in lat[1:]]
+            for side in ('L', 'R')}))
 
     moved = 0
     worst_mass = 0.0
     both_sides = 0
     capped = 0
+    per_chain = {ctag: 0 for ctag, _, _ in chains}
     for v in low.data.vertices:
         cur = {g.group: g.weight for g in v.groups
                if g.weight > 1e-6 and g.group in joints}
-        legs = {s: sum(w for gi, w in cur.items()
-                       if gi in {g for g, c in lattice[s] if c >= 1.0})
-                for s in ('L', 'R')}
-        if legs['L'] + legs['R'] <= 1e-6:
-            continue               # no leg weight: a pure trunk/arm/head vertex
-        if legs['L'] > 1e-6 and legs['R'] > 1e-6:
-            both_sides += 1
-        wS = cur.get(idx['spine_01'], 0.0)
-        tot = legs['L'] + legs['R']
         new = dict(cur)
-        for gi in all_chain:
-            new.pop(gi, None)
-        for side in ('L', 'R'):
-            # The shared root is split between the sides in proportion to the
-            # leg weight each side already carries, so a crotch vertex sitting
-            # on both thighs keeps its total and neither side is privileged.
-            mass = legs[side] + wS * (legs[side] / tot)
-            if mass <= 1e-6:
-                continue
-            coords = {gi: c for gi, c in lattice[side]}
-            s = sum(w * coords[gi] for gi, w in cur.items() if gi in coords
-                    and (coords[gi] >= 1.0 or gi == idx['spine_01']))
-            # spine_01's contribution to the moment is zero (coord 0), so the
-            # numerator is the legs' alone; the DENOMINATOR carries its share.
-            s /= mass
-            # Hat functions on the lattice: at most two adjacent nodes, so the
-            # span is 0.5 by construction and the result is a partition of
-            # unity of `mass`. Identity at every lattice node, so a vertex that
-            # was purely one bone's stays purely that bone's.
-            lo = max(0, min(len(lattice[side]) - 2, int(math.floor(s / 0.5))))
-            a = (s - lo * 0.5) / 0.5
-            a = 0.0 if a < 0.0 else (1.0 if a > 1.0 else a)
-            for k, part in ((lo, 1.0 - a), (lo + 1, a)):
-                if part <= 1e-6:
+        touched = set()
+        hit = False
+        for ctag, ri, lattice in chains:
+            limb = {s: sum(w for gi, w in cur.items()
+                           if gi in {g for g, c in lattice[s] if c >= 1.0})
+                    for s in ('L', 'R')}
+            if limb['L'] + limb['R'] <= 1e-6:
+                continue           # this chain does not reach this vertex
+            hit = True
+            per_chain[ctag] += 1
+            if limb['L'] > 1e-6 and limb['R'] > 1e-6:
+                both_sides += 1
+            wS = cur.get(ri, 0.0)
+            tot = limb['L'] + limb['R']
+            chain_nodes = {gi for s in lattice for gi, _ in lattice[s]}
+            touched |= chain_nodes
+            for gi in chain_nodes:
+                new.pop(gi, None)
+            for side in ('L', 'R'):
+                # The shared root is split between the sides in proportion to
+                # the limb weight each side already carries, so a crotch vertex
+                # sitting on both thighs keeps its total and neither side is
+                # privileged.
+                mass = limb[side] + wS * (limb[side] / tot)
+                if mass <= 1e-6:
                     continue
-                gi = lattice[side][k][0]
-                new[gi] = new.get(gi, 0.0) + mass * part
+                coords = {gi: c for gi, c in lattice[side]}
+                s = sum(w * coords[gi] for gi, w in cur.items() if gi in coords
+                        and (coords[gi] >= 1.0 or gi == ri))
+                # The root's contribution to the moment is zero (coord 0), so
+                # the numerator is the limb's alone; the DENOMINATOR carries
+                # its share.
+                s /= mass
+                # Hat functions on the lattice: at most two adjacent nodes, so
+                # the span is 0.5 by construction and the result is a partition
+                # of unity of `mass`. Identity at every lattice node, so a
+                # vertex that was purely one bone's stays purely that bone's.
+                lo = max(0, min(len(lattice[side]) - 2, int(math.floor(s / 0.5))))
+                a = (s - lo * 0.5) / 0.5
+                a = 0.0 if a < 0.0 else (1.0 if a > 1.0 else a)
+                for k, part in ((lo, 1.0 - a), (lo + 1, a)):
+                    if part <= 1e-6:
+                        continue
+                    gi = lattice[side][k][0]
+                    new[gi] = new.get(gi, 0.0) + mass * part
+        if not hit:
+            continue               # pure trunk/head vertex: nothing to project
         got = sum(new.values())
         was = sum(cur.values())
         worst_mass = max(worst_mass, abs(got - was))
@@ -7547,14 +7654,16 @@ def add_joint_helpers(low, arm):
         for g in bone_groups:
             if g.index in keep:
                 g.add([v.index], keep[g.index], 'REPLACE')
-            elif g.index in cur or g.index in all_chain:
+            elif g.index in cur or g.index in touched:
                 g.remove([v.index])
         moved += 1
     low.data.update()
-    log(f'joint helpers: {len(JOINT_HELPERS)} bones added; {moved} leg-weighted '
-        f'verts re-projected onto the half-joint lattice ({both_sides} carry '
-        f'both legs, {capped} needed the {WEIGHT_SEAM_INFLUENCES}-influence '
-        f'cap); worst chain-mass error before the cap {worst_mass:.2e}')
+    log(f'joint helpers: {len(JOINT_HELPERS)} bones added; {moved} limb-weighted '
+        f'verts re-projected onto the half-joint lattice ('
+        + ', '.join(f'{n} {t}' for t, n in per_chain.items()) +
+        f'; {both_sides} carry both sides of a chain, {capped} needed the '
+        f'{WEIGHT_SEAM_INFLUENCES}-influence cap); worst chain-mass error '
+        f'before the cap {worst_mass:.2e}')
     if worst_mass > 1e-4:
         raise SystemExit(
             f'[body] the helper re-projection is not a partition of unity: '

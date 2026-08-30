@@ -121,11 +121,13 @@ function createSim(opts = {}) {
             // The spine's own geometry is gated in tests/drive/spine.spec.js
             // (structure, weights, skinned strain, chain C1 continuity), with
             // a negative control.
-            // Same for the four hlp* joint helpers (OPUS item 5, reviewer
-            // approval 2026-08-30 02:40): updateJointHelpers walks each one to
+            // Same for the eight hlp* joint helpers (OPUS item 5, reviewer
+            // approvals 2026-08-30 02:40 for the hips and knees and 03:40 for
+            // the shoulders and elbows): updateJointHelpers walks each one to
             // the half-angle of two bones this trace already records in full
-            // (spine_01 is itself derived from torso/head/upperLeg*), so a
-            // change in a helper shows up here through its cause.
+            // (spine_01 and spine_03 are themselves derived from
+            // torso/head/upperLeg*), so a change in a helper shows up here
+            // through its cause.
             if (/^spine_\d+$/.test(name) || /^hlp[A-Z]/.test(name)) continue;
             const n = BABYLON._nodes.get(name);
             if (!n) continue;

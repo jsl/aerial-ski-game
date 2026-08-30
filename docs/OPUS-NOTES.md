@@ -796,6 +796,155 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 21 (2026-08-30, 04:0x-05:0x)
+
+Merged `render-realism-glm` first (2 commits, no conflicts; GLM's iter-126 PBD
+determinism work and the census-only trace re-capture). Unit 81/81 + golden
+30/30 on the merge before committing it (`5a0037c`).
+
+**Harness note, and it cost the first eleven minutes:** `./tests/run-all.sh`
+runs the Playwright layer on `DRIVE_PORT`'s DEFAULT, 8099 — one of the ports
+this lane is forbidden to touch, and the port another worktree was using. Run
+the layers separately from this lane: `node --test tests/unit/*.test.js`,
+`node tests/golden/verify.js`, then
+`DRIVE_PORT=8399 npx playwright test -c tests/drive/playwright.config.js`.
+
+### Item 5 — the half-angle helpers reach the SHOULDERS and ELBOWS. Commit `37674be`
+
+The 03:40 ruling approved extending session 20's knee/hip helpers to the arms.
+Four more bones on
+
+    spine_03 --- hlpShoulder --- upperArm --- hlpElbow --- lowerArm
+       0.0          0.5             1.0         1.5          2.0
+
+by the same hat projection. `add_joint_helpers` now runs over a LIST of chains
+(`HELPER_CHAINS`), each with its own root vertebra — legs off `spine_01`, arms
+off `spine_03` — and a vertex is projected once per chain that reaches it, so a
+trunk vertex is still untouched and a leg vertex keeps its arm weights.
+
+**Three things the arms needed that the legs did not, and all three are in the
+table rather than the loop:**
+
+- **the arm drivers BIND FLIPPED.** The athlete's rest pose is
+  `armSweep(armDrop = 1)` — the hang — whose `rx` is **-pi**, where every spine
+  and leg driver binds at 0. What the shader averages is each bone's DELTA from
+  its own bind, not its absolute Euler angle, so `updateJointHelpers` takes the
+  half-angle between `wrapPi(rx - bindRx)` of each side. Between raw angles it
+  would have put the shoulder helper 90 degrees off AT REST and torn the seam
+  it exists to close. The helper's own bind stays translation-only, because
+  `rest_h` cancels out of the skinning delta
+  (`T(p).R(rot_h).R(rest_h)^-1.T(-p_rest)`), so `helper_matrix` is unchanged.
+- **a flipped bind sends the segment's outer end along MINUS its driver's local
+  +Y** (`_localUp(-pi, 0)` points at -y, and the left shoulder must come out
+  0.15 m ABOVE the upper-arm centre) — the `sA`/`sB` signs.
+- **the arm segments are unequal** (0.30 and 0.25) where the leg's are not
+  (0.36 and 0.36), so the half-lengths are per-helper, and the edit-bone rest
+  is now placed half a PROXIMAL segment down the axis instead of at the
+  midpoint of the two centres — the same point on the leg, and not on the arm.
+
+| build gate | before | shipped |
+|---|---|---|
+| JOINTSPAN vertices over half a joint | **1467/1467** | **0/1551** |
+| span p99 / max | 1.00 / 1.00 | **0.50 / 0.50** |
+| WEIGHTSEAM p99 / max / hot (folded basis) | 0.336 / 0.779 / 0 | **0.336 / 0.779 / 0** |
+| LOCALITY offenders | 0/11767 | **0/11858** (p99 1.32 -> 1.43, gate 1.70) |
+| chain-mass partition error | — | 1.11e-16 |
+| 4-influence cap hits | — | 0 |
+
+`hlpShoulderL/R` carry 85.9/89.3 weight units, `hlpElbowL/R` 72.7/73.1. glb
+8995 verts, **21 bones**. The seam metric being byte-identical in the folded
+basis is again the continuity proof: the projection cuts no seam.
+
+### THE FINDING — the armpit is NOT a blend-span defect, and this is the number
+
+New armpit band in `spine.spec.js` (rest coordinates, `|x| > 0.13` and
+`0 < y < 0.20`; a 0.11 cut still caught the FLANK, whose worst edge at
+(-0.115, -0.043) is the same waist bridge the whole-body max sits on).
+**A/B on this tree, pre-helper = `5a0037c` assets + `game.js` checked out and
+restored:**
+
+| pose | shoulder span | elbow span | pit max pre | pit max shipped |
+|---|---|---|---|---|
+| neutral | 0.0 deg | 0.0 deg | 1.000 | 1.000 |
+| in-run crouch | 44.79 | 0.0 | **5.161** | **5.161** |
+| flight tuck | 60.46 | 52.88 | **4.854** | **4.854** |
+| pike | 90.05 | 0.0 | **6.207** | **6.207** |
+
+The joints really do bend — 90 degrees at the shoulder in the pike — and the
+band's worst edge does not move by one part in a thousand. Its two worst edges,
+(0.145, 0.020, -0.094) and (0.195, 0.045, 0.002), are unmoved by halving the
+lattice under them, which is what a bake-geometry stretch does and what a candy
+wrapper cannot do. **So session 18's 76.3 mm armpit edge is the same class as
+the crotch bridge face: item 3 geometry, not skinning.** The band therefore
+ships LOGGED, not gated — gating a number the change under test does not move
+is decoration, the same call the front/back bib ink ratio already got.
+
+What the helpers DID move, whole-body worst edge (`STRAINTABLE`):
+
+| pose | session 20 (legs only) | shipped (legs + arms) |
+|---|---|---|
+| in-run crouch | 11.038 | **10.838** |
+| flight tuck | 10.509 | **10.345** |
+| pike | 13.480 | **13.263** |
+
+all three still at the same crotch bridge face (y -0.03, z -0.125).
+
+**A measurement bug found on the way, and it is session 6's trap again.**
+Reading `_helperProbe()` from a SECOND `page.evaluate` after `MEASURE` returns
+the LIVE frame's drivers, not the probe pose's: all four poses came back with
+identical spans (`hlpHipL` 12.66, `hlpHipR` 0.00) until the call moved INSIDE
+`MEASURE`, in the same synchronous block as `_poseProbe` and `prepare(true)`.
+Any future spec reading driver state after a probe pose needs this.
+
+### Item 3 (bib back plate) — diagnosed, NOT fixed, and the instrument is the problem
+
+The 03:05 ruling asks for the back plate laid out like the front and gated on
+the ink profile. Before changing the layout I looked at both plates directly —
+a new `BODY_BIB_ASCII=1` dump renders each face's samples as ink coverage in
+its own patch (u, v) — and measured the atlas islands. Two results:
+
+- **the two plates have IDENTICAL texel density, 83.0 texels/cm2, in separate
+  islands** (front uv 0.2968..0.3617 x 0.1018..0.1860, 17216 texels over
+  207 cm2; back 0.0720..0.1384 x 0.0851..0.1894, 25463 over 307 cm2). So the
+  back is not texel-starved and the islands do not overlap. The back plate
+  covers 50% more SURFACE for the same parametric patch, i.e. the back of the
+  torso is the more curved face — worth following up, but not a bake defect.
+- **the profile that produced the "edge-clipped" verdict is too sparse to carry
+  it.** 650 front and 680 back samples spread over a 30 x 18 patch grid is
+  ~1.2 samples per cell, and the ASCII shows the back's apparent structure is
+  interleaved with columns that hold NO samples at all. Session 19's ten-bucket
+  profiles are the same 680 samples binned coarser.
+
+**REVIEWER: I did not lay out the back plate against a measurement I had just
+shown to be that thin.** The next session's first step on this item should be a
+denser sampler — a rectified render of each plate (fixed grid in patch space,
+bilinear texture fetch, no dependence on where the low-poly triangles happen to
+fall) — and then the layout fix and the gate the ruling asks for. The ASCII
+dump and the atlas report are in the tree behind `BODY_BIB_ASCII=1`.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96; 8995 verts, 21 bones
+    unit    81/81      golden 30/30 (no display node changed; no re-capture)
+    drive   rig + spine + chain + ready-stance 35/35 (7.7 m)
+            spine.spec.js alone after the armpit instrument: 14/14 (2.9 m)
+
+`ASSET_V` 51 -> 52, `game.js?v=` 47 -> 48, preload hrefs `?v=52`.
+
+### Open at the end of session 21
+
+- **The bib back plate**, with the denser-sampler step above as its first move.
+- **The residual strain tail is entirely item 3 geometry, now on two
+  independent measurements**: the crotch bridge face (whole-body max, all three
+  poses) and the armpit band (unmoved by a lattice halving that closed a
+  90-degree joint). No skinning change reaches either.
+- Carried: the flight-tuck re-check; the smoothed suit shell (author #7 — the
+  author's most visible open item); panels/collar/cuffs; the THUMB as its own
+  finger group; the UV unwrap + arm stripe last.
+- Not re-run this session: `crash-ragdoll.spec.js` (green on this tree in
+  session 20; nothing in this commit reaches the crash path, which does not
+  drive the helpers) and the shot regeneration.
+
 ## Session 20 (2026-08-30, 03:0x-04:0x)
 
 Nothing to merge: `render-realism-glm` was 0 commits ahead at session start, and
