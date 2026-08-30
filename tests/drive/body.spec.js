@@ -160,23 +160,53 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
         // luma 0.50, halfway between the helmet and the white margin around it,
         // and could not distinguish "correct" from "mirrored". A centroid is
         // always strictly inside the island.
+        // Each triangle also carries the name of the BONE that drives it, from
+        // its vertices' heaviest skin weight. The regions below used to be
+        // pure height bands, and that was fine only for as long as the suit's
+        // design happened to be leg-only: once item 3 put the outer-seam
+        // stripe on the ARMS as well, the "torso" band at fy 0.55-0.78 —
+        // which is every triangle at that height, arms included, because the
+        // arms hang beside the torso in bind pose — started counting sleeve
+        // stripe as torso blue, on BOTH sides, and the back-of-torso reading
+        // went 0.115 against a < 0.10 gate with the bib itself untouched.
+        // A bone is an authoritative answer to "is this the torso"; a height
+        // band is not.
         const V = [];
         for (const p of parts) {
             const pos = p.getVerticesData(BABYLON.VertexBuffer.PositionKind);
             const uv = p.getVerticesData(BABYLON.VertexBuffer.UVKind);
+            const mi = p.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+            const mw = p.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
             const idx = p.getIndices();
             if (!pos || !uv || !idx) continue;
+            const bones = (p.skeleton && p.skeleton.bones) || [];
+            const boneOf = (vi) => {
+                if (!mi || !mw) return null;
+                let best = -1, bw = -1;
+                for (let k = 0; k < 4; k++) {
+                    if (mw[vi * 4 + k] > bw) { bw = mw[vi * 4 + k]; best = mi[vi * 4 + k]; }
+                }
+                return (bones[best] && bones[best].name) || null;
+            };
             for (let t = 0; t < idx.length; t += 3) {
                 const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+                const nb = [boneOf(a), boneOf(b), boneOf(c)];
+                const tally = {};
+                for (const n of nb) if (n) tally[n] = (tally[n] || 0) + 1;
+                const bone = Object.keys(tally)
+                    .sort((p1, p2) => tally[p2] - tally[p1])[0] || null;
                 V.push({
                     x: (pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3,
                     y: (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3,
                     z: (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2]) / 3,
                     u: (uv[a * 2] + uv[b * 2] + uv[c * 2]) / 3,
                     v: (uv[a * 2 + 1] + uv[b * 2 + 1] + uv[c * 2 + 1]) / 3,
+                    bone,
                 });
             }
         }
+        const TORSO_BONES = ['torso', 'spine_01', 'spine_02', 'spine_03'];
+        const isTorso = (p) => p.bone === null || TORSO_BONES.includes(p.bone);
         const ext = (k) => ({
             lo: Math.min(...V.map(p => p[k])), hi: Math.max(...V.map(p => p[k])),
         });
@@ -201,7 +231,10 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
         // fwd extent 0.157 -> 0.229) and dragged back-of-torso triangles into
         // the back box, sinking the bib front-back delta below its gate with
         // the bib itself untouched.
-        const torsoBand = V.filter(p => { const f = fy(p); return f > 0.55 && f < 0.78; });
+        const torsoBand = V.filter(p => {
+            const f = fy(p);
+            return f > 0.55 && f < 0.78 && isTorso(p);
+        });
         const fwdSorted = torsoBand.map(p => p[fwd]).sort((a, b) => a - b);
         const fwdMid = fwdSorted[Math.floor(fwdSorted.length / 2)];
 

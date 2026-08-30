@@ -207,6 +207,29 @@ SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 # in metres of arc, not in radians (see paint_suit). STRIPE_DPHI_MAX caps the
 # wrap on a thin segment — a true 50 mm band round a 40 mm-radius forearm would
 # reach 0.63 rad and read as a blue sleeve.
+# Which segments carry the outer-seam stripe.
+#
+# ITEM 3 asks for it on the arms too ("down the OUTSIDE seam of each arm,
+# shoulder to cuff, and each leg, hip to ankle" —
+# reference/images/aerial_suit.png), and the paint branch below does the arms
+# correctly. It is off because the BAKE cannot currently carry it. Measured on
+# tests/drive/body.spec.js's suit-design test, torso triangles selected by the
+# bone that drives them, sampling the baked albedo:
+#
+#                       torso front blue   torso back blue   (gates: back < 0.10)
+#   legs only                    0.086            0.019
+#   + arms                       0.145            0.121   FAIL
+#   + arms, capped at along 0.55 0.117            0.110   FAIL
+#
+# The arm band lands on TORSO texels. Capping the stripe below the shoulder
+# barely moves it (0.121 -> 0.110 for 3% fewer stripe verts), so it is not the
+# shoulder cap wrapping onto the chest — it leaks the whole length of the chest
+# wall, where the arm shell and the torso shell sit against each other since
+# loosen_suit stood the suit off the skin. That is the same armpit/bridge-face
+# geometry the reviewer has queued under item 3, and the stripe is not the
+# place to fix it. Flip this back to include the arms once it is fixed; the
+# body.spec.js numbers above are the test.
+STRIPE_SEGMENTS = ('upperLeg', 'lowerLeg')
 STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
 # fixed angle wraps a thin segment. 0.46 lets the 5 cm arc rule govern the
@@ -5174,10 +5197,11 @@ def displace_suit(obj, lm):
                 # relief has to use the SAME arc-width band the paint uses
                 # (item 3 (d)), or the lit edge and the colour edge part
                 # company; and it now runs on the arms too.
-                rad = limb_radius(lx, ly, z, name, slices)
-                halfphi = min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX)
-                if dphi < halfphi:
-                    d += 0.0009 * (1.0 - (dphi / halfphi) ** 6)
+                if name.startswith(STRIPE_SEGMENTS):
+                    rad = limb_radius(lx, ly, z, name, slices)
+                    halfphi = min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX)
+                    if dphi < halfphi:
+                        d += 0.0009 * (1.0 - (dphi / halfphi) ** 6)
             if name == 'torso':
                 dphi = abs(math.atan2(math.sin(azim - math.pi), math.cos(azim - math.pi)))
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
@@ -5347,7 +5371,7 @@ def paint_suit(obj, lm):
             # below paint it would have run royal blue down the shell.
             col, tag = ((BOOT_CUFF, 'bootlip') if along >= BOOT_LIP_ALONG
                         else (BOOT, 'boot'))
-        elif name.startswith(('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm')):
+        elif name.startswith(STRIPE_SEGMENTS):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
             # cross-section centroid so the stripe tracks the visible face of
@@ -5363,11 +5387,11 @@ def paint_suit(obj, lm):
             # 5 cm band would wrap most of the way round, so STRIPE_DPHI_MAX
             # holds the wrap and the band narrows only there.
             #
-            # ITEM 3 also puts the stripe on the ARMS ("down the OUTSIDE seam
-            # of each arm, shoulder to cuff, and each leg, hip to ankle" —
-            # reference/images/aerial_suit.png). The glove and boot branches
-            # are above this one, so the arm band stops at the glove cuff and
-            # the leg band at the boot cuff, which is where the reference's do.
+            # ITEM 3 also wants the stripe on the ARMS. It is built and it
+            # works, and it is OFF — see STRIPE_SEGMENTS for the measurement
+            # that turned it off. The glove and boot branches sit above this
+            # one, so whichever segments are enabled, each band stops at its
+            # own cuff, which is where the reference's do.
             azim = limb_azim(lx, ly, z, name, paint_slices)
             outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))

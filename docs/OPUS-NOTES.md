@@ -796,6 +796,231 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 11 (2026-08-29, 20:0x-21:0x)
+
+### Merge with `render-realism-glm` — commit `ca8627f`
+
+Four commits (iter 119's night-mode toggle + generic kicker panels + chop
+displacement, the reverted `blender/terrain.json`, the session-9 ruling docs).
+Clean auto-merge. Unit 81/81, golden 30/30 on the merge, committed before any
+new work per rule 1.
+
+`blender/terrain.json` came back modified in the working tree afterwards — the
+same ±1e-7 FP jitter a drive run re-extracts that GLM reverted in `e0fba99`.
+Reverted here too; no geometric intent.
+
+### Item 3 (d) — the stripe was a STAIRCASE — LANDED, commit `bd0eb70`
+
+The reviewer's 20:05 ruling (d) said to fix `limb_azim`'s per-vertex azimuth.
+That was the right address; the defect turned out to be one line of it.
+
+`limb_slice_centroids` returned `{(segment, round(z/0.04)): centroid}` and
+`limb_azim` looked the query point's bucket up by NEAREST. **The reference
+axis the stripe's azimuth is measured from was piecewise constant in z.**
+Every 4 cm the whole angular window jumped sideways by however far the
+cross-section centroid had moved — millimetres to a centimetre on a tapering,
+curving limb — and the painted band stepped with it, in one row, with a tread
+4 cm tall. That is the staircase in `shots/figure_side.png`, exactly.
+
+Two aggravations sat on top of it:
+
+* a per-bucket median over as few as five vertices is noisy, and the noise is
+  uncorrelated between adjacent buckets, so the treads alternate direction
+  rather than drift — which is what made it read as "ragged" rather than as a
+  spiral;
+* `.get(..., (0.0, 0.0))` silently substituted the DRIVER centre for any bucket
+  with fewer than five vertices. That is the 8 cm-off-the-shin pole the
+  function's own docstring says it exists to replace, and the sparse buckets
+  are the segment ends — i.e. the joints, where a broken seam shows most.
+
+**The axis is now a weighted least-squares QUADRATIC** through 2 cm
+cross-section centroids. Three coefficients describe a gently bowed limb
+segment, cannot staircase by construction, and their derivative bounds the
+seam's step. Interpolating the sampled rungs was tried first and is not
+enough — even after four [1 2 1] passes the per-rung median noise still stepped
+the thigh seam 14.5 → 13.7 mm (`scratch/opus/s11_build1.log`, `s11_build2.log`).
+
+**The band is a fixed 5 cm of ARC now, not a fixed angle.** A constant `dphi`
+is a constant fraction of the circumference, so the same 0.32 rad that made a
+5.4 cm panel on an 85 mm-radius thigh made a 3.5 cm pinstripe on a 55 mm shin
+and 2.9 cm on the forearm — the stripe narrowed exactly where the limb did,
+which is not what a cut-and-sewn panel does. `STRIPE_DPHI_MAX` (0.46) keeps
+entry-75's protection against a thin segment reading all blue, and now binds
+only on the arms, where the reference suit's sleeve stripe is narrower anyway.
+
+**The stripe on the ARMS is built, and it is OFF.** Item 3 and
+`reference/images/aerial_suit.png` both ask for it, `paint_suit` does it
+correctly, and the bake cannot currently carry it — see the next section. It
+is one constant (`STRIPE_SEGMENTS`) away from being on again.
+
+`displace_suit`'s stripe relief moved to the same arc band, so the lit edge and
+the colour edge stay together, and it runs on the arms too.
+
+### NEW GATE `stripe_straight_gate` — and the first version of it was junk
+
+Per 2 cm rung, the seam's 5th/95th-percentile fore/aft edges; from those, the
+centre's **step** between adjacent rungs (the staircase metric), its **wander**
+off a straight least-squares fit, and the band's **width**. Measured against
+`ly` — each vertex's offset from its DRIVER centre, which `segment_frame`
+already hands `paint_suit` — deliberately *not* against the smoothed axis the
+paint used, because any axis makes its own band look centred.
+
+|                | shipped | `BODY_SABOTAGE_STRIPE=1` | gate |
+|---|---|---|---|
+| worst step     | **10.8 mm** (upperLegL) | **33.0 mm** (upperLegR) | 14 |
+| worst wander   | **14.3 mm** (lowerLegL) | **34.7 mm** (upperArmR) | 20 |
+| median width   | 41.2 mm | 33.8 mm | — |
+
+**NEGATIVE CONTROL**: `BODY_SABOTAGE_STRIPE=1` restores the nearest-4 cm-bucket
+axis and fails at 33.0 mm.
+
+The first version of this gate used the **mean** of `ly` per rung and had to be
+thrown away, for the same reason the reviewer threw away the fold gate: the
+suit mesh's vertices come in rows, so how many land inside a 43 mm band varies
+rung to rung and the mean of a clumpy sample moves several millimetres on its
+own. It read **14.4 mm on a smooth axis and 14.5 mm on the bucketed one** — it
+could not tell the staircase from the fix. The band's edges are geometric, so
+percentiles of them are stable; that one change opened the separation to 3×.
+
+Thresholds are set on the measured numbers with margin, in the reviewer's own
+19:15 shape ("ship at an honest number and ratchet"), not on a round wish.
+
+`shots/figure_side.png` by eye: a continuous royal-blue seam from the hip down
+the outside of the leg into the boot cuff. No treads. The edge still carries a
+few mm of vertex-resolution noise — that is mesh density, not the axis, and it
+is the next thing to ratchet. Leg blue on the outboard shin went 0.585 -> 0.638
+of the region (`body.spec.js`'s SUIT line): a wider, straighter band.
+
+### THE FINDING — the ARM stripe leaks onto the TORSO through the bake
+
+The arm stripe was built, shipped in `bd0eb70`, and turned back off in the
+follow-up commit, because `body.spec.js`'s suit-design test went red on it:
+`the back of the torso is blue — the bib has wrapped all the way round`.
+
+That test's first problem was its own. Its "torso" was a pure HEIGHT band
+(`fy` 0.55-0.78), i.e. every triangle at chest height including the arms,
+which hang beside the torso in bind pose — so sleeve stripe was being counted
+as torso blue on both sides. Fixed properly: the band now also requires the
+triangle's heaviest LOW-POLY skin weight to name a torso or spine bone. A bone
+is an authoritative answer to "is this the torso"; a height band is not. That
+is the same argument `dominant_segments` makes in `build_body.py`.
+
+With that fixed the test still failed, and the measurement is the interesting
+part. Same selector, three albedos:
+
+| stripe on | torso front blue | torso back blue (gate < 0.10) |
+|---|---|---|
+| legs only (`ca8627f`, previous ship) | 0.086 | **0.019** |
+| legs only (this session's axis + arc width) | 0.086 | **0.019** |
+| + arms | 0.145 | **0.121** FAIL |
+| + arms, capped at `along` 0.55 | 0.117 | **0.110** FAIL |
+
+The legs-only rebuild reproducing `0.086 / 0.019` exactly is what pins it: the
+quadratic axis and the 5 cm arc band put nothing on the torso, and the arm
+band is the whole of the difference.
+
+**It is not the shoulder cap wrapping onto the chest.** Capping the arm stripe
+below the shoulder removed 3 % of the stripe verts and moved the torso back
+reading 0.121 -> 0.110. The band leaks along the WHOLE chest wall, where the
+arm shell and the torso shell sit against each other since `loosen_suit` stood
+the suit off the skin — the low-poly torso's bake ray finds high-poly arm. That
+is the armpit/bridge-face geometry the reviewer already has queued under item 3,
+and the stripe is not the place to fix it.
+
+So the arm stripe is held behind `STRIPE_SEGMENTS` with the table above written
+into the constant's comment, and the `displace_suit` relief follows the same
+constant so the lit edge and the colour edge cannot part company. Flipping it
+back on is a one-line change once the armpit bake is fixed, and `body.spec.js`
+is the test.
+
+### THE OTHER FINDING — `crash-ragdoll` is RED, and it is not new
+
+The full drive suite reports `crash-ragdoll.spec.js:57` failing on
+`total motion restAt(sim)=9.00s in 2-5 s`. I did not cause it and could not
+have: this session changed `build_body.py` (Blender-only), the baked maps, an
+`ASSET_V` comment, `index.html` version strings and `body.spec.js`, and
+`assets/athlete_body.glb` came out of the rebuild **byte-identical**.
+
+Bisected rather than argued: a throwaway worktree at **`d638150`** — session
+10's own head, before the GLM merge and before anything in this session —
+fails the same test with the same number, `restAt=9.0021s`. It is a
+pre-existing red that sessions 9 and 10 never ran (their notes list `rig`,
+`body`, `chain`, `athlete`, `ready-stance`, `bib-number`, `spine`, `look` —
+not `crash-ragdoll`).
+
+It is a physics-settling gate, so it is outside this lane by the no-physics
+rule. **Reviewer: this needs an owner.** The second run failed one assertion
+earlier, on `tumble pose excursion 38.3 <= 38`, so there are two marginal
+numbers in that spec, not one.
+
+### Verification
+
+    build   all gates green at 2048/96 (stripe straight NEW, stripe bake 0.039,
+            boot paint, sliver, goggle band 0.400-0.568h, dome seating, leg
+            taper 0.718, bib number, suit NM variance, atlas share, weight seam)
+    unit    81/81
+    golden  30/30, no re-capture, no physics change
+    look    3/3 — figure/face/pose shots regenerated
+    drive   108 passed, 2 skipped, 2 failed on the first full run:
+            - body.spec.js 'suit design' — the arm stripe; fixed by turning it
+              off and by giving the test a bone-based torso selector. Now green.
+            - crash-ragdoll.spec.js 'settles with skis at rest' — PRE-EXISTING,
+              reproduced at d638150, see above. Untouched.
+            Re-run after the fix: body + rig + bib-number + athlete 19/19.
+    wire    1 820 292 B total, budget 2.5 MB
+    glb     byte-identical after the rebuild: `displace_suit` and `paint_suit`
+            feed the BAKE, not the exported low-poly
+
+`ASSET_V` 42 → 43, `index.html` `game.js?v=` 36 → 37, preload hrefs `?v=43`.
+
+One operational note for the next session: port 8399 was still held by a
+`python3 -m http.server` left running by session 10's drive run (cwd
+`tests/drive`, serving this worktree). Playwright will not start its own server
+over it and the whole suite errors out with `Address already in use`. Kill the
+stale pid; it is always this worktree's own.
+
+### Open at the end of session 11
+
+- Items 12, 11, 5 (weights + chain), 1, 8, 4 CLOSED.
+- Item 3 (d) CLOSED for the LEGS; the arm band is written, measured and held
+  off behind `STRIPE_SEGMENTS` pending the armpit bake fix (numbers above).
+  **Item 3's main body is still open**: two-tone side
+  panels, centre-front zip line, stand-up collar, sleeve/ankle cuffs, the
+  separate loose bib, the neck gaiter, the light-grey (not pure white) base.
+  The suit still reads white-on-white at scene distance.
+- **Item 3 (b) from the 20:05 ruling — the fold amplitude — NOT started.** The
+  measurement it rests on is session 10's; nothing in this session changed it.
+  The fold gate replacement (ruling (a)) is not written either. Both are the
+  next thing after the suit panels, and they are the same file.
+- Items 10 (stance), 2 (helmet rim lip / chin strap / vents), 9 (collar +
+  throat red streak), 6 (in-run arms), 7 (pike hip) untouched.
+- `pose-shots.spec.js` still frames the tuck from too far off (session 9's
+  ruling asked for ≥ 350 px of figure). Latest POSESHOT spans this session:
+  tuck side 0.528, pike side 0.380, pike front 0.395 of frame height.
+
+### For the reviewer (session 11)
+
+1. **`stripe_straight_gate`'s thresholds are honest, not aspirational** —
+   14 mm step / 20 mm wander against measured 10.8 / 14.3 and a control at
+   33.0 / 34.7. The residual is vertex-resolution noise on the band edge, so
+   ratcheting it needs mesh density at the seam (or the stripe moving from
+   per-vertex colour to a UV-space mask), which is a bigger change than item
+   3 (d) was. Worth a ruling on whether that is wanted.
+2. **`crash-ragdoll.spec.js:57` is red and has been for at least two sessions**
+   (bisected to `d638150`, evidence above). It is physics, so this lane cannot
+   touch it. It needs assigning — and the drive suite should be run whole at
+   the end of a session rather than spec-by-spec, which is how it stayed hidden.
+3. **The arm stripe is a decision you may want to make differently.** I judged a
+   red gate worse than a missing stripe and shipped the legs. If you would
+   rather see the arm stripe on the author's 8203 view now and accept the
+   torso bleed until the armpit geometry lands, it is one constant.
+4. Carried, unchanged: the `POSE_TUCKED_INERTIA` reconciliation
+   (`NEEDS-APPROVAL:`, deferred by the 18:30 ruling); the 1.35 strain gate
+   still unset pending item 3's bridge faces; `smooth_blend_rings` running
+   after the bake.
+
+---
+
 ## Session 10 (2026-08-29, 19:0x-20:0x)
 
 ### Merge with `render-realism-glm` — commit `f6a5edd`
