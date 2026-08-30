@@ -9,6 +9,19 @@
 //     Gate: sole-to-ski-top ≤ 5 mm at BOTH binding stations, at rest, in the
 //     gate crouch, through the whole hop turn, mid-in-run and in flight.
 //
+//     BOOT-CUFF LEAN (reviewer ruling 00:15 item (b), 2026-08-30). The pitch
+//     half of this invariant used to demand the shin be within ±2° of the
+//     ski's NORMAL in every state, which is what held the crouch knee at
+//     134.2°: with a perpendicular shin the knee interior angle is exactly
+//     180−(thigh rx), so a deeper knee could only be bought by throwing the
+//     hip backwards. A ski boot's cuff carries 15–20° of built-in forward
+//     lean and the athlete flexes into it, so the shin is NEVER perpendicular
+//     to the ski in a crouch. The SOLE half of the invariant is unchanged and
+//     is what "boot sole on the ski" means: ≤ 5 mm at both stations, always.
+//     The pitch half is now crouch-aware — 0–2° at rest (item 10's
+//     perpendicular standing stance) rising to 15–20° forward at full
+//     crouch, and never backwards.
+//
 // (5) In-run crouch arm hold — while grounded with the crouch engaged the
 //     hands stay AHEAD of the hips by 0.25–0.40 m in the body frame and below
 //     shoulder height (IMG_3768 in-run frames); the upward sweep starts only
@@ -36,7 +49,11 @@ async function boot(page) {
     await page.waitForTimeout(600);
 }
 
-function expectBootsSeated(page, label) {
+// leanBand: [min, max] degrees of FORWARD shin lean off the ski normal, the
+// boot cuff's flex. pitchDelta is (shin rx − ski pitch), and forward is −z, so
+// forward lean is −pitchDelta.
+function expectBootsSeated(page, label, leanBand) {
+    const band = leanBand || [0, 2];
     return page.evaluate(() => window._bootSkiProbe().boots).then((boots) => {
         for (const side of ['L', 'R']) {
             for (const st of ['toe', 'heel']) {
@@ -44,19 +61,27 @@ function expectBootsSeated(page, label) {
                 expect(Math.abs(gap), `${label}: ${side}/${st} sole-to-ski-top ${gap.toFixed(4)} m within ±5 mm`)
                     .toBeLessThanOrEqual(GAP_LIMIT);
             }
-            const pd = boots[side].pitchDelta;
-            expect(Math.abs(pd), `${label}: ${side} boot-vs-ski pitch ${pd.toFixed(4)} rad within ±2°`)
-                .toBeLessThanOrEqual(2 * Math.PI / 180);
+            const leanDeg = -boots[side].pitchDelta * 180 / Math.PI;
+            expect(leanDeg,
+                `${label}: ${side} boot-cuff lean ${leanDeg.toFixed(2)}° forward (${band[0]}–${band[1]})`)
+                .toBeGreaterThanOrEqual(band[0]);
+            expect(leanDeg,
+                `${label}: ${side} boot-cuff lean ${leanDeg.toFixed(2)}° forward (${band[0]}–${band[1]})`)
+                .toBeLessThanOrEqual(band[1]);
         }
         return boots;
     });
 }
+// The cuff is moulded, not free: at full crouch the lean must be in the
+// ruling's band, and it must never lean BACKWARDS in any state.
+const CROUCH_LEAN = [15, 20];
+const REST_LEAN   = [-2, 2];
 
 test('rest and gate crouch: boots seated ≤5 mm; crouch hands ahead of hips, below shoulders', async ({ page }) => {
     await boot(page);
 
     // Rest (tuck = 0): invariant holds trivially, arms at the sides untouched.
-    await expectBootsSeated(page, 'rest');
+    await expectBootsSeated(page, 'rest', REST_LEAN);
 
     // Gate crouch (Space): the pose table displaced the boot 12 cm / 11 mm;
     // the pin must seat it, and the arms must hold the footage's forward pose.
@@ -64,7 +89,7 @@ test('rest and gate crouch: boots seated ≤5 mm; crouch hands ahead of hips, be
     await page.waitForFunction(() => window._getGameState().tuckAmount > 0.95,
         null, { timeout: 8000 });
     await page.waitForTimeout(300);
-    await expectBootsSeated(page, 'gate crouch');
+    await expectBootsSeated(page, 'gate crouch', CROUCH_LEAN);
 
     const arms = await page.evaluate(() => window._bootSkiProbe().arms);
     for (const side of ['L', 'R']) {
@@ -111,7 +136,7 @@ test('hop turn and in-run: boots stay seated ≤5 mm through the whole turn and 
     await page.keyboard.down('Space');
     await page.waitForFunction(() => window._getGameState().tuckAmount > 0.95,
         null, { timeout: 8000 });
-    await expectBootsSeated(page, 'mid-in-run crouch');
+    await expectBootsSeated(page, 'mid-in-run crouch', CROUCH_LEAN);
     const arms = await page.evaluate(() => window._bootSkiProbe().arms);
     for (const side of ['L', 'R']) {
         const dz = arms[side].handZ - arms[side].hipZ;

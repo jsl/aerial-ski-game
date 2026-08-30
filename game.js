@@ -1285,8 +1285,28 @@ function _inrunArmForward(meshes, tuck, armRaise) {
 // the boot sole sat 11 mm THROUGH the ski top and 12 cm behind the binding
 // centre (measured), and the hop-turn fold lifted the boots up to 0.24 m off
 const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015 };
-function _pinBootsToSkis(meshes) {
+// Boot-cuff forward lean (reviewer ruling 00:15 item (b)). The pin used to set
+// the shin along the ski's NORMAL, i.e. a shin exactly perpendicular to the
+// ski. A shin is never perpendicular to the ski in a crouch: a ski boot's cuff
+// is moulded with 15-20 deg of forward lean and the athlete flexes into it.
+// With a perpendicular shin the knee interior angle is exactly 180 - thigh rx,
+// so the only way to deepen the knee was to throw the hip backwards; measured
+// live at the crouch endpoint before this change, knee 134.2 deg with the hip
+// 0.258 m BEHIND the ankle. Leaning the shin moves the knee forward instead,
+// which is what lets the hip drop over the heels (author 23:40, "hips over the
+// heels") while the thigh carries the flex.
+// The lean is weighted by the crouch, so it is exactly 0 in the ready stance
+// (item 10's perpendicular standing gate) and in every other grounded state
+// (hop turn, landing) — a boot cuff only leans when you press into it.
+// The invariant the ruling keeps is the SOLE: the shin's -Y end stays exactly
+// on the binding anchor at every lean, so sole-to-ski-top stays 0.
+const _BOOT_CUFF_LEAN = 0.3054;   // 17.5 deg, middle of the ruling's 15-20
+function _pinBootsToSkis(meshes, tuck, armRaise) {
     if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
+    // Same weight as _seatTorsoOnHips / _inrunArmForward: exactly 0 at rest and
+    // once the arms start their sweep out of the crouch.
+    const w = Math.min(1, Math.max(0, (tuck || 0) * (1 - (armRaise || 0))));
+    const lean = _BOOT_CUFF_LEAN * w;
     for (const side of ['L', 'R']) {
         const sk = meshes['ski' + side], ll = meshes['lowerLeg' + side],
               ul = meshes['upperLeg' + side];
@@ -1311,7 +1331,9 @@ function _pinBootsToSkis(meshes) {
         const ay = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * stationMid;
         const az = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * stationMid;
         
-        const rxL = Math.atan2(upZ, upY), cL = Math.cos(rxL), sL = Math.sin(rxL);
+        // Forward is -z, and the shin's +Y end is the knee, so leaning the
+        // knee forward over the sole is rxL - lean.
+        const rxL = Math.atan2(upZ, upY) - lean, cL = Math.cos(rxL), sL = Math.sin(rxL);
         ll.rotation.x = rxL;
         ll.position.x = ax;
         ll.position.y = ay + _BOOT_SKI.hl * cL;
@@ -3326,7 +3348,7 @@ void main(void) {
         const M = character.meshes;
         const t = (tuck === undefined) ? 1 : tuck;
         applyPose(M, t, 1, 1, 0, 0, 0, true, 0, 0);
-        _pinBootsToSkis(M);
+        _pinBootsToSkis(M, t, 0);
         _seatTorsoOnHips(M, t, 0);
         _inrunArmForward(M, t, 0);
         const seg = (n) => {
@@ -7291,7 +7313,7 @@ void main(void) {
                 character.root.rotationQuaternion = qFaceR.multiply(qFlipR).multiply(qSpinR);
             }
             if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode && !crashActive) {
-                _pinBootsToSkis(character.meshes);
+                _pinBootsToSkis(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
                 _seatTorsoOnHips(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
                 _inrunArmForward(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
             }
@@ -8521,7 +8543,8 @@ void main(void) {
             // starts, _inrunArmForward owns the arm z instead.
             const preZL = character.meshes.upperLegL && character.meshes.upperLegL.position.z;
             const preZR = character.meshes.upperLegR && character.meshes.upperLegR.position.z;
-            _pinBootsToSkis(character.meshes);
+            _pinBootsToSkis(character.meshes, state.tuckAmount,
+                            state.grounded ? state.armRaise : 1);
             // Sol-8 (ready-stance knee flex): the pin derives both legs' rx
             // from the ski pitch — physically right, a binding clamps boot to
             // ski — so the stance block's knee term never survives into the
