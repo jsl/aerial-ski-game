@@ -308,7 +308,12 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
     for (let y = 0; y < size; y++) {
         // v: 0 = valley floor, 1 = well above the snowline. Canvas y grows
         // DOWN while texture v grows UP, so sample v from the bottom.
-        const v = 1 - y / (size - 1);
+        // v = elevation (0 valley floor → 1 above the snowline). Measured on
+        // the GPU (2026-08-30, HUMAN TESTING #11): with this DynamicTexture the
+        // canvas TOP row samples at v = 0, so the old `1 - y/(size-1)` put the
+        // forest band on every crown and snow at the base — the "tooth" peaks
+        // and upside-down ridges. Canvas y grows with elevation here.
+        const v = y / (size - 1);
         for (let x = 0; x < size; x++) {
             const u = x / size;
             const j = fbm(u * 5, v * 5, 3, 2.2, 0.5);          // band jitter

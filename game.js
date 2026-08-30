@@ -5010,7 +5010,16 @@ void main(void) {
         mat.metallic = 0; mat.roughness = 0.95;
         mat.albedoTexture = peakMatBase.albedoTexture;   // share the band map
         mat.bumpTexture = peakMatBase.bumpTexture;
-        mat.fogEnabled = true; mat.backFaceCulling = true; mat.alpha = 1;
+        // HUMAN TESTING #11 (author, 2026-08-30): a peak read as "a tooth —
+        // snow on one side": with scene fog ON the band texture washed out
+        // (the same failure the ridges had on 08-29) and the cone's sun
+        // flank/shade flank split into flat white vs flat dark grey. Same
+        // remedy as the ridges: fog OFF with the haze baked into albedo, a
+        // lower direct-light share (distant faces have little lit/shade
+        // contrast) plus a faint haze emissive that lifts the shaded flank.
+        mat.fogEnabled = false; mat.backFaceCulling = true; mat.alpha = 1;
+        mat.directIntensity = 0.55;
+        mat.emissiveColor = new BABYLON.Color3(FOG.r * 0.16, FOG.g * 0.16, FOG.b * 0.16);
         mat.albedoColor = new BABYLON.Color3(
             (1 + (FOG.r - 1) * haze) * tint,
             (1 + (FOG.g - 1) * haze) * tint,
@@ -5037,9 +5046,10 @@ void main(void) {
         const p = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
         const uv = [];
         for (let k = 0; k < p.length; k += 3) {
-            uv.push(Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5,
-                    Math.min(1, Math.max(0, (p[k + 1] + body.position.y
-                                - valleyFloorY) / snline)));
+            uv.push((Math.atan2(p[k + 2], p[k]) / (2 * Math.PI) + 0.5) * 3.0,   // 3 repeats around: strata/rock detail at a believable scale (wrapU)
+                    Math.min(0.995, Math.max(0, (p[k + 1] + body.position.y - valleyFloorY) / snline)));
+            // ^ HUMAN TESTING #11: v == 1.0 WRAPPED to texture row 0 (the FOREST
+            //   band) — every crown above the snowline was painted dark: the "tooth".
         }
         body.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
         body.material = mat;
