@@ -145,8 +145,30 @@ DOME_SEAT_LO, DOME_SEAT_HI = -40.0, 5.0
 # ── Suit palette, read off the reference footage ────────────────────────────
 SUIT       = (0.80, 0.82, 0.85)      # suit: darker than snow (0.975 albedo) so it separates at 3 m (entry-75 item 2; was 0.86/0.88/0.91). Cool-neutral: b-r stays 0.05, under bib-number.spec's blue threshold (b > r + 0.08)
 STRIPE     = (0.09, 0.24, 0.62)      # royal blue, full length of the outer leg
-BIB        = (0.55, 0.72, 0.88)      # powder-blue competition bib
+# SESSION 30 — the bib is a THREE-BAND garment, measured off the author's
+# primary reference (`reference/images/aerial_suit.png`, the bib crop at
+# x 250..950 / y 980..1750). Measured medians, converted sRGB → linear and
+# divided by the WHITE band's own linear value in the same frame — a ratio,
+# because the whole photograph is backlit and the absolute values are three
+# stops down:
+#
+#   band     sRGB median        linear / white band
+#   yoke     0.078 0.180 0.282  0.093  0.282  0.365
+#   white    0.302 0.341 0.459  1      1      1
+#   magenta  0.259 0.137 0.255  0.734  0.173  0.299
+#
+# So the yoke is a DEEP teal at a quarter of the white's luminance, not the
+# powder blue this build has carried since iteration 61. It is shipped at
+# (0.20, 0.42, 0.62): the reference hue (r:g:b 0.26:0.77:1.00 against the
+# ship's 0.32:0.68:1.00) at 40% of the white's luma rather than 25%, because
+# `bib-number.spec`'s blue detector needs `lum > 0.35` on the RENDERED frame
+# and the literal reference tone lands under it in the shade of the visor.
+# That compromise is the one place this palette is not the measurement.
+BIB        = (0.20, 0.42, 0.62)      # the bib's teal YOKE, over the shoulders
 BIB_NUMBER = (0.95, 0.96, 0.97)      # white number patch on the bib
+BIB_WAIST  = (0.62, 0.14, 0.30)      # the magenta/pink sponsor band at the waist
+BIB_OLD    = (0.55, 0.72, 0.88)      # NEGATIVE CONTROL only: the flat powder-blue panel through session 29
+SABOTAGE_BIBBANDS = os.environ.get('BODY_SABOTAGE_BIBBANDS') == '1'
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
 # OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
@@ -6645,7 +6667,27 @@ def bib_mask(name, along, front, lat):
 #   number, and that balance is what bib-number.spec's blueFrac bands measure.
 
 NUM_W = 0.075                    # patch half-width in metres (15 cm wide)
-NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
+# SESSION 30: the plate's BOTTOM edge moves up from −0.54 to −0.40 to make
+# room for the magenta waist band below it. The reference bib's three bands
+# run about 48 / 24 / 27 % of its height (yoke / white / magenta); ours cannot
+# reach that because the "30" is drawn far larger relative to the bib than the
+# reference's numeral, but the magenta band now measures 0.28 along-units
+# = 77 mm = 23 % of the bib against the reference's 27 %.
+#
+# What moving NUM_A0 does and does not change: the digit CELL width is
+# absolute (NUM_W), the ink band is a FRACTION of the plate (NUM_DV0/1), so
+# the ink-fraction gate [0.10, 0.45] is scale-invariant and only the digit
+# ASPECT moves — 0.497 → 0.594, inside BIB_ASPECT (0.45, 0.75), and the
+# BODY_SABOTAGE_BIBASPECT control still lands at 0.32, under the floor.
+NUM_A0, NUM_A1 = -0.40, 0.32     # patch along-span
+# The magenta band fills the bib below the plate. Its top edge IS the plate's
+# bottom edge: nothing magenta may fall inside the number patch, because the
+# bake's ink classifier is `lum < 0.45 and |r − 0.05| < 0.30` and the teal
+# yoke (r = 0.20, luma 0.36) satisfies BOTH — any yoke or band tone that got
+# inside the plate would be counted as numeral ink. That is why the bands are
+# cut to the plate rather than the plate laid over reference-proportioned
+# bands; see `bib_band_gate`, which asserts the separation.
+BIB_WAIST_A1 = NUM_A0
 
 # ── SESSION 22: the layout the 03:05 ruling asks for, and WHY it is a stroke
 # ── width and not a flip.
@@ -7545,7 +7587,15 @@ def paint_suit(obj, lm):
             col = NUM_INK if digit30_mask(u, v) > 0.5 else BIB_NUMBER
             tag = 'number'
         elif bib_mask(name, along, front, lx) > 0.5:
-            col, tag = BIB, 'bib'
+            # SESSION 30: three bands, not one panel. Teal yoke from the
+            # shoulders down to the plate, the white plate itself, and the
+            # magenta sponsor band at the waist — the layout of every bib in
+            # the reference still. SABOTAGE_BIBBANDS restores the flat
+            # powder-blue panel this build shipped up to session 29.
+            if along < BIB_WAIST_A1 and not SABOTAGE_BIBBANDS:
+                col, tag = BIB_WAIST, 'bibwaist'
+            else:
+                col, tag = (BIB_OLD if SABOTAGE_BIBBANDS else BIB), 'bib'
         if tag == 'suit' and name.startswith('lowerLeg') \
                 and along < ANKLE_A1 and not SABOTAGE_COLLAR:
             # OPUS ITEM 3: the ANKLE CUFF. It runs as a POST-step rather than
@@ -7641,6 +7691,7 @@ def paint_suit(obj, lm):
     # sport glasses cannot silently lose an arm or the brow bar either.
     required = ['suit', 'helmet', 'face', 'goggle', 'nostril',
                 'browbar', 'bridge', 'temple', 'waist', 'bib', 'number',
+                ] + ([] if SABOTAGE_BIBBANDS else ['bibwaist']) + [
                 'stripe', 'glove',
                 'lip', 'noshade']
     if not SABOTAGE_BOOT:
@@ -7870,6 +7921,111 @@ def collar_cuff_gate(obj, lm):
         raise SystemExit('[body] COLLAR/CUFF GATE FAILED: ' + '; '.join(bad))
     return {'skin_frac': skin_frac, 'octants': len(octants), 'rise': rise,
             'collar_mm': collar_mm, 'cuff_mm': cuff_mm, 'ankle_mm': ank_mm}
+
+
+# SESSION 30: the magenta band's measured height floor, in mm of world z.
+# Nominal is 0.28 along-units = 77 mm; the floor is set below the nominal by
+# the same margin the collar/cuff floors use, so a band that half-collapses
+# fails before it becomes invisible.
+BIB_BAND_MIN_MM = 55.0
+BIB_BAND_VERTS = 20             # per band: a tone that matched three vertices
+                                # is a rounding artefact, not a band
+
+
+def bib_band_gate(obj):
+    """
+    SESSION 30 hard gate: the bib is the reference's THREE-BAND garment.
+
+    The author's primary reference shows one bib and it has three bands —
+    teal yoke over the shoulders, white middle carrying the number, magenta
+    sponsor band at the waist. Through session 29 this build painted a single
+    flat powder-blue panel with a white plate on it, and session 29's own note
+    called the missing magenta band "the single most visible remaining
+    difference from the reference photograph".
+
+    Five assertions on the painted high-poly, all on exact tone matches
+    (paint_suit writes bib tones unshaded — `fold_shade` only touches
+    tag == 'suit' — so they survive the vertex buffer bit for bit):
+
+      present  each of the three tones covers >= BIB_BAND_VERTS vertices.
+      order    every magenta vertex sits BELOW every white-plate vertex. Bands
+               that interleave are a mask bug, not a garment.
+      height   the magenta band measures >= BIB_BAND_MIN_MM of world z.
+      clean    NO yoke or magenta vertex lies inside the number patch. This is
+               the assertion that protects the bake: `bib_number_gate`'s ink
+               classifier is `lum < 0.45 and |r - 0.05| < 0.30`, and the teal
+               yoke (r = 0.20, luma 0.36) satisfies both — a band tone leaking
+               into the plate would be counted as numeral ink and inflate the
+               ink fraction toward its 0.45 ceiling.
+      yoke     >= BIB_BAND_VERTS yoke vertices sit ABOVE the plate, so the
+               yoke is a band over the chest and not merely the margin
+               painted either side of the plate.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_BIBBANDS=1 restores the flat powder-blue
+    panel of session 29 — no magenta anywhere, and the yoke tone replaced by
+    BIB_OLD — and this gate must reject it.
+    """
+    attr = obj.data.color_attributes.get('suit')
+    if attr is None:
+        raise SystemExit('[body] bib band gate: no "suit" colour attribute')
+    own = dominant_segments(obj)
+
+    def is_tone(c, t):
+        return all(abs(c[k] - t[k]) < 1e-3 for k in range(3))
+
+    yoke_z, band_z, plate_z = [], [], []
+    yoke_above, in_plate_bad = 0, 0
+    for i, v in enumerate(obj.data.vertices):
+        if own[i] != 'torso':
+            continue
+        name, along, radial, out, front, local = segment_frame(v.co, 'torso')
+        if bib_mask(name, along, front, local[0]) <= 0.5:
+            continue
+        c = attr.data[i].color
+        inpatch = in_number_patch(name, along, front, local[0])
+        if is_tone(c, BIB_WAIST):
+            band_z.append(v.co.z)
+            if inpatch:
+                in_plate_bad += 1
+        elif is_tone(c, BIB):
+            yoke_z.append(v.co.z)
+            if inpatch:
+                in_plate_bad += 1
+            elif along > NUM_A1:
+                yoke_above += 1
+        elif is_tone(c, BIB_NUMBER) or is_tone(c, NUM_INK):
+            plate_z.append(v.co.z)
+
+    band_mm = (max(band_z) - min(band_z)) * 1000.0 if band_z else 0.0
+    gap_mm = ((min(plate_z) - max(band_z)) * 1000.0
+              if band_z and plate_z else float('nan'))
+    log(f'bib bands: yoke {len(yoke_z)} verts ({yoke_above} above the plate), '
+        f'plate {len(plate_z)}, magenta {len(band_z)} spanning '
+        f'{band_mm:.1f} mm | plate-minus-band gap {gap_mm:+.1f} mm | '
+        f'{in_plate_bad} band/yoke verts inside the number patch')
+
+    bad = []
+    for nm, n in (('yoke', len(yoke_z)), ('white plate', len(plate_z)),
+                  ('magenta waist band', len(band_z))):
+        if n < BIB_BAND_VERTS:
+            bad.append(f'the {nm} covers only {n} vertices '
+                       f'(>= {BIB_BAND_VERTS}) — that band is not painted')
+    if band_z and plate_z and max(band_z) > min(plate_z):
+        bad.append(f'the magenta band reaches {gap_mm:+.1f} mm PAST the '
+                   f'bottom of the number plate — the bands interleave')
+    if band_mm < BIB_BAND_MIN_MM:
+        bad.append(f'the magenta band measures only {band_mm:.1f} mm '
+                   f'(>= {BIB_BAND_MIN_MM})')
+    if in_plate_bad:
+        bad.append(f'{in_plate_bad} yoke/band vertices lie INSIDE the number '
+                   f'patch — the bake would count them as numeral ink')
+    if yoke_above < BIB_BAND_VERTS:
+        bad.append(f'only {yoke_above} yoke vertices sit above the plate '
+                   f'(>= {BIB_BAND_VERTS}) — there is no yoke, only a margin')
+    if bad:
+        raise SystemExit('[body] BIB BAND GATE FAILED: ' + '; '.join(bad))
+    return {'yoke': len(yoke_z), 'plate': len(plate_z), 'band': len(band_z),
+            'band_mm': band_mm, 'yoke_above': yoke_above}
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
@@ -8730,6 +8886,7 @@ def make_highpoly(low, lm):
     paint_suit(high, lm)
     boot_paint_gate(high)
     collar_cuff_gate(high, lm)
+    bib_band_gate(high)
 
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')

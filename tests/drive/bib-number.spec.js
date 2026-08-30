@@ -110,7 +110,7 @@ async function plateView(page, name, alpha, sideSign) {
     const PX_PER_M = f.H / (2 * 2.4 * Math.tan(0.4));   // fov 0.8 rad, r 2.4 m
     const bw = Math.round(0.13 * PX_PER_M), bh = Math.round(0.20 * PX_PER_M);
     const X0 = Math.round(state.sx * f.W - bw / 2), Y0 = Math.round(state.sy * f.H - bh / 2);
-    let n = 0, navy = 0, blue = 0;
+    let n = 0, navy = 0, blue = 0, mag = 0;
     for (let y = Math.max(0, Y0); y < Math.min(f.H, Y0 + bh); y++) {
         for (let x = Math.max(0, X0); x < Math.min(f.W, X0 + bw); x++) {
             const i = (y * f.W + x) * 4;
@@ -119,11 +119,39 @@ async function plateView(page, name, alpha, sideSign) {
             n++;
             if (lum < 0.38 && b >= g - 0.02 && g >= r - 0.04) navy++;
             if (b > r + 0.08 && lum > 0.35) blue++;
+            // SESSION 30: the bib is a THREE-BAND garment (teal yoke, white
+            // plate, magenta sponsor band at the waist), so "is the bib
+            // there" can no longer be asked of blue alone — the fabric this
+            // box actually contains below the number is MAGENTA. Detector:
+            // clearly red-dominant and not dark. The suit (b−r = +0.05), the
+            // yoke (b−r = +0.42) and the skin (r−b = 0.32 but g−r = −0.22,
+            // i.e. r−g = 0.22 < 0.28) all fail it; BIB_WAIST renders at
+            // r−g ≈ 0.45.
+            if (r > b + 0.10 && r > g + 0.28 && lum > 0.15) mag++;
         }
     }
-    const navyFrac = navy / n, blueFrac = blue / n;
+    // PANEL WIDTH, which is what "the front panel is the wider one" actually
+    // means. The box above is narrower than the plate on both faces, so no
+    // fraction measured inside it can see the wrap at all — the front bib
+    // wraps to |lat| < 0.09 and the back only to 0.06, and that difference
+    // lives OUTSIDE the box. Count the magenta waist band over a box three
+    // times as wide (same rows): the band runs the full width of the panel on
+    // each face, so its pixel count is the panel's width at the waist.
+    let magWide = 0;
+    for (let y = Math.max(0, Y0); y < Math.min(f.H, Y0 + bh); y++) {
+        for (let x = Math.max(0, X0 - bw); x < Math.min(f.W, X0 + 2 * bw); x++) {
+            const i = (y * f.W + x) * 4;
+            const r = f.d[i] / 255, g = f.d[i + 1] / 255, b = f.d[i + 2] / 255;
+            const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            if (r > b + 0.10 && r > g + 0.28 && lum > 0.15) magWide++;
+        }
+    }
+    const navyFrac = navy / n, blueFrac = blue / n, magFrac = mag / n;
+    const bibFrac = blueFrac + magFrac;
     console.log(`BIB ${name}: box=[${X0},${Y0} ${bw}x${bh}] n=${n} ` +
-        `navyFrac=${navyFrac.toFixed(4)} blueFrac=${blueFrac.toFixed(4)}`);
+        `navyFrac=${navyFrac.toFixed(4)} blueFrac=${blueFrac.toFixed(4)} ` +
+        `magFrac=${magFrac.toFixed(4)} bibFrac=${bibFrac.toFixed(4)} ` +
+        `magWide=${magWide}`);
     // Ship the measured box as a picture. These bands were originally
     // calibrated against a render in which the athlete was out of focus (the
     // depth of field was pinned at 10 m and never tracked the subject), so
@@ -149,7 +177,7 @@ async function plateView(page, name, alpha, sideSign) {
         fs.writeFileSync(require('node:path').join(dir, `bib_${name}.png`),
             Buffer.from(marked.split(',')[1], 'base64'));
     }
-    return { navyFrac, blueFrac };
+    return { navyFrac, blueFrac, magFrac, bibFrac, magWide };
 }
 
 test('bib number 30 reads on both faces at the look camera', async ({ page }) => {
@@ -164,11 +192,51 @@ test('bib number 30 reads on both faces at the look camera', async ({ page }) =>
             `(navyFrac ${s.navyFrac.toFixed(4)} — plate reads as a dark slab)`)
             .toBeLessThan(0.25);
     }
-    // The bib panel is a chest garment: the front face carries the full panel
-    // and the back only the designed narrow rear patch (rebuild measured
-    // 0.102 vs 0.068), so the front must dominate but the back stays bounded.
-    expect(front.blueFrac, 'bib panel not visible from the front').toBeGreaterThan(0.04);
-    expect(front.blueFrac, 'bib panel does not dominate the back panel')
-        .toBeGreaterThan(back.blueFrac);
-    expect(back.blueFrac, 'bib panel wrapped around to the back').toBeLessThan(0.09);
+    // SESSION 30 — these three assertions used to be measured on blueFrac
+    // alone, and blueFrac now reads 0.0000 on BOTH faces of a bib that is
+    // plainly there in shots/bib_front.png. The reason is the design, not a
+    // regression: the box is anchored to the ray hit at a fixed body height
+    // and lands on the plate's lower half and the band under it, and that
+    // fabric is MAGENTA now (the reference bib's waist band, iteration 61).
+    // Blue was only ever a proxy for "bib fabric"; with a three-band garment
+    // it is the wrong proxy, so it is replaced rather than recalibrated —
+    // the same treatment the 19:15 ruling gave the fold gate that could not
+    // tell folds-off from folds-on.
+    //
+    // NEGATIVE CONTROL, measured rather than asserted: with the session-29
+    // assets restored (git checkout of the pre-iteration-61 athlete_albedo)
+    // magFrac reads 0.0000 / 0.0000 and blueFrac 0.0615 / 0.0725, so the
+    // band assertions below fail on the build that does not have the band,
+    // and the bibFrac assertions pass on both — which is what a proxy for
+    // "some bib fabric" should do.
+    for (const [nm, s] of [['front', front], ['back', back]]) {
+        expect(s.bibFrac, `bib panel not visible from the ${nm} ` +
+            `(blue ${s.blueFrac.toFixed(4)} + magenta ${s.magFrac.toFixed(4)})`)
+            .toBeGreaterThan(0.04);
+        expect(s.magFrac, `the magenta waist band does not read on the ${nm} ` +
+            `face (magFrac ${s.magFrac.toFixed(4)})`).toBeGreaterThan(0.08);
+    }
+    // "The bib panel does not dominate the back panel" — the front bib wraps
+    // to |lat| < 0.09 and the back only to 0.06, so the FRONT panel is the
+    // wider one. That is a width, and no fraction measured inside a box
+    // narrower than the plate can see it: measured on the wide box, front
+    // 1430 px of band against back 1361. The margin is thin (5%) because the
+    // extra wrap is nearly edge-on to the camera and contributes little
+    // projected width; it is asserted as an ordering and the ratio is
+    // reported, NOT floored at an invented number.
+    console.log(`BIB panel width: front ${front.magWide} px / back ` +
+        `${back.magWide} px = ${(front.magWide / back.magWide).toFixed(3)}`);
+    expect(front.magWide, 'the back bib panel is WIDER than the front one')
+        .toBeGreaterThan(back.magWide);
+    // "…wrapped around to the back" — the anti-wrap ceiling. A bib that had
+    // become a tube round the ribs would run its waist band across the whole
+    // torso, filling the wide box; the shipped build fills 10.5% of it. The
+    // bound is the geometric one (a band four times as wide as the panel is
+    // no longer a panel), not a threshold tuned to the shipped value.
+    const WIDE_PX = 3 * 54 * 84;
+    for (const [nm, s] of [['front', front], ['back', back]]) {
+        expect(s.magWide / WIDE_PX, `the bib waist band has wrapped round ` +
+            `the ribs on the ${nm} face (${(s.magWide / WIDE_PX * 100).toFixed(1)}% ` +
+            `of a box three panels wide)`).toBeLessThan(0.40);
+    }
 });
