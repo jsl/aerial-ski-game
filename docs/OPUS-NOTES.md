@@ -1,5 +1,10 @@
 # Opus lane — athlete body: working notes
 
+**LANE CLOSED after session 32 (author via Fable, 2026-08-30 13:15).** Sessions 33-34
+are cancelled; the remaining work moves to the GLM scene lane. The handover is the
+"Session 32" entry below — read it first: it says what landed, what is open, and which
+recorded numbers can and cannot be trusted.
+
 Implementer: Claude Opus 5 (`claude-opus-5`), branch `opus/athlete-body`, worktree `~/aerial-agents/opus`,
 test port `DRIVE_PORT=8399`. Brief: `docs/OPUS-BODY-BRIEF.md`.
 
@@ -794,6 +799,156 @@ still stands and is still the right plan), 3 (suit + bib as a real two-tone
 panel garment), 10 (stance), 6 (in-run arms), 7 (pike hip tear), 9 (face).
 Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
+
+
+## Session 32 (2026-08-30, 12:3x-13:4x) — FINAL ENTRY, LANE HANDOVER
+
+Merged `render-realism-glm` (3 commits, docs only — the GLM handoff, `NEXT.md` and a
+`RENDER-PROGRESS` line) as `50ec834` before any work. No conflicts, no code.
+
+### The arm stripe — LANDED (`9e81fcc`), and session 31's conclusion was half right
+
+Session 31 ended with the arm band still off and a question for the reviewer, on the
+strength of this reading: the unwrap overlap went 10 301 shared texels -> 0, and the
+torso-back leak did not move (0.135). It concluded "the stripe's leak was never the
+unwrap".
+
+**The unwrap was never the cause of the LEAK. It was the cause of the REPAIR being
+impossible** — and that is what the 23:10 ruling actually said, which is why it made
+non-overlapping islands a *precondition* and not a fix. With two surfaces sharing a
+texel a subtractive pass has nothing to subtract: erasing the leak erases the sleeve
+painted in the same place. Session 31 removed that obstacle and then did not run the
+pass — `stripe_texel_ownership` was still behind `BODY_REPAIR_STRIPE_LEAK`, logging
+`[instrument: not repairing]`, so nothing ever wrote a repaired atlas. Turning it on is
+the whole fix.
+
+The leak's own cause is session 31's build-ORDER finding and it stands: `paint_suit`
+keys the band to the weights that exist when the HIGH-POLY is painted, `body.spec.js`
+reads the weights that SHIP, and `add_spine_chain`, `localise_weights`,
+`smooth_blend_rings` and `add_joint_helpers` re-partition the shoulder in between. Of
+the two candidates recorded there this is **(b)**, re-derive ownership from the final
+weights and repair the atlas — which the 12:55 ruling explicitly allows as equivalent
+to moving the paint. **It required no reordering at all**: `stripe_texel_ownership`
+already runs after all four weight passes, and its own header says that position is
+deliberate. So the "build-ORDER question" session 31 escalated was already answered by
+the build; what was missing was the switch.
+
+| `body.spec.js` › suit design, torso **back** blueFrac (gate < 0.10) | |
+|---|---|
+| session 13 — overlapping unwrap, arms on | 0.121 |
+| session 31 — zoned unwrap, arms on, repair OFF | 0.135 |
+| **session 32 — zoned unwrap, arms on, repair ON** | **0.073** |
+
+front 0.109, front-back delta 0.036 (gate > 0.03), leg outboard 0.590, head 0.029.
+149 856 of 255 054 blue texels rewritten, converging to **0** unowned.
+
+**The bib cannot be damaged by this pass, by construction**: `_stripe_blue_mask` cuts at
+sRGB blue-minus-red > 0.30, and the three blues that BELONG on the trunk measure 0.18
+(teal yoke), 0.17 (waistband) and 0.15 (number ink). That was checked rather than
+assumed — `bib_band_gate`, `bib_number_gate` and `_bib_layout_gate` are all green on the
+shipped build.
+
+**New arm-stripe ATLAS gate**, and it is the one this item was missing. The existing
+`arm_stripe_presence_gate` measures the PAINT, on the high-poly, before the bake — it
+cannot see the repair at all, so the repair's degenerate solution (erase every blue
+texel and every leak gate goes green) would have sailed straight past it. The new gate
+counts stripe-blue texels surviving INSIDE the arm mask after the subtraction: **32 490
+of 267 677** (12.1 %, floor `ARM_STRIPE_MIN_TEXELS` = 1000).
+
+Negative controls, all three run rather than reasoned about:
+
+    BODY_SABOTAGE_ARMBAND=1     arms unlicensed -> the repair eats the sleeve; the
+                                atlas gate rejects it at 0 texels, exit 1
+                                (scratch/opus/s32_negctl_armband.log)
+    BODY_REPAIR_STRIPE_LEAK=0   instrument-only pass restored; body.spec.js rejects
+                                it on the back blueFrac (0.135)
+    BODY_STRIPE_ARMS=0          legs-only band restored (the session 13-31 ship)
+
+Band widths unchanged from session 31's measurement: upper arm 42.3/42.7 mm, forearm
+35.2/35.3 mm, `STRIPE_DPHI_MAX` 0.55.
+
+**Also removed: 8.2 MB of lossless PNG maps session 31 committed by accident.**
+`pack_delivery_maps` deletes `athlete_{albedo,ao,normal}.png` once every build gate has
+measured them, so they are build intermediates. They entered the tree because a
+sabotage run aborted before the delivery encode and was then swept up by a broad
+`git add`. Worth knowing for whoever runs the negative controls next: **run them with
+`--out` pointing into scratch**, which is what this session did.
+
+### `look.spec` FACEDIST — GREEN, but the reviewer's 12:55 item 1 is NOT resolved
+
+It measures **0.1724** against a gate of `>= 0.15` and passes, where sessions 29-31
+measured 0.1411/0.1413 and failed. All three canonical shots were written this session
+for the first time in four sessions (`figure_front.png`, `figure_side.png`, `face.png`).
+
+**Do not read that as the instrument being fixed. I did not touch `look.spec`.** The
+12:55 ruling's finding was that the gate is *inverted* — the `BODY_SABOTAGE_FACE=1`
+control measured 0.1719 and PASSED where the honest build failed at 0.1411. The honest
+build now sits at 0.1724, which is **0.0005 from the sabotage control's reading**. So
+the ruling's complaint survives intact and is now sharper: **this gate has essentially
+no discrimination margin between the correct build and its own negative control**, and
+a green from it is worth very little. Whoever picks this up should re-run the control
+before citing any face number.
+
+Why it moved is not established. The head close-up frames the shoulders (front
+`maskFrac` 0.084, head 420 px), so this session's atlas repair is the obvious suspect,
+but I did not isolate it and will not claim it.
+
+### Verification (session 32)
+
+    build    all gates green at 2048/96, including the new arm-stripe atlas gate
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (texture only)
+    drive    118 passed, 2 skipped, 1 RED
+    RED      tests/drive/terrain-corridor.spec.js 'chopped landing: sink band,
+             fades, material' — the GLM lane's file and the GLM lane's documented
+             P0 corridor grey-slab regression (docs/HANDOFF-2026-08-30.md section 1,
+             reviewer-bisected to their iteration 138 / fbbbe07). Not this lane's and
+             not touchable from it. NOTE the suite ran against load average 17.7 with
+             the GLM lane's own full suite running concurrently — the drive suite took
+             37.8 min against a normal ~10.
+    body     4/4 including 'the suit design lands on the right part of the body'
+    look     6/6, FACEDIST 0.1724 (see the caveat above)
+    shots    figure_front.png — the blue band now runs down the OUTSIDE of both
+             sleeves, shoulder to cuff, matching the legs; three bib bands read;
+             boots dark; shield mirrored blue
+    ASSET_V  62 -> 63; index.html preloads and game.js?v= 58 -> 59 in step
+
+### Where this lane stops — for the GLM lane
+
+Landed and verified this session: the arm stripe, above. Nothing is left uncommitted and
+no gate was loosened.
+
+Open, in the order I would take them:
+
+1. **The suit shell + less-muscular reshape — author HUMAN TESTING #12 items 1, 2 and
+   4.** The author's own top item and the biggest single thing still wrong. Do not start
+   it from the brief alone: session 28's entry records that the shell landed for four of
+   six segments and lists the two that did NOT clear the curvature target together with
+   their measured causes (`upperArm` 0.715 and `upperLeg` 0.455 against 0.35 — the
+   thigh's iron is capped at 6 mm by `LEG_GIRTH_GATE['thigh_depth']`, which has 7.5 mm
+   of depth to spend where the relief needs 10; the upper arm's own vertex cloud carries
+   a sheet of chest wall from the arm rebind, so the tube is being fitted through
+   geometry that is not a limb). Those two causes are the work.
+2. **`look.spec`'s FACEDIST discrimination** — above. Cheap, and it gates two of the
+   three shots the author is shown.
+3. **The front bib "30" reads mirrored to the eye** in `figure_front.png` while
+   `_bib_layout_gate` and `bib_orientation_report` pass on the front face. Sessions 19,
+   22 and 50 each spent a session here and the rectified sampler `_rect_plate` is the
+   current authority; the same log still reports the BACK plate as `DEFECT`, matching
+   neither the front (L1 0.529) nor its mirror (L1 0.352). **The author will see the
+   shot, not the gate.** My own read of `figure_front.png` this session agrees with GLM's
+   review 125: the front glyph pair looks reversed.
+4. **Visible white shard slivers on the front of the thighs and around the groin** in
+   `figure_front.png`. `sliver_gate` is green (0.568 % of faces), so whatever these are
+   the gate does not describe them — a gate-coverage gap, not a clean build.
+5. **The two-tone panels question is still unanswered** (open since session 29): the
+   brief's primary-reference paragraph says the suit has "nothing else on the body
+   panels" while the 07:25 order says "two-tone panels". They contradict; the reference
+   photograph is the tiebreak and it shows plain panels.
+
+Numbers recorded in sessions 29-31 for anything measured through `look.spec`'s face path
+were taken while that gate was aborting the spec — treat them as suspect, per the 12:55
+ruling.
 
 
 ## Session 31 (2026-08-30, 12:0x-12:4x)
