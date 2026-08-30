@@ -44,6 +44,14 @@ async function measure(page) {
             return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
         };
         let cor = 0, corN = 0, fl = 0, flN = 0, dark = 0;
+        let corSun = 0, corSunN = 0, corAway = 0, corAwayN = 0, sunDir = null;
+        // Iter-151: the scene-framing corridor class mixes SURFACE ASPECTS —
+        // the inclined in-run tilted away from the sun vs the sun-facing
+        // table/landing/field. Mean luminance cannot separate them; record
+        // the aspect split (dot(worldNormal, toSun)) so the canary is
+        // attributable (see iter-151 entry: 100% of the scene-framing dark
+        // deficit was the away-facing in-run aspect; shadows and the bake
+        // were excluded by toggle tests).
         const darkHist = {};
         for (let j = 0; j < NY; j++) {
             const sy = Math.round((0.15 + 0.80 * j / (NY - 1)) * (H - 1));
@@ -72,13 +80,38 @@ async function measure(page) {
                 } catch (e) { /* keep null */ }
                 if (pt) {
                     const ax = Math.abs(pt.x);
-                    if (ax <= 4) { cor += l; corN++; }
+                    if (ax <= 4) {
+                        cor += l; corN++;
+                        // Aspect split on the same ray: sun-facing vs away.
+                        try {
+                            const hitN = scene.pickWithRay(scene.createPickingRay(sx, sy,
+                                BABYLON.Matrix.Identity(), cam), (m) =>
+                                !!(m.name && /^(terrainCorridor|terrainSkirt)/.test(m.name)));
+                            if (hitN && hitN.hit) {
+                                const n = hitN.getNormal(true);
+                                const sun = sunDir || (sunDir = (() => {
+                                    const dl = scene.lights.find((li) => li.getTypeID &&
+                                        li.getTypeID() === BABYLON.Light.LIGHTTYPEID_DIRECTIONALLIGHT);
+                                    return dl ? dl.direction.scale(-1).normalize() : null;
+                                })());
+                                if (sun) {
+                                    const d = BABYLON.Vector3.Dot(n, sun);
+                                    if (d > 0.2) { corSun += l; corSunN++; }
+                                    else if (d < -0.2) { corAway += l; corAwayN++; }
+                                }
+                            }
+                        } catch (e) { /* keep counts */ }
+                    }
                     else if (ax >= 8) { fl += l; flN++; }
                 }
             }
         }
         const top = Object.entries(darkHist).sort((a, b) => b[1] - a[1]).slice(0, 8);
         return {
+            corSun: corSunN ? +(corSun / corSunN / 255).toFixed(4) : null,
+            corSunN,
+            corAway: corAwayN ? +(corAway / corAwayN / 255).toFixed(4) : null,
+            corAwayN,
             corridor: corN ? +(cor / corN / 255).toFixed(4) : null,
             flank: flN ? +(fl / flN / 255).toFixed(4) : null,
             nCor: corN, nFlank: flN,

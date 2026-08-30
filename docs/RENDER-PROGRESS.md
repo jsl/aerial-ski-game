@@ -240,6 +240,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 151 | **Corridor-dimming ROOT-CAUSED (diagnosis only, no source change landed): the scene-framing deficit is a dark in-run band the ready camera crosses, NOT shadows (CSM render list emptied: darkN 3192→3191), NOT the bake (inrun gate 0.964 green), NOT away-facing aspect (14039/14124 corridor samples sun-facing, 0.594); no scene code/asset changed 146–149 (git-verified) — remaining correlate is the athlete-anchored camera target drifting with the 146–148 stance rebuilds; grey-attr instrument now reports the sun-aspect split (corSun/corAway)** | unit 81/81; golden 30/30; grey-attr scene canary still red 0.5952/0.8335 (deterministic, unchanged by every toggle); inrun 0.7869/0.816 = 0.964 PASS; look 6/6 shots regenerated. See entry 151. |
 | — | Iteration 148 | **NEXT.md step 2 slice 1 — shell curvature gates EXTENDED to the upper arms and thighs, ALL 8 gated segments now ≤ 0.35: upperArm 0.160/0.324 (was 1.037/0.715), thighs 0.343/0.242 (was 0.529/0.455), torso 0.088 (was 0.644, still reported-not-gated). Chest-wall verts excluded from the upper-arm fit/move via the torso's own fitted tube; thigh iron freed 6→16 mm under the reviewer's garment-`thigh_depth` ruling (gate re-attached to the shipped garment); inner-thigh gap 45.5 mm ≥ 40 (session-28 open item CLOSED); arm/thigh 0.498 ≤ 0.55; ASSET_V 67** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43. See entry 148. |
 | — | Iteration 149 | **NEXT.md reviewer-ruling instrument fix — garment `thigh_depth` sampling widened until n ≥ 100 (single-thigh bands cap at n=84, so the instrument now POOLS BOTH THIGHS and computes depth/breadth per 2 cm rung, reporting the median rung ratio per side); citable reading 1.663 (n=103, band ±6 cm, 6 rungs/side), gate ≥ 0.90 green. NEXT.md step 3 (arm stripe) VERIFIED on the merged branch: blue band on BOTH arms' outer seams in figure_front/figure_side, default flag state, leak gates green. Geometry untouched — assets byte-identical, NO ASSET_V bump** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43 (kneeMax 1.0); shots regenerated + inspected. See entry 149. |
 | — | Iteration 150 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, browser+mutation+coverage PASS, look 6/6, shots regenerated. The 149 "magenta patches" ROOT-CAUSED — they are the session-30 bib sponsor band (`BIB_WAIST`) and its rib wrap, not a defect. NEW P0 REGRESSION: grey-attr scene gate RED — corridor 0.5952 vs flank 0.8335 (ratio 0.714, gate ≥ 0.75 × flank; 145's canary was 0.788) — introduced somewhere in 146–149, unmeasured there; 151 must root-cause it before slice 2 paints panels** | two deterministic grey-attr solo failures; magenta = code-read + by-eye confirmation in figure_front/figure_side. See entry 150. |
@@ -1433,6 +1434,75 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 151 — Corridor-dimming root-cause: the deficit is NOT shadows, NOT the bake, NOT sun aspect; every scene toggle moved nothing — evidence points at camera framing drift from the athlete rebuilds; instrument upgraded with a sun-aspect split
+
+**Scope.** Per the 17:20 ruling (corridor dimming outranks suit paint), NEXT.md slice 2 was
+NOT started. This iteration is a diagnosis; the only landed change is a report-only
+grey-attr instrument extension. No `game.js`/asset change survives (two candidate fixes were
+tested and REVERTED when the numbers refuted them — details below).
+
+**Reproduced (deterministic, two solo runs):** SCENE_INSTRUMENT corridor 0.5952 / flank
+0.8335 (ratio 0.714 < 0.75), darkFrac 0.0481 (above the 0.035 control spread);
+INRUN_INSTRUMENT 0.7869/0.816 = 0.964 — the real gate PASSES. The flank term is unchanged
+since 145 (0.8335 vs 0.8337): scene lighting is bit-identical; only the corridor term moved.
+
+**What the probes established:**
+1. **Localization.** Of 3184 dark (< 0.35) corridor-classified samples, 3080 sit at
+   z ≈ −25..−15 (the in-run band just below the start plateau), spread x −4..+4; the
+   remainder scatter along the far out-run (z 180–210). Unfiltered first-hit attribution:
+   the dark pixels genuinely SHOW `terrainCorridor` (12 949 samples, mean 0.574) — they are
+   not fence/net pixels misattributed through the pick filter.
+2. **Shadows EXCLUDED.** Setting every shadow generator's darkness to 1 moved darkN
+   3192 → 3191; EMPTYING the single CSM's render list entirely moved it 3192 → 3191. The
+   dark band is not any cast shadow, regardless of `setDarkness` semantics.
+3. **Sun-aspect EXCLUDED.** New `corSun`/`corAway` split in `grey-attr.spec.js`
+   (report-only; dot(worldNormal, toSun) > 0.2 / < −0.2): 14 039 of 14 124 corridor
+   samples are SUN-FACING and read 0.5939; away-facing is n=13 at 0.818. The
+   "inclined in-run tilted away from the sun" hypothesis is refuted — the sun-facing
+   corridor itself reads 0.59 at this framing.
+4. **Two-sided lighting is a no-op.** `snowMat.twoSidedLighting = true` (+ landingMat):
+   corridor 0.5952 → 0.5955. All 3192 dark samples measure dot(worldNormal, toCamera) < 0
+   (grazing/backface picks), but flipping normals changes nothing — Babylon PBR already
+   shades backfaces with the flipped normal. Both edits reverted.
+5. **No scene change exists in 146–149 (git-verified).** 146/147/148/149 touched only
+   `blender/build_body.py`, the athlete assets and test files; the `da7406f` Opus merge's
+   `game.js` delta is the boot-fit calibration + athlete pose code only (scene greps:
+   zero hits); `blender/terrain.json` differs by a 1-character float in `terrainBase`
+   positions (the known float jitter); `index.html` only `?v=` bumps. Corridor geometry,
+   material, lighting and fog code are identical to 145's verified tip.
+
+**Conclusion (for the reviewer's parallel bisect):** with geometry, material, sun, fog,
+shadows and bake all excluded by direct toggles, and the flank term unchanged, the
+remaining correlate is the CAMERA: the scene camera targets the athlete in the ready
+stance, and 146–148 rebuilt the athlete three times (shell move fade, boot-fit lateral
+calibration `dx`, smoothing) — a small target/framing shift sweeps the grazing in-run band
+across the ray-classified corridor sample and moves the mean, exactly the
+framing-sensitivity 145 documented (the pre-138 GOOD build already read 0.787 there).
+Prediction: re-measuring 145's tip on the CURRENT athlete assets would reproduce 0.595
+without any scene edit; conversely, pinning the scene camera to an absolute preset
+(not athlete-anchored) makes the canary stable. Not actioned — camera changes are
+reviewer/author territory and the inrun gate (the real 0.95 gate) is green.
+
+**Landed change:** `tests/drive/grey-attr.spec.js` `measure()` reports `corSun`/`corSunN`
+/`corAway`/`corAwayN` alongside the existing fields (gates untouched). Recorded run:
+SCENE_INSTRUMENT corSun 0.5939 (n=14039), corAway 0.8182 (n=13), corridor 0.5952, flank
+0.8335; INRUN corSun 0.7868 (n=18731), corAway null, corridor 0.7869, flank 0.816.
+
+**Verification:** unit 81/81; golden verify 30/30; grey-attr scene test still fails as
+before (the canary is unchanged — correctly, since the diagnosis says the defect class is
+framing, not a fixable scene term this iteration); inrun gate passes; look 6/6, shots
+regenerated 17:54–17:59, scene.png/figure.png inspected by eye — corridor reads
+white-on-white in both, matching 150's by-eye note (the deficit is a graded instrument
+effect, not the 12:45 grey slab).
+
+**Open questions for the reviewer:**
+1. Does your parallel 146→149 bisect have a culprit commit? My toggles exclude every scene
+   side; if the bisect lands on an athlete commit, that confirms the framing-drift story
+   and the canary should be rebased (absolute camera preset, or an aspect+grazing-masked
+   corridor mean) rather than hunting a scene defect that the numbers say is not there.
+2. Scratch spec lives at `/home/justin/aerial-agents/scratch/iter-151/attr.spec.js` (the
+   probes: z/x histogram, first-hit attribution, shadow toggles, aspect split) — kept for
+   your re-run; the repo copy of the aspect split is in grey-attr.
 
 ### 150 — REVIEW-ONLY: suite green, shots inspected; magenta patches ROOT-CAUSED (they are the bib's sponsor band); NEW P0 regression — grey-attr scene canary red (corridor 0.595 vs flank 0.834, ratio 0.714 < 0.75)
 
