@@ -887,9 +887,12 @@ for that reason, with the delivery encode and `athlete_maps.json` moved after it
             weight seam. assets/athlete_body.glb byte-identical to HEAD.
     unit    see run-all below
     golden  no re-capture, no physics change
-    drive   body.spec.js 4/4 with the arms off (it is 3/4 with them on, and
-            the failing assertion is the front/back bib delta at 0.147/0.117 —
-            i.e. the leak, measured above)
+    unit    PASS (80/80), browser 36/36, mutation PASS, coverage PASS
+    drive   38/38 on the athlete set (rig, body, bib-number, athlete,
+            ready-stance, spine, chain), 8.1 min. body.spec.js is 4/4 with the
+            arms off; with them ON it is 3/4 and the failing assertion is the
+            front/back bib delta at 0.147/0.117 — i.e. the leak, measured
+            above. crash-ragdoll skipped deliberately per the 21:30 ruling (c).
     merge   `render-realism-glm` merged at session start (docs-only, 2 files)
 
 ### Open at the end of session 13
