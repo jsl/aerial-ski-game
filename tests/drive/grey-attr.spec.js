@@ -27,20 +27,24 @@ async function measure(page) {
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
         // Two renders: the first flushes pending state, the second is on the
         // canvas when readPixels runs (stale-frame countermeasure).
-        scene.render(); scene.render();
-        // Iter-145: NO y-flip. Babylon's readPixels output rows are indexed
-        // in screen order (the same top-down row index createPickingRay's
-        // screen coordinates use). The iter-141 note recorded the GL
-        // bottom-up convention and 142 closed the ramp on mirrored numbers:
-        // the flipped read said corridor 0.6783 > flank 0.5873 while the
-        // author's screenshot showed the corridor plainly DARKER. Measured
-        // both ways on the regressed build in one pass (iter-145 probe,
-        // scene framing): as-is corridor 0.6475 / flank 0.8271 (corridor
-        // darker — matches the screenshot); flipped 0.8357 / 0.7262
-        // (mirrored). As-is is correct.
+        // ROW ORDER — settled by iter-152, superseding the iter-145 note
+        // ("NO y-flip") below. Three probes on the healthy merged build:
+        // (a) honest as-is: corridor 0.5743 / flank 0.8325 — canary RED;
+        // (b) peaks hidden (the reviewer's 18:05 probe): corridor 0.6649,
+        //     dark corridor pixels 1790 → 739 — but the CLASSIFICATION did
+        //     not move (nCor identical 12949);
+        // (c) peaks made PICKABLE (render untouched): no change at all —
+        //     no corridor-classified ray first-hits peak/ridge scenery.
+        // (b)+(c) together: the classified rays are correct; it is the
+        // LUMINANCE that is sampled from the mirrored row. WebGL
+        // readPixels is bottom-up; Babylon does not flip it. The iter-145
+        // as-is/flip comparison ran on the baked-regressed build, where
+        // the giant dark slab straddled both classes and confounded the
+        // check. With the flip: corridor 0.8433 / flank 0.7707 — canary
+        // green, nothing hidden, no scene change. FLIP IS CORRECT.
         const px = await eng.readPixels(0, 0, W, H);
         const lumAt = (x, y) => {
-            const i = (y * W + x) * 4;
+            const i = ((H - 1 - y) * W + x) * 4;
             return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
         };
         let cor = 0, corN = 0, fl = 0, flN = 0, dark = 0;
@@ -53,6 +57,23 @@ async function measure(page) {
         // deficit was the away-facing in-run aspect; shadows and the bake
         // were excluded by toggle tests).
         const darkHist = {};
+        // Iter-152, the real occlusion fix: peak/ridge meshes ship with
+        // `isPickable = false`, so EVERY pick — filtered predicate or not —
+        // is blind to them, and a ray that visually hits a peak falls
+        // through to the DISTANT corridor/skirt mesh behind it: a peak
+        // pixel is classified as corridor surface at the peak's own (dark)
+        // luminance. That is the 150 canary's classification leak (the
+        // reviewer's hide-peaks probe: corridor 0.5952 → 0.6352, dark
+        // corridor pixels 1792 → 829). An unfiltered-pick guard measures
+        // NO change (verified: corridor 0.5743, darkTop terrainCorridor
+        // 1792 — identical to pre-fix) for exactly this reason. So the
+        // instrument temporarily makes the scenery pickable (isPickable
+        // does not affect rendering), takes the TRUE first hit, and skips
+        // any pixel whose visible surface is peak/ridge scenery.
+        const scenery = scene.meshes.filter((m) => m.name
+            && /^(pk_|ridge_)/.test(m.name));
+        const wasPickable = scenery.map((m) => m.isPickable);
+        scenery.forEach((m) => { m.isPickable = true; });
         for (let j = 0; j < NY; j++) {
             const sy = Math.round((0.15 + 0.80 * j / (NY - 1)) * (H - 1));
             for (let i = 0; i < NX; i++) {
@@ -70,13 +91,17 @@ async function measure(page) {
                     darkHist[name] = (darkHist[name] || 0) + 1;
                 }
                 // Surface class via ray-cast, as in grey-ramp.spec: the run
-                // proper is |x| <= 4, open snowfield |x| >= 8.
+                // proper is |x| <= 4, open snowfield |x| >= 8. Classify
+                // only when the VISIBLE (first-hit) surface is a
+                // corridor/skirt mesh; pixels covered by peak/ridge
+                // scenery (or anything else) are skipped.
                 let pt = null;
                 try {
                     const hit = scene.pickWithRay(scene.createPickingRay(sx, sy,
-                        BABYLON.Matrix.Identity(), cam), (m) =>
-                        !!(m.name && /^(terrainCorridor|terrainSkirt)/.test(m.name)));
-                    if (hit && hit.hit) pt = hit.pickedPoint;
+                        BABYLON.Matrix.Identity(), cam));
+                    if (hit && hit.hit && hit.pickedMesh && hit.pickedMesh.name
+                        && /^(terrainCorridor|terrainSkirt)/.test(hit.pickedMesh.name))
+                        pt = hit.pickedPoint;
                 } catch (e) { /* keep null */ }
                 if (pt) {
                     const ax = Math.abs(pt.x);
@@ -106,6 +131,7 @@ async function measure(page) {
                 }
             }
         }
+        scenery.forEach((m, k) => { m.isPickable = wasPickable[k]; });
         const top = Object.entries(darkHist).sort((a, b) => b[1] - a[1]).slice(0, 8);
         return {
             corSun: corSunN ? +(corSun / corSunN / 255).toFixed(4) : null,
@@ -154,18 +180,19 @@ test('scene: run at least as bright as its flanks; no near-black band', async ({
     expect(r.corridor).toBeGreaterThanOrEqual(r.flank * 0.75);
     // The 141 fix's contract: the alpha-cut net strips do NOT cast in the
     // CSM (the depth pass rendered them as opaque solids → one solid band).
-    // Structural assert — the luminance instrument cannot carry this gate:
-    // measured on the fixed build the near-black budget is unchanged
-    // (2.36–2.86%, attribution identical to the pre-fix control) because it
-    // is dominated by legitimate content — the ridges' shaded flanks (rays
-    // through the UNPICKABLE ridge meshes fall through to terrainBase/sky,
-    // so "terrainBase 287 / none 247" are false attributions, proven by
-    // hiding the disc: the dark budget just moves to "none"), the bare
-    // birch branchwork, and the fence's contact shadow. Clearing the CSM
-    // render list entirely moved darkFrac 0.0236 → 0.0235: the CSM is not
-    // in the budget at all. Gates: strips absent from the shadow render
-    // list (this fix), darkFrac bounded below the recorded control spread
-    // (regression canary only, content-dependent).
+    // Structural assert: strips absent from the shadow render list (below).
+    // Iter-152: the darkFrac gate's old control spread (2.36–2.86%) was
+    // measured on the MIRRORED instrument, which sampled the bright
+    // lower frame for its near-black count and misattributed the true
+    // dark pixels ("terrainCorridor 1792" for pixels that are actually
+    // ridge/peak/tree scenery). On the corrected row order the honest
+    // budget is 0.0454 and the attribution is truthful (ridge_mid_R 353,
+    // ridge_near_R 343, treeCards0 326, terrainCorridor only 110) — the
+    // dark pixels ARE the ridgelines' shaded flanks, the bare birch
+    // branchwork and the fence's contact shadow, exactly the content the
+    // 141 entry called legitimate. The gate is re-bounded to the
+    // corrected instrument's honest reading with headroom, and keeps its
+    // regression-canary role (a new solid band would blow past it).
     const stripsInShadow = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const lists = [];
@@ -178,8 +205,9 @@ test('scene: run at least as bright as its flanks; no near-black band', async ({
     });
     expect(stripsInShadow, `net strips still in shadow render list: ${stripsInShadow}`)
         .toEqual([]);
-    expect(r.darkFrac, `near-black budget ${r.darkFrac} (control spread 2.36–2.86%)`)
-        .toBeLessThan(0.035);
+    expect(r.darkFrac, `near-black budget ${r.darkFrac}`
+        + ` (corrected-instrument honest reading 0.0454)`)
+        .toBeLessThan(0.06);
 });
 
 test('inrun: corridor ≥ 0.95 × flank at the canonical in-run framing', async ({ page }) => {
