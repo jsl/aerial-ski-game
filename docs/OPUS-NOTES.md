@@ -796,6 +796,116 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 13 (2026-08-29, 22:0x-23:0x)
+
+### Item 3 (b) — the arm stripe — NOT SHIPPED, and the reason is now MEASURED
+
+The reviewer's 21:30 ruling (b) says the arm stripe must ship and that the
+torso leak is "a paint-ownership problem": paint the band only on texels whose
+triangle's heaviest skin weight is an arm bone. I implemented exactly that,
+three ways, and **the ruling's premise does not hold on this atlas.** The band
+already IS painted by ownership, and the leak is not in the paint, not in the
+bake rays, and not repairable by any rule that operates on texels.
+
+**THE ARM AND TRUNK UV ISLANDS OVERLAP.** Measured, with the arms switched on:
+
+* `body.spec.js` flags 57 back-of-torso triangles as blue. Their sampled colour
+  is sRGB **(0.325, 0.518, 0.800)**, which is `STRIPE` to three decimals — so
+  they really are the sleeve band, not the bib (the other 11 blue triangles are
+  the bib and the waistband, and they are the 0.019 the legs-only build has
+  always read).
+* Three of them probed at gltf uv (0.6462, 0.8405), (0.6527, 0.8410) and
+  (0.9485, 0.5870). Each of those texels is covered, **in Blender's own UV
+  layout and with ZERO mask dilation**, by a low-poly polygon every vertex of
+  which is arm-owned — while the exported triangle whose centroid lands on the
+  same texel is torso-owned.
+* Aggregate: **2781 texels (0.68 % of the arm mask) are claimed by an arm
+  polygon and by a trunk polygon at once.** A sound unwrap gives zero. That is
+  now a permanent build log line, `STRIPE OWNERSHIP overlap`.
+
+At a shared texel there is one texel to give: erasing the leak erases the
+sleeve, painting the sleeve paints the trunk. That is also why session 11's
+shoulder cap barely moved the number (0.121 → 0.110) — it removed 3 % of the
+stripe verts, and the overlap is spread along the whole chest wall. **The fix
+is in the UNWRAP, not the paint**, which puts it in item 3's geometry work
+alongside the armpit/bridge faces.
+
+So the arms are OFF again, and the shipped build is unchanged: `STRIPE_SEGMENTS`
+back to legs-only, `STRIPE_DPHI_MAX` back to 0.46, `assets/` reverted to HEAD's
+bytes (a rebuild with the shipped configuration reproduced `athlete_body.glb`
+**byte-identical**; only the two Cycles-baked maps moved by encoder noise, so
+nothing shipped and no `ASSET_V` bump was warranted).
+
+**What IS ready for the moment the unwrap is fixed**, all in the tree:
+
+* `STRIPE_SEGMENTS` + `STRIPE_DPHI_MAX 0.46 → 0.55`. The cap, not the 5 cm arc
+  rule, was setting the sleeve width, and it set it at **39.8 mm — 0.2 mm under
+  the ruling's own 4 cm floor**. At 0.55 (the arc rule's 0.536 at the upper
+  arm's measured 46.6 mm radius) the sleeve measures **42.9 / 42.3 mm** with the
+  forearm still cap-limited at 37.6 / 38.3, which is the reference's narrower
+  sleeve cuff. The legs do not move (arc-limited at 0.455).
+* `arm_stripe_presence_gate` — floors both upper arms at 40 mm off
+  `stripe_straight_gate`'s per-segment median width, and is inert while the arms
+  are not in `STRIPE_SEGMENTS`. It exists so that a future leak repair cannot be
+  satisfied by erasing the seam.
+* `stripe_texel_ownership` — ships as an INSTRUMENT (report only; the repair is
+  behind `BODY_REPAIR_STRIPE_LEAK=1`), carrying the overlap metric and the
+  probe. Same shape as `fold_relief_instrument`: the prescribed fix was built,
+  measured, and kept in the tree as the evidence that it cannot work.
+* `_owned_uv_tris` / `_owned_uv_tris_excluding` / `_dilate` — texel-ownership
+  masks under `body.spec.js`'s own predicate (per-vertex heaviest bone,
+  unanimous over the quad, over EVERY bone group).
+
+### Two traps found on the way, both worth keeping written down
+
+**(1) `bpy` hands back RAW sRGB for a loaded BYTE image, not linear.** Measured:
+a texel written from linear (0.07, 0.24, 0.62) reads back as
+(0.294, 0.525, 0.808), which is that colour's sRGB encoding. A freshly BAKED
+float image is scene-linear, which is why `bake_maps` saves with `srgb=True` —
+the two cases are opposite. The first version of the repair assumed linear on
+the way in and let `save_bake` encode on the way out, so every touched texel
+went through the transfer twice and the whole map came back at mean 0.883 with
+**nothing at all below half**: helmet, boots and gloves all pale. Anything that
+round-trips the albedo must read raw and write `srgb=False`.
+
+**(2) Ownership at bake time is not the ownership that ships.** `add_spine_chain`
+and `smooth_blend_rings` both run after the bake and both move it: the arm's
+share of the low-poly went **5254 → 5738 triangles** across the ring relax, and
+the trunk's `torso` group is gone entirely by export (split onto spine_01..03),
+so a `nm in SEGMENTS` filter makes a spine-weighted vertex look weightless and
+its face falls through to whichever arm bone holds the residue. Any texel-space
+gate that has to agree with a browser test must be computed on the SHIPPED
+weights — the instrument is placed after `weight_seam_gate(low, 'shipped skin')`
+for that reason, with the delivery encode and `athlete_maps.json` moved after it.
+
+### Verification
+
+    build   all gates green at 2048/96 with the shipped (legs-only) config,
+            incl. stripe straightness (worst step 10.5 mm, wander 12.7 mm,
+            median width 41.7 mm), fold_ripple, sliver, goggle band, dome
+            seating, leg taper, bib number, suit NM variance, atlas share,
+            weight seam. assets/athlete_body.glb byte-identical to HEAD.
+    unit    see run-all below
+    golden  no re-capture, no physics change
+    drive   body.spec.js 4/4 with the arms off (it is 3/4 with them on, and
+            the failing assertion is the front/back bib delta at 0.147/0.117 —
+            i.e. the leak, measured above)
+    merge   `render-realism-glm` merged at session start (docs-only, 2 files)
+
+### Open at the end of session 13
+
+- **For the reviewer:** ruling 21:30 (b) needs re-issuing against the overlap
+  finding. The arm stripe cannot ship until the unwrap stops sharing texels
+  between the sleeve and the chest wall. I did not loosen `body.spec.js` and I
+  did not ship it red.
+- Everything session 12 left open is still open: item 3's smoothed shell
+  (author HUMAN TESTING #7, top priority), the two-tone panels / collar / cuffs
+  / gaiter / bib-as-geometry, the sport glasses (author 21:55), then 10, 2, 9,
+  6, 7. `pose-shots.spec.js` framing still not fixed.
+- `crash-ragdoll.spec.js` remains the GLM lane's, per the 21:30 ruling (c).
+
+---
+
 ## Session 12 (2026-08-29, 21:1x-22:2x)
 
 ### The 20:05 ruling (a) + (b) — the fold gate and the fold amplitude — LANDED

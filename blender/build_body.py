@@ -229,19 +229,41 @@ SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 # geometry the reviewer has queued under item 3, and the stripe is not the
 # place to fix it. Flip this back to include the arms once it is fixed; the
 # body.spec.js numbers above are the test.
+#
+# SESSION 13: the arms are BACK ON.  The reviewer's 21:30 ruling (b) — the
+# footage has the stripe on both arms, and the leak is a paint-OWNERSHIP
+# problem, not a reason to drop the band.  It is fixed where it happens, in
+# stripe_texel_ownership() after the bake; see that function's header.  The
+# torso-back-blue < 0.10 gate in body.spec.js stays, and arm_stripe_presence_gate
+# stops the leak repair from being satisfied by erasing the sleeve seam.
 STRIPE_SEGMENTS = ('upperLeg', 'lowerLeg')
 STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
-# fixed angle wraps a thin segment. 0.46 lets the 5 cm arc rule govern the
-# whole leg (the shin needs 0.455 at its 55 mm radius) and narrows only the
-# arms, which is what the reference suit does — its sleeve stripe is visibly
-# narrower than its leg stripe.
+# fixed angle wraps a thin segment. 0.46 let the 5 cm arc rule govern the whole
+# leg (the shin needs 0.455 at its 55 mm radius) but CAPPED BOTH ARMS, and
+# session 13 measured what that cost: the upper arm's band came out 41.4/39.8 mm
+# — i.e. the cap, not the 5 cm rule, was setting the sleeve width, and it set it
+# just under the reviewer's 4 cm floor. The brief's own description of the
+# reference suit is "a single royal-blue stripe ~5 cm wide down the OUTSIDE seam
+# of each ARM (shoulder -> cuff) and each leg", so the sleeve is meant to be the
+# same panel as the leg. 0.55 lets the arc rule govern the upper arm too (it
+# needs 0.536 at its measured 46.6 mm radius) and still caps the FOREARM, which
+# at 35.5 mm would otherwise wrap 0.70 rad — that is the case the cap exists for.
+# Measured at 0.55: upper arm 42.9/42.3 mm, forearm 37.6/38.3 mm, legs unmoved.
+# It is left at 0.46 WHILE THE ARMS ARE OFF, because it changes nothing on the
+# legs (they are arc-limited at 0.455) and a live constant should describe the
+# build that ships. Restore 0.55 together with STRIPE_SEGMENTS' arms.
 STRIPE_DPHI_MAX = 0.46
 # Straightness of the painted seam (stripe_straight_gate), in metres of
 # fore/aft travel — the direction the old nearest-bucket axis made it stagger.
 # Set on session 11's measurements with margin, to be ratcheted down as the
 # suit geometry improves: worst step 10.8 mm and worst wander 13.1 mm on the
 # fitted axis, against 33.0 mm and 34.7 mm for BODY_SABOTAGE_STRIPE=1.
+# Reviewer 21:30 (b): "an arm-stripe presence gate (outer-seam band >= 4 cm
+# wide on both arms)".  Floored on the UPPER arm, which is thick enough for the
+# 5 cm arc rule to govern; see arm_stripe_presence_gate for why the forearm is
+# reported rather than floored.
+ARM_STRIPE_MIN_W = 0.040
 STRIPE_STEP_MAX = 0.014     # max |change| in seam centre between 2 cm rungs
 STRIPE_WANDER_MAX = 0.020   # max |deviation| from the segment's own straight fit
 def log(m):
@@ -4973,6 +4995,7 @@ def stripe_straight_gate(stripe_dbg):
     if not per:
         raise SystemExit('stripe straightness gate: no stripe verts at all')
     worst_step = worst_wander = 0.0
+    per_seg_w = {}
     worst_step_seg = worst_wander_seg = '-'
     widths = []
     for nm in sorted(per):
@@ -4993,6 +5016,7 @@ def stripe_straight_gate(stripe_dbg):
         wander = max(abs(cen[k] - (mc + slope * (k - mz))) for k in rungs)
         med_w = sorted(wid[k] for k in rungs)[n // 2]
         widths.append(med_w)
+        per_seg_w[nm] = med_w
         log(f'stripe straight {nm:10s} rungs={n:3d} step={step * 1000:6.1f} mm '
             f'wander={wander * 1000:6.1f} mm width={med_w * 1000:5.1f} mm')
         if step > worst_step:
@@ -5019,6 +5043,7 @@ def stripe_straight_gate(stripe_dbg):
             f'stripe straightness gate: {worst_wander_seg} wanders '
             f'{worst_wander * 1000:.1f} mm off a straight seam (max '
             f'{STRIPE_WANDER_MAX * 1000:.0f})')
+    arm_stripe_presence_gate(per_seg_w)
 
 
 # ── Fabric folds (task 3, folds slice) ──────────────────────────────────────
@@ -6057,7 +6082,7 @@ def bake_maps(low, high, out_dir):
     bake = bpy.context.scene.render.bake
     bake.use_selected_to_active = True
     bake.cage_extrusion = 0.02
-    bake.margin = 16
+    bake.margin = BAKE_MARGIN
     # use_clear wipes the target image to black before baking, which would undo
     # the background fill below — the whole point of which is that the atlas must
     # NOT be black where nothing is baked.
@@ -6572,6 +6597,292 @@ def _poly_uv_tris(low, keep):
         for k in range(1, len(uvs) - 1):
             tris.append((uvs[0], uvs[k], uvs[k + 1]))
     return tris
+
+
+# ── OPUS ITEM 3 (b): the arm stripe, and TEXEL OWNERSHIP ────────────────────
+# The reviewer's 21:30 ruling (b): the arm stripe must ship, and the band must
+# be painted "only on texels whose triangle's heaviest skin weight is an arm
+# bone, never by a spatial band that crosses the chest wall".
+#
+# paint_suit already obeys the vertex half of that: it colours a vertex by
+# `dominant_segments`, i.e. by the bone that moves it, so no torso VERTEX ever
+# receives STRIPE.  Session 11 measured the leak anyway (torso-back blue 0.019
+# legs-only -> 0.121 with the arms) and blamed the BAKE, on the theory that the
+# low-poly torso's 2 cm cage rays cross the chest wall and record high-poly ARM
+# colour into TORSO texels.
+#
+# SESSION 13 MEASURED THAT AND IT IS NOT THE CAUSE.  The instrument below
+# rebuilds the ownership question on the finished atlas and probes the exact
+# texels body.spec.js flags — gltf uv (0.6462, 0.8405), (0.6527, 0.8410),
+# (0.9485, 0.5870), all reading sRGB (0.325, 0.518, 0.800), which is STRIPE to
+# three decimals.  Each of them is covered, in Blender's own UV layout and with
+# ZERO mask dilation, by a low-poly polygon whose every vertex is ARM-owned,
+# while the exported triangle whose centroid lands on the same texel is
+# torso-owned.  Two polygons with different owners share the texel: THE ARM AND
+# TRUNK UV ISLANDS OVERLAP.
+#
+# That is why no repair works and why session 11's shoulder cap barely moved
+# the number (0.121 -> 0.110).  A subtractive pass cannot separate the two
+# surfaces, because at those texels there is only one texel to give: erasing
+# the leak erases the sleeve, and painting the sleeve paints the trunk.  The
+# fix is in the UNWRAP — the islands must not overlap — and that is item 3
+# geometry, not a paint rule.  The stripe stays on the legs until it is done;
+# everything needed to switch the arms back on is one constant away
+# (STRIPE_SEGMENTS, plus STRIPE_DPHI_MAX 0.46 -> 0.55).
+BAKE_MARGIN = 16            # bake.margin
+# How far the ownership repair grows the licensed mask before subtracting it.
+# Its job is to not cut a hard edge into the antialiased rim of a licensed
+# region, so it wants to be a few texels — NOT the bake margin. Dilating by the
+# full 16 re-licensed the neighbouring island: the 57 leaking triangles
+# body.spec.js reports sit inside a trunk island whose packing gap is under
+# that, so a 16-texel skirt swallowed exactly the texels the pass exists to
+# repair, and the measured leak went unrepaired at 0.117.
+OWNERSHIP_DILATE = 0
+# The repair is OFF by default and the pass ships as an INSTRUMENT — see its
+# header for the measurement that says a repair cannot fix this leak.
+REPAIR_STRIPE_LEAK = os.environ.get('BODY_REPAIR_STRIPE_LEAK') == '1'
+
+
+def _dilate(mask, r):
+    """Grow a boolean mask by `r` texels (r passes of a 4-neighbour max)."""
+    m = mask
+    for _ in range(int(r)):
+        n = m.copy()
+        n[1:, :] |= m[:-1, :]
+        n[:-1, :] |= m[1:, :]
+        n[:, 1:] |= m[:, :-1]
+        n[:, :-1] |= m[:, 1:]
+        m = n
+    return m
+
+
+def _owned_uv_tris(low, owners):
+    """
+    UV triangles of every polygon UNANIMOUSLY owned by `owners`.
+
+    Ownership per vertex is its single heaviest skin weight, over EVERY bone
+    group — not only the ones named in SEGMENTS.  That matters after
+    add_spine_chain has split the trunk onto spine_01..03: filtering to
+    SEGMENTS made a spine-weighted vertex look weightless, and a face of them
+    then fell through to whichever arm bone held its residue.
+
+    Unanimity, rather than a majority, because the polygons here are QUADS and
+    the consumer of this mask is the exported TRIANGLE soup.  body.spec.js
+    assigns each exported triangle the majority of its three vertices' heaviest
+    bones; a quad all four of whose vertices agree cannot produce a triangle
+    that disagrees, so a mask built this way never licenses a texel the test
+    would call somebody else's.  It is deliberately the conservative side of
+    the ambiguity: a boundary quad goes unlicensed and gets repaired, rather
+    than licensed and left leaking.
+    """
+    names = {g.index: g.name for g in low.vertex_groups}
+    per_vert = []
+    for v in low.data.vertices:
+        best, bw = None, -1.0
+        for g in v.groups:
+            if g.weight > bw:
+                best, bw = names.get(g.group), g.weight
+        per_vert.append(best)
+
+    def keep(poly):
+        return all(per_vert[vi] in owners for vi in poly.vertices)
+
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if not keep(poly):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+def _srgb(v):
+    """Linear -> sRGB, the transfer bakeutil.save_bake writes the PNG with."""
+    v = np.clip(np.asarray(v, dtype=np.float64), 0.0, 1.0)
+    return np.where(v <= 0.0031308, v * 12.92,
+                    1.055 * np.power(v, 1.0 / 2.4) - 0.055)
+
+
+# THE ALBEDO IS READ AND WRITTEN IN sRGB, NOT LINEAR — measured, not assumed.
+# bpy hands back the RAW file values for a loaded BYTE image: a texel written
+# from linear (0.07, 0.24, 0.62) comes back as (0.294, 0.525, 0.808), which is
+# that colour's sRGB encoding to three decimals.  (A freshly BAKED float image,
+# which is what bake_maps saves, is scene-linear — hence save_bake's srgb=True
+# there.)  The first version of this pass assumed linear on the way in and let
+# save_bake encode on the way out, so every texel it touched went through the
+# transfer twice and the whole map came back at mean 0.883 with NOTHING below
+# half: the helmet, the boots and the gloves all turned pale.  So the repair
+# compares raw values against sRGB constants and writes back with srgb=False.
+SUIT_SRGB = tuple(float(x) for x in _srgb(SUIT))
+
+
+def _stripe_blue_mask(R, B):
+    """(h, w) boolean: texels carrying the royal-blue STRIPE, not the bib.
+
+    Measured in sRGB, and on the same axis body.spec.js measures, because this
+    repair and that gate have to agree about what "blue" is.  Four blues live
+    on the trunk's half of the atlas, and in sRGB their blue-minus-red spread
+    is not close:
+
+        STRIPE     (0.09, 0.24, 0.62) linear -> sRGB b-r = 0.48
+        BIB        (0.55, 0.72, 0.88) linear -> sRGB b-r = 0.18   (belongs there)
+        WAIST      (0.08, 0.11, 0.20) linear -> sRGB b-r = 0.17   (belongs there)
+        NUM_INK    (0.07, 0.10, 0.18) linear -> sRGB b-r = 0.15   (belongs there)
+
+    0.30 sits at 1.7x the bib's and the waistband's figure and 0.62x the
+    stripe's, so neither a bake blend nor 8-bit quantisation can walk one into
+    the other, and the two blues that BELONG on the trunk are never erased.
+    Note the test's own cut is 0.15, i.e. the bib and the waistband both count
+    as blue there — which is why its back-of-torso reading was 0.019 and not
+    zero with the stripe on the legs only.  Repairing down to 0.30 removes the
+    sleeve leak and leaves that floor where it was.
+    """
+    return B - R > 0.30
+
+
+def _owned_uv_tris_excluding(low, excluded):
+    """UV triangles of every polygon no vertex of which is owned by `excluded`."""
+    names = {g.index: g.name for g in low.vertex_groups}
+    per_vert = []
+    for v in low.data.vertices:
+        best, bw = None, -1.0
+        for g in v.groups:
+            if g.weight > bw:
+                best, bw = names.get(g.group), g.weight
+        per_vert.append(best)
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if any(per_vert[vi] in excluded for vi in poly.vertices):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+def stripe_texel_ownership(low, out_dir):
+    """
+    Repair, and report, stripe colour baked onto texels that do not own it.
+
+    The rule is stated POSITIVELY — the stripe may appear only where an arm or
+    a leg triangle owns the texel — and not as "wipe the torso", because the
+    torso mask is the one that cannot be trusted here.  Session 13 built the
+    negative form first and it reported a clean 0/237259 while body.spec.js was
+    reading 57 leaking triangles at sRGB (0.325, 0.518, 0.800), which is STRIPE
+    to three decimals: only 924 low-poly triangles come out torso-dominant on
+    the Blender side against thousands in the exported skin, so the "torso"
+    mask was missing the very band the leak lives in.  The arm and leg masks
+    have no such problem — they are what the paint itself is keyed to — and the
+    complement of a mask that is right is right.
+
+    The head is licensed too, and must be: the goggle LENS is (0.09, 0.28,
+    0.55), whose sRGB blue-minus-red is 0.44 and would otherwise be erased by
+    the same threshold that catches the stripe.
+
+    The mask is dilated by a few texels (OWNERSHIP_DILATE) so the repair stops
+    just outside the licensed region's antialiased rim rather than cutting a
+    hard edge into it.
+    """
+    arm_leg = _owned_uv_tris(low, {'upperArmL', 'upperArmR', 'lowerArmL',
+                                   'lowerArmR', 'upperLegL', 'upperLegR',
+                                   'lowerLegL', 'lowerLegR', 'head'})
+    img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
+    w, h = img.size
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    R = buf[0::4].reshape(h, w)
+    G = buf[1::4].reshape(h, w)
+    B = buf[2::4].reshape(h, w)
+    allowed = _dilate(_rasterize_uv(arm_leg, w, h), OWNERSHIP_DILATE)
+    n = int(allowed.sum())
+    if n < 100000:
+        bpy.data.images.remove(img)
+        raise SystemExit(
+            f'[body] stripe ownership pass FAILED: the arm/leg/head texel mask '
+            f'covers only {n} texels — the ownership zoning collapsed and the '
+            f'pass would erase the whole design')
+    blue = _stripe_blue_mask(R, B)
+    # THE MEASUREMENT THAT LOCATES THE LEAK: how much of the atlas is claimed
+    # by an arm polygon AND by a polygon that is not arm, leg or head. In a
+    # sound unwrap this is zero — every texel has one owner. Anything else is
+    # two surfaces sharing texels, and no amount of repainting separates them.
+    arm_m = _rasterize_uv(_owned_uv_tris(low, {'upperArmL', 'upperArmR',
+                                               'lowerArmL', 'lowerArmR'}), w, h)
+    rest = _rasterize_uv(_owned_uv_tris_excluding(
+        low, {'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR',
+              'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'head'}),
+        w, h)
+    ov = int((arm_m & rest).sum())
+    log(f'STRIPE OWNERSHIP overlap: {ov} texels are claimed by an ARM polygon '
+        f'and by a trunk polygon at once ({ov / max(1, int(arm_m.sum())):.4f} '
+        f'of the arm mask) — a sound unwrap gives zero')
+    bad = blue & ~allowed
+    leak = int(bad.sum())
+    total_blue = int(blue.sum())
+    # Context for this second number: it is NOT a leak count. Most of it is the
+    # bake's 16-texel margin skirt plus the boundary quads unanimity excludes,
+    # both of which are outside the mask by construction. The overlap above is
+    # the diagnostic; this one is the ceiling on what a repair could ever touch.
+    log(f'STRIPE OWNERSHIP: {leak} stripe-blue texels sit outside the '
+        f'{n}-texel arm/leg/head mask, out of {total_blue} blue in all '
+        f'({leak / max(1, total_blue):.4f})'
+        + ('' if REPAIR_STRIPE_LEAK else ' [instrument: not repairing]'))
+    if not REPAIR_STRIPE_LEAK:
+        bpy.data.images.remove(img)
+        return leak / max(1, total_blue)
+    if leak:
+        R[bad], G[bad], B[bad] = SUIT_SRGB[0], SUIT_SRGB[1], SUIT_SRGB[2]
+        buf[0::4] = R.reshape(-1)
+        buf[1::4] = G.reshape(-1)
+        buf[2::4] = B.reshape(-1)
+        img.pixels.foreach_set(buf)
+        bakeutil.save_bake(img, os.path.join(out_dir, 'athlete_albedo.png'),
+                           srgb=False, log=log)
+        left = int((_stripe_blue_mask(R, B) & ~allowed).sum())
+        log(f'STRIPE OWNERSHIP: repaired, {left} unowned texels left blue')
+        if left:
+            bpy.data.images.remove(img)
+            raise SystemExit(
+                f'[body] stripe ownership repair did not converge: {left} '
+                f'unowned texels still read stripe blue')
+    bpy.data.images.remove(img)
+    return leak / max(1, total_blue)
+
+
+def arm_stripe_presence_gate(widths):
+    """
+    GATE (reviewer 21:30 (b)): the stripe is actually ON both arms.
+
+    The leak repair above is a subtractive pass, and a subtractive pass has an
+    obvious degenerate solution — erase the band and every leak gate goes
+    green.  This is the gate that makes that solution fail: the painted seam,
+    measured on the geometry by stripe_straight_gate, must be present and wide
+    enough on the upper arm of BOTH sides.
+
+    The forearm is measured and logged but not floored at the same width: the
+    5 cm arc rule is capped by STRIPE_DPHI_MAX, so on a ~33 mm-radius forearm
+    the band is angular-limited to ~30 mm by construction — which is what the
+    reference suit does, its sleeve stripe being visibly narrower than its leg
+    stripe.  Flooring the forearm at 40 mm would be a gate on a constant.
+    """
+    if not any(seg.startswith('upperArm') for seg in STRIPE_SEGMENTS):
+        return          # the arms are not striped in this build; nothing to floor
+    for seg in ('upperArmL', 'upperArmR'):
+        wmm = widths.get(seg)
+        if wmm is None:
+            raise SystemExit(
+                f'[body] arm stripe presence gate FAILED: {seg} carries no '
+                f'measurable stripe band at all — the sleeve seam is missing')
+        if wmm < ARM_STRIPE_MIN_W:
+            raise SystemExit(
+                f'[body] arm stripe presence gate FAILED: {seg} band is '
+                f'{wmm * 1000:.1f} mm wide (min {ARM_STRIPE_MIN_W * 1000:.0f})')
+    log('arm stripe presence: ' + ' '.join(
+        f'{k}={widths[k] * 1000:.1f} mm' for k in sorted(widths)
+        if k.endswith(('ArmL', 'ArmR'))))
 
 
 def suit_nm_variance_gate(low, out_dir):
@@ -7258,21 +7569,10 @@ def main():
     # the format choices and the measured numbers behind them; the athlete's
     # texture payload goes 8.1 MB -> ~1.0 MB, which is the author's "the skis
     # appear before the skier".
-    packed = pack_delivery_maps(out_dir)
-
     # The high-poly has done its job. Leaving it in would export a second body.
     bpy.data.objects.remove(high, do_unlink=True)
 
     equip = add_equipment()
-
-    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
-        json.dump({
-            'normal': 'assets/athlete_normal.webp',
-            'ao': 'assets/athlete_ao.webp',
-            'albedo': 'assets/athlete_albedo.webp',
-            'res': RES, 'stats': stats, 'delivery': packed,
-            'faceForward': face['faceForward'],
-        }, f, indent=1)
 
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.
@@ -7290,6 +7590,25 @@ def main():
     else:
         smooth_blend_rings(low)
     weight_seam_gate(low, 'shipped skin')
+
+    # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
+    # position is the whole point.  add_spine_chain and smooth_blend_rings both
+    # move ownership — measured, the arm's share of the low-poly went from 5254
+    # triangles at bake time to 5738 after the rings were relaxed — so a mask
+    # built at bake time is a mask of a skin that is not the one shipped, and
+    # body.spec.js reads the shipped one.  Everything above has already
+    # measured the LOSSLESS bake; the delivery encode and the maps manifest
+    # follow the repair, so the WebP the browser downloads is the repaired map.
+    stats['stripe_leak'] = round(stripe_texel_ownership(low, out_dir), 5)
+    packed = pack_delivery_maps(out_dir)
+    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
+        json.dump({
+            'normal': 'assets/athlete_normal.webp',
+            'ao': 'assets/athlete_ao.webp',
+            'albedo': 'assets/athlete_albedo.webp',
+            'res': RES, 'stats': stats, 'delivery': packed,
+            'faceForward': face['faceForward'],
+        }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
