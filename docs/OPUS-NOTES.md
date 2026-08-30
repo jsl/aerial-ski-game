@@ -796,6 +796,146 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 27 (2026-08-30, 08:3x-09:5x)
+
+Tree clean at start (session 26 committed). `render-realism-glm` has not moved
+since `9fcbd1f`, so there was again no merge to take.
+
+Took the first item of the author's HUMAN TESTING #12 order — the bindings and
+the boot–ski invariant — because the reviewer put it first as the quick
+invariant, and it turned out to be two separate faults, neither of which any
+existing gate could see.
+
+### Item 3 (author #12 item 3) — the boots stand on the skis — LANDED `ba1a942`
+
+**What the author photographed** (`reference/shots/author_binding_top_2026-08-30.png`,
+top view): the boots offset laterally from their skis and the toe/heel blocks
+standing clear of the boot at both ends.
+
+**Measured**, in each ski's OWN frame so the rig's yaw is divided out
+(`rig.spec.js` BOOTBIND, ready stance, sole = lowest 50 mm of the skinned mesh):
+
+| | L | R |
+|---|---|---|
+| sole centroid off the ski centreline | -0.0183 m | -0.0194 m |
+| sole z extent | -0.101 .. 0.132 | -0.103 .. 0.128 |
+| toe/heel block slot | -0.140 .. 0.1875 | same |
+| daylight, toe / heel | 0.0390 / 0.0555 | 0.0371 / 0.0592 |
+
+**The lateral fault is not the pin.** `skiL`, `lowerLegL` and `upperLegL` all
+read `x = -0.075` EXACTLY (and +0.075 on the right), so `_pinBootsToSkis` puts
+the bone precisely where it intends. It is the MESH: both feet hang ~19 mm to
+-x of the shin they are weighted to, **the same way on both sides**, so the
+left boot reads outboard and the right one inboard — "between the skis", which
+is the author's description. The whole-body centroid is centred (meanX
+-0.0008, midX -0.0014), so it is a foot asymmetry, not an off-centre bake.
+
+**The fore/aft fault is the ski build.** The binding stations (-0.205 / +0.245)
+in `_buildStyledSki` were authored before the boot geometry existed; the slot
+they leave is 328 mm for a 233 mm sole.
+
+**The fix is calibrated, not constant.** `_calibrateBootFit` measures both
+faults once off the linked skinned mesh. A hard-coded 19 mm would be silently
+wrong the next time this lane rebakes a boot — which is most sessions. It
+skins the mesh by hand into each ski's frame, takes the sole band, and returns
+the sole's lateral offset and its toe/heel z.
+
+**And it moves the SKI, not the bones.** The first shape of this fix seated
+each shin so its SOLE landed on the centreline — and `rig.spec.js` > "bind
+equals driver and the figure faces -z" caught it immediately: lowerLegL's
+bind-to-driver residual went 0 -> **0.0183 m**, i.e. the rest pose stopped
+reproducing the bind mesh and the hips began the session pre-deformed. That
+gate is right and the first fix was wrong. Nothing about the fault needs a
+bone to move: the two feet are **148.9 mm apart against the skis' 150.0 mm**,
+so the pair is not splayed, it is SHIFTED, and sliding the ski the athlete is
+standing on is exactly what a binding does. The calibration now sets the
+lateral offset on the visible ski's children (`ski*_vis`, `_toe`, `_heel`,
+`_brake`) and slides the toe/heel blocks fore/aft until they touch, with 4 mm
+of clamp overlap. The physics driver is untouched; bind still equals driver to
+1e-3.
+
+One existing gate had to be re-measured, not loosened, for this:
+`rig.spec.js` > "styled skis…" asserted `|toe.position.x| < 0.01` in the
+DRIVER's frame. The statement it makes — "the binding is centred on the ski" —
+is unchanged, but the driver's x stopped being the ski's centreline, so it now
+reads `toe.position.x - vis.position.x`. Shipped: 0.0000 both sides, with
+`visX` -0.0183 / -0.0194 logged beside it.
+
+Three more things the calibration has to get right, each found by measuring a
+wrong answer:
+
+1. **`getTransformMatrices` returns the LAST RENDERED frame** — session 6's
+   finding, and it bites any new probe. Without `skeleton.prepare(true)` the
+   calibration read the glb's BIND pose, measured a 35 mm "sole" partway up
+   the shin, and slid the binding blocks to z = +0.14 (they ended up behind
+   the ankle, and the toe gap read -0.24 m).
+2. **It has to run AFTER the pin has seated the legs**, not before: the
+   residual to measure is what is left once the shin is where the pin means to
+   put it. Calibrating first read dx = -0.028 / -0.050 instead of
+   -0.018 / -0.019 and overshot to soleX +0.0076 / +0.0272.
+3. **Ready stance only, and it rejects an implausible read** (sole length
+   0.15-0.35 m, |dx| <= 0.06 m) instead of baking it in. The cuff lean swings
+   the boot about the ankle, so a sole measured mid-crouch is not the sole the
+   binding holds. A rejected read costs nothing — the next frame retries.
+
+Shipped (same probe, ready stance):
+
+    soleLateral   0.0183 / 0.0194  ->  0.0000 / 0.0000  gate <= 0.010
+    sole toe gap  0.0390 / 0.0371  -> -0.0040 / -0.0040  gate <= 0.005
+    sole heel gap 0.0555 / 0.0592  -> -0.0040 / -0.0040  gate <= 0.005
+    boot-body lateral (whole 150 mm band, i.e. what reads as "standing on the
+    ski" from above)  0.0235 / 0.0238 -> 0.0052 / 0.0044  gate <= 0.020
+
+(soleLateral is 0.0000 by construction now — the ski is placed at the sole's
+own centroid — so the gate that carries the weight for the lateral fault is
+the boot-BODY one at 0.020, which is measured over the whole 150 mm boot band
+and is not what the calibration targets.)
+
+**Why the existing gate was green through all of this.** `rig.spec.js` >
+"both SOLES rest on their skis" measures ONE lowest vertex against a 0.12 m
+lateral bound and never looks at the binding pieces at all. A single vertex
+and a whole foot in the wrong place give the same reading, and 19 mm is well
+inside 120 mm.
+
+New gate: **"the boots stand ON their skis, clamped at toe and heel by the
+bindings"**, which also writes `shots/boot_binding_top.png` in the author's own
+top view. **NEGATIVE CONTROL** `window._bootFitOff` skips the calibration and
+restores exactly the state in the author's shot; the control test asserts the
+gates reject it and it does on all six readings (logged as
+`BOOTBIND-OFF offences`).
+
+### Verification
+
+    unit    81/81
+    golden  30/30, no re-capture (nothing here touches the physics path:
+            _calibrateBootFit reads vertex buffers and writes two child mesh
+            positions)
+    drive   athlete set (rig, chain, inrun-contact, ready-stance, body,
+            athlete, spine, crash-ragdoll) — see below
+    assets  UNCHANGED, ASSET_V stays 54; game.js?v= 51 -> 52
+
+### Open at the end of session 27
+
+- **Author #12 item 1, the suit SHELL, is the next and largest item** and is
+  untouched. It is the author's most visible open ask and the reviewer's
+  07:25/08:30 order puts it immediately after the bindings.
+- Author #12 item 2 (calf/thigh gap) falls out of the shell.
+- The ramped `reclaim_chest_wall` (session 26's blocker) is still open.
+- `game.js`'s sky fragment shader still does not compile (GLM `cac3bae`) — not
+  this lane's file, still red on this tree, still what makes `game.spec.js`
+  red. Reported in session 26; unchanged.
+
+### For the reviewer (session 27)
+
+1. **The boot lateral offset is an ASSET asymmetry** (both feet 19 mm to -x of
+   their shins, spacing otherwise correct to 1.1 mm) that this commit corrects
+   by moving the ski GEOMETRY 19 mm under the boot, not the bone. The honest
+   place to fix it is the bake, and the suit-shell rebuild is the natural
+   session for it; the calibration will then measure ~0 and cost nothing.
+   Flagging so the ski-visual offset is not read later as a hidden hack.
+2. No physics change, no golden re-capture, no gate loosened; the new gate
+   ships with a control that fires.
+
 ## Session 26 (2026-08-30, 08:3x-09:5x)
 
 Tree was clean at session start (session 25 committed). No merge was

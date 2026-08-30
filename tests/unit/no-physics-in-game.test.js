@@ -36,6 +36,7 @@ const ALLOWED_FUNCTIONS = {
     _inrunArmForward:    'in-run crouch arm-hold blend on the mesh drivers — renderer (ADR-0002)',
     _seatTorsoOnHips:    'translates the torso/head/arm drivers onto the hips the boot–ski pin left them off (author 23:40 crouch) — renderer (ADR-0002). It writes mesh transforms from mesh transforms, adds no state and never touches the physics state object.',
     _pinBootsToSkis:     'boot–ski seating fix-up on the mesh drivers after applyPose — renderer (ADR-0002)',
+    _calibrateBootFit:   'one-shot measurement of where the skinned SOLE sits relative to the ski it is pinned to, and the matching slide of that ski\'s toe/heel blocks (author HUMAN TESTING #12 item 3) — renderer (ADR-0002). It reads vertex buffers and writes two child mesh positions; it holds no simulation state.',
     _athleteVisualMeshes: 'athlete visibility registry for start gating — renderer',
     _alpineWorld:         'athlete/ski build + reveal orchestration on body link — renderer',
     _showAthleteFallback: 'legacy-solid fallback reveal on load failure — renderer',
