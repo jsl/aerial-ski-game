@@ -10,6 +10,11 @@ Status: FACEDIST gate fixed; ready for shell knee-band fix.
 Tighter SHELL_JOINT_LO_LEG/HI_LEG range (0.35, 0.60) in `blender/build_body.py`.
 Verification: `spine.spec` knee collapse gates now pass (flight tuck max 7.247 < 8.0).
 Status: Knee-band collapse fixed; ready for #12 gates.
+### 153 — Implement two-tone suit panels
+Added two-tone side panels (royal blue) and shoulder yoke (yoke color) to the suit shell.
+Verification: `look.spec` still passes; visual inspection of panels confirms they are painted on the side segments.
+Status: Two-tone panels implemented; ready for collar/cuffs and crotch cleanup.
+
 
 
 
