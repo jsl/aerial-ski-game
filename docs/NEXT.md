@@ -40,6 +40,13 @@ Order:
      tube, ≥ 4 cm inner-thigh gap, bideltoid per the brief.
    - Articulation and invariants must not regress: `rig.spec`, `chain.spec`, `spine.spec`, the
      boot-binding gates and the golden suite stay green in every non-crash state.
+2b. **HUMAN TESTING #15 (author, 17:00) — A-frame legs.** Full spec in the #15 Reviewer-feedback entry:
+   frontal-plane hip→knee→ankle near-collinear (knee deviation ≤ 5°), thighs angling out from the crotch
+   with visible daylight between them all the way to the knees, no calf fan-out at the knee (shin frontal
+   tilt smooth, ≤ ~8°), ankles staying at ski spacing with the binding gates green. NEW GATE REQUIRED in
+   render space (silhouette daylight in `figure_front.png`, ≥ 3 cm projected at mid-thigh) — the existing
+   45.5 mm mesh-space gap gate passed while the author sees touching thighs, so it does not count as
+   evidence here; the current build is the failing negative control.
 3. **Arm stripe — VERIFY, do not redo.** Session 32 shipped it (`9e81fcc`: repair pass enabled on the
    zero-overlap unwrap; torso-back blueFrac 0.135 → 0.073, gate < 0.10). Confirm on the merged branch:
    leak gate green, stripe visible on BOTH arms as a band on the outer seam in the figure shots, default
