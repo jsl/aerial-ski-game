@@ -796,6 +796,138 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 31 (2026-08-30, 12:0x-12:4x)
+
+Merged `render-realism-glm` (one commit, `4992619`) first — one conflict, the
+`game.js?v=` line in `index.html`, resolved to this lane's 57. Unit 81/81 and
+golden 30/30 on the merge, committed as `14226bc` before any new work.
+
+Then the standing order's step 3: **the unwrap + the arm stripe.**
+
+### The unwrap — LANDED (`4819831`)
+
+The 23:10 ruling parked the arm band behind the unwrap: "the arm and trunk UV
+islands share texels, so no paint-side fix can work … gate: zero shared texels
+between arm and trunk masks on the shipped weights."
+
+**Where the sharing came from**, measured rather than assumed. Not packing —
+`pack_islands` packs disjoint AABBs. Not edge adjacency — `_rasterize_uv` tests
+texel CENTRES against triangle interiors, and `_owned_uv_tris` excludes
+non-unanimous boundary quads from both masks, so two triangles merely sharing
+an edge share ~no texels. It was **one island folding over itself**:
+`smart_project` groups faces inside a 66° angle limit and projects each group
+onto a single plane, and since `loosen_suit` stood the suit off the skin the
+shoulder's arm faces and chest-wall faces are inside that limit of each other.
+One group, one plane, the arm folded back across the chest — arm and trunk
+texels in the same place by construction, which is why every paint-side repair
+since session 12 has been fighting it.
+
+`unwrap_zones` runs `smart_project` once **per zone** (each arm, each leg, each
+hand, the skull, the trunk), cut on the skin weights the ownership masks and
+`body.spec.js` are already keyed to, so the layout and the gate agree about
+where an arm stops. **The area weighting has to be put back by hand**: seven
+separate calls each normalise their own `area_weight` and would give seven
+zones the same atlas area regardless of size, obliterating both `HEAD_GROW` and
+`UV_SHRINK`; each zone is rescaled to the trunk's texel density before one
+global pack, which is exactly the allocation a single `area_weight=1.0` call
+would have made.
+
+| | before | after |
+|---|---|---|
+| arm/trunk shared texels | 10 301 (3.48 % of the arm mask) | **0**, exactly |
+| head+face atlas share | 28.3 % | 31.8 % (gate 25 %) |
+| zone rescales | — | armL ×1.006, armR ×1.030, handL/R ×0.248, legL ×1.247, legR ×1.278, skull ×1.606, trunk ×1.000 |
+
+New **UV ZONE gate** in `stripe_texel_ownership`, written at zero because zero
+is what the layout measures. **NEGATIVE CONTROL** `BODY_SABOTAGE_UVZONES=1`
+restores the single global projection and the gate rejects it at 10 301, exit 1
+(`scratch/opus/s31_negctl_uvzones.log`).
+
+### THE FINDING: the arm stripe's leak was never the unwrap
+
+With the overlap at zero the leak did not move. All three rows are
+`body.spec.js` › *the suit design lands on the right part of the body*, torso
+**back** `blueFrac`, gate < 0.10:
+
+| build | back blueFrac |
+|---|---|
+| zoned unwrap, legs only (the control) | **0.030** |
+| zoned unwrap, arms on | **0.135** |
+| old global unwrap, arms on (session 13) | 0.121 |
+
+Two further causes ruled out by running them:
+
+* **bake-margin bleed** between the now-more-numerous islands — `BAKE_MARGIN`
+  16 → 6, i.e. under the 8-texel pack gap, so no island's skirt can reach a
+  neighbour's interior. The back stayed **0.135 to three decimals**. (A larger
+  pack margin was tried first, 0.004 → 0.018, and is not viable: it shrinks
+  every island until `fold_relief_gate`'s eroded crease mask covers 0 texels.)
+* **the 21:30 (b) ruling** — "paint the band only on texels whose triangle's
+  heaviest skin weight is an arm bone, never by a spatial band". The paint
+  **already does this**: `paint_suit` calls
+  `segment_frame(co, force=owner[i])` with `owner = dominant_segments(obj)`.
+
+**What it actually is.** The paint is keyed to the skin weights that exist
+**when the high-poly is painted**; `body.spec.js` reads the weights that
+**ship**. Four passes run between the two — `add_spine_chain`,
+`add_joint_helpers`, `localise_weights`, `smooth_blend_rings` — and every one
+re-partitions ownership across the shoulder. A vertex the stripe paints because
+it is heaviest on `upperArmR` is, by export time, heaviest on `torso` or
+`spine_01`, and the blue it carries is torso blue by the only definition the
+shipped asset has. A probe on the shipped mesh puts the 76 offending back-torso
+triangles at bones **torso 59 / spine_01 9 / spine_02 8**, spread over the whole
+trunk width (|lat| 0.011..0.234) — not a band along one seam.
+
+**FOR THE REVIEWER — this is a build-ORDER question, not a stripe question**, so
+it is recorded rather than guessed at. The two candidate fixes are (a) run the
+weight passes before the bake so the paint sees the shipped ownership, or (b)
+re-derive the stripe mask from the final weights and repair the atlas after the
+weight passes (the machinery for that already exists in
+`stripe_texel_ownership`, currently `[instrument: not repairing]`).
+`BODY_STRIPE_ARMS=1` ships the sleeve band and reproduces the 0.135 for whoever
+picks it up; at that setting the band measures 42.3/42.7 mm on the upper arms
+and 35.2/35.3 mm on the forearms with `STRIPE_DPHI_MAX` 0.55, straightness worst
+step 13.8 mm / wander 14.9 mm — i.e. the band itself is correct and only its
+ownership is not.
+
+### Verification (session 31)
+
+    build    all gates green at 2048/96, including the new UV ZONE gate
+    control  BODY_SABOTAGE_UVZONES=1 rejected at 10301 texels, exit 1
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (UV layout only)
+    drive    body 4/4, bib-number, rig — 18 passed
+    RED      look.spec FACEDIST 0.1411 — UNCHANGED from sessions 29/30 (0.1413),
+             and still the gate rather than the build: the spec's OWN negative
+             control (BODY_SABOTAGE_FACE=1) measures 0.1719 and PASSES where the
+             correct build fails. Untouched deliberately; this is the third
+             session it has waited on the ruling session 29 asked for. It also
+             aborts look.spec before figure_side.png / face.png are written, so
+             only figure_front.png regenerated this session.
+    wire     glb 835 324 + normal 574 208 + albedo 338 878 + ao 147 214
+             + maps.json 1 393 = 1 897 017 B (budget 3 MB)
+    shots    figure_front.png — the leg stripes run straight down both outside
+             seams, the three bib bands read, the boots are dark and the shield
+             is mirrored blue
+    ASSET_V  61 -> 62; index.html preloads and game.js?v= 57 -> 58 in step
+
+### Open, in the reviewer's order
+
+1. **The build-order question above** — it is what stands between the arm
+   stripe and shipping, and it is the last item of the 07:25 standing order.
+2. **`look.spec` FACEDIST**, inverted against its own control, three sessions
+   open. It costs two of the three canonical shots every session.
+3. **The two-tone panels question from session 29 is still unanswered** — the
+   brief's primary-reference paragraph says the suit has "nothing else on the
+   body panels" while the 07:25 order says "two-tone panels".
+4. **Looking at `figure_front.png`, the front bib "30" reads mirrored** to the
+   eye, against `_bib_layout_gate` and `bib_orientation_report` which pass on
+   the front face. Not investigated this session (sessions 19/22/50 each spent
+   a session here and the rectified sampler `_rect_plate` is the current
+   authority); flagged because the author will see the shot, not the gate. The
+   same log still reports the BACK plate as `DEFECT` — matching neither the
+   front (L1 0.529) nor its mirror (L1 0.352) — reported, not gated.
+
 ## Session 30 (2026-08-30, 11:2x-12:0x)
 
 Tree clean at start, `render-realism-glm` unmoved since session 29's merge
