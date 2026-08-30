@@ -628,8 +628,8 @@ test('look', async ({ page }) => {
             faceGate(mf.lensFrac - mb.lensFrac > 0.04, 'front and back carry '
                 + 'the same amount of lens (' + mf.lensFrac + ' vs '
                 + mb.lensFrac + ') — the head has no front');
-            faceGate(dist <= 0.15, 'front and back face close-ups are '
-                + 'structurally disparate — the head has no front (distance '
+            faceGate(dist >= 0.10, 'front and back face close-ups are '
+                + 'structurally identical — the head has no front (distance '
                 + dist + ')');
         }
     }
