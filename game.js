@@ -2385,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=67";   // 67: NEXT.md step 2 — shell curvature gates extended to upper arms/thighs (chest-wall + fit exclusions, smoothing 20 iters); thigh iron freed to 16 mm per the garment thigh_depth ruling; assets re-baked
+    const ASSET_V = "?v=68";   // 68: athlete body rebuild (shell knee-band fix)
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
