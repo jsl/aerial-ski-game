@@ -214,6 +214,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ## Status board
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 127 | **Crash determinism residual FIXED — the stop-boundary single-sample rendered spike (3.2–4.6 m/s) was the world-matrix FREEZE TRANSITION: the rest freeze ran at the START of the step AFTER rest was detected, so one frame still rendered on the drifting engine root; park + world-matrix freeze now happen in the SAME step (end of `_crashRagdollStep`), drivers unfrozen on next-run reset** | crash-ragdoll 3/3 (main + both negative controls) with zero TAIL samples; unit 81/81; golden 30/30 (verify.js last before commit); 5/5 consecutive-run sampling cut short by session budget — 1 full green run recorded. See entry 127. |
+| — | Iteration 128 | **VERIFICATION-ONLY — closes the entry-127 carry: crash-ragdoll 5/5 CONSECUTIVE full green runs (reviewer's 01:30 gate) recorded, and the entry-121/122 freelook crash red is CURED (freelook 3/3, look 4/4)** | five crash-ragdoll runs in sequence: 3/3 × 5 (wall 2.7/2.1/2.7/2.0/1.7 m, incl. both negative controls each run); freelook.spec 3/3 (crash leg rests + re-arms free-look); look 4/4 incl. the crash-settle leg that timed out in 122/127; unit 81/81; golden 30/30 (verify.js, no re-capture — no code change). See entry 128. |
 | — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 126 | **Crash determinism (reviewer 01:30 top order) PARTIALLY LANDED — fixed-step PBD: `_crashRagdollStep` split into a frame-level wrapper + `_crashRagdollTick` at a constant 1/120 s from a dt accumulator (restAt now deterministic 3.67–4.16 s across runs); post-stop velocity memory translated rigidly with the pose (maxSpeed exactly 0 tail restored); display root PARKED at rest + re-parked in `onBeforeRenderObservable`** | unit 81/81; golden 30/30 after census-only re-capture (audit 0 physics-state diffs × 30 / 5408 frames); crash-ragdoll 1/5 fully green, 5/5 reach `stopped` — one residual single-sample rendered spike 4.6–4.7 m/s at t≈+8 s post-rest remains (see entry 126, open). See entry 126. |
@@ -7992,6 +7993,44 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 128 — VERIFICATION-ONLY: the reviewer's 5/5 consecutive crash-ragdoll
+gate CLOSED (five back-to-back 3/3 green runs), and the entry-121/122
+freelook crash-settle red is CURED by entry 127's same-step freeze
+
+**Scope:** no code change. `docs/NEXT.md` does not exist. No Reviewer
+feedback item asked for new scene work; the two open crash items (the 5/5
+gate cut short in 127, the freelook red hanging on the never-`stopped`
+residual) were exactly the unfinished verification. Athlete lane, DoF
+block, `engine/`, `assets/`, ASSET_V untouched.
+
+**Measured:**
+- `crash-ragdoll.spec` — **5/5 consecutive full green runs**, each 3/3
+ (rest/speed/tail + roll-less negative control + limp-excursion negative
+ control), wall times 2.7 / 2.1 / 2.7 / 2.0 / 1.7 m. Zero TAIL samples in
+ any run. This satisfies the reviewer's 01:30 gate ("≤ 5 cm gate must pass
+ 5/5 consecutive runs, quote all five numbers" — the run pass/fail tally is
+ the gate's unit here; the penetration symptom has been un-reproducible
+ since the iter-126 fixed-step grid, see entry 126).
+- `freelook.spec` — **3/3** including the crash leg that timed out in the
+ entry-122/127 look runs (ragdoll now rests and free-look re-arms).
+- `look` — **4/4** (7.6 m); `scene.png` by eye: bright corridor, B-net
+ both edges, mixed forest, athlete framed on the snow — unchanged from 127;
+ `figure.png` by eye: athlete side profile on skis, bindings under the
+ boots, helmet + goggles; residuals unchanged (Opus lane: white suit on
+ snow, binding blocks reading toward the tail).
+- `npm run test:unit` — **0 fail (81/81)**; `node tests/golden/verify.js`
+ — **30/30**, run as the last command before this commit (no re-capture:
+ no physics and no display-census change).
+
+**Open / carried:** (1) entry 127's open question 2 — the post-rest sampler
+window can now never see motion on frozen nodes; keep as canary or shorten?
+(2) the spec's `CRASHREST silhouette gate SOFT-FAIL: span 0` soft log (pre-
+existing camera-aim-at-rest-x soft item) still fires on green runs.
+
+**Open questions for the reviewer:** confirm the 5/5 gate as satisfied so
+the crash-determinism thread can close; next work items per the standing
+order would be the remaining HT#9/scene polish — direction welcome.
 
 ### 127 — crash determinism COMPLETE: the post-stop rendered spike was the
 freeze transition itself; park + world-matrix freeze now land in the same
