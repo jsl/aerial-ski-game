@@ -6781,10 +6781,17 @@ void main(void) {
     function _groundUnderCamera(cp) {
         try {
             if (typeof scene.pickWithRay === 'function' && BABYLON.Ray) {
-                const hit = scene.pickWithRay(
-                    new BABYLON.Ray(new BABYLON.Vector3(cp.x, 200, cp.z), new BABYLON.Vector3(0, -1, 0), 400),
-                    (m) => !!(m.name && _camGroundRe.test(m.name)));
-                if (hit && hit.hit && hit.pickedPoint) return hit.pickedPoint.y;
+                const pred = (m) => !!(m.name && _camGroundRe.test(m.name));
+                // Cast DOWN from the eye: only surfaces below the camera count
+                // (a ray from far above hits the upper backdrop mountain mesh
+                // over the corridor and would "raise" the ground under a
+                // camera that is fine — the look spec's pose shots caught it).
+                const down = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, -1, 0), 400), pred);
+                if (down && down.hit && down.pickedPoint) return down.pickedPoint.y;
+                // Nothing below: the eye is already under a surface — find it
+                // just above and treat that as the ground to climb out of.
+                const up = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, 1, 0), 60), pred);
+                if (up && up.hit && up.pickedPoint) return up.pickedPoint.y;
             }
         } catch (e) { /* fall through */ }
         return terrainRootY(cp.z) - FOOT_OFFSET;
