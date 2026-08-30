@@ -6489,6 +6489,35 @@ void main(void) {
             const loc = _crashQRotV(qRootInv, rel);
             n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
         }
+        // iter 127: park + freeze in the SAME step that detects rest, with
+        // the driver locals freshly written above and the root positioned at
+        // the capture. The previous position (freeze at the START of the
+        // NEXT step) left one rendered frame on the still-drifting root —
+        // the engine keeps integrating the crashed root after the machine
+        // stops, so that frame showed the body displaced (measured
+        // single-sample rendered spikes 3.2–4.6 m/s at the stop boundary).
+        if (R.resting && !R._frozen) {
+            if (!R._park) {
+                const _q = character.root.rotationQuaternion;
+                R._park = { x: character.root.position.x, y: character.root.position.y, z: character.root.position.z,
+                            qx: _q ? _q.x : 0, qy: _q ? _q.y : 0, qz: _q ? _q.z : 1, qw: _q ? _q.w : 0 };
+            }
+            character.root.position.x = R._park.x;
+            character.root.position.y = R._park.y;
+            character.root.position.z = R._park.z;
+            R._frozen = [];
+            character.root.computeWorldMatrix(true);
+            character.root.freezeWorldMatrix();
+            R._frozen.push(character.root);
+            for (const nm of Object.keys(character.meshes)) {
+                const n = character.meshes[nm];
+                if (n && n.freezeWorldMatrix) {
+                    n.computeWorldMatrix(true);
+                    n.freezeWorldMatrix();
+                    R._frozen.push(n);
+                }
+            }
+        }
     }
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
@@ -6984,6 +7013,13 @@ void main(void) {
                 // The ragdoll wrote ski rotationQuaternions (flat slide to
                 // rest); clear them so applyPose's Euler writes drive the
                 // skis again on the next run.
+                // iter 127: release the rest-time world-matrix freeze so the
+                // driver chain re-joins the normal per-frame matrix update.
+                character.root.unfreezeWorldMatrix();
+                for (const nm of Object.keys(character.meshes)) {
+                    const n = character.meshes[nm];
+                    if (n && n.unfreezeWorldMatrix) n.unfreezeWorldMatrix();
+                }
                 for (const nm of ['skiL', 'skiR']) {
                     const m = character.meshes[nm];
                     if (m) m.rotationQuaternion = null;
