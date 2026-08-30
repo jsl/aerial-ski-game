@@ -5693,6 +5693,27 @@ void main(void) {
         const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
         const _rq = character.root.rotationQuaternion || R.qRoot;
         const qRootInv = _crashQConj(_rq);
+        // Root-slide lag compensation (iter 123): the write-back below
+        // projects the frozen world pose through the root position captured
+        // HERE, but the engine keeps sliding the root afterwards in the same
+        // frame — so the rendered body drifts at the root's residual speed
+        // after rest (measured 0.109 m/s vs the 0.06 gate; during the roll it
+        // adds to slideV). While the pose is rigid (every phase after the
+        // tumble), translate the frozen world points by the root's per-step
+        // delta BEFORE the projection: rendered world speed is then exactly
+        // the pose's own speed in every phase.
+        if (R.phase !== 'tumble') {
+            if (R._lastRoot) {
+                const _rd = _crashVSub(rootPos, R._lastRoot);
+                for (const pt of R.parts) {
+                    pt.p.x += _rd.x; pt.p.y += _rd.y; pt.p.z += _rd.z;
+                }
+                for (const sk of R.skis) {
+                    sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
+                }
+            }
+            R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
+        }
         // When the hard freeze has fired (R.phase leaves 'tumble'), the
         // ragdoll pose is FROZEN in world space — but the physics root KEEPS
         // SLIDING under it (the crash only froze state.vz at impact and the
@@ -6057,6 +6078,7 @@ void main(void) {
             } else if (_onSteep) {
                 const _th = Math.atan(Math.abs(_slope));
                 const _a = Math.max(0, 14 * (Math.sin(_th) - 0.5 * Math.cos(_th)));
+                const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
                     R.slideV.x *= _k; R.slideV.z *= _k;
@@ -6065,6 +6087,7 @@ void main(void) {
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(0, _vH0 - 0.5 * 14 * dt) / _vH0;
+                    R.slideV.x *= _k; R.slideV.z *= _k;
                 }
             }
             const _vH = Math.hypot(R.slideV.x, R.slideV.z);
