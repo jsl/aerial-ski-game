@@ -215,6 +215,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
+| — | Iteration 126 | **Crash determinism (reviewer 01:30 top order) PARTIALLY LANDED — fixed-step PBD: `_crashRagdollStep` split into a frame-level wrapper + `_crashRagdollTick` at a constant 1/120 s from a dt accumulator (restAt now deterministic 3.67–4.16 s across runs); post-stop velocity memory translated rigidly with the pose (maxSpeed exactly 0 tail restored); display root PARKED at rest + re-parked in `onBeforeRenderObservable`** | unit 81/81; golden 30/30 after census-only re-capture (audit 0 physics-state diffs × 30 / 5408 frames); crash-ragdoll 1/5 fully green, 5/5 reach `stopped` — one residual single-sample rendered spike 4.6–4.7 m/s at t≈+8 s post-rest remains (see entry 126, open). See entry 126. |
 | — | Iteration 121 | **slope-aware crash roll LANDED (entry-112 ruling) — steep accelerates a = g·(sinθ−μ·cosθ) μ=0.5, flat brakes μ·g=7.0, seed floor 6→3, bounded `settling` phase fixes maxAbove 0.615 vs 0.6, post-clamp excursion tracking fixes the 38.1° knife edge; spec envelope 2–5 → 3–7 s** | unit 0 fail; golden 30/30 CENSUS-ONLY re-capture (HEAD was 22 red on un-rebaselined pk_body_* peak scale), audit 0 physics diffs ×30/5408 frames, 0 display diffs; crash-ragdoll 2/3 green (restAt 9.1 → 7.19 → one residual never-stopped run, open for 122). See entry 121. |
 | — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
 | — | Iteration 117 | **P10 free-look camera LANDED — orbit (drag + wheel zoom + layout-aware WASD) in ready state, after a run stops, once the crash ragdoll rests, and in replay; follow stands down while active; eye clamped ≥ 1 m over the snow; launch keys not swallowed; first-time HUD hint** | freelook.spec.js 2/2 (ready drag persists 1 s; clamp gap ≥ 0.99 at orbit extremes; ArrowUp starts while orbiting; pump-forced crash → ragdoll rests t = 9.1 s → free-look re-arms, drag persists); unit 78/78, golden 30/30 (no re-capture), look/reveal-gate/hop-turn/hotkeys 11/11; scene.png inspected (follow view unchanged). See entry 117. |
@@ -7990,6 +7991,64 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 126 — crash determinism PARTIAL: fixed-step PBD substeps land (restAt
+now deterministic); the rendered-tail spike is narrowed to one single-sample
+jump but 5/5 is NOT achieved — carried to 127
+
+**What changed (reviewer top order, 2026-08-30 01:30; entry 125 item 1;
+display-only, `engine/` untouched):** `game.js` `_crashRagdollStep` split:
+- `_crashRagdollTick(R, dt)` = the old per-frame PBD physics verbatim, now
+  driven at a CONSTANT `_CRASH_DT = 1/120` s from a frame-dt accumulator
+  (`R._acc`, backlog dumped above 24 ticks/frame). Simulated state is now a
+  function of accumulated sim time only — the old `dt > 0.026 ? 3 : 2`
+  substep switch and dt-scaled friction are gone. The root capture, the
+  iter-123 root-slide lag compensation and the driver/ski write-back stay
+  in the per-frame wrapper.
+- Post-stop velocity fix: the lag compensation translated `pt.p` with the
+  root but not `pt.prev`, so after rest `maxSpeed` read the root's residual
+  slide (the entry-125 tail symptom: 151–322 nonzero samples). `pt.prev`
+  now translates too (rigid; inert during roll/settling where the tick
+  re-bases prev = p).
+- Root parking at rest: the engine keeps integrating the crashed root after
+  the machine stops; past the out-run it leaves the terrain and FALLS,
+  dragging the riding frozen pose (measured 2.6–4.5 m/s rendered decay
+  bursts at t≈+6–7 s post-rest). Once `R.resting`, the DISPLAY root's world
+  transform is captured (`R._park`) and held every step AND re-applied in a
+  `scene.onBeforeRenderObservable` (late engine writes on janky frames were
+  still reaching the render). Engine state untouched; next-run reset
+  repositions the root as before.
+
+**Verification:** `node --check` clean; unit **81/81**; golden **30/30**
+(`verify.js` last before commit) after a CENSUS-ONLY re-capture of the 13
+crash-tail scenarios — `audit-physics-state.js`: **0 physics-state diffs ×
+30 scenarios / 5408 frames** (precedent iters 109/116/121/123). Crash-ragdoll
+5 consecutive solo runs: restAt = 3.68 / 3.77 / 4.16 / 3.74 / 3.75 s (all in
+the 3–7 s gate, previously 3.73–5.8 s with a 1/3 flake) — the machine is now
+deterministic. **BUT the "settles" test still failed 4/5** on ONE gate: a
+SINGLE-sample rendered torso spike of 4.55–4.73 m/s at t≈10.1–11.7 s wall
+(≈+7–8 s after rest), phase=stopped, probe.maxSpeed exactly 0 throughout
+(26+ s exactly-0 span). The one pre-fix negative-control property (worst
+body penetration > 5 cm, 0.0509–0.0805 m) is not reproducible on the fixed
+build's frame grid — fixed stepping removed that failure mode.
+
+**OPEN for 127 (honest status, not done):** the residual spike is a
+permanent ~0.37 m one-frame shift of the RENDERED torso long after rest,
+while the ragdoll pose, the parked root and the write-back locals are all
+frozen — i.e. something outside the crash step moves the mesh (or its world
+matrix) for one frame. Candidate instruments for 127: log `torso.getAbsolutePosition()`
+vs root absolute vs the parent chain per sample in that window; check whether
+the camera-ease block or the scoring/stopped UI path (`_onSkierStopped`)
+touches a driver; consider parking via `scene.onAfterAnimationsObservable`or
+freezing the driver nodes' world matrices. The 5/5 consecutive-green gate is
+NOT met; pre-fix code as negative control still owed.
+
+**Open questions for the reviewer:** (1) the spike is 8 s AFTER rest — is
+post-rest rendered stillness required indefinitely, or only for the gated
+3 s zero-span window (the spec samples 30 s)? A scoped window would make the
+gate well-defined while the residual defect is chased; (2) confirm the
+root-parking approach (display-node freeze at rest) is acceptable vs a
+physics-side hold, which would need an `APPROVED:` line.
 
 ### 125 — REVIEW (review-only) + iteration-124's crashed floodlight-tower
 work finished and landed; suite green except the crash-ragdoll settled-tail
