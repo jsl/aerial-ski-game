@@ -796,6 +796,157 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 26 (2026-08-30, 08:3x-09:5x)
+
+Tree was clean at session start (session 25 committed). No merge was
+available — `render-realism-glm` has not moved since `9fcbd1f`.
+
+Took the reviewer's ruling on session 23, carried unactioned through 24 and
+25: **mirror `reclaim_chest_wall` to the left arm.** It is blocked. The
+measurement chain below is the session's result; the shipped change is one
+instrument.
+
+### The mirror is three lines and it fails four gates in a row
+
+`reclaim_chest_wall` gives the ribcage side wall from `upperArmR` to `torso`.
+Mirroring it reclaims 24 left verts against the right's 25 — symmetric, as
+expected. Then, in order:
+
+| gate | before (right-only) | mirrored |
+|---|---|---|
+| loosen_suit waist breadth delta | +37.4 mm (gate 16-40) | **+43.9 FAIL** |
+| leg girth chest/thigh | 1.285 (gate <= 1.70) | **1.863 FAIL** |
+| sliver, shipped mesh | under the 0.60% limit | **0.6836% FAIL** (65/9509) |
+
+**Not one of those is a body that changed shape.** The first two are
+measurement artefacts and the third is real.
+
+### Finding 1: the ownership-filtered anchors measure two different body parts
+
+Every slice in this build that filters by vertex OWNERSHIP inherits the
+reclaim's one-sidedness. New instrument (`SUIT GIRTH halves`, shipped this
+session) on the RIGHT-ONLY build:
+
+    waist R +165.6 -> +187.5 mm      L  -91.2 -> -106.7 mm
+
+The right half is the flank at the arm's own radius (166 mm out), taking the
+torso stand-off; the left half is the trunk wall (91 mm out). The gate reads
+their sum, 37.4 mm, and passes 2.6 mm under the bound. Mirrored, both halves
+are the flank and both move 21.9 mm — the RIGHT side's own number is
+unchanged to the tenth of a millimetre — and the sum is 43.9. The gate did
+not detect a wider suit; it detected that its two halves finally agree.
+
+Same for `_leg_girth_ratios`' chest read: 275 mm one-sided, 399 mm mirrored,
+no vertex moved. Cross-checked by forcing the upper arms into the slice, which
+makes it ownership-invariant: **484 mm before the mirror and 484 mm after**
+(`scratch/opus/build26_head2.log` vs `build26f.log`). Identical. So the
+figure is untouched and the 1.70 bound was calibrated on a slice containing
+one flank. (484 is not a usable chest read either — it is an arms-in span and
+fails the human-plausible band; and dropping the reclaimed verts instead reads
+159 mm, because the `torso` group on this mesh genuinely does not contain the
+ribcage sides. There is no ownership-based slice here that is a chest.)
+
+### Finding 2: the reclaim is a hard ownership flip, and that is the shards
+
+The blocker. Per-pass sliver counts, right-only vs mirrored:
+
+    after soften               0/10590    0/10590
+    after shape_helmet        41/10590   52/10590     <- +11, all of it here
+    ...
+    after finish_lowpoly       (< 0.60%)  65/9509  0.6836%  FAIL
+
+The +11 appears before any suit pass, at the first report after
+`pose_onto_segments`. The reclaimed verts are set to torso 1.0 / arm 0.0, so
+at bind-to-segment transport they snap with the torso while the vert next to
+them goes with the arm. That is a tear, and it renders as the author's
+silvery shards. `smooth_blend_rings` already names this pass as the "hard
+OWNERSHIP flip with no blend at all" — but that pass runs on the low-poly
+mesh long after the transport, so it cannot help here.
+
+**The right side has been contributing its own share of those shards since
+the pass was written.** Mirroring does not introduce the defect; it doubles a
+defect that was already shipping.
+
+Two fixes tried and rejected this session, both measured:
+
+- **Zone the reclaimed verts as sleeve in `loosen_suit`** (cloth zone by
+  geometry, not by skin ownership — they sit among arm-owned neighbours at the
+  arm's radius). Sound in itself, and it takes chest/thigh to 1.659, under even
+  the OLD 1.70 bound. But it does not touch the shards (0.6138% -> 0.6327%,
+  the wrong way) because they are made at transport, not at stand-off, and it
+  drops the chest anchor's stand-off to +9.6 mm (gate 18-34) — the deltoid cap
+  fade zeroes the sleeve amount at that height, so the suit would cling under
+  the armpit.
+- Raising `chest_thigh` 1.70 -> 1.95 as a ratchet. Correct in spirit but
+  unnecessary once the slice is honest, and it does not address the shards.
+
+**What the mirror actually needs: reclaim_chest_wall must RAMP, not flip.**
+Give the reclaimed band a blended weight (torso rising to 1.0 across the wall,
+arm falling to 0) so the transport is continuous. That is a change to skin
+weights on both sides and it will move the chest/waist reads again, so it
+wants its own session and a re-measure of the four gates above. It should also
+remove shards from the RIGHT side, i.e. finish below today's baseline rather
+than at it.
+
+### Shipped
+
+`SUIT GIRTH halves` in `loosen_suit`: the per-flank extents behind every
+breadth delta. Log-only — no behaviour, no gate, no asset. Commit `74b9659`.
+
+### Not mine, but it is red on this tree: the SKY SHADER DOES NOT COMPILE
+
+Found while chasing the drive suite. `game.js:1978` reads
+
+    float cov = smoothstep(0.52, 0.66, f);
+
+and `f` is never declared. The browser reports
+`FRAGMENT SHADER ERROR: 0:50: 'f' : undeclared identifier` (plus 0:55 and a
+cascade on `sunDir`) on EVERY boot, so the sky dome's effect fails outright.
+
+`git log -S "float f = _fbm"` names the commit: **GLM's `cac3bae`, iter 131**
+(the snowing-flatness pass that added the `sunAmount`/`cloudAmount` uniforms)
+deleted the `float f = _fbm(...)` line it still uses. It is on
+`render-realism-glm`, `integ/opus-merge`, `fable/peaks` and — via the session
+25 merge — here.
+
+That is what makes `tests/drive/game.spec.js` red on this tree, both cases:
+`console errors during the run` is asserted to be empty and the shader errors
+land in it. **Not fixed here — the sky is GLM's file by the brief** — but the
+author is looking at :8203, which is this worktree, so it wants a fast fix in
+the GLM lane. The missing line is one statement, something of the shape
+`float f = _fbm(uv * 1.7);` before the `cov` line.
+
+### Verification
+
+    build   rc=0, 2048/96, every gate green
+    unit    81/81      golden 30/30      coverage PASS
+    drive   4 red, none of them this commit (which touches only a Blender
+            script and docs — the browser loads neither):
+              game.spec x2   the sky shader above (GLM cac3bae)
+              crash-ragdoll  the documented load-dependent settle flake
+              bib-number     open, not investigated this session
+            Isolated re-run of game.spec: 1 passed, 2 failed, same shader.
+    assets  UNCHANGED — ASSET_V stays 54
+
+### For the reviewer (session 26)
+
+0. **`game.js`'s sky fragment shader does not compile** (GLM `cac3bae`), see
+   above. Every boot logs it; two drive tests are red because of it. Needs a
+   one-line fix in the GLM lane.
+1. **The mirror is blocked on the sliver gate at 0.6836% (limit 0.60%)**, and
+   the cause is that `reclaim_chest_wall` sets 0-or-1 ownership. I did not
+   loosen the gate and I did not land the mirror. The unblocking fix is a
+   ramped reclaim (above) — it is a skin-weight change on both arms, so I am
+   flagging it rather than doing it under the new 07:25 order.
+2. **Two of this build's proportion gates are calibrated on the asymmetry**
+   (`SUIT_GIRTH_GATE['waist']` and `LEG_GIRTH_GATE['chest_thigh']`). They will
+   both move when the mirror lands, by the amounts tabulated above, and
+   neither movement will mean the body changed shape. Worth knowing before
+   the next red is read as a regression.
+3. **Order taken as read**: the 07:25 entry in the brief arrived during this
+   session and parks item 5's metric work. Session 27 starts on author #7,
+   the smoothed suit shell, not on the mirror.
+
 ## Session 25 (2026-08-30, 07:1x-08:2x)
 
 Merged `render-realism-glm` first (9 commits: GLM's 132-134 peak de-glassing,
