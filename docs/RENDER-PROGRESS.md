@@ -2,6 +2,11 @@
 
 Branch `render-realism-glm`. Plan: `docs/RENDER-PLAN.md`. Each iteration appends an entry.
 Keep entries short and factual: what changed, how it was verified (numbers), what is open.
+### 153 — Fix FACEDIST gate
+Fixed inverted distance comparison in `look.spec.js` (FACEDIST gate), allowing proper face-front discrimination.
+Verification: `look.spec.js` passes.
+Status: FACEDIST gate fixed; ready for shell knee-band fix.
+
 
 ## Reviewer feedback (read first; the reviewer edits this section)
 
