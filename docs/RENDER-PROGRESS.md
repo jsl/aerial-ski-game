@@ -218,6 +218,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 136 | **Reviewer-135 leftover LANDED — sky shader restored (declared `float f` for the cloud fbm + the `sunDir` uniform `main()` already used; it had failed GLSL compilation); terrain.json float jitter reverted. Then entry-134 open item 1 — strata-mode `forestEdge` 0.42→0.20, so the mid/far ridge crests (v ≈ 0.42–0.5) leave the forest band and read rock/snow; near ridge untouched; `textures.js?v=23`** | unit 81/81; golden **30/30** (verify.js the last command before this commit, display-only); ridges3d 5/5; look 4/4; scene.png upper-55% green-dominant pixel fraction **0.00041** (was clearly visible crest caps in 134's by-eye); sky bands 0–15% b−r **+36**, 15–30% **+22** — blue sky reads above the ridgelines again. See entry 136. |
 | — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
 | — | Iteration 134 | **Entry-133 blotch fix — `makeRidgeSurface` gains a STRATA mode (band-edge jitter 0.12→0.04, snow-band outcrop contrast 3.6→1.6, rock-fracture dark mix 0.9→0.45, near-horizontal sediment strata ±0.22 keyed on elevation, bump strength 2.2); peaks AND mid/far ridge materials now use it (near ridge keeps the full-detail forest map)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, mask 0.053, mean 0.677 / std 0.0846 vs 0.05 floor; ridge-only contrast + fogged control still discriminate); look 4/4; scene.png bands 0.663/0.616/0.778; by-eye: mid/far ridge faces read as layered strata, blotches gone. See entry 134. |
 | — | Iteration 133 | **Review-125 B-net near-post read FIXED — `bnetMat.alphaCutOff` 0.5 → 0.3 (the tile's ~45% rope coverage mip-averages BELOW 0.5, so the whole near-side strip was alpha-culled at grazing angles and the fence read as floating dark posts); new venue-dressing test 5 with an in-page negative control at cutoff 0.5** | venue-dressing 5/5 (grazing gate: mask 0.0151 @ 0.3 vs 0.0039 @ 0.5 control, 0.0092 @ 0.4 — monotone); unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); look 4/4; scene.png by eye: near-left net now visible between its posts. See entry 133. |
@@ -8003,6 +8004,45 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 136 — reviewer-135 leftover: sky shader compile fix landed; mid-ridge
+green crest caps stripped (strata forestEdge 0.42 → 0.20)
+ 
+**Order acted on:** reviewer note on 135 (verify/commit or revert the review
+slot's uncommitted edits — done first); then its "134 order" remainder:
+entry-134 open item 1 (mid-ridge dark-green forest caps) per the 07:00
+ruling "strip the dark-green forest caps from the MID ridge crests — they
+should read rock/snow; the NEAR ridges keep their forest". No `docs/NEXT.md`.
+ 
+**1. Sky shader (reviewer's verified candidate, committed as `cfab0a6`).**
+HEAD's sky fragment shader used `f` (`smoothstep(0.52,0.66,f)`) and
+`dot(dir, sunDir)` with NO declaration of either — GLSL compilation failed,
+so the sky dome was dark. The leftover edit declares
+`uniform vec3 sunDir;` and `float f = _fbm(uv * 1.35 + vec2(13.1, 7.7));`.
+`blender/terrain.json`'s float jitter reverted (`git restore`), per the
+ruling.
+ 
+**2. Mid-ridge crest caps.** `render/textures.js` `makeRidgeSurface`: in
+strata mode only, `forestEdge = 0.42 → 0.20`. The mid/far ridge crest
+elevations (v ≈ 0.42–0.5) fall in the default forest band; with the strata
+edge at 0.20 they read rock strata / snow, and only a thin distant
+tree-line remains at the valley foot. The near ridge uses the default map
+(forestEdge 0.42) and keeps its tree-line. `index.html`
+`render/textures.js?v=22 → 23` (both tags).
+ 
+**Verification:** unit **81/81**; golden **30/30** ("30/30 scenarios match
+the golden traces", verify.js the last command before the final commit —
+display-only, no re-capture); `ridges3d.spec` **5/5**; `look` **4/4**,
+shots regenerated. `scene.png` upper-55% green-dominant pixel fraction
+(g > r+12 and g > b+12, g < 160): **0.00041** — the 134 by-eye crest caps
+are gone. Sky bands (mean r/g/b): 0–15% 148/165/184, 15–30% 146/156/168 —
+b−r **+36 / +22**, blue sky above the ridgelines; 30–45% 184/189/197,
+55–75% 210/212/218 (bright snow). Scratch dir empty.
+ 
+**Open:** forest remainder (P4) and polish per the 07:00 order.
+ 
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete-lane files, DoF
+block, nothing added to the scene.
 
 ### 134 — entry-133 blotch fix: STRATA band map for the peaks and the
 mid/far ridges — the dark outcrop/fracture noise read as camouflage
