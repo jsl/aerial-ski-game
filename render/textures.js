@@ -324,7 +324,12 @@ function makeRidgeSurface(BABYLON, scene, size, opts) {
                 : 0;
             const jitter = o.strata ? 0.04 : 0.12;
             const snowEdge = 0.66 + (j - 0.5) * jitter;
-            const forestEdge = 0.42 + (j - 0.5) * jitter;
+            // Strata mode serves the DISTANT peaks and mid/far ridges: their
+            // crests sit at v ≈ 0.42–0.5, inside the default forest band, so
+            // they carried dark-green caps (entry-134 open item). Drop the
+            // strata forest edge so mid/far crests read rock/snow; only a
+            // thin distant tree-line remains at the valley foot.
+            const forestEdge = (o.strata ? 0.20 : 0.42) + (j - 0.5) * jitter;
             if (v >= snowEdge) {
                 const d = fbm(u * 12, v * 12, 3, 2.3, 0.5);
                 // Stronger rock outcrops: the snowfields must read as broken

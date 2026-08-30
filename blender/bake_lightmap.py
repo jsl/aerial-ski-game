@@ -102,6 +102,7 @@ SAMPLES = int(arg('--samples', '512'))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+TREES = arg('--trees', os.path.join(HERE, 'trees.json'))
 DATA = json.load(open(os.path.join(HERE, 'terrain.json')))
 
 # Surfaces that RECEIVE a baked map. Everything else in terrain.json is still
@@ -259,7 +260,7 @@ def build_geometry():
                     f'[bake] {m["name"]} rebuilt inside-out (signed volume {vol:.3f}). '
                     f'Every hemisphere ray would start inside the solid and every '
                     f'diffuse-style bake would return black.')
-        else:
+        elif is_receiver(m['name']):
             frac_up, mean_up, worst = sky_facing_census(verts, faces)
             if worst < -1e-3 or frac_up < 0.999:
                 raise SystemExit(
@@ -269,6 +270,11 @@ def build_geometry():
                     f'so down-facing terrain bakes black.')
             log(f'{m["name"]}: open mesh — signed volume {vol:.2f} not used; '
                 f'up-facing {frac_up * 100:.2f} %, mean n·up {mean_up:.3f}')
+        else:
+            # Open OCCLUDER (e.g. the vertical terrainSkirt closure wall): it
+            # never receives a bake, so its normals only matter to rays that
+            # hit it — no hemisphere invariant to enforce.
+            log(f'{m["name"]}: open occluder — no receiver invariant')
 
         mesh = bpy.data.meshes.new(m['name'])
         mesh.from_pydata(verts, [], faces)
@@ -364,40 +370,34 @@ def unwrap_for_lightmap(receivers):
         # into whatever that untouched layer happens to contain.
         lm.active_render = True
 
-    # UV selection has to follow mesh selection, or pack_islands finds nothing
-    # selected in a headless session and silently does nothing.
-    bpy.context.scene.tool_settings.use_uv_select_sync = True
-
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in receivers:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = receivers[0]
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.smart_project(
-        angle_limit=math.radians(66.0),
-        island_margin=0.0,
-        area_weight=1.0,
-        correct_aspect=True,
-        scale_to_bounds=False,
-    )
-
-    # smart_project alone lays the islands out at WORLD scale and leaves them
-    # wherever they land: measured on this scene it filled 0.7% of a 2048 atlas,
-    # a strip along the top edge, wasting 99% of the texels. pack_islands with
-    # scale=True grows them all by one common factor until they fill the square,
-    # which keeps the area-proportional relationship smart_project established
-    # (big hill, big island) while actually using the atlas.
-    #
-    # margin is in UV units: 0.004 at 2048 is ~8 texels, enough that bilinear
-    # filtering and mipmaps cannot pull a neighbouring island across a seam and
-    # leave a bright fringe along a ridge.
-    bpy.ops.uv.pack_islands(
-        rotate=True, scale=True, merge_overlap=False,
-        margin_method='FRACTION', margin=0.004, shape_method='AABB',
-    )
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # ── Entry-138: deterministic planar atlas instead of smart_project ──────
+    # The corridor is now per-triangle UNshared (entry-137/138: per-vertex uv2
+    # must be representable). smart_project on that topology degenerates every
+    # one-triangle island — measured per-face UV area ~9e-15, pack_islands then
+    # has nothing to pack and the fill guard aborts the bake. All receivers are
+    # terrain-draped heightfields anyway, so a top-down world-xz projection IS
+    # the correct lightmap: no seams, area-proportional texels, one UV per
+    # vertex by construction. Each receiver gets its own u-range slice of the
+    # atlas so footprint overlaps in xz cannot blend one mesh's lighting into
+    # another's texels.
+    xs = [v.co.x for o in receivers for v in o.data.vertices]
+    zs = [v.co.z for o in receivers for v in o.data.vertices]
+    minx, maxx = min(xs), max(xs)
+    minz, maxz = min(zs), max(zs)
+    spanx = max(maxx - minx, 1e-6)
+    spanz = max(maxz - minz, 1e-6)
+    slice_u = 1.0 / max(len(receivers), 1)
+    for si, o in enumerate(receivers):
+        lm = o.data.uv_layers['Lightmap']
+        u0 = si * slice_u
+        loops = o.data.loops
+        for li in range(len(loops)):
+            vert = o.data.vertices[loops[li].vertex_index]
+            lm.data[li].uv = (
+                u0 + slice_u * 0.98 * (vert.co.x - minx) / spanx
+                     + slice_u * 0.01,
+                0.98 * (vert.co.z - minz) / spanz + 0.01,
+            )
 
     fill = atlas_fill(receivers)
     log(f'atlas unwrapped and packed: {fill * 100:.1f}% of UV space used')
@@ -609,9 +609,105 @@ def bake_sun_shadow(receivers, sun, bg, out_dir):
     return encode(img, os.path.join(out_dir, 'terrain_shadow.png'), normalise=False)
 
 
+
+def add_tree_occluders(path):
+    """
+    Add the game's thin-instance impostor trees as alpha-cutout occluders.
+
+    Entry 125/137 scene note: the live CSM shadows for the forest come from one
+    solid 6-sided cone per tree (treeShadowProxy), so every tree shadows as a
+    featureless wedge — at the 32-degree sun the flanks read rows of dark
+    "dirt smudges" with no crown structure. The bake can do better: the real
+    crossed-card silhouette per tree, path-traced, with the card's alpha letting
+    light through the crown gaps the way real branches do.
+
+    Input is blender/trees.json — the per-variant thin-instance matrices dumped
+    from the RUNNING game (tests use the same names: treeCards0..5), positions
+    in game world space with per-tree scale and yaw.
+
+    Game space is Y-up; the terrain meshes above convert (x, y, z) -> (x, z, y).
+    A card is a vertical quad of CARD_W x CARD_H scaled by the instance scale,
+    its base at the instance's terrain height; each tree is two crossed quads
+    (the game's card pair). Yaw barely matters to a cross, so it is applied only
+    to keep the bake honest about orientation.
+
+    The quads are OCCLUDERS ONLY — they are not receivers, so they get no
+    atlas UVs and no material changes beyond the cutout shader.
+    """
+    if not os.path.exists(path):
+        log(f'trees: {path} not found — baking WITHOUT tree shadows')
+        return 0
+    trees = json.load(open(path))
+    if not trees:
+        return 0
+
+    CARD_W, CARD_H = 7.3, 14.6   # must match game.js's forest card frame
+    VARIANT_TEX = [
+        'tree_spruce_card_0.png', 'tree_spruce_card_1.png',
+        'tree_spruce_card_2.png', 'tree_spruce_card_3.png',
+        'tree_birch_card_4.png', 'tree_birch_card_5.png',
+    ]
+
+    def cutout_material(tex_name):
+        mat = bpy.data.materials.new(f'tree_{tex_name}')
+        mat.use_nodes = True
+        nt = mat.node_tree
+        bsdf = nt.nodes.get('Principled BSDF')
+        bsdf.inputs['Base Color'].default_value = (0.04, 0.05, 0.04, 1.0)
+        transparent = nt.nodes.new('ShaderNodeBsdfTransparent')
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.image = bpy.data.images.load(
+            os.path.join(ROOT, 'assets', tex_name), check_existing=True)
+        mix = nt.nodes.new('ShaderNodeMixShader')
+        nt.links.new(tex.outputs['Alpha'], mix.inputs['Fac'])
+        nt.links.new(transparent.outputs['BSDF'], mix.inputs[1])
+        nt.links.new(bsdf.outputs['BSDF'], mix.inputs[2])
+        out = nt.nodes.get('Material Output')
+        nt.links.new(mix.outputs['Shader'], out.inputs['Surface'])
+        return mat
+
+    by_variant = {}
+    for t in trees:
+        by_variant.setdefault(int(t['v']), []).append(t)
+
+    n_quads = 0
+    for vi, group in sorted(by_variant.items()):
+        verts, faces, uvs = [], [], []
+        for t in group:
+            # game (x, y, z) -> blender (x, z, y); base at the tree's ground y
+            cx, cz, cy = t['x'], t['z'], t['y']
+            s = float(t['s'])
+            yaw = float(t.get('yaw') or 0.0)
+            hw, hh = CARD_W * s * 0.5, CARD_H * s
+            for quad in (0, 1):
+                ang = yaw + quad * math.pi / 2
+                dx, dy = math.cos(ang) * hw, math.sin(ang) * hw
+                b = len(verts)
+                verts += [(cx - dx, cy - dy, cz), (cx + dx, cy + dy, cz),
+                          (cx + dx, cy + dy, cz + hh), (cx - dx, cy - dy, cz + hh)]
+                faces += [(b, b + 1, b + 2, b + 3)]
+                uvs += [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+                n_quads += 1
+        mesh = bpy.data.meshes.new(f'treeCards{vi}')
+        mesh.from_pydata(verts, [], faces)
+        mesh.validate()
+        mesh.update()
+        layer = mesh.uv_layers.new(name='UVMap')
+        for i, uv in enumerate(uvs):
+            layer.data[i].uv = uv
+        obj = bpy.data.objects.new(mesh.name, mesh)
+        bpy.context.collection.objects.link(obj)
+        obj.data.materials.append(cutout_material(VARIANT_TEX[vi] if vi < len(VARIANT_TEX) else VARIANT_TEX[0]))
+        log(f'trees: variant {vi} — {len(group)} trees, '
+            f'{len(group) * 2} crossed quads')
+    log(f'trees: {len(trees)} trees as {n_quads} cutout quads from {path}')
+    return len(trees)
+
+
 def main():
     clear()
     receivers, casters = build_geometry()
+    add_tree_occluders(TREES)
     sun, bg, sky_strength = build_lighting()
     unwrap_for_lightmap(receivers)
     uv2 = check_uv_consistency(receivers)

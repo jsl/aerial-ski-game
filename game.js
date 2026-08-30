@@ -2085,6 +2085,7 @@ precision highp float;
 varying vec3 vDir;
 uniform float sunAmount;
 uniform float cloudAmount;
+uniform vec3 sunDir;
 uniform vec3 zenithColor;
 uniform vec3 horizonColor;
 float _hash(vec2 p) {
@@ -2122,6 +2123,7 @@ void main(void) {
     // gates stay deterministic.
     if (dir.y > 0.015) {
         vec2 uv = dir.xz / (dir.y + 0.10);
+        float f = _fbm(uv * 1.35 + vec2(13.1, 7.7));
         float cov = smoothstep(0.52, 0.66, f);
         float fade = smoothstep(0.02, 0.16, dir.y);
         float dens = cov * fade * cloudAmount;
@@ -2383,7 +2385,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=55';   // 55: OPUS author #12 items 1+4 — THE SUIT IS A FITTED SHELL, not a filtered skin. relax_suit's z-Gaussian leaves 45% of the muscle relief by construction (its own gate asks for a 55% RMS drop) and that residue is what the author has now reported twice. suit_shell fits ONE superellipse cross-section per suit segment — semi-axes A(lateral)/B(fore-aft) solved per 2 cm rung in the 1/r^n domain where the model is linear, then a LINEAR function of z on the limbs (a straight tapered tube whose silhouette cannot inflect) and a quadratic on the torso — and moves each suit vertex along its own radius onto it, so azimuth, z and every contact gate are untouched. Shrink-only and travel-capped, provably: no vertex ends further from its segment axis than it started, in the move OR in the Laplacian that follows (the uncapped Laplacian was where the thigh's depth/breadth went, 0.935 -> 0.865, with the radial move already capped at zero outward). Shipped SHELLCURV (interior radial-relief variance, before -> after): lowerArm 0.153/0.163, lowerLeg 0.046/0.068 — six to twenty times less relief; upperArm 1.037/0.715 and upperLeg 0.529/0.455 do NOT clear 0.35 and are recorded open with their causes (the thigh's iron is capped at 6 mm by LEG_GIRTH_GATE['thigh_depth'], which has 7.5 mm of depth to spend and the relief needs 10; the upper arm's own vertex cloud carries a sheet of chest wall from the arm rebind, so the tube is fitted through geometry that is not a limb). Silhouette inflections upperArm 1/0 -> 1/0, lowerArm 1/1 -> 0/0, lowerLeg 0/0. Item 4 on the shell: upper-arm tube 57.8 mm vs thigh 106.0 = 0.545 (gate <= 0.55, slim 0.78 on the upper arm), shoulder 398 mm / hip 446 = 0.893 (gate <= 1.35), inner-thigh gap +23.7 -> +31.0 mm (author's 40 not reached). The BIB is excluded from the pass — it is a separate panel and its number plate is placed from the panel's own surface, and shelling under it dropped the front plate's ink to 0.058 against a [0.10, 0.45] band; front/back now 0.136/0.135. narrow_shoulders is re-asked after the shell (the superellipse pushes the deltoid corner out, 401 -> 416 mm against a 410 gate) and lands 398. Sliver 0.568%, leg taper calf/thigh 0.691, thighD/B 0.901. NEGATIVE CONTROL BODY_SHELL_OFF=1 skips the pass and the gate rejects the bare body. 54: OPUS item 5 — THE REACH CEILING LANDS. The weight-locality repair had been measuring itself since session 18: a bone's reach was the p98 distance of the skin it already drove, so skin a bone wrongly grabbed set the reach that then declared the grab local, and the gate read 0 offenders on a skin carrying 0.68 of a lower-belly vertex on upperArmR (150 mm out, 2.7x the upper arm's own radius) — the fan of shards over the hip and lower back in the flight tuck. The honest reference is the cross-section of the box each segment was BUILT from, which no mis-weighting can inflate. Session 23 had the ceiling written but red at seam max 1.632/1.382 against a 1.10 limit; three measured corrections landed it. (1) The residual hinge was NOT the rescue branch: the new _rescue_boundary_report says 0 of the 12 hot edges straddled it, all 12 were both-ramped at the left armpit. What cut them was running the relax and the ramp IN SEQUENCE — the relax diffuses weight back out past a bone's reach and the localise cuts it off again inside one ~25 mm edge with nothing after it to smooth the cut. smooth_blend_rings now takes the ramp as a CONSTRAINT (locality=...) and projects onto it every iteration instead of being followed by a cut: both-ramped hot edges 11 -> 0. (2) The rescue kept the FAR bones. Only 2 of 8995 vertices have no bone within 1.70x reach, so the near bone nearly always exists and simply is not in the vertex's weight list; the rescue now rebuilds from the bones that ARE near, kernel f(e)/e^4 which vanishes exactly where the ramp does, so it is local by construction and the locality gate can read a true zero instead of a zero of its own metric. (3) 1.00x the cross-section was below what the model's own geometry allows: calf skin weighted 0.94 to lowerLegL measured e = 1.61-1.76 with upperLegL tied at the same distance, both straddling the 1.70 cutoff, which is the suit and boot girth passes and not mis-weighting — the ceiling is 1.40x. The forearm's locality SEGMENT also had to run past the wrist to the fingertips: the forearm bone drives the hand and there is no hand bone, but seg_ends('lowerArmL') stops at the wrist, so hand skin measured t = 1.75 of the elbow-wrist segment (187 mm past it, MEDIAN already 1.32) and the ceiling ramped the whole hand off the forearm — the geometric rescue, in a rest pose where the hands hang beside the thighs, then handed the glove to upperLeg and rig.spec read hand/forearm 0.468 (gate >= 0.65) with the glove no longer clearing the leg. With the segment corrected the rescue is not needed AT ALL: 368 -> 0 vertices rescued, so the ramp alone carries the repair and the rescue branch is unreachable on the shipped asset. The cross-section is also a FLOOR now, for the same reason it is a ceiling: spine_01 self-certified at 78 mm against a 175 mm torso cross-section and failed its own pelvis skin at 1.84x. Reach lowerArm 180 -> 89 mm, upperArm 146 -> 109, lowerLeg 155 -> 129, spine_01 78 -> 175. Shipped: LOCALITY 0/12800 offenders on the HONEST reference (d/reach p99 1.40, max 1.52), WEIGHTSEAM max 0.892 with 0 hot edges (was 0.779 on the self-certified skin, limit 1.10), 0.925 after the helpers, JOINTSPAN 0/2391. NEGATIVE CONTROL BODY_LOCALITY_NOCAP=1 restores the self-certifying reach and the gate — whose reference is now always the clamped one, so it is a real control and not a second opinion from the same witness — rejects it at 310 offenders, worst lowerArmL w=1.000 at 2.14x reach. 53: OPUS item 3 — THE BIB BACK PLATE, and it was neither mirrored nor clipped. The new rectified sampler (_rect_plate) renders each plate on a fixed 96x64 grid in PATCH space, clipping partial triangles instead of dropping them and interpolating the atlas UV per cell, which replaces the point sampler session 19's verdict rested on (~45 wholly-inside triangles x 16 barycentric points = 3 samples/cm2, binned at 1.2 per cell, whole columns empty). At 96 columns of the actual plate both faces carry a correctly-oriented '30'; what differed was STROKE WIDTH — the front's vertical stems rendered ~5 of 96 columns, the back's ~1. The cause is a units bug in the glyph table: the rects are normalised to [0,1] in BOTH axes of a cell that measures 5.6 x 12.3 cm, so '0.16' meant a 19.6 mm horizontal bar but a 9.0 mm vertical stem, against a measured high-poly patch-u vertex gap of p90 0.0641 (9.6 mm) on the back and 0.0478 (7.2 mm) on the front — the paint is per-vertex and then baked, so the bars always resolved and the stems sat AT the lattice limit, surviving on the front only by its phase. Stems are now 0.30 of cell WIDTH (16.9 mm, matching the bars), and the pair is inset by NUM_MARGIN = 0.10 so the 03:05 ruling's margins hold identically on both faces (band narrowed to 0.27..0.75 to keep the digit aspect at 0.497, inside the 0.45-0.75 gate). New _bib_layout_gate: ink in the outer 1/12 of the plate 0.000/0.000 (max 0.02) and back-vs-front column profile L1 0.232 (max 0.40) against 0.582 for the mirrored front. NEGATIVE CONTROL BODY_SABOTAGE_BIBLAYOUT=1 restores the pre-session-22 layout and fails all three: margins 0.092/0.081, L1 0.502, and its back matches the MIRRORED front marginally better (0.496) — which is exactly the reading that produced three sessions of 'the back is mirrored'. 52: OPUS item 5 — the half-angle helpers EXTENDED TO THE SHOULDERS AND ELBOWS (reviewer ruling 2026-08-30 03:40). The armpit was the knee's defect one joint up: session 18 measured upperArmR 0.495 / spine_02 0.490 on an edge going 6.9 mm at rest to 76.3 mm posed, and linear blend skinning collapses such a ring by cos(theta/2) whatever the weights are. Four more bones (hlpShoulder{L,R}, hlpElbow{L,R}) on the lattice spine_03-hlpShoulder-upperArm-hlpElbow-lowerArm, by the same hat projection on the weighted-mean chain coordinate; add_joint_helpers now runs over a LIST of chains, each with its own root vertebra (legs off spine_01, arms off spine_03). What the arms added is that their drivers BIND FLIPPED at rx = -pi (armSweep at armDrop = 1, the hang), so updateJointHelpers takes the half-angle between each bone's DELTA from its own bind rather than between raw Euler angles (raw would have put the shoulder helper 90 deg off at rest), and walks a flipped segment's outer end along MINUS its driver's local +Y; the arm segments are also unequal (0.30 / 0.25 vs the leg's 0.36 / 0.36), so the half-lengths are per-helper. JOINTSPAN 1467/1467 vertices over half a joint -> 0/1551, max span 1.00 -> 0.50, 0 hit the 4-influence cap; WEIGHTSEAM in the folded basis p99 0.336 max 0.779 with 0 hot edges, byte-identical to the pre-helper skin, which is the continuity proof; LOCALITY 0 offenders. hlpShoulder carries 85.9/89.3 weight units and hlpElbow 72.7/73.1. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 skips the pass and the span gate rejects the result. 51: OPUS item 5 — HALF-ANGLE HELPER BONES at the hips and knees (reviewer approval 2026-08-30 02:40). With the trunk on three vertebrae and the leg weight localised, the worst edge left in the skinned buffer was the KNEE — 22.1 mm at rest, 1.28 mm at the crouch endpoint, strain 17.2 — between vertices weighted upperLegR 0.648/0.352 and 0.506/0.494. That is not a bad weight, it is what linear blend skinning DOES: Babylon averages the two bones' MATRICES and the average of two rotations theta apart is that rotation scaled by cos(theta/2), so at a knee closing 98 deg the ring lands at 0.66 of its radius and pinches. Four new bones (hlpHip{L,R}, hlpKnee{L,R}) carry the half-angle of the pair they sit between, and add_joint_helpers re-projects the leg skin onto the finer lattice spine_01-hlpHip-upperLeg-hlpKnee-lowerLeg by hat functions on the vertex's weighted-mean chain coordinate: at most two ADJACENT lattice nodes per vertex, so no vertex is blended across more than half a joint and the worst pair the shader averages is ~49 deg (cos 0.91, not 0.66). JOINTSPAN 604/604 vertices over half a joint -> 0/618, max span 1.00 -> 0.50, with NO extra influence per vertex (0 hit the 4-influence cap). It is inert at rest by construction — bind == driver, so every bone contributes identity there and any partition of unity reproduces the bind mesh. The seam metric now folds helpers back onto their neighbours 50/50 before measuring, because raw weight L1 on a lattice of half the spacing counts the same physical gradient twice (the hip edge read 0.72 -> 1.36 while moving no differently); in that basis the shipped skin measures p50 0.000 p99 0.336 max 0.779 with 0 hot edges, IDENTICAL to before the helpers, which is the continuity proof. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 reports 604 spanning vertices and the gate rejects it. 50: OPUS — the bib back plate is NOT mirrored. bib_orientation_report bins each face's plate ink along that face's OWN viewer-right axis R = Z x N, so neither face is privileged and no frame convention is assumed (the torso frame's sense has now been misread twice). Front reads a clean structured '30' (one '3' stem, then the '0' pair); the back matches neither the front (L1 1.022) nor its mirror (L1 1.066) — it is flat where the front is peaked and runs ink hard onto both plate edges where the front keeps the glyph rects' margins, and under BODY_SABOTAGE_BIBMIRROR=1 it barely moves where a real mirror would come back reversed. So GLM review 125's 'front is mirrored' is wrong and the 16:30 'flip U on the back panel' ruling does not address the defect. Reported, not gated, until the horizontal clipping is root-caused. 49: merge of the GLM lane's tip (lamp towers, crash-flake docs) with this lane's weight-locality skin. 48: OPUS item 5 — WEIGHT LOCALITY. The crouch smear over the buttock and back of the thigh was chest and ribcage skin weighted 17-25% to `upperLegL/R`: at the deep-hip endpoint those vertices are flung with the thigh and the edges between them go from 23 mm at rest to 210 mm posed, which is the streaking. New localise_weights takes each bone's influence off skin further than 1.70 x that bone's own reach (the p98 distance of the skin it drives at >= 0.5), on a smoothstep ramp from 1.25 so it cuts no hinge; it runs after the bake like smooth_blend_rings, and the order is localise -> re-relax -> localise because the ramp still ends at a boundary. LOCALITY 24 offenders -> 0, d/reach p99 1.50 -> 1.32; WEIGHTSEAM max 0.715 -> 0.779, still 0 hot. NEGATIVE CONTROL BODY_SABOTAGE_LOCALITY=1. 47: OPUS — RELAXED HANDS (author 23:40, reviewer 00:15 item (a)): the CC0 base figure's flat starfish hand shipped unchanged into every pose, so the author's crouch screenshot had claws on the ends of the arms. relax_hands finds the digits by CONNECTIVITY (below the crotch each finger is its own component of the mesh, so no coordinate is guessed; the cut depth is laddered and the shallowest depth that parts the most digits wins), swings each about its own base to within 2 deg of the hand's mean direction, then packs the tips together with a shear field that is constant across each finger and interpolates only in the gaps — interpolating THROUGH a finger squashes it instead and bought 2.5 mm of a 14.6 mm gap. Fan 34.7 -> 8.4 deg, worst gap 14.6 -> 6.6 mm, sliver count unchanged at 49/10590. Gates hand_spread_gate (spread <= 15 deg, gap <= 8 mm) on the final geometry; NEGATIVE CONTROL BODY_SABOTAGE_HANDS=1 reads 29.3 deg / 13.6 mm and fails both. 46: merge of the GLM lane's landing chop rebake (was their 43) with this lane's athlete work (was 45). landing chop rebake — NORMAL_GAIN 0.35 damps the normal map's shading amplitude (HUMAN TESTING #9 item 1: the full-slope normals + 1.2 m SSAO radius painted the whole landing dark grey in daytime; ratio chop/flat 0.52). Height tile unchanged — the 3D relief is geometry. 45: AUTHOR RULING 21:55 — the eyewear is SHOOTER-STYLE SPORT GLASSES, not goggles. The shield narrows 0.40..0.57h -> 0.44..0.57h (29.4 mm = 0.128h on a 229 mm chin-to-crown), the frame becomes a THIN BROW BAR on the top edge only (the lower rim stroke that drew a dark line under the eyes is gone; what is left at the bottom is a nose-bridge notch), and the 0.10h navy STRAP that closed round the whole skull is replaced by thin TEMPLE ARMS — dark moulded plastic, 16 verts a side, running back over the ears at 0.520h (under the 0.55h side rim) and stopping at 2.45 rad, pushed 2.50 mm PROUD where the strap was a groove RECESSED into the shell. Three new build gates, each with a negative control that fires: the shield bottom must clear the UN-PUSHED skull's nose tip (0.440h vs 0.357h; --lens-lo 0.28 fails at 0.280h), the band window tightens to 0.44..0.57 +-0.03, and the temple arms must exist on both sides with 0 verts behind 2.75 rad and >=1.5 mm of realised push (BODY_SABOTAGE_GOGGLES=1 reads 0.00 and fails). OPUS item 3, folds — THE LOWER BACK HAD NO FOLDS AT ALL (SUIT_FOLDS had four keys, none of them the torso, so the author's "suit doesn't seem to fold over the back" was reported against a table that never creased it); a lumbar band now runs on the bare suit AROUND the bib, which as a separate loose garment does not crease with the back under it. Fold relief raised to a real cloth scale: 3-5 cm apart and 6-9 mm deep instead of 2 cm and 1.5 mm, which is both what reference/images/aerial_suit.png shows at the knee and what the 3.5 mm high-poly vertex spacing can resolve without aliasing the crest away. Four bands re-seated INSIDE their segments (`along` clamps at +-1, so a band at 0.86 +-0.22 had half its window off the end of the mesh). rig.spec.js's crease-band variance gate DELETED per the reviewer's ruling — it could not tell folds-off from folds-on because its dynamic range was the boot's shell edge; replaced by build-side fold_ripple_gate, which measures each crease band's relief on the displaced high-poly: 2.31 mm RMS shipped vs 1.35 mm with BODY_SABOTAGE_FOLDS=1, a 41.6% drop. 43: OPUS item 3 (d) — the outer-seam STRIPE stops being a staircase. limb_azim's reference axis was the nearest 4 cm z-bucket's centroid median, piecewise constant in z, so every 4 cm the whole angular window jumped sideways and the painted band stepped with it (shots/figure_side.png, session 10: a blue staircase down arm and leg). The axis is now a weighted least-squares QUADRATIC through 2 cm cross-section centroids — smooth by construction, never falling back to the driver centre — and the band is a fixed 5 cm of ARC (STRIPE_HALF_W) rather than a fixed angle, so it does not narrow to a pinstripe wherever the limb does. The arm band is built but held OFF behind STRIPE_SEGMENTS: it lands on TORSO texels through the bake (body.spec.js torso back blue 0.019 legs-only -> 0.121 with arms, gate < 0.10) and capping it below the shoulder barely moves it (0.110), so it leaks the whole chest wall where the arm and torso shells meet — item 3's armpit geometry, not the stripe. New stripe_straight_gate measures the seam's 5th/95th-percentile edges per 2 cm rung: worst step 10.8 mm, worst wander 14.3 mm, median width 41.2 mm, against 33.0 mm / 34.7 mm for the negative control BODY_SABOTAGE_STRIPE=1. 42: OPUS item 12 — THE LEG NOW ENDS IN A BOOT. The boot GEOMETRY has existed since rigid_boots/seat_soles and leg_taper_gate already measured its cuff breadth, but nothing ever PAINTED it, so the suit ran white onto the ski (negative control BODY_SABOTAGE_BOOT=1 measures that shipped skin: 90.7% of the boot band light, mean luma 0.764). Measuring also moved the number: the segment model has no foot below the ankle (sole and ankle both z=-0.995), so the old cuff step at along -0.74 left only 47 mm of mesh under it; the shell is now the lower shin from along -0.40, 112 mm tall, mean luma 0.078, 0 light verts, with a lighter liner lip at its rim. SUIT_FOLDS' boot-cuff crease moved -0.62+-0.18 -> -0.26+-0.13 so the cloth bunches ABOVE the shell instead of creasing plastic. 41: OPUS item 5 (skin weights) — every seam in the shipped skin was cut by the three OWNERSHIP passes, not by the bind: heat-map skin ships max edge weight-L1 0.636 with ZERO hot edges, sharpen_limb_weights takes it to 1.599, reclaim_chest_wall to a bare 2.000 hinge at the armpit (100% torso next to 100% upperArmR). Those passes exist to make pose_onto_segments transport the limbs, which is baked into the rest mesh and done by then, so smooth_blend_rings now relaxes the seams over 4 rings on the SHIPPED low-poly after the bake: max 1.538 -> 0.715, 151 hot edges -> 0, head group share 0.1954 -> 0.1955. 40: OPUS — THE SHARDS WERE narrow_shoulders' SIGN BUG: its outboard test compared s*x against the SIGNED plane x_b, so on the left side it selected the whole trunk and the far arm and rescaled them about the left shoulder plane (279 verts moved vs 42 on the right, worst 226.8 mm, x +0.172 -> -0.055 through the chest); the faces bridging moved and unmoved verts stretched to 240 mm and shaded anywhere — the silvery shards on the suit at rest. Shard faces 157/9558 (1.64%) -> 50/9509 (0.53%), longest 240 -> 139 mm; weave 1.1 -> 2.1 mm p-p to give back the NM variance the tear was supplying (8.24 -> 5.96 -> 6.36, floor 6.30); chest sanity floor 0.30 -> 0.25 (the old floor was cleared by 28 mm of smear: 303 -> 275 mm). 39: OPUS item 5 — the armature gets a SPINE (spine_01..03 between pelvis and neck, torso weight split by a partition of unity along the torso axis); game.js drives the chain from the hip anchor, coupled to the thigh and head deviations, closing exactly onto the torso's own neck end; 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
+    const ASSET_V = '?v=58';   // 58: merge of the GLM lane's tip (entry 138-140: corridor unshared + lightmap with tree occluders, crash roll retimed) with this lane's suit shell. 57: entry-138 rebake — corridor unshared + lightmap with tree occluders applied 55: OPUS author #12 items 1+4 — THE SUIT IS A FITTED SHELL, not a filtered skin. relax_suit's z-Gaussian leaves 45% of the muscle relief by construction (its own gate asks for a 55% RMS drop) and that residue is what the author has now reported twice. suit_shell fits ONE superellipse cross-section per suit segment — semi-axes A(lateral)/B(fore-aft) solved per 2 cm rung in the 1/r^n domain where the model is linear, then a LINEAR function of z on the limbs (a straight tapered tube whose silhouette cannot inflect) and a quadratic on the torso — and moves each suit vertex along its own radius onto it, so azimuth, z and every contact gate are untouched. Shrink-only and travel-capped, provably: no vertex ends further from its segment axis than it started, in the move OR in the Laplacian that follows (the uncapped Laplacian was where the thigh's depth/breadth went, 0.935 -> 0.865, with the radial move already capped at zero outward). Shipped SHELLCURV (interior radial-relief variance, before -> after): lowerArm 0.153/0.163, lowerLeg 0.046/0.068 — six to twenty times less relief; upperArm 1.037/0.715 and upperLeg 0.529/0.455 do NOT clear 0.35 and are recorded open with their causes (the thigh's iron is capped at 6 mm by LEG_GIRTH_GATE['thigh_depth'], which has 7.5 mm of depth to spend and the relief needs 10; the upper arm's own vertex cloud carries a sheet of chest wall from the arm rebind, so the tube is fitted through geometry that is not a limb). Silhouette inflections upperArm 1/0 -> 1/0, lowerArm 1/1 -> 0/0, lowerLeg 0/0. Item 4 on the shell: upper-arm tube 57.8 mm vs thigh 106.0 = 0.545 (gate <= 0.55, slim 0.78 on the upper arm), shoulder 398 mm / hip 446 = 0.893 (gate <= 1.35), inner-thigh gap +23.7 -> +31.0 mm (author's 40 not reached). The BIB is excluded from the pass — it is a separate panel and its number plate is placed from the panel's own surface, and shelling under it dropped the front plate's ink to 0.058 against a [0.10, 0.45] band; front/back now 0.136/0.135. narrow_shoulders is re-asked after the shell (the superellipse pushes the deltoid corner out, 401 -> 416 mm against a 410 gate) and lands 398. Sliver 0.568%, leg taper calf/thigh 0.691, thighD/B 0.901. NEGATIVE CONTROL BODY_SHELL_OFF=1 skips the pass and the gate rejects the bare body. 54: OPUS item 5 — THE REACH CEILING LANDS. The weight-locality repair had been measuring itself since session 18: a bone's reach was the p98 distance of the skin it already drove, so skin a bone wrongly grabbed set the reach that then declared the grab local, and the gate read 0 offenders on a skin carrying 0.68 of a lower-belly vertex on upperArmR (150 mm out, 2.7x the upper arm's own radius) — the fan of shards over the hip and lower back in the flight tuck. The honest reference is the cross-section of the box each segment was BUILT from, which no mis-weighting can inflate. Session 23 had the ceiling written but red at seam max 1.632/1.382 against a 1.10 limit; three measured corrections landed it. (1) The residual hinge was NOT the rescue branch: the new _rescue_boundary_report says 0 of the 12 hot edges straddled it, all 12 were both-ramped at the left armpit. What cut them was running the relax and the ramp IN SEQUENCE — the relax diffuses weight back out past a bone's reach and the localise cuts it off again inside one ~25 mm edge with nothing after it to smooth the cut. smooth_blend_rings now takes the ramp as a CONSTRAINT (locality=...) and projects onto it every iteration instead of being followed by a cut: both-ramped hot edges 11 -> 0. (2) The rescue kept the FAR bones. Only 2 of 8995 vertices have no bone within 1.70x reach, so the near bone nearly always exists and simply is not in the vertex's weight list; the rescue now rebuilds from the bones that ARE near, kernel f(e)/e^4 which vanishes exactly where the ramp does, so it is local by construction and the locality gate can read a true zero instead of a zero of its own metric. (3) 1.00x the cross-section was below what the model's own geometry allows: calf skin weighted 0.94 to lowerLegL measured e = 1.61-1.76 with upperLegL tied at the same distance, both straddling the 1.70 cutoff, which is the suit and boot girth passes and not mis-weighting — the ceiling is 1.40x. The forearm's locality SEGMENT also had to run past the wrist to the fingertips: the forearm bone drives the hand and there is no hand bone, but seg_ends('lowerArmL') stops at the wrist, so hand skin measured t = 1.75 of the elbow-wrist segment (187 mm past it, MEDIAN already 1.32) and the ceiling ramped the whole hand off the forearm — the geometric rescue, in a rest pose where the hands hang beside the thighs, then handed the glove to upperLeg and rig.spec read hand/forearm 0.468 (gate >= 0.65) with the glove no longer clearing the leg. With the segment corrected the rescue is not needed AT ALL: 368 -> 0 vertices rescued, so the ramp alone carries the repair and the rescue branch is unreachable on the shipped asset. The cross-section is also a FLOOR now, for the same reason it is a ceiling: spine_01 self-certified at 78 mm against a 175 mm torso cross-section and failed its own pelvis skin at 1.84x. Reach lowerArm 180 -> 89 mm, upperArm 146 -> 109, lowerLeg 155 -> 129, spine_01 78 -> 175. Shipped: LOCALITY 0/12800 offenders on the HONEST reference (d/reach p99 1.40, max 1.52), WEIGHTSEAM max 0.892 with 0 hot edges (was 0.779 on the self-certified skin, limit 1.10), 0.925 after the helpers, JOINTSPAN 0/2391. NEGATIVE CONTROL BODY_LOCALITY_NOCAP=1 restores the self-certifying reach and the gate — whose reference is now always the clamped one, so it is a real control and not a second opinion from the same witness — rejects it at 310 offenders, worst lowerArmL w=1.000 at 2.14x reach. 53: OPUS item 3 — THE BIB BACK PLATE, and it was neither mirrored nor clipped. The new rectified sampler (_rect_plate) renders each plate on a fixed 96x64 grid in PATCH space, clipping partial triangles instead of dropping them and interpolating the atlas UV per cell, which replaces the point sampler session 19's verdict rested on (~45 wholly-inside triangles x 16 barycentric points = 3 samples/cm2, binned at 1.2 per cell, whole columns empty). At 96 columns of the actual plate both faces carry a correctly-oriented '30'; what differed was STROKE WIDTH — the front's vertical stems rendered ~5 of 96 columns, the back's ~1. The cause is a units bug in the glyph table: the rects are normalised to [0,1] in BOTH axes of a cell that measures 5.6 x 12.3 cm, so '0.16' meant a 19.6 mm horizontal bar but a 9.0 mm vertical stem, against a measured high-poly patch-u vertex gap of p90 0.0641 (9.6 mm) on the back and 0.0478 (7.2 mm) on the front — the paint is per-vertex and then baked, so the bars always resolved and the stems sat AT the lattice limit, surviving on the front only by its phase. Stems are now 0.30 of cell WIDTH (16.9 mm, matching the bars), and the pair is inset by NUM_MARGIN = 0.10 so the 03:05 ruling's margins hold identically on both faces (band narrowed to 0.27..0.75 to keep the digit aspect at 0.497, inside the 0.45-0.75 gate). New _bib_layout_gate: ink in the outer 1/12 of the plate 0.000/0.000 (max 0.02) and back-vs-front column profile L1 0.232 (max 0.40) against 0.582 for the mirrored front. NEGATIVE CONTROL BODY_SABOTAGE_BIBLAYOUT=1 restores the pre-session-22 layout and fails all three: margins 0.092/0.081, L1 0.502, and its back matches the MIRRORED front marginally better (0.496) — which is exactly the reading that produced three sessions of 'the back is mirrored'. 52: OPUS item 5 — the half-angle helpers EXTENDED TO THE SHOULDERS AND ELBOWS (reviewer ruling 2026-08-30 03:40). The armpit was the knee's defect one joint up: session 18 measured upperArmR 0.495 / spine_02 0.490 on an edge going 6.9 mm at rest to 76.3 mm posed, and linear blend skinning collapses such a ring by cos(theta/2) whatever the weights are. Four more bones (hlpShoulder{L,R}, hlpElbow{L,R}) on the lattice spine_03-hlpShoulder-upperArm-hlpElbow-lowerArm, by the same hat projection on the weighted-mean chain coordinate; add_joint_helpers now runs over a LIST of chains, each with its own root vertebra (legs off spine_01, arms off spine_03). What the arms added is that their drivers BIND FLIPPED at rx = -pi (armSweep at armDrop = 1, the hang), so updateJointHelpers takes the half-angle between each bone's DELTA from its own bind rather than between raw Euler angles (raw would have put the shoulder helper 90 deg off at rest), and walks a flipped segment's outer end along MINUS its driver's local +Y; the arm segments are also unequal (0.30 / 0.25 vs the leg's 0.36 / 0.36), so the half-lengths are per-helper. JOINTSPAN 1467/1467 vertices over half a joint -> 0/1551, max span 1.00 -> 0.50, 0 hit the 4-influence cap; WEIGHTSEAM in the folded basis p99 0.336 max 0.779 with 0 hot edges, byte-identical to the pre-helper skin, which is the continuity proof; LOCALITY 0 offenders. hlpShoulder carries 85.9/89.3 weight units and hlpElbow 72.7/73.1. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 skips the pass and the span gate rejects the result. 51: OPUS item 5 — HALF-ANGLE HELPER BONES at the hips and knees (reviewer approval 2026-08-30 02:40). With the trunk on three vertebrae and the leg weight localised, the worst edge left in the skinned buffer was the KNEE — 22.1 mm at rest, 1.28 mm at the crouch endpoint, strain 17.2 — between vertices weighted upperLegR 0.648/0.352 and 0.506/0.494. That is not a bad weight, it is what linear blend skinning DOES: Babylon averages the two bones' MATRICES and the average of two rotations theta apart is that rotation scaled by cos(theta/2), so at a knee closing 98 deg the ring lands at 0.66 of its radius and pinches. Four new bones (hlpHip{L,R}, hlpKnee{L,R}) carry the half-angle of the pair they sit between, and add_joint_helpers re-projects the leg skin onto the finer lattice spine_01-hlpHip-upperLeg-hlpKnee-lowerLeg by hat functions on the vertex's weighted-mean chain coordinate: at most two ADJACENT lattice nodes per vertex, so no vertex is blended across more than half a joint and the worst pair the shader averages is ~49 deg (cos 0.91, not 0.66). JOINTSPAN 604/604 vertices over half a joint -> 0/618, max span 1.00 -> 0.50, with NO extra influence per vertex (0 hit the 4-influence cap). It is inert at rest by construction — bind == driver, so every bone contributes identity there and any partition of unity reproduces the bind mesh. The seam metric now folds helpers back onto their neighbours 50/50 before measuring, because raw weight L1 on a lattice of half the spacing counts the same physical gradient twice (the hip edge read 0.72 -> 1.36 while moving no differently); in that basis the shipped skin measures p50 0.000 p99 0.336 max 0.779 with 0 hot edges, IDENTICAL to before the helpers, which is the continuity proof. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 reports 604 spanning vertices and the gate rejects it. 50: OPUS — the bib back plate is NOT mirrored. bib_orientation_report bins each face's plate ink along that face's OWN viewer-right axis R = Z x N, so neither face is privileged and no frame convention is assumed (the torso frame's sense has now been misread twice). Front reads a clean structured '30' (one '3' stem, then the '0' pair); the back matches neither the front (L1 1.022) nor its mirror (L1 1.066) — it is flat where the front is peaked and runs ink hard onto both plate edges where the front keeps the glyph rects' margins, and under BODY_SABOTAGE_BIBMIRROR=1 it barely moves where a real mirror would come back reversed. So GLM review 125's 'front is mirrored' is wrong and the 16:30 'flip U on the back panel' ruling does not address the defect. Reported, not gated, until the horizontal clipping is root-caused. 49: merge of the GLM lane's tip (lamp towers, crash-flake docs) with this lane's weight-locality skin. 48: OPUS item 5 — WEIGHT LOCALITY. The crouch smear over the buttock and back of the thigh was chest and ribcage skin weighted 17-25% to `upperLegL/R`: at the deep-hip endpoint those vertices are flung with the thigh and the edges between them go from 23 mm at rest to 210 mm posed, which is the streaking. New localise_weights takes each bone's influence off skin further than 1.70 x that bone's own reach (the p98 distance of the skin it drives at >= 0.5), on a smoothstep ramp from 1.25 so it cuts no hinge; it runs after the bake like smooth_blend_rings, and the order is localise -> re-relax -> localise because the ramp still ends at a boundary. LOCALITY 24 offenders -> 0, d/reach p99 1.50 -> 1.32; WEIGHTSEAM max 0.715 -> 0.779, still 0 hot. NEGATIVE CONTROL BODY_SABOTAGE_LOCALITY=1. 47: OPUS — RELAXED HANDS (author 23:40, reviewer 00:15 item (a)): the CC0 base figure's flat starfish hand shipped unchanged into every pose, so the author's crouch screenshot had claws on the ends of the arms. relax_hands finds the digits by CONNECTIVITY (below the crotch each finger is its own component of the mesh, so no coordinate is guessed; the cut depth is laddered and the shallowest depth that parts the most digits wins), swings each about its own base to within 2 deg of the hand's mean direction, then packs the tips together with a shear field that is constant across each finger and interpolates only in the gaps — interpolating THROUGH a finger squashes it instead and bought 2.5 mm of a 14.6 mm gap. Fan 34.7 -> 8.4 deg, worst gap 14.6 -> 6.6 mm, sliver count unchanged at 49/10590. Gates hand_spread_gate (spread <= 15 deg, gap <= 8 mm) on the final geometry; NEGATIVE CONTROL BODY_SABOTAGE_HANDS=1 reads 29.3 deg / 13.6 mm and fails both. 46: merge of the GLM lane's landing chop rebake (was their 43) with this lane's athlete work (was 45). landing chop rebake — NORMAL_GAIN 0.35 damps the normal map's shading amplitude (HUMAN TESTING #9 item 1: the full-slope normals + 1.2 m SSAO radius painted the whole landing dark grey in daytime; ratio chop/flat 0.52). Height tile unchanged — the 3D relief is geometry. 45: AUTHOR RULING 21:55 — the eyewear is SHOOTER-STYLE SPORT GLASSES, not goggles. The shield narrows 0.40..0.57h -> 0.44..0.57h (29.4 mm = 0.128h on a 229 mm chin-to-crown), the frame becomes a THIN BROW BAR on the top edge only (the lower rim stroke that drew a dark line under the eyes is gone; what is left at the bottom is a nose-bridge notch), and the 0.10h navy STRAP that closed round the whole skull is replaced by thin TEMPLE ARMS — dark moulded plastic, 16 verts a side, running back over the ears at 0.520h (under the 0.55h side rim) and stopping at 2.45 rad, pushed 2.50 mm PROUD where the strap was a groove RECESSED into the shell. Three new build gates, each with a negative control that fires: the shield bottom must clear the UN-PUSHED skull's nose tip (0.440h vs 0.357h; --lens-lo 0.28 fails at 0.280h), the band window tightens to 0.44..0.57 +-0.03, and the temple arms must exist on both sides with 0 verts behind 2.75 rad and >=1.5 mm of realised push (BODY_SABOTAGE_GOGGLES=1 reads 0.00 and fails). OPUS item 3, folds — THE LOWER BACK HAD NO FOLDS AT ALL (SUIT_FOLDS had four keys, none of them the torso, so the author's "suit doesn't seem to fold over the back" was reported against a table that never creased it); a lumbar band now runs on the bare suit AROUND the bib, which as a separate loose garment does not crease with the back under it. Fold relief raised to a real cloth scale: 3-5 cm apart and 6-9 mm deep instead of 2 cm and 1.5 mm, which is both what reference/images/aerial_suit.png shows at the knee and what the 3.5 mm high-poly vertex spacing can resolve without aliasing the crest away. Four bands re-seated INSIDE their segments (`along` clamps at +-1, so a band at 0.86 +-0.22 had half its window off the end of the mesh). rig.spec.js's crease-band variance gate DELETED per the reviewer's ruling — it could not tell folds-off from folds-on because its dynamic range was the boot's shell edge; replaced by build-side fold_ripple_gate, which measures each crease band's relief on the displaced high-poly: 2.31 mm RMS shipped vs 1.35 mm with BODY_SABOTAGE_FOLDS=1, a 41.6% drop. 43: OPUS item 3 (d) — the outer-seam STRIPE stops being a staircase. limb_azim's reference axis was the nearest 4 cm z-bucket's centroid median, piecewise constant in z, so every 4 cm the whole angular window jumped sideways and the painted band stepped with it (shots/figure_side.png, session 10: a blue staircase down arm and leg). The axis is now a weighted least-squares QUADRATIC through 2 cm cross-section centroids — smooth by construction, never falling back to the driver centre — and the band is a fixed 5 cm of ARC (STRIPE_HALF_W) rather than a fixed angle, so it does not narrow to a pinstripe wherever the limb does. The arm band is built but held OFF behind STRIPE_SEGMENTS: it lands on TORSO texels through the bake (body.spec.js torso back blue 0.019 legs-only -> 0.121 with arms, gate < 0.10) and capping it below the shoulder barely moves it (0.110), so it leaks the whole chest wall where the arm and torso shells meet — item 3's armpit geometry, not the stripe. New stripe_straight_gate measures the seam's 5th/95th-percentile edges per 2 cm rung: worst step 10.8 mm, worst wander 14.3 mm, median width 41.2 mm, against 33.0 mm / 34.7 mm for the negative control BODY_SABOTAGE_STRIPE=1. 42: OPUS item 12 — THE LEG NOW ENDS IN A BOOT. The boot GEOMETRY has existed since rigid_boots/seat_soles and leg_taper_gate already measured its cuff breadth, but nothing ever PAINTED it, so the suit ran white onto the ski (negative control BODY_SABOTAGE_BOOT=1 measures that shipped skin: 90.7% of the boot band light, mean luma 0.764). Measuring also moved the number: the segment model has no foot below the ankle (sole and ankle both z=-0.995), so the old cuff step at along -0.74 left only 47 mm of mesh under it; the shell is now the lower shin from along -0.40, 112 mm tall, mean luma 0.078, 0 light verts, with a lighter liner lip at its rim. SUIT_FOLDS' boot-cuff crease moved -0.62+-0.18 -> -0.26+-0.13 so the cloth bunches ABOVE the shell instead of creasing plastic. 41: OPUS item 5 (skin weights) — every seam in the shipped skin was cut by the three OWNERSHIP passes, not by the bind: heat-map skin ships max edge weight-L1 0.636 with ZERO hot edges, sharpen_limb_weights takes it to 1.599, reclaim_chest_wall to a bare 2.000 hinge at the armpit (100% torso next to 100% upperArmR). Those passes exist to make pose_onto_segments transport the limbs, which is baked into the rest mesh and done by then, so smooth_blend_rings now relaxes the seams over 4 rings on the SHIPPED low-poly after the bake: max 1.538 -> 0.715, 151 hot edges -> 0, head group share 0.1954 -> 0.1955. 40: OPUS — THE SHARDS WERE narrow_shoulders' SIGN BUG: its outboard test compared s*x against the SIGNED plane x_b, so on the left side it selected the whole trunk and the far arm and rescaled them about the left shoulder plane (279 verts moved vs 42 on the right, worst 226.8 mm, x +0.172 -> -0.055 through the chest); the faces bridging moved and unmoved verts stretched to 240 mm and shaded anywhere — the silvery shards on the suit at rest. Shard faces 157/9558 (1.64%) -> 50/9509 (0.53%), longest 240 -> 139 mm; weave 1.1 -> 2.1 mm p-p to give back the NM variance the tear was supplying (8.24 -> 5.96 -> 6.36, floor 6.30); chest sanity floor 0.30 -> 0.25 (the old floor was cleared by 28 mm of smear: 303 -> 275 mm). 39: OPUS item 5 — the armature gets a SPINE (spine_01..03 between pelvis and neck, torso weight split by a partition of unity along the torso axis); game.js drives the chain from the hip anchor, coupled to the thigh and head deviations, closing exactly onto the torso's own neck end; 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -2414,24 +2416,18 @@ void main(void) {
     // once per material while uv2 is assigned per mesh.
     window._bakedApplied = 0;
 
-    // TEMPORARY OFF SWITCH (iteration 13, reviewer order 1 of 23:50): the maps on
-    // disk were baked for the PRE-P1 slab terrain. The corridor ribbon replaced
-    // those meshes, so every atlas sample taken on wInrun's newly-exposed top face
-    // reads a stale zero multiplier — a full-width black band across the ready
-    // view (measured: black coverage 9.29% of frame; 0.09% with these clones
-    // stripped). Until the rebake lands (blocked on the post-unwrap vertex-split
-    // fixup across the uv2 sidecar contract — see RENDER-PROGRESS entries 12/13),
-    // the statics render on their plain snow/ls materials. FLIP TO true WITH THE
-    // REBAKE COMMIT; baked.spec.js asserts the off-state meanwhile.
-    window._bakeLightmapEnabled = false;
+    // Entry-138: REBAKE LANDED — the iteration-13 off switch flips back ON.
+    // The bake is current (blender/bake_lightmap.py now path-traces the forest
+    // as alpha-cutout card occluders, and the corridor's vertices are unshared
+    // so the per-vertex uv2 sidecar can describe it). baked.spec.js asserts
+    // the applied state.
+    window._bakeLightmapEnabled = true;
     (function applyBakedLighting() {
         if (!window._bakeLightmapEnabled) return;
         try {
             fetch('assets/terrain_uv2.json' + ASSET_V)
                 .then(r => r.ok ? r.json() : null)
                 .then(function (data) {
-                    if (!data || !data.meshes) { window._bakedApplied = 0; return; }
-
                     // gammaSpace = false on both: these are DATA, not colour. An
                     // sRGB decode would bend every value and quietly change the
                     // shape of the occlusion.
@@ -2460,9 +2456,28 @@ void main(void) {
                         if (!mat) return null;
                         if (baked.has(mat.uniqueId)) return baked.get(mat.uniqueId);
                         const clone = mat.clone(mat.name + '_baked') || mat;
-                        clone.ambientTexture = skyvis;
-                        clone.lightmapTexture = shadow;
-                        clone.useLightmapAsShadowmap = true;
+                        // Entry-138: the corridor is a MultiMaterial (snow +
+                        // chopped-landing sub-materials); the maps live on the
+                        // SUB-materials for those, on the material itself otherwise.
+                        // MultiMaterial.clone shares its sub-materials — assign
+                        // the maps to clones of THOSE, or the shared snowMat
+                        // would lightmap the 43 uncovered meshes sampling
+                        // uv2 (0, 0) (the exact regression the clone avoids).
+                        const isMulti = clone.getClassName && clone.getClassName() === 'MultiMaterial';
+                        const targets = isMulti
+                            ? clone.subMaterials.map((s) => {
+                                if (!s) return s;
+                                const sc = s.clone(s.name + '_baked');
+                                return sc || s;
+                            })
+                            : [clone];
+                        if (isMulti) clone.subMaterials = targets;
+                        for (const t of targets) {
+                            if (!t) continue;
+                            t.ambientTexture = skyvis;
+                            t.lightmapTexture = shadow;
+                            t.useLightmapAsShadowmap = true;
+                        }
                         baked.set(mat.uniqueId, clone);
                         return clone;
                     };
@@ -3116,6 +3131,7 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 impactSpeed: ragdoll.impactSpeed,
                  // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
                  // and peak spine bend (deg) for the crash-spec gates.
                  peakExcDeg: (ragdoll.peakExc || 0) * 180 / Math.PI,
@@ -3127,7 +3143,14 @@ void main(void) {
                      kneeR: ang(B.kneeR, B.hipR, B.ankleR),
                      elbL: ang(B.elbowL, B.shL, B.wristL),
                      elbR: ang(B.elbowR, B.shR, B.wristR),
-                 } };
+                 },
+                 // HT#13 (2026-08-30): ski rest offsets from the eject point.
+                 skis: (ragdoll.skis || []).map((s) => ({
+                     dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),
+                     dz: s.pos.z - (s.eject ? s.eject.z : s.pos.z),
+                     resting: !!s.resting,
+                 })),
+             };
     };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
@@ -3973,7 +3996,7 @@ void main(void) {
         zs.push(...JOINS);
         zs.sort((a, b) => a - b);
 
-        const positions = [], indices = [], uvs = [];
+        let positions = [], indices = [], uvs = [];
         const DEG = Math.PI / 180;
         const eps = 0.01;
         const slopeAt = (z) => Math.atan(
@@ -4019,10 +4042,34 @@ void main(void) {
         const vd = new BABYLON.VertexData();
         vd.positions = positions;
         vd.indices = indices;
-        const normals = [];
+        let normals = [];
         BABYLON.VertexData.ComputeNormals(positions, indices, normals);
         vd.normals = normals;
         vd.uvs = uvs;
+        // ── Entry-137 proposal, step 1: unshare the corridor's vertices ──────
+        // A per-vertex uv2 cannot describe the bake's per-face lightmap UVs
+        // wherever vertices are shared across faces (the bake rejected the
+        // shared grid with 2204 per-vertex conflicts). Duplicate every
+        // triangle's vertices so each vertex belongs to exactly ONE triangle,
+        // while COPYING the averaged normals from the shared computation —
+        // shading is bit-identical, only the vertex/index layout changes.
+        {
+            const fPos = [], fNrm = [], fUV = [], fIdx = [];
+            for (let t = 0; t < indices.length; t += 3) {
+                for (let k = 0; k < 3; k++) {
+                    const vi = indices[t + k] * 3;
+                    fPos.push(positions[vi], positions[vi + 1], positions[vi + 2]);
+                    fNrm.push(normals[vi], normals[vi + 1], normals[vi + 2]);
+                    fUV.push(uvs[indices[t + k] * 2], uvs[indices[t + k] * 2 + 1]);
+                }
+                fIdx.push(t, t + 1, t + 2);
+            }
+            positions = fPos; normals = fNrm; uvs = fUV; indices = fIdx;
+            vd.positions = positions;
+            vd.indices = indices;
+            vd.normals = normals;
+            vd.uvs = uvs;
+        }
         // ── P5 slice: the chopped landing (blender/bake_landing.py tiles) ───
         // The landing zone gets its own material — the baked chop albedo +
         // normal, 8 m tile over the ribbon's metre UVs — and, once the height
@@ -6114,6 +6161,9 @@ void main(void) {
                 yaw: Math.atan2(fwd.x, fwd.z || 1e-6),
                 vyaw: (Math.random() - 0.5) * 5.0,
                 resting: false, y0: 0.015,
+                // HT#13 (2026-08-30): eject point for the "skis stop within
+                // 6 m of the eject point" gate — pos at release.
+                eject: { x: pos.x, z: pos.z },
             });
         }
 
@@ -6443,9 +6493,10 @@ void main(void) {
         // (non-contacting) parts that the static-friction stop never
         // touches — so a propped body sits in a visible limit cycle at or
         // above the 0.12 m/s threshold and never yields 8 quiet frames. A
-        // wall of time is frame-rate independent: tumble at most 1.0 s,
+        // wall of time is frame-rate independent: tumble at most 0.6 s
+        // (HUMAN TESTING #13: slide onset ≤ 0.6 s after impact),
         // then freeze the pose and slide it as ONE rigid piece.
-        if (R.phase === 'tumble' && R.t >= 1.0) {
+        if (R.phase === 'tumble' && R.t >= 0.6) {
             // Freeze: capture the body's mean horizontal velocity, kill all
             // internal velocities (prev = p), switch to the rigid slide.
             let _sx = 0, _sz = 0;
@@ -6501,7 +6552,15 @@ void main(void) {
                 R.slideV.x *= _dec; R.slideV.z *= _dec;
             } else if (_onSteep) {
                 const _th = Math.atan(Math.abs(_slope));
-                const _a = Math.max(0, 14 * (Math.sin(_th) - 0.5 * Math.cos(_th)));
+                // HT#13 addendum 08:55: the chopped landing is steep but
+                // ROUGH — μ_chop 0.55 (vs the 0.50 corduroy steep value)
+                // so the body still accelerates on the steep but reaches
+                // the roll-out 10–20 % slower. window._crashChopMu is the
+                // negative-control override (0.5 = old model).
+                const _mu = (typeof window !== 'undefined' &&
+                    window._crashChopMu !== undefined &&
+                    R.torso.z < OUTRUN_Z - 2) ? window._crashChopMu : 0.55;
+                const _a = Math.max(0, 14 * (Math.sin(_th) - _mu * Math.cos(_th)));
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
@@ -6509,8 +6568,16 @@ void main(void) {
                 }
             } else {
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
+                // HT#13: flat roll-out friction — window._crashFlatDecel is
+                // the tuning/negative-control override (default 8.0 m/s²,
+                // raised from 7.0 so the slide stops a few metres past the
+                // transition, targets single 3–8 / double 6–12 / triple
+                // 10–18 m past the roll-out radius end).
                 if (_vH0 > 1e-6) {
-                    const _k = Math.max(0, _vH0 - 0.5 * 14 * dt) / _vH0;
+                    const _dec = (typeof window !== 'undefined' &&
+                        window._crashFlatDecel !== undefined)
+                        ? window._crashFlatDecel : 8.0;
+                    const _k = Math.max(0, _vH0 - _dec * dt) / _vH0;
                     R.slideV.x *= _k; R.slideV.z *= _k;
                 }
             }
@@ -6697,7 +6764,13 @@ void main(void) {
         // points by the root's per-FRAME delta before the ticks, so the
         // rendered body tracks the sliding root exactly (per-frame because
         // the root's own motion is engine-driven at frame granularity).
-        if (R.phase !== 'tumble') {
+        // HT#13 (2026-08-30): the ride ENDS at the roll-out — past OUTRUN_Z
+        // the machine's own flat friction brakes the body to rest a few
+        // metres past the transition (targets single 3–8 / double 6–12 /
+        // triple 10–18 m); without this cut the engine's crashed root keeps
+        // re-accelerating down the out-run and drags the body ~30 m past
+        // the flat (measured rest 33.5 m past rollOutZ at the 8 m/s² brake).
+        if (R.phase !== 'tumble' && R.torso.z < OUTRUN_Z) {
             if (R._lastRoot) {
                 const _rd = _crashVSub(rootPos, R._lastRoot);
                 for (const pt of R.parts) {
@@ -6712,9 +6785,6 @@ void main(void) {
                     if (pt.prev) {
                         pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
                     }
-                }
-                for (const sk of R.skis) {
-                    sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
                 }
             }
             R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
@@ -7015,12 +7085,41 @@ void main(void) {
     // (plan P10 "never see under the terrain"). Applied every frame on the
     // orbit camera; on the steep pitch it clamps beta (camera up) rather than
     // fighting the orbit target.
+    // HUMAN TESTING #10 (author): "a hard lock on camera rotation below the
+    // surface of the earth at all points of game". The clamp now (1) samples
+    // the REAL ground under the eye with a ray against the terrain meshes
+    // (corridor, skirt, backdrop) — the corridor centreline profile ignored
+    // the flanks and the knoll — and (2) runs on every rendered frame via
+    // onBeforeRender, so paused/replay/menu states are covered too.
+    // wUpperMtn is the steep paper-mountain BACKDROP behind the start: a ray
+    // hitting it reports a "ground" far above the eye of a perfectly fine
+    // camera (the default behind-the-athlete view), so it is not a clamp
+    // surface — the corridor + skirt are, with the physics profile as fallback.
+    const _camGroundRe = /^(terrainCorridor|terrainSkirt)/;
+    function _groundUnderCamera(cp) {
+        try {
+            if (typeof scene.pickWithRay === 'function' && BABYLON.Ray) {
+                const pred = (m) => !!(m.name && _camGroundRe.test(m.name));
+                // Cast DOWN from the eye: only surfaces below the camera count
+                // (a ray from far above hits the upper backdrop mountain mesh
+                // over the corridor and would "raise" the ground under a
+                // camera that is fine — the look spec's pose shots caught it).
+                const down = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, -1, 0), 400), pred);
+                if (down && down.hit && down.pickedPoint) return down.pickedPoint.y;
+                // Nothing below: the eye is already under a surface — find it
+                // just above and treat that as the ground to climb out of.
+                const up = scene.pickWithRay(new BABYLON.Ray(cp.clone(), new BABYLON.Vector3(0, 1, 0), 60), pred);
+                if (up && up.hit && up.pickedPoint) return up.pickedPoint.y;
+            }
+        } catch (e) { /* fall through */ }
+        return terrainRootY(cp.z) - FOOT_OFFSET;
+    }
     function _clampCameraAboveTerrain() {
         try {
             if (!camera || camera.mode !== BABYLON.Camera.PERSPECTIVE_CAMERA) return;
             const cp = camera.position;
             if (!cp || !isFinite(cp.z)) return;
-            const minY = terrainRootY(cp.z) - FOOT_OFFSET + 1.0;
+            const minY = _groundUnderCamera(cp) + 1.0;
             if (cp.y >= minY) return;
             const r  = camera.radius || 10;
             const ty = camera.target ? camera.target.y : 0;
@@ -7035,6 +7134,17 @@ void main(void) {
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
+    // Every rendered frame, in every state (the update-loop call below still
+    // runs first when the sim is active; this catches paused/replay/menus).
+    // Only while the engine's own render loop is running: every real game
+    // state (play, pause, replay, menus) has it running; shot harnesses that
+    // stop the loop and drive the camera by hand for a still are left alone.
+    if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(() => {
+        const eng = scene.getEngine();
+        if (eng && eng.activeRenderLoops && eng.activeRenderLoops.length === 0) return;
+        _clampCameraAboveTerrain();
+    });
+    window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
     window._freeLookProbe = function () {
         try {
             const cp = camera.position;
@@ -7344,6 +7454,22 @@ void main(void) {
             }
 
             readyState = true; readyTurnT = 0.0;
+            // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
+            // doesn't seem to work". The state DID reset — but free-look was
+            // active after the crash, so the follow block stood down and the
+            // camera stayed parked at the crash site looking at empty snow.
+            // Re-frame behind the athlete, synchronously, as the last step of
+            // the reset (anything that places the camera after R keeps it).
+            try {
+                // state.rootY is only re-derived from the terrain on the next
+                // update tick (it still holds the crash-site value here — measured
+                // -2.2 m vs a 6.7 m start), so take the root height from the
+                // profile directly.
+                camera.target.set(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0,
+                    _poolDiveMode ? state.rootY : terrainRootY(state.posZ), state.posZ);
+                camera.alpha = Math.PI * 1.5; camera.beta = CAM_BETA_BACK; camera.radius = 10;
+                _camTargetAlpha = null;
+            } catch (err) { /* never let a camera nicety break the reset */ }
             return;
         }
         if (_keyIsLetter(e, 'c')) {
@@ -9250,14 +9376,13 @@ void main(void) {
                 }
             }
         }
-        // Trees all cast — the CSM frustum follows the camera, so only trees near
-        // it ever enter a cascade's depth pass; the auto-fit explosion that made
-        // this impossible with the single-map generator cannot recur. (The static
-        // terrain keeps its bake; far peaks are past shadowMaxZ and are culled.)
-        scene.meshes.forEach((m) => {
-            if (!m.name || !m.getTotalVertices || m.getTotalVertices() === 0) return;
-            if (/^(tr_|fl_)$/.test(m.name) || m.name === 'treeShadowProxy') casters.add(m);
-        });
+        // Trees NO LONGER cast at runtime (entry-138): the rebaked lightmap
+        // path-traces crown-shaped, dappled tree shadows onto the terrain via
+        // the alpha-cutout card occluders in blender/bake_lightmap.py, so the
+        // solid treeShadowProxy cone wedges (the "dirt smudge" read) and the
+        // legacy tr_/fl_ meshes are off the CSM caster list. The proxy MESH
+        // stays in the scene hidden (display census unchanged); the athlete
+        // keeps its real-time contact shadow.
         // B-net fencing casts as well: the thin posts render through their
         // source caster, and the alpha-cut strip throws a cutout shadow via
         // ALPHATEST in the depth pass (a solid-quad shadow here means that
