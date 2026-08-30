@@ -225,6 +225,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 137 | **Tree-shadow smudge root-caused + lightmap bake GROUNDWORK: `bake_lightmap.py` gains `add_tree_occluders` (`blender/trees.json` = the game's 152 thin-instance trees dumped from the running page, baked as per-variant alpha-cutout crossed cards so tree shadows get crown structure and dappled penumbra); the full rewire is BLOCKED this iteration and recorded as a proposal** | unit 81/81; golden **30/30** (verify.js the last command before this commit — no game-side change, nothing to re-capture); findings: baked lighting `applied: 0` (the 08-25 sidecar's mesh names/vertex counts match no current mesh), corridor uv2 has 2204 per-vertex conflicts, the flank "dirt smudges" are the solid `treeShadowProxy` cone wedges — the ONLY tree shadowing actually live. See entry 137. |
+| — | Iteration 140 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6, shots inspected + measured. Top finding: a hard black diagonal band crosses the landing in scene.png (mid-band 2.67% of pixels lum<60, p5=80 vs p50=213) — the tree-shadow cone-wedge defect is still live at the tip; corridor still ~10% darker than flank snow (194 vs 215); background peaks read at 0.98× sky luminance (glassy). No code change; defects recorded in entry 140** | run-all drive-through phase timed out at 30 min under SwiftShader contention (unit/golden/mutation/coverage had already passed inside it); re-verified unit + golden + look solo. See entry 140. |
 | — | Iteration 136 | **Reviewer-135 leftover LANDED — sky shader restored (declared `float f` for the cloud fbm + the `sunDir` uniform `main()` already used; it had failed GLSL compilation); terrain.json float jitter reverted. Then entry-134 open item 1 — strata-mode `forestEdge` 0.42→0.20, so the mid/far ridge crests (v ≈ 0.42–0.5) leave the forest band and read rock/snow; near ridge untouched; `textures.js?v=23`** | unit 81/81; golden **30/30** (verify.js the last command before this commit, display-only); ridges3d 5/5; look 4/4; scene.png upper-55% green-dominant pixel fraction **0.00041** (was clearly visible crest caps in 134's by-eye); sky bands 0–15% b−r **+36**, 15–30% **+22** — blue sky reads above the ridgelines again. See entry 136. |
 | — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
 | — | Iteration 134 | **Entry-133 blotch fix — `makeRidgeSurface` gains a STRATA mode (band-edge jitter 0.12→0.04, snow-band outcrop contrast 3.6→1.6, rock-fracture dark mix 0.9→0.45, near-horizontal sediment strata ±0.22 keyed on elevation, bump strength 2.2); peaks AND mid/far ridge materials now use it (near ridge keeps the full-detail forest map)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, mask 0.053, mean 0.677 / std 0.0846 vs 0.05 floor; ridge-only contrast + fogged control still discriminate); look 4/4; scene.png bands 0.663/0.616/0.778; by-eye: mid/far ridge faces read as layered strata, blotches gone. See entry 134. |
@@ -8011,6 +8012,66 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 140 — REVIEW-ONLY: suite verified, shots inspected + measured; the tree-shadow
+black band is still the worst scene defect at the tip
+
+No `docs/NEXT.md`. No code change (review slot; author's no-unrequested-scene-work
+rule). Athlete-lane defects observed, not fixed (standing rule).
+
+**Verification:** `npm run test:unit` 81/81 (fail 0); `npm run test:golden`
+**30/30** — verify.js quoted from this iteration's own run; `look` 6/6 (4.0 m),
+shots regenerated. `./tests/run-all.sh` was run first and TIMED OUT at the
+30-minute session limit inside the Playwright drive-through phase; the unit,
+golden (all scenarios differentiate, coverage PASS) and mutation/coverage
+phases had already passed inside it before the cut; unit/golden/look were
+re-run solo afterwards and are the quoted numbers. Not a code regression —
+the full parallel suite no longer fits the 30-min run-all timeout on this
+machine (same contention the 115 review recorded).
+
+**What reads wrong, measured (`shots/scene.png`, 1100×850):**
+1. **A hard black diagonal band crosses the whole landing** — mid-band
+   (42–62% height) darkest-percentile p5 = 80/255 with **2.67% of pixels
+   lum < 60** (p50 = 213). By eye it is a featureless near-black stripe from
+   the lower-left corner across the fence line to the right edge: this is the
+   entry-137 `treeShadowProxy` cone-wedge defect, still live at this tip —
+   the 138 lightmap rewire that was to replace it is under reviewer
+   verification (`fbbbe07`) and has not been confirmed kept. Highest-priority
+   open scene item.
+2. **Corridor still darker than the flanks** (grey-ramp target was corridor
+   ≥ flank): left corridor/in-run area mean lum **194.2** vs right flank snow
+   **215.2** (−9.8%). Band 50–100% (snow field) 211.9.
+3. **Background cone peaks still read glassy**: peak-region mean lum 160 vs
+   sky top-row 163 → **0.98×** (the reviewer's 08:15 instrument wants
+   ≤ 0.85×). The peaks/ridge-material fix lives on `fable/peaks` per the
+   08:50 ruling — recorded here as the by-eye confirmation hook; GLM did not
+   touch ridge/peak materials.
+4. Sky: 0–15% band b−r = **+36** — blue sky still reads above the ridgelines
+   (136's fix holding).
+
+**Figure shots:** `figure_front.png` bib **"30" legible, not mirrored** (good);
+`figure.png` side profile clean, boots on skis, bindings present. Athlete-lane
+defects for the Opus brief: (a) figure_front shows **red scribble strokes at
+the mouth/chin** (lip paint reads as a wound at this distance); (b) a
+**silvery glossy blob at the chest/waist centre** (bib clip or specular
+artefact) catches the eye before the bib number; (c) the suit's white reads
+slightly warmer/greyer than the snow behind it in figure_front — marginal,
+borderline pass.
+
+**Gaps vs plan/reference (re-prioritised for 141+):**
+1. Tree shadows with crown structure (137 proposal; blocked on the 138
+   verification verdict) — biggest visual defect.
+2. Grey ramp (corridor ≥ flank) — measured above, still open.
+3. Forest remainder P4 (bare-deciduous majority reads well; conifers still
+   uniform stacks at distance).
+4. Landing chop relief reads only faintly at gameplay distance in scene.png.
+5. Peaks fix landing from `fable/peaks` + re-measure instrument 3 above.
+
+**Open questions for the reviewer:** (1) verdict on `fbbbe07` (138) — if kept,
+does the black band in finding 1 persist with the proxy off (if so the cause
+has moved); (2) run-all has outgrown the 30-min wall — split the drive
+phase or raise the timeout?; (3) confirm the athlete-lane items (a)/(b)
+above are queued for Opus.
 
 ### 138 — the dead lightmap LIVES: corridor unshared, rebake with tree
 occluders applied, treeShadowProxy off the CSM
