@@ -5482,8 +5482,8 @@ NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
 # the lattice gap and always resolved; the stems sat AT it, and survived on
 # the front only by the lattice's phase.
 #
-# So the stems are now as thick in METRES as the bars (0.30 of cell width vs
-# 0.16 of cell height: 16.9 mm vs 18.2 mm), which is also what a sans-serif
+# So the stems are now as thick in METRES as the bars (0.25 of cell width vs
+# 0.14 of cell height: 14.1 mm vs 15.9 mm), which is also what a sans-serif
 # competition numeral actually looks like, and the pair is inset by
 # NUM_MARGIN so the ruling's margins hold on both faces.
 #
@@ -5505,7 +5505,17 @@ NUM_DV0, NUM_DV1 = ((0.06, 0.96)
                     if os.environ.get('BODY_SABOTAGE_BIBASPECT') == '1'
                     else (0.24, 0.76) if SABOTAGE_BIBLAYOUT
                     else (0.27, 0.75))   # ink's vertical share of the patch
-NUM_INK = (0.07, 0.10, 0.18)     # dark navy on the white plate
+# NEAR-BLACK on the white plate, not navy — and the reason is a measurement,
+# not taste. body.spec.js calls a torso texel blue at b - r > 0.15 in the
+# SHIPPED sRGB atlas, and (0.07, 0.10, 0.18) linear encodes to b - r = 0.174:
+# every numeral texel was being counted as competition-bib blue. That was
+# harmless while the stems were 9 mm and half of them dissolved, and it stops
+# being harmless the moment they resolve — bolding them took the back of the
+# torso from blueFrac 0.015 to 0.034 and closed the front-minus-back margin
+# that gate exists to defend to 0.028 against its 0.03 floor. The bib is what
+# that test is about; the number is not, and reference/images/aerial_suit.png
+# has black numerals on the bib anyway. b - r = 0.023 in sRGB now.
+NUM_INK = (0.05, 0.05, 0.06)     # near-black numeral ink on the white plate
 
 # Glyph outlines as (u0,u1,v0,v1) rectangles in a per-digit cell [0,1]².
 _GLYPH_RECTS_THIN = {           # pre-session-22: 9 mm stems, under the lattice
@@ -5518,15 +5528,21 @@ _GLYPH_RECTS_THIN = {           # pre-session-22: 9 mm stems, under the lattice
           (0.20, 0.80, 0.84, 1.00),   # top shoulder
           (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
 }
-_GLYPH_RECTS_BOLD = {           # stems 0.30 of cell WIDTH = 16.9 mm ≈ the bars
-    '3': ((0.06, 0.94, 0.84, 1.00),   # top bar
-          (0.10, 0.90, 0.42, 0.58),   # middle bar
-          (0.06, 0.94, 0.00, 0.16),   # bottom bar
-          (0.64, 0.94, 0.00, 1.00)),  # right stem joins all three
-    '0': ((0.06, 0.36, 0.00, 1.00),   # left stem
-          (0.64, 0.94, 0.00, 1.00),   # right stem
-          (0.20, 0.80, 0.84, 1.00),   # top shoulder
-          (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
+# Stems 0.25 of cell WIDTH = 14.1 mm against bars 0.14 of cell HEIGHT =
+# 15.9 mm: the point is that the two are now within 12% of each other in
+# METRES, both clear of the back lattice's 9.6 mm p90 gap by ~1.5x. The first
+# cut of this table used 0.30/0.16 (16.9 / 18.2 mm) and drew a genuinely
+# legible "30", but bib-number.spec's dark-slab ceiling measured navyFrac
+# 0.2540 against its 0.25 — so the strokes came down, not the gate.
+_GLYPH_RECTS_BOLD = {
+    '3': ((0.06, 0.94, 0.86, 1.00),   # top bar
+          (0.10, 0.90, 0.43, 0.57),   # middle bar
+          (0.06, 0.94, 0.00, 0.14),   # bottom bar
+          (0.69, 0.94, 0.00, 1.00)),  # right stem joins all three
+    '0': ((0.06, 0.31, 0.00, 1.00),   # left stem
+          (0.69, 0.94, 0.00, 1.00),   # right stem
+          (0.20, 0.80, 0.86, 1.00),   # top shoulder
+          (0.20, 0.80, 0.00, 0.14)),  # bottom shoulder
 }
 _GLYPH_RECTS = _GLYPH_RECTS_THIN if SABOTAGE_BIBLAYOUT else _GLYPH_RECTS_BOLD
 
