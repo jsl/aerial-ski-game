@@ -117,7 +117,7 @@ const { computeI } = AerialEngine.inertia;
 function makePBR(name, scene) {
     const m = new BABYLON.PBRMaterial(name, scene);
     m.metallic  = 0.0;      // nothing in this scene is bare metal
-    // P9 night mode adds 7 floodlight spots to the hemi+sun pair; the default
+    // P9 night mode adds 8 floodlight spots to the hemi+sun pair; the default
     // budget of 4 would silently drop the furthest pools. Day mode keeps 2
     // lights, so this costs nothing there.
     m.maxSimultaneousLights = 8;
@@ -1866,12 +1866,11 @@ void main(void) {
     }
 
     // ── P9 night snowfall mode (?night=1) ────────────────────────────────────
-    // Modelled on reference/frames/IMG_3396 (night training session, heavy
-    // snowfall): near-black sky with no horizon detail; 7 warm floodlights on
-    // poles along the in-run crest and table with visible pools on the snow;
-    // fast dark falloff between pools; falling snow as elongated streaks in a
-    // camera-following volume. Sunny day remains the default; display-only —
-    // no physics, no trace-visible state (the golden harness never passes
+    // snowfall): near-black sky with no horizon detail; 8 warm floodlight
+    // towers (6 corridor, 3 per side, outside the B-net — HT#9 item 2) plus
+    // snow, with fast dark falloff between pools; falling snow as elongated
+    // streaks in a camera-following volume. Sunny day remains the default;
+    // display-only — no physics, no trace-visible state (the golden harness
     // ?night=1, and every Babylon call below is stubbed inert there anyway).
     const _nightLights = [];
     if (_nightMode) {
@@ -1889,54 +1888,91 @@ void main(void) {
             hemi.diffuse       = new BABYLON.Color3(0.30, 0.34, 0.46);
             hemi.groundColor   = new BABYLON.Color3(0.05, 0.06, 0.09);
 
-            // 7 warm floodlights on poles beside the corridor: three on the
-            // in-run crest (z < TRANS_START_Z), two across the table, one over
-            // the kicker, one over the knuckle. Pools read where the cones land.
-            const _poleZs = [-22, -12, -2, 8, 14, 21, LANDING_START_Z - 0.5];
-            const _poleH  = 6.5;
+            // HUMAN TESTING #9 item 2 (author, 2026-08-29 23:05): the old
+            // seven 6.5 m poles at |x| = 2.6 crowded the in-run inside the
+            // B-net (NET_X = 6.2). They are now SIX lamp towers, three per
+            // side, ALL outside the fence (|x| = NET_X + 1.6 = 7.8) and
+            // taller (9.5 m) with a visible head — dark housing, warm
+            // emissive lens, small crossarm — so they read as lamp posts.
+            // The spots still aim inward so the lit pools land on the
+            // corridor; nightFlood2 keeps its name (the night spec projects
+            // its ground point to measure warmth).
+            const _towerZs = [-12, -5, 2, 9, 15, 21];    // L, R, L, R, L, R
+            const _towerX  = 6.2 + 1.6;                  // NET_X + 1.5 m clearance
+            // ~9-10 m lamp towers; the two at the top of the hill are lower
+            // (HT#9: "lower or move them") so their heads stay inside the
+            // ready-state camera's steep downward framing — measured, not
+            // guessed (see tests/drive/night.spec.js headsInFrame gate).
+            const _towerHs = [6.0, 6.5, 9.5, 9.5, 9.5, 9.5];
             const poleMat = new BABYLON.StandardMaterial('nightPoleMat', scene);
             poleMat.diffuseColor = new BABYLON.Color3(0.05, 0.05, 0.06);
-            for (let i = 0; i < _poleZs.length; i++) {
-                const z = _poleZs[i];
-                const x = (i % 2 === 0 ? -1 : 1) * 2.6;   // alternate sides
+            const headMat = new BABYLON.StandardMaterial('nightHeadMat', scene);
+            headMat.diffuseColor = new BABYLON.Color3(0.04, 0.04, 0.05);
+            const lensMat = new BABYLON.StandardMaterial('nightLensMat', scene);
+            lensMat.emissiveColor = new BABYLON.Color3(1.00, 0.82, 0.55);
+            for (let i = 0; i < _towerZs.length; i++) {
+                const z = _towerZs[i], _th = _towerHs[i], sign = (i % 2 === 0 ? -1 : 1);
                 const y = terrainRootY(z) - FOOT_OFFSET;
-                const pole = BABYLON.MeshBuilder.CreateCylinder('nightPole' + i,
-                    { height: _poleH, diameter: 0.09 }, scene);
-                pole.position.set(x, y + _poleH / 2, z);
+                const pole = BABYLON.MeshBuilder.CreateCylinder('nightTowerPost' + i,
+                    { height: _th, diameterBottom: 0.16, diameterTop: 0.10, tessellation: 10 }, scene);
+                pole.position.set(sign * _towerX, y + _th / 2, z);
                 pole.material = poleMat;
                 pole.isPickable = false;
+                // Crossarm reaching inward over the fence; head hangs at its end.
+                const armLen = 1.0;
+                const arm = BABYLON.MeshBuilder.CreateBox('nightTowerArm' + i,
+                    { width: armLen, height: 0.08, depth: 0.08 }, scene);
+                arm.position.set(sign * (_towerX - armLen / 2), y + _th - 0.10, z);
+                arm.material = poleMat;
+                arm.isPickable = false;
+                const headX = sign * (_towerX - armLen);
+                const headY = y + _th - 0.28;
+                const housing = BABYLON.MeshBuilder.CreateBox('nightTowerHead' + i,
+                    { width: 0.34, height: 0.18, depth: 0.46 }, scene);
+                housing.position.set(headX, headY, z);
+                housing.material = headMat;
+                housing.isPickable = false;
+                // Lens on the inward-down face of the housing.
+                const lens = BABYLON.MeshBuilder.CreatePlane('nightTowerLens' + i,
+                    { width: 0.26, height: 0.38 }, scene);
+                lens.position.set(headX - sign * 0.10, headY - 0.02, z);
+                lens.rotation.y = sign * Math.PI / 2;    // face the corridor centre
+                lens.rotation.x = -0.42;                 // tilt down at the pool
+                lens.material = lensMat;
+                lens.isPickable = false;
                 const spot = new BABYLON.SpotLight('nightFlood' + i,
-                    new BABYLON.Vector3(x * 0.8, y + _poleH - 0.2, z),
-                    new BABYLON.Vector3(-x * 0.12, -1, 0).normalize(),
-                    0.7, 18, scene);
-                // Babylon's default falloff is physical (intensity/r²); at the
-                // 6.5 m drop to the snow that divides by ~42 — the intensity
-                // is tuned for ≈ 1.0 arriving at the surface.
-                spot.intensity = 45.0;
-                spot.range = 60;
-                spot.diffuse  = new BABYLON.Color3(1.00, 0.80, 0.55); // ~2900 K
+                    new BABYLON.Vector3(headX - sign * 0.1, headY - 0.05, z),
+                    new BABYLON.Vector3(-sign * 0.45, -1, 0).normalize(),
+                    0.45, 18, scene);
+                // Physical falloff: head ≈ 9.6 m above the snow → slant ≈ 10.5 m
+                // to the pool; intensity ≈ r² for ≈ 1.0 arriving at the surface.
+                spot.intensity = 150.0;
+                spot.range = 70;
+                spot.diffuse  = new BABYLON.Color3(1.00, 0.62, 0.28); // ~2700 K (HT#9 warmth at the pool)
                 _nightLights.push(spot);
             }
 
             // Two more floods (reviewer note on 118): one over the start
             // plateau so the waiting athlete is lit, one BEHIND the kicker
             // high on the landing so the jumper reads backlit in flight
-            // (IMG_3396's glowing jumper).
+            // (IMG_3396's glowing jumper). The start pole also stands outside
+            // the corridor (HT#9 item 2) on a full-height tower.
             {
                 const zs = SLOPE_START_Z - 4;
+                const _towerH = 9.5;
                 const ys = terrainRootY(zs) - FOOT_OFFSET;
                 const poleS = BABYLON.MeshBuilder.CreateCylinder('nightPoleStart',
-                    { height: _poleH, diameter: 0.09 }, scene);
-                poleS.position.set(-2.6, ys + _poleH / 2, zs);
+                    { height: _towerH, diameterBottom: 0.16, diameterTop: 0.10, tessellation: 10 }, scene);
                 poleS.material = poleMat;
                 poleS.isPickable = false;
                 const za = SLOPE_START_Z + 2;   // where the athlete stands at rest
                 const ya = terrainRootY(za) - FOOT_OFFSET + 1;
+                poleS.position.set(-_towerX, ys + _towerH / 2, zs);
                 const spotS = new BABYLON.SpotLight('nightFloodStart',
-                    new BABYLON.Vector3(-2.1, ys + _poleH - 0.2, zs),
-                    new BABYLON.Vector3(2.1, ya - (ys + _poleH), za - zs).normalize(),
-                    0.8, 18, scene);
-                spotS.intensity = 45; spotS.range = 60;
+                    new BABYLON.Vector3(-_towerX + 0.9, ys + _towerH - 0.3, zs),
+                    new BABYLON.Vector3(2.1 - (-_towerX + 0.9), ya - (ys + _towerH - 0.3), za - zs).normalize(),
+                    0.95, 18, scene);
+                spotS.intensity = 110; spotS.range = 70;
                 spotS.diffuse = new BABYLON.Color3(1.00, 0.80, 0.55);
                 _nightLights.push(spotS);
                 const zb = LANDING_START_Z + 7;
@@ -1990,7 +2026,7 @@ void main(void) {
                 }
                 window._nightSnowPs = ps;
             }
-        } catch (e) { /* night mode is display-only — never break the game */ }
+        } catch (e) { console.error('NIGHT INIT ERR', e); /* display-only */ }
     }
     window._nightProbe = () => ({
         active: _nightMode,
