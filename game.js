@@ -1937,6 +1937,7 @@ precision highp float;
 varying vec3 vDir;
 uniform float sunAmount;
 uniform float cloudAmount;
+uniform vec3 sunDir;
 uniform vec3 zenithColor;
 uniform vec3 horizonColor;
 float _hash(vec2 p) {
@@ -1974,6 +1975,7 @@ void main(void) {
     // gates stay deterministic.
     if (dir.y > 0.015) {
         vec2 uv = dir.xz / (dir.y + 0.10);
+        float f = _fbm(uv * 1.35 + vec2(13.1, 7.7));
         float cov = smoothstep(0.52, 0.66, f);
         float fade = smoothstep(0.02, 0.16, dir.y);
         float dens = cov * fade * cloudAmount;
