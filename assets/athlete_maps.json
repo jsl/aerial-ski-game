@@ -18,8 +18,8 @@
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7704,
-   "belowHalf": 0.1596,
+   "mean": 0.7647,
+   "belowHalf": 0.1595,
    "srgb": true
   },
   "face": {
@@ -48,34 +48,34 @@
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.59406
+  "stripe_leak": 0.58755
  },
  "delivery": {
   "athlete_albedo": {
-   "mean_abs": 0.0035,
-   "p99_abs": 0.0235,
-   "png": 1217085,
-   "ratio": 3.59,
+   "mean_abs": 0.0037,
+   "p99_abs": 0.0314,
+   "png": 1185063,
+   "ratio": 3.13,
    "res": 2048,
-   "web": 338878
+   "web": 378772
   },
   "athlete_ao": {
    "mean_abs": 0.0118,
    "p99_abs": 0.1647,
-   "png": 2432999,
+   "png": 2433519,
    "ratio": 16.53,
    "res": 1024,
-   "web": 147214
+   "web": 147202
   },
   "athlete_normal": {
-   "mean_deg": 1.32,
+   "mean_deg": 1.321,
    "p95_deg": 3.749,
-   "png": 4792272,
+   "png": 4795907,
    "ratio": 8.35,
    "res": 2048,
-   "web": 574208
+   "web": 574376
   },
-  "total_web": 1060300
+  "total_web": 1100350
  },
  "faceForward": [
   -0.0063,

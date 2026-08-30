@@ -351,42 +351,35 @@ SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
 # Shared-texel ceiling for the arm/trunk masks (see stripe_texel_ownership's
 # gate and unwrap_zones). Zero, because the zoned unwrap measures zero.
 UV_ZONE_OVERLAP_MAX = 0
-# THE ARM BAND IS STILL OFF, and session 31 moved the reason.
+# THE ARM BAND SHIPS (session 32). The footage has the stripe on both arms and
+# the 21:30 (b) ruling required it; sessions 12-31 could not land it, and this
+# records what each of them was actually looking at, because three separate
+# causes wore the same symptom (body.spec.js torso back blueFrac, gate < 0.10).
 #
-# The 23:10 ruling parked it behind the unwrap: "the arm and trunk UV islands
-# share texels, so no paint-side fix can work". unwrap_zones has now taken that
-# sharing to zero (10 301 texels -> 0, gated), and the leak did not move:
+#   session 13  arm/trunk UV islands OVERLAP                   back 0.121
+#   session 31  overlap fixed (unwrap_zones), leak unmoved     back 0.135
+#   session 32  ownership repair ENABLED                       back 0.073
 #
-#   body.spec.js 'suit design', torso back blueFrac      gate < 0.10
-#     zoned unwrap, legs only  (BODY_STRIPE_ARMS=1 off)         0.030
-#     zoned unwrap, arms on                                     0.135
-#     old global unwrap, arms on (session 13)                   0.121
+# The overlap was real and it was the blocker for a REPAIR, not for the paint:
+# with two surfaces on one texel a subtractive pass has nothing to subtract,
+# because erasing the leak erases the sleeve painted in the same place. That is
+# why session 13 correctly parked the band and why session 31, having taken the
+# overlap to zero, still measured a leak — it had removed the obstacle to the
+# repair without running the repair, which was still gated behind
+# BODY_REPAIR_STRIPE_LEAK.
 #
-# So the overlap was real, and it was not this. Two more causes ruled OUT by
-# measurement this session: bake-margin bleed between the now-more-numerous
-# islands (BAKE_MARGIN 16 -> 6, under the 8-texel pack gap: back stayed 0.135
-# to three decimals), and the paint keying off a spatial band, which the
-# reviewer's 21:30 (b) ruling asked be replaced by skin ownership — it already
-# is, `segment_frame(co, force=owner[i])` with owner from dominant_segments.
-#
-# WHAT IT ACTUALLY IS: the paint is keyed to the skin weights that exist WHEN
-# THE HIGH-POLY IS PAINTED, and body.spec.js reads the weights that SHIP. Four
-# passes run between them — add_spine_chain, add_joint_helpers,
-# localise_weights and smooth_blend_rings — and every one of them re-partitions
-# ownership across the shoulder. A vertex the stripe paints because it is
-# heaviest on upperArmR is, by the time it is exported, heaviest on torso or
-# spine_01, and the blue it carries is then torso blue by the only definition
-# the shipped asset has. The probe puts the 76 offending back-torso triangles at
-# bones torso 59 / spine_01 9 / spine_02 8, spread over the whole trunk width
-# (|lat| 0.011..0.234) — not a band along one seam.
-#
-# That is a build-ORDER question (run the weight passes before the bake, or
-# re-derive the paint from the final weights), not a stripe question, and it is
-# left for the reviewer rather than guessed at. BODY_STRIPE_ARMS=1 ships the
-# sleeve band and reproduces the 0.135 for whoever picks it up.
-STRIPE_SEGMENTS = (('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm')
-                   if os.environ.get('BODY_STRIPE_ARMS') == '1'
-                   else ('upperLeg', 'lowerLeg'))
+# The leak itself is the build-ORDER effect session 31 identified: paint_suit
+# keys the band to the weights that exist when the HIGH-POLY is painted, and
+# body.spec.js reads the weights that SHIP, with add_spine_chain,
+# localise_weights, smooth_blend_rings and add_joint_helpers re-partitioning
+# the shoulder in between. Of session 31's two candidate fixes this is (b) —
+# re-derive ownership from the final weights and repair the atlas — and it
+# needs no reordering, because stripe_texel_ownership ALREADY runs after all
+# four weight passes. See its header and REPAIR_STRIPE_LEAK.
+# BODY_STRIPE_ARMS=0 drops back to the legs-only band (the session-13..31 ship).
+STRIPE_SEGMENTS = (('upperLeg', 'lowerLeg')
+                   if os.environ.get('BODY_STRIPE_ARMS') == '0'
+                   else ('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm'))
 STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
 # fixed angle wraps a thin segment. 0.46 let the 5 cm arc rule govern the whole
@@ -400,10 +393,10 @@ STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
 # needs 0.536 at its measured 46.6 mm radius) and still caps the FOREARM, which
 # at 35.5 mm would otherwise wrap 0.70 rad — that is the case the cap exists for.
 # Measured at 0.55: upper arm 42.9/42.3 mm, forearm 37.6/38.3 mm, legs unmoved.
-# It is left at 0.46 WHILE THE ARMS ARE OFF, because it changes nothing on the
-# legs (they are arc-limited at 0.455) and a live constant should describe the
-# build that ships. Restore 0.55 together with STRIPE_SEGMENTS' arms.
-STRIPE_DPHI_MAX = 0.55 if os.environ.get('BODY_STRIPE_ARMS') == '1' else 0.46
+# Session 32 ships 0.55 with the arms; BODY_STRIPE_ARMS=0 restores 0.46 with
+# the legs-only band, which changes nothing on the legs (they are arc-limited
+# at 0.455) so the control differs from the ship in the arms alone.
+STRIPE_DPHI_MAX = 0.46 if os.environ.get('BODY_STRIPE_ARMS') == '0' else 0.55
 # Straightness of the painted seam (stripe_straight_gate), in metres of
 # fore/aft travel — the direction the old nearest-bucket axis made it stagger.
 # Set on session 11's measurements with margin, to be ratcheted down as the
@@ -414,6 +407,17 @@ STRIPE_DPHI_MAX = 0.55 if os.environ.get('BODY_STRIPE_ARMS') == '1' else 0.46
 # 5 cm arc rule to govern; see arm_stripe_presence_gate for why the forearm is
 # reported rather than floored.
 ARM_STRIPE_MIN_W = 0.040
+# Floor for the ATLAS-side sleeve gate in stripe_texel_ownership: stripe-blue
+# texels still inside the arm mask AFTER the ownership repair has subtracted.
+# Measured 32 490 on the session-32 build at 2048 (12.1% of the 267 677-texel
+# arm mask, which is what a 5 cm band capped at STRIPE_DPHI_MAX comes to on a
+# ~30 cm sleeve). Floored at a thirtieth of that, because the claim is "the
+# band is still there", not "the band is exactly this many texels" — its area
+# moves with STRIPE_DPHI_MAX and with the atlas allocation unwrap_zones hands
+# the arms. NEGATIVE CONTROL: BODY_SABOTAGE_ARMBAND=1 drops the arm bones from
+# the licensed mask so the repair erases the sleeve, and the gate must reject
+# it.
+ARM_STRIPE_MIN_TEXELS = 1000
 STRIPE_STEP_MAX = 0.014     # max |change| in seam centre between 2 cm rungs
 STRIPE_WANDER_MAX = 0.020   # max |deviation| from the segment's own straight fit
 def log(m):
@@ -10076,9 +10080,20 @@ BAKE_MARGIN = 16            # bake.margin
 # that, so a 16-texel skirt swallowed exactly the texels the pass exists to
 # repair, and the measured leak went unrepaired at 0.117.
 OWNERSHIP_DILATE = 0
-# The repair is OFF by default and the pass ships as an INSTRUMENT — see its
-# header for the measurement that says a repair cannot fix this leak.
-REPAIR_STRIPE_LEAK = os.environ.get('BODY_REPAIR_STRIPE_LEAK') == '1'
+# SESSION 32: the repair is ON by default, and the reason it was off is gone.
+# It shipped as an instrument from session 13 to 31 because the arm and trunk
+# UV islands OVERLAPPED — at a shared texel a subtractive pass has nothing to
+# subtract, since erasing the leak erases the sleeve that is painted in the
+# same place. unwrap_zones took that overlap to zero on session 31 (gated at
+# zero, UV_ZONE_OVERLAP_MAX), which is exactly the precondition the 23:10
+# ruling set: "separate, non-overlapping islands ... gate: zero shared texels
+# between arm and trunk masks on the shipped weights". With one owner per
+# texel the complement of the licensed mask is a set the repair can write
+# without touching anything licensed, so it does.
+# NEGATIVE CONTROL: BODY_REPAIR_STRIPE_LEAK=0 restores the instrument-only
+# pass and body.spec.js's torso-back blueFrac must reject it.
+REPAIR_STRIPE_LEAK = os.environ.get('BODY_REPAIR_STRIPE_LEAK', '1') == '1'
+SABOTAGE_ARMBAND = os.environ.get('BODY_SABOTAGE_ARMBAND') == '1'
 
 
 def _dilate(mask, r):
@@ -10224,9 +10239,16 @@ def stripe_texel_ownership(low, out_dir):
     just outside the licensed region's antialiased rim rather than cutting a
     hard edge into it.
     """
-    arm_leg = _owned_uv_tris(low, {'upperArmL', 'upperArmR', 'lowerArmL',
-                                   'lowerArmR', 'upperLegL', 'upperLegR',
-                                   'lowerLegL', 'lowerLegR', 'head'})
+    licensed = {'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR',
+                'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR', 'head'}
+    if SABOTAGE_ARMBAND:
+        # NEGATIVE CONTROL for the atlas-side sleeve gate below: unlicense the
+        # arms so the repair does the degenerate thing — erase the band and go
+        # green on every leak gate. The atlas gate must reject it.
+        licensed -= {'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
+        log('arm band SABOTAGED: the arms are unlicensed, so the ownership '
+            'repair will erase the sleeve — the atlas gate must reject it')
+    arm_leg = _owned_uv_tris(low, licensed)
     img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
     w, h = img.size
     buf = np.empty(w * h * 4, dtype=np.float32)
@@ -10301,6 +10323,27 @@ def stripe_texel_ownership(low, out_dir):
             raise SystemExit(
                 f'[body] stripe ownership repair did not converge: {left} '
                 f'unowned texels still read stripe blue')
+    # GATE: the sleeve band SURVIVED the repair, measured on the atlas the
+    # browser downloads.
+    #
+    # arm_stripe_presence_gate already floors the band's width, but it measures
+    # the PAINT, on the high-poly, before the bake — so it cannot see this pass
+    # at all, and the repair's degenerate solution (erase every blue texel and
+    # every leak gate goes green) would sail past it.  This is the gate that
+    # closes that: after the subtraction, count stripe-blue texels still inside
+    # the arm mask itself.  The floor is a twentieth of the measured figure, so
+    # it is a gate on the band EXISTING rather than on its exact area, which
+    # moves with STRIPE_DPHI_MAX and the atlas allocation.
+    arm_blue = int((_stripe_blue_mask(R, B) & arm_m).sum())
+    log(f'STRIPE OWNERSHIP: {arm_blue} stripe-blue texels survive inside the '
+        f'{int(arm_m.sum())}-texel arm mask')
+    if any(seg.startswith('upperArm') for seg in STRIPE_SEGMENTS) \
+            and arm_blue < ARM_STRIPE_MIN_TEXELS:
+        bpy.data.images.remove(img)
+        raise SystemExit(
+            f'[body] arm stripe ATLAS gate FAILED: only {arm_blue} stripe-blue '
+            f'texels are left inside the arm mask (min {ARM_STRIPE_MIN_TEXELS}) '
+            f'— the ownership repair ate the sleeve band instead of the leak')
     bpy.data.images.remove(img)
     return leak / max(1, total_blue)
 
