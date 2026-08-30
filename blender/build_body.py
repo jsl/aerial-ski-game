@@ -5457,17 +5457,58 @@ def bib_mask(name, along, front, lat):
 
 NUM_W = 0.075                    # patch half-width in metres (15 cm wide)
 NUM_A0, NUM_A1 = -0.54, 0.32     # patch along-span
+
+# ── SESSION 22: the layout the 03:05 ruling asks for, and WHY it is a stroke
+# ── width and not a flip.
+#
+# The ruling asks for the back plate laid out exactly like the front, with
+# margins ≥ 10% of the plate width each side and both glyphs fully inside.
+# Session 21 refused to do it against an instrument it had just shown to be
+# too thin; the rectified sampler (`_rect_plate`) replaces that instrument,
+# and with 96 columns of the actual plate it says something the ten-bucket
+# profile could not:
+#
+#   BOTH plates carry a correctly-oriented "30". Neither is mirrored and
+#   neither is clipped. What differs is STROKE WIDTH: the front's vertical
+#   stems render ~5 of 96 columns, the back's ~1.
+#
+# The cause is in this block, and it is a units bug rather than a mapping
+# one. The paint is per-VERTEX on the high poly and then baked, so the plate
+# has the resolution of the torso lattice — measured, a median patch-u vertex
+# gap of 0.0036 with a p90 of 0.0641 on the back (0.0478 on the front, which
+# is why the front survived). The glyph rects are in a cell normalised to
+# [0,1] in BOTH axes, and a cell is 5.6 x 12.3 cm — so "0.16" meant 19.6 mm
+# for a horizontal bar and 9.0 mm for a vertical stem. The bars sat at twice
+# the lattice gap and always resolved; the stems sat AT it, and survived on
+# the front only by the lattice's phase.
+#
+# So the stems are now as thick in METRES as the bars (0.30 of cell width vs
+# 0.16 of cell height: 16.9 mm vs 18.2 mm), which is also what a sans-serif
+# competition numeral actually looks like, and the pair is inset by
+# NUM_MARGIN so the ruling's margins hold on both faces.
+#
+# NEGATIVE CONTROL for both new gates: BODY_SABOTAGE_BIBLAYOUT=1 restores the
+# pre-session-22 layout exactly — no margin, 9 mm stems — which is the bake
+# the ruling says must fail.
+SABOTAGE_BIBLAYOUT = os.environ.get('BODY_SABOTAGE_BIBLAYOUT') == '1'
+
+# Blank bib either side of the glyph pair, as a fraction of the plate width.
+NUM_MARGIN = 0.0 if SABOTAGE_BIBLAYOUT else 0.10
+# Cell width and the gap between the two cells, in plate-u units.
+NUM_CELL_W = 0.47 * (1 - 2 * NUM_MARGIN)
+NUM_CELL_GAP = 0.06 * (1 - 2 * NUM_MARGIN)
+
 # Negative control for the digit-aspect gate: the pre-fix full-height ink
 # band, which made each digit 7.0 x 21.3 cm (aspect 0.33 — a vertical bar).
+# The band narrows with the cell so the aspect stays a numeral's, not a bar's.
 NUM_DV0, NUM_DV1 = ((0.06, 0.96)
                     if os.environ.get('BODY_SABOTAGE_BIBASPECT') == '1'
-                    else (0.24, 0.76))   # ink's vertical share of the patch
+                    else (0.24, 0.76) if SABOTAGE_BIBLAYOUT
+                    else (0.27, 0.75))   # ink's vertical share of the patch
 NUM_INK = (0.07, 0.10, 0.18)     # dark navy on the white plate
 
 # Glyph outlines as (u0,u1,v0,v1) rectangles in a per-digit cell [0,1]².
-# Stroke ≈ 0.14 of cell height — bib numerals are narrow, and the plate must
-# stay well under half ink or the white "30" reads as a dark slab.
-_GLYPH_RECTS = {
+_GLYPH_RECTS_THIN = {           # pre-session-22: 9 mm stems, under the lattice
     '3': ((0.08, 0.90, 0.82, 0.98),   # top bar
           (0.12, 0.84, 0.45, 0.58),   # middle bar
           (0.08, 0.90, 0.02, 0.18),   # bottom bar
@@ -5477,6 +5518,17 @@ _GLYPH_RECTS = {
           (0.20, 0.80, 0.84, 1.00),   # top shoulder
           (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
 }
+_GLYPH_RECTS_BOLD = {           # stems 0.30 of cell WIDTH = 16.9 mm ≈ the bars
+    '3': ((0.06, 0.94, 0.84, 1.00),   # top bar
+          (0.10, 0.90, 0.42, 0.58),   # middle bar
+          (0.06, 0.94, 0.00, 0.16),   # bottom bar
+          (0.64, 0.94, 0.00, 1.00)),  # right stem joins all three
+    '0': ((0.06, 0.36, 0.00, 1.00),   # left stem
+          (0.64, 0.94, 0.00, 1.00),   # right stem
+          (0.20, 0.80, 0.84, 1.00),   # top shoulder
+          (0.20, 0.80, 0.00, 0.16)),  # bottom shoulder
+}
+_GLYPH_RECTS = _GLYPH_RECTS_THIN if SABOTAGE_BIBLAYOUT else _GLYPH_RECTS_BOLD
 
 
 def in_number_patch(name, along, front, lx):
@@ -5517,14 +5569,21 @@ def number_uv(front, lx, along):
 
 
 def digit30_mask(u, v):
-    """Ink coverage of '30' in patch space; cells [0,0.47]=3, [0.53,1]=0."""
+    """Ink coverage of '30' in patch space.
+
+    The two cells are inset by NUM_MARGIN from each plate edge, so the glyph
+    pair is centred with blank bib either side on BOTH faces — the layout the
+    03:05 ruling specifies, and the same construction for front and back.
+    """
     if not (NUM_DV0 <= v <= NUM_DV1):
         return 0.0
     vd = (v - NUM_DV0) / (NUM_DV1 - NUM_DV0)
-    if u < 0.47:
-        ch, uc = '3', u / 0.47
-    elif u >= 0.53:
-        ch, uc = '0', (u - 0.53) / 0.47
+    u3 = NUM_MARGIN                                  # '3' cell left edge
+    u0 = NUM_MARGIN + NUM_CELL_W + NUM_CELL_GAP      # '0' cell left edge
+    if u3 <= u < u3 + NUM_CELL_W:
+        ch, uc = '3', (u - u3) / NUM_CELL_W
+    elif u0 <= u <= u0 + NUM_CELL_W:
+        ch, uc = '0', (u - u0) / NUM_CELL_W
     else:
         return 0.0
     uc = min(max(uc, 0.0), 1.0)
@@ -6073,6 +6132,7 @@ def paint_suit(obj, lm):
     attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     stripe_dbg = []
+    _plate_paint = {'front': [], 'back': []}
     for i, v in enumerate(mesh.vertices):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
@@ -6218,10 +6278,59 @@ def paint_suit(obj, lm):
                 col = (col[0] * (1 - 0.18 * f), col[1] * (1 - 0.15 * f),
                        col[2] * (1 - 0.10 * f))
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
+        if tag == 'number':
+            _u, _v = number_uv(front, lx, along)
+            _plate_paint['front' if front > 0 else 'back'].append(
+                (_u, _v, col is NUM_INK, x, y, z))
         counts[tag] = counts.get(tag, 0) + 1
         if tag == 'stripe':
             stripe_dbg.append((x, y, z, lx, ly, name))
     log(f'suit painted: {counts}')
+    # PAINT-SIDE view of the number plates: the high-poly vertices that carry
+    # plate colour, splatted into patch space. This is what the bake is given;
+    # comparing it with `bib rect ascii` (which reads the bake back through
+    # the low-poly UVs) says whether a thin stroke was never painted or was
+    # painted and then lost.
+    for _f in ('front', 'back'):
+        _d = _plate_paint[_f]
+        if not _d:
+            continue
+        _xs = sorted(p_[3] for p_ in _d)
+        log(f'plate paint [{_f}]: {len(_d)} high-poly verts, '
+            f'{sum(1 for p_ in _d if p_[2])} ink '
+            f'({sum(1 for p_ in _d if p_[2]) / len(_d):.3f}), '
+            f'world x {_xs[0]:+.4f}..{_xs[-1]:+.4f}')
+        # Mean nearest-neighbour spacing along the patch-u direction, per row:
+        # the resolution the paint actually has where a vertical stroke lives.
+        _rows = {}
+        for _u, _v, _k, _x, _y, _z in _d:
+            _rows.setdefault(int(_v * 16), []).append(_u)
+        _gaps = []
+        for _r, _us in _rows.items():
+            _us.sort()
+            _gaps += [b - a for a, b in zip(_us, _us[1:]) if b - a > 1e-9]
+        _gaps.sort()
+        if _gaps:
+            log(f'plate paint [{_f}]: patch-u vertex gap median '
+                f'{_gaps[len(_gaps) // 2]:.4f} p90 '
+                f'{_gaps[int(len(_gaps) * 0.9)]:.4f} '
+                f'(stroke width {0.14 * 0.47:.4f} of the plate)')
+    if os.environ.get('BODY_BIB_ASCII') == '1':
+        for _f in ('front', 'back'):
+            NU, NV = 96, 64
+            g = [[[0, 0] for _ in range(NU)] for _ in range(NV)]
+            for _u, _v, _k, _x, _y, _z in _plate_paint[_f]:
+                _i = min(NU - 1, max(0, int(_u * NU)))
+                _j = min(NV - 1, max(0, int(_v * NV)))
+                g[_j][_i][1] += 1
+                g[_j][_i][0] += 1 if _k else 0
+            log(f'plate paint ascii [{_f}] (patch u across, v up):')
+            for _j in range(NV - 1, -1, -1):
+                _row = ''
+                for _i in range(NU):
+                    _k2, _t2 = g[_j][_i]
+                    _row += ' ' if not _t2 else '.:*#'[min(3, int(_k2 / _t2 * 4))]
+                log(f'  |{_row}|')
     if stripe_dbg:
         zs = sorted(p[2] for p in stripe_dbg)
         lxs = sorted(p[3] for p in stripe_dbg)
@@ -6468,6 +6577,199 @@ def bib_orientation_report(viewer):
     return lead
 
 
+# ── The RECTIFIED plate sampler (session 22) ────────────────────────────────
+#
+# Session 21 refused to lay the back plate out against session 19's profile
+# because the instrument behind it is too thin: it samples only the low
+# triangles that lie WHOLLY inside a plate, on a 16-point barycentric grid, so
+# ~45 triangles produce ~700 point samples over a 200-300 cm2 plate — 3 per
+# cm2, binned into a 30x18 grid at ~1.2 samples per cell, with whole columns
+# empty. Structure read off that is noise.
+#
+# This is the replacement the reviewer's ruling needs a measurement from: a
+# fixed grid in PATCH space, rasterised from the same triangles, with the
+# atlas UV interpolated per cell and the baked albedo fetched there. Two
+# things change the answer, and both matter:
+#
+#   * partial triangles are CLIPPED, not dropped. The old test threw away
+#     every triangle with a corner outside the plate, i.e. exactly the border
+#     ring — so the sampled region was the plate's interior, its extent set by
+#     wherever the triangulation happened to fall, and "ink hard against the
+#     plate edge" could be an artefact of a sampled window that is not the
+#     plate. Patch coordinates are affine in the triangle, so a corner outside
+#     [0,1]^2 is interpolated through perfectly well; only the CELLS outside
+#     are dropped.
+#   * the grid is the plate, not the samples. Every cell of the NU x NV grid
+#     is either covered by some triangle or recorded as a hole, so a profile
+#     bucket that is empty is visibly empty instead of silently renormalised.
+
+RECT_NU, RECT_NV = 96, 64
+
+
+def _rect_plate(low, px, w, h, owner, uvl, nu=RECT_NU, nv=RECT_NV):
+    """Rectified ink coverage of both number plates, in patch space.
+
+    Returns {face: (ink, cov)} where each is an nv x nu grid of floats/ints:
+    `ink` counts dark sub-samples, `cov` counts sub-samples of any colour.
+    """
+    import mathutils
+
+    def patch_of(vi):
+        """Patch (u, v) for a torso vertex, VALID OUTSIDE the plate too."""
+        if owner[vi] != 'torso':
+            return None
+        nm, along, _r, _o, front, local = segment_frame(
+            low.data.vertices[vi].co, 'torso')
+        u, v = number_uv(front, local[0], along)
+        return front, u, v
+
+    def classify(ptr):
+        o = 4 * ptr
+        lum = 0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]
+        return lum < 0.45 and abs(px[o] - NUM_INK[0]) < 0.30
+
+    out = {}
+    for fname, fsign in (('front', 1.0), ('back', -1.0)):
+        ink = [[0] * nu for _ in range(nv)]
+        cov = [[0] * nu for _ in range(nv)]
+        for poly in low.data.polygons:
+            vids = list(poly.vertices)
+            if len(vids) < 3:
+                continue
+            pp = [patch_of(vi) for vi in vids]
+            if any(d is None or d[0] != fsign for d in pp):
+                continue
+            # Cheap reject: a triangle none of whose corners come within half
+            # a plate of the patch cannot cover a cell, and iterating its
+            # clamped bbox would cost 96x64 barycentric tests for nothing.
+            if not any(-0.5 < d[1] < 1.5 and -0.5 < d[2] < 1.5 for d in pp):
+                continue
+            cuv = [tuple(uvl[li].uv) for li in poly.loop_indices]
+            if len(cuv) != len(vids):
+                continue
+            # Same UV-seam rejection as the point sampler: a triangle that
+            # spans a seam interpolates through unrelated texels.
+            seam = False
+            for k in range(len(vids)):
+                k2 = (k + 1) % len(vids)
+                du = mathutils.Vector(
+                    (cuv[k][0] - cuv[k2][0], cuv[k][1] - cuv[k2][1])).length
+                dp = (low.data.vertices[vids[k]].co
+                      - low.data.vertices[vids[k2]].co).length
+                if du > 0.10 and dp > 1e-6:
+                    seam = True
+                    break
+            if seam:
+                continue
+            for (a, b, c3) in [(0, k, k + 1) for k in range(1, len(vids) - 1)]:
+                (_f, ua, va) = pp[a]
+                (_f, ub, vb) = pp[b]
+                (_f, uc, vc) = pp[c3]
+                det = (ub - ua) * (vc - va) - (uc - ua) * (vb - va)
+                if abs(det) < 1e-12:
+                    continue
+                # Only the part of the triangle that lands ON the plate.
+                i0 = max(0, int(math.floor(min(ua, ub, uc) * nu)))
+                i1 = min(nu - 1, int(math.ceil(max(ua, ub, uc) * nu)))
+                j0 = max(0, int(math.floor(min(va, vb, vc) * nv)))
+                j1 = min(nv - 1, int(math.ceil(max(va, vb, vc) * nv)))
+                for j in range(j0, j1 + 1):
+                    py_ = (j + 0.5) / nv
+                    for i in range(i0, i1 + 1):
+                        pu = (i + 0.5) / nu
+                        l1 = ((pu - ua) * (vc - va) - (uc - ua) * (py_ - va)) / det
+                        l2 = ((ub - ua) * (py_ - va) - (pu - ua) * (vb - va)) / det
+                        l0 = 1.0 - l1 - l2
+                        if l0 < -1e-9 or l1 < -1e-9 or l2 < -1e-9:
+                            continue
+                        tu = (l0 * cuv[a][0] + l1 * cuv[b][0]
+                              + l2 * cuv[c3][0]) % 1.0
+                        tv = (l0 * cuv[a][1] + l1 * cuv[b][1]
+                              + l2 * cuv[c3][1]) % 1.0
+                        ptr = (min(h - 1, int(tv * h)) * w
+                               + min(w - 1, int(tu * w)))
+                        cov[j][i] += 1
+                        if classify(ptr):
+                            ink[j][i] += 1
+        out[fname] = (ink, cov)
+    return out
+
+
+def _rect_profile(ink, cov):
+    """Ink fraction per plate COLUMN, and the covered-column mask."""
+    nv, nu = len(ink), len(ink[0])
+    prof, seen = [], []
+    for i in range(nu):
+        t = sum(cov[j][i] for j in range(nv))
+        k = sum(ink[j][i] for j in range(nv))
+        seen.append(t > 0)
+        prof.append(k / t if t else 0.0)
+    return prof, seen
+
+
+RECT_GROUPS = 12                 # column groups the plate profile is read in
+
+# The 03:05 ruling's two acceptance questions, on the rectified plates.
+#
+#   MARGIN  — "both glyphs fully inside, ≥ 10 % of the plate width each side".
+#             Measured as the share of each face's total ink that falls in the
+#             outer NUM_MARGIN of the plate. Zero by construction with the
+#             inset cells; the gate is what stops a later widening of the
+#             glyph rects from quietly walking the ink back to the edge.
+#   MATCH   — "the back plate's horizontal ink profile matches the front's
+#             within tolerance". L1 between the two NORMALISED column
+#             profiles, so it is a shape comparison and not an amount one
+#             (the faces carry different ink fractions: 0.135 / 0.166).
+#
+# Both thresholds are set from the measurement plus margin, and both have the
+# same negative control: BODY_SABOTAGE_BIBLAYOUT=1, the pre-session-22 layout,
+# which fails MARGIN at 0.093/0.082 (no margins exist in it) and MATCH at
+# L1 0.511 (its back stems do not resolve, so the shapes differ).
+BIB_MARGIN_INK_MAX = 0.02
+BIB_PROFILE_L1_MAX = 0.40
+
+
+def _norm(g):
+    t = sum(g)
+    return [x / t for x in g] if t > 1e-9 else list(g)
+
+
+def _bib_layout_gate(groups):
+    """Same layout on both faces: glyphs inside the margins, profiles alike."""
+    edge = max(1, int(round(NUM_MARGIN * RECT_GROUPS)))
+    fails = []
+    for f in ('front', 'back'):
+        g = groups[f]
+        tot = sum(g)
+        if tot <= 1e-9:
+            fails.append(f'{f}: no ink on the rectified plate at all')
+            continue
+        m = (sum(g[:edge]) + sum(g[-edge:])) / tot
+        log(f'bib layout [{f}]: ink in the outer {edge}/{RECT_GROUPS} of the '
+            f'plate = {m:.3f} (max {BIB_MARGIN_INK_MAX})')
+        if m > BIB_MARGIN_INK_MAX:
+            fails.append(f'{f}: {m:.3f} of its ink is in the outer '
+                         f'{edge}/{RECT_GROUPS} of the plate, which must be '
+                         f'blank bib')
+    pf, pb = _norm(groups['front']), _norm(groups['back'])
+    l1 = sum(abs(a - b) for a, b in zip(pf, pb))
+    l1m = sum(abs(a - b) for a, b in zip(pf[::-1], pb))
+    log(f'bib layout: back-vs-front profile L1 {l1:.3f} '
+        f'(max {BIB_PROFILE_L1_MAX}), back-vs-mirrored-front {l1m:.3f}')
+    if l1 > BIB_PROFILE_L1_MAX:
+        fails.append(f'back-vs-front profile L1 {l1:.3f} > '
+                     f'{BIB_PROFILE_L1_MAX}')
+    if l1 >= l1m:
+        fails.append(f'the back matches the MIRRORED front at least as well '
+                     f'({l1:.3f} vs {l1m:.3f})')
+    if fails:
+        raise SystemExit(
+            '[body] bib plate layout gate FAILED: ' + '; '.join(fails)
+            + ' — the two plates must be laid out identically (negative '
+              'control: BODY_SABOTAGE_BIBLAYOUT=1)')
+    return l1
+
+
 def bib_number_gate(low, out_dir):
     """
     The P7 acceptance question, asked of the SAVED albedo at build time: do
@@ -6697,12 +6999,45 @@ def bib_number_gate(low, out_dir):
                         row += '.:*#'[min(3, int(ink_n / tot_n * 4))]
                 log(f'  |{row}|')
 
+    # The rectified plates: dense, clipped, and gridded on the PLATE.
+    rect = _rect_plate(low, px, w, h, owner, uvl)
+    groups = {}
+    for _f in ('front', 'back'):
+        _ink, _cov = rect[_f]
+        _prof, _seen = _rect_profile(_ink, _cov)
+        _nc = sum(1 for s_ in _seen if s_)
+        _tot = sum(sum(r) for r in _cov)
+        _ti = sum(sum(r) for r in _ink)
+        _g = [sum(_prof[k * RECT_NU // RECT_GROUPS:
+                        (k + 1) * RECT_NU // RECT_GROUPS])
+              / (RECT_NU // RECT_GROUPS) for k in range(RECT_GROUPS)]
+        groups[_f] = _g
+        log(f'bib rect [{_f}]: {RECT_NU}x{RECT_NV} grid, {_nc}/{RECT_NU} '
+            f'columns covered, {_tot} sub-samples, ink fraction '
+            f'{_ti / max(1, _tot):.3f}')
+        log(f'bib rect [{_f}]: ink by plate column ({RECT_GROUPS} groups) '
+            + ' '.join(f'{x:.2f}' for x in _g))
+    if os.environ.get('BODY_BIB_ASCII') == '1':
+        for _f in ('front', 'back'):
+            _ink, _cov = rect[_f]
+            log(f'bib rect ascii [{_f}] (patch u across, v up, '
+                f'{RECT_NU}x{RECT_NV}):')
+            for _j in range(RECT_NV - 1, -1, -1):
+                _row = ''
+                for _i in range(RECT_NU):
+                    _t = _cov[_j][_i]
+                    _row += ' ' if not _t else '.:*#'[
+                        min(3, int(_ink[_j][_i] / _t * 4))]
+                log(f'  |{_row}|')
+
+    _bib_layout_gate(groups)
+
     bib_orientation_report(viewer)
 
     # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
     # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
     # numeral is near 0.58.
-    cell_w = 0.47 * 2 * NUM_W
+    cell_w = NUM_CELL_W * 2 * NUM_W
     cell_h = (NUM_DV1 - NUM_DV0) * (NUM_A1 - NUM_A0) * (SEGMENTS['torso']['h'] / 2)
     aspect = cell_w / cell_h
     log(f'bib digit cell: {cell_w * 100:.1f} x {cell_h * 100:.1f} cm, '
