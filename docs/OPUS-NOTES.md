@@ -796,6 +796,142 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 30 (2026-08-30, 11:2x-12:0x)
+
+Tree clean at start, `render-realism-glm` unmoved since session 29's merge
+(`git merge-base --is-ancestor` confirms it is an ancestor of HEAD), so no
+merge this session. No new reviewer ruling in the tree since 07:25/#12, so
+the standing order's step 2 continues: **the bib**.
+
+### Item 3 — the bib is the reference's THREE-BAND garment — LANDED (`e60c4c2`)
+
+Session 29 named this and left it: "the bib is a three-band garment — light-
+blue yoke over the shoulders, white middle carrying the number, magenta/pink
+band with a sponsor mark at the waist … the magenta band is the single most
+visible remaining difference from the reference photograph."
+
+**Measured, not chosen.** Cropped `reference/images/aerial_suit.png` at the
+bib (x 250..950, y 980..1750 — the crop is worth looking at, it also shows
+the arm stripe and the thigh logo), took the band medians, converted sRGB ->
+linear and divided by the WHITE band's own value in the same frame. A ratio,
+because the whole photograph is backlit and the absolute values are three
+stops down:
+
+| band | sRGB median | linear / white band |
+|---|---|---|
+| yoke | 0.078 0.180 0.282 | 0.093 0.282 0.365 |
+| white | 0.302 0.341 0.459 | 1 1 1 |
+| magenta | 0.259 0.137 0.255 | 0.734 0.173 0.299 |
+
+So the yoke is a **deep teal at a quarter of the white's luminance**, not the
+powder blue this build has carried since iteration 61, and the magenta band
+has never existed at all. `BIB` 0.55/0.72/0.88 -> **0.20/0.42/0.62**, new
+`BIB_WAIST` **0.62/0.14/0.30** below the plate.
+
+**The one place the palette is not the measurement:** the yoke ships at 40%
+of the white's luma, not the reference's 25%, because `bib-number.spec`'s
+blue detector needs `lum > 0.35` on the rendered frame and the literal tone
+lands under it in the shade of the visor. Recorded as a compromise, in the
+constant's own comment.
+
+The number plate's bottom edge moves `-0.54 -> -0.40` along-units to make
+room. The band then measures **60.2 mm** of world z (nominal 77, trimmed by
+`bib_mask`'s own bottom ramp) against the reference band's ~27% of bib
+height. The shorter plate moves the digit **aspect** only, 0.497 -> **0.593**
+inside the 0.45-0.75 gate; the ink fraction is a fraction OF the plate and is
+scale-invariant (front/back 0.163/0.134), and the `BODY_SABOTAGE_BIBASPECT`
+control still lands at 0.32 under the floor.
+
+**Why the bands are cut TO the plate and not the other way round.** The
+reference's three bands run about 48/24/27% of the bib height and ours cannot,
+because the "30" is drawn far larger relative to the bib than the reference's
+numeral. Laying reference-proportioned bands over the plate is not merely
+awkward, it is unsound: `bib_number_gate`'s ink classifier is
+`lum < 0.45 and |r - 0.05| < 0.30`, and the teal yoke (r = 0.20, luma 0.36)
+satisfies **both** — any band tone inside the plate would be counted as
+numeral ink and pushed toward the 0.45 ceiling.
+
+New build gate **`bib_band_gate`** asserts exactly that separation, plus the
+three tones' presence, their vertical ordering and the band's height. Shipped:
+yoke 878 verts (381 above the plate), plate 1405, magenta 312 spanning
+60.2 mm, plate-minus-band gap +0.2 mm, **0** band/yoke verts inside the patch.
+**NEGATIVE CONTROL** `BODY_SABOTAGE_BIBBANDS=1` restores session 29's flat
+powder-blue panel and the gate rejects it on four of its five assertions,
+exit 1 (`scratch/opus/s30_negctl_bibbands.log`).
+
+### THE FINDING: the bib gate that has been red since the merge was reading a lighting difference, not a panel
+
+`bib-number.spec`'s three panel assertions were all measured on `blueFrac`,
+and after this change blueFrac reads **0.0000 on both faces** of a bib that is
+plainly there in `shots/bib_front.png`. That is the design, not a regression:
+the measurement box is anchored to a ray hit at a fixed body height and lands
+on the plate's lower half and the fabric under it — and that fabric is
+magenta now. Blue was only ever a proxy for "bib fabric"; with a three-band
+garment it is the wrong proxy, so it is **replaced rather than recalibrated**
+(the same treatment the 19:15 ruling gave the fold gate that could not tell
+folds-off from folds-on).
+
+More to the point, measuring the replacement explains **why the "bib panel
+does not dominate the back panel" assertion has been red since the GLM merge**
+(session 29 measured it and correctly said it was not its commit; this is the
+cause). The intent — the front bib wraps to `|lat| < 0.09` and the back only
+to 0.06, so the front panel is the wider one — is a **width**, and the box is
+narrower than the plate on both faces, so the extra wrap lives entirely
+outside it. What the assertion actually compared was two bulk brightness
+fractions on differently-lit faces. Measured on a box three panels wide, the
+front panel is the wider one: **1430 px of band against 1361**.
+
+The replacement set:
+
+| assertion | shipped | session-29 assets |
+|---|---|---|
+| bib visible (blue + magenta > 0.04, both faces) | 0.2315 / 0.2573 | 0.0615 / 0.0725 (passes) |
+| the magenta band reads (magFrac > 0.08, both) | 0.2315 / 0.2573 | **0.0000 / 0.0000 (fails)** |
+| front panel wider than back (px of band, wide box) | 1430 > 1361 (1.051) | 0 vs 0 (fails) |
+| not wrapped round the ribs (< 40% of the wide box) | 10.5% | — |
+
+**NEGATIVE CONTROL, run rather than argued:** the session-29 assets restored
+from git into the same tree, same spec — magFrac 0.0000/0.0000, blueFrac
+0.0615/0.0725 (session 29's exact numbers, which is also the cross-check that
+the harness is measuring the same thing it was), band assertion fails first.
+
+Two honesty notes for the reviewer, both in the spec's own comments: the
+front/back panel-width margin is **thin (5%)**, because the extra wrap is
+nearly edge-on to the camera and contributes little projected width — it is
+asserted as an ordering with the ratio reported, not floored at an invented
+number; and the anti-wrap ceiling (40% of a box three panels wide, against
+10.5% shipped) is a geometric bound rather than a threshold tuned to the ship.
+
+### Verification (session 30)
+
+    build    all gates green at 2048/96, including the new bib_band_gate
+    control  BODY_SABOTAGE_BIBBANDS=1 rejected on 4 of 5 assertions, exit 1
+    unit     81/81
+    golden   30/30, no re-capture, no physics touched (vertex COLOURS only)
+    drive    bib-number 1/1, body 4/4, rig + chain + pose-shots + look 29 passed
+    RED      look.spec FACEDIST 0.1413 — UNCHANGED from session 29, and still
+             the gate rather than the build: the spec's OWN negative control
+             (BODY_SABOTAGE_FACE=1) measures 0.1719 and PASSES where the
+             correct build fails. Untouched deliberately; awaiting the ruling
+             session 29 asked for.
+    wire     glb 823 156 + normal 556 420 + albedo 329 470 + ao 135 536
+             + maps.json 1 394 = 1 845 976 B (budget 3 MB)
+    shots    figure_front.png (the three bands read at figure distance, and
+             the front "30" reads left-to-right), bib_front.png / bib_back.png
+             with the measured box marked
+    ASSET_V  60 -> 61; index.html preloads and game.js?v= 56 -> 57 in step
+
+### Open, unchanged, in the reviewer's order
+
+1. **The two-tone panels question from session 29 is still unanswered** — the
+   brief's primary-reference paragraph says the suit has "nothing else on the
+   body panels" while the 07:25 order says "two-tone panels". This session did
+   the other half of step 2 (the bib) instead of guessing.
+2. **The arm stripe** (step 3). Still off behind `STRIPE_SEGMENTS`; the
+   reference crop this session confirms it is on the arm as well as the leg.
+   `STRIPE_DPHI_MAX` must go 0.46 -> 0.55 with it.
+3. `look.spec` FACEDIST, above.
+
 ## Session 29 (2026-08-30, 10:1x-11:5x)
 
 Tree clean at start. `render-realism-glm` HAD moved (entries 138-140), so this
