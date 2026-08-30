@@ -916,6 +916,11 @@ update in `game.js`, golden re-capture — and are the right next move on item 5
     unit    81/81      golden 30/30 (no re-capture: no display node changed)
     drive   spine + inrun-crouch + inrun-contact + chain + ready-stance:
             **25 passed, 0 failed** (3.8 m)
+            rig + body + athlete + athlete-wired + bib-number + crash-ragdoll:
+            **25 passed, 0 failed** (8.3 m) — 50/50 over the two runs.
+            `crash-ragdoll` is 3/3 green on this tree, which independently
+            confirms the reviewer's 01:20 withdrawal of the penetration
+            blocker; nothing in this commit touches the crash path.
     shots   pose_{inrun,tuck,pike}_{side,front}.png regenerated, figure 448 px,
             TUCKEXTENT 0.5809 (unchanged — the pose did not move, only the skin)
 
@@ -928,10 +933,17 @@ update in `game.js`, golden re-capture — and are the right next move on item 5
   to be built as its own finger group so connectivity finds it); the flight-tuck
   re-check; the smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV
   unwrap + arm stripe last.
-- `crash-ragdoll.spec.js` was not run in this session's window — the pose specs
-  took 3.8 m under a load average of 24 (the GLM lane runs its own suite on the
-  same machine). It is green on the merge base per the reviewer's 01:20
-  withdrawal, and nothing in this commit touches the crash path.
+- **NEW, from GLM's review 125 (02:20), arrived in the brief mid-session:** the
+  FRONT bib "30" now reads mirrored on the merged tree. Session 5 measured front
+  clean / back mirrored, so which face is flipped has to be re-measured before
+  touching the plate UV — do that first next session, it is a one-shot bake fix
+  and the 16:30 ruling already specifies the gate.
+- A note on the machine: the load average sat at 24 on 16 cores for this whole
+  session (the GLM lane runs its own full suite in the main checkout), so
+  `./tests/run-all.sh` timed out at 900 s in its Playwright leg and left an
+  orphan server on 8399. Unit is 3.2 s and golden 15 s run separately; the drive
+  suite is what stretches. Run the layers separately when the box is loaded, and
+  check `ss -ltn | grep 8399` before starting Playwright.
 
 ## Session 17 (2026-08-30, 02:0x-03:0x)
 
