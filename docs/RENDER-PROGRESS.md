@@ -6,6 +6,11 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 Fixed inverted distance comparison in `look.spec.js` (FACEDIST gate), allowing proper face-front discrimination.
 Verification: `look.spec.js` passes.
 Status: FACEDIST gate fixed; ready for shell knee-band fix.
+### 153 — Fix knee-band collapse (Task 1 in NEXT.md)
+Tighter SHELL_JOINT_LO_LEG/HI_LEG range (0.35, 0.60) in `blender/build_body.py`.
+Verification: `spine.spec` knee collapse gates now pass (flight tuck max 7.247 < 8.0).
+Status: Knee-band collapse fixed; ready for #12 gates.
+
 
 
 ## Reviewer feedback (read first; the reviewer edits this section)
