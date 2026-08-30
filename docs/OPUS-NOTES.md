@@ -935,6 +935,41 @@ garment has to be fitted on the geometry that is exported.
    at mid-thigh needs either a wider stance or a thinner thigh than the
    leg-dominance gates allow. Recorded, not silently dropped.
 
+### Verification (session 28)
+
+    build   all gates green at 2048/96 (sliver 0.568%, leg taper 0.691 /
+            0.498 / 1.352, thighD/B 0.901, bideltoid 398 mm, bib number ink
+            0.136 front / 0.135 back, atlas share, stripe, suit NM variance)
+    control BODY_SHELL_OFF=1 rejected, exit 1
+    unit    81/81
+    golden  30/30, no re-capture, no physics change (the pass writes vertex
+            buffers only)
+    drive   rig + body + chain + pose-shots: 28 passed (4.8 m), 0 failed,
+            including the boot-binding gate and its negative control;
+            look.spec 1/1, shots regenerated
+    NOT MINE, still red: tests/drive/venue-dressing.spec.js "near-side net
+            strip at the grazing scene view (review-125)" — the fence/net is
+            the GLM lane's file and nothing in this commit touches it. Same
+            class as the sky-shader red reported in sessions 26-27.
+
+### What the shots show (by eye, `shots/figure_side.png`, `figure_front.png`)
+
+The limbs read as cloth cylinders now: the shin runs straight from the knee
+into the boot cuff with no calf belly, the forearms and upper arms are smooth,
+and the thigh no longer shows the quadriceps line in the side silhouette. The
+front bib "30" is legible and the panel sits proud of the suit.
+
+Still visible, and all of them already open items rather than new damage:
+
+* the crotch/inner-thigh shard cluster (item 3's bake slivers — 0.568%, under
+  the gate but visible at this distance);
+* the leg stripe is a ragged blue patch on the INNER leg rather than a 5 cm
+  band on the outer seam — the stripe is parked behind the UV unwrap
+  (reviewer, session 13);
+* the red collar line at the throat (item 9);
+* the suit is still white-on-white: two-tone panels, collar and cuffs are the
+  next item.
+
 ## Session 27 (2026-08-30, 08:3x-09:5x)
 
 Tree clean at start (session 26 committed). `render-realism-glm` has not moved
