@@ -5041,28 +5041,29 @@ def stripe_straight_gate(stripe_dbg):
 #   glove-cuff (forearm, above the cuff step at along -0.80),
 #   boot-cuff (shin, above the cuff step at along -0.74).
 SUIT_FOLDS = {
-    'upperArm': [('elbow', -0.86, 0.26, 0.0016, 2.0, None),
-                 ('armpit', 0.86, 0.20, 0.0013, 1.5, None)],
-    'lowerArm': [('elbow', 0.74, 0.22, 0.0018, 2.0, None),
-                 ('glove-cuff', -0.70, 0.18, 0.0015, 2.0, None)],
-    'upperLeg': [('knee', -0.88, 0.24, 0.0019, 2.0, None),
-                 ('hip', 0.86, 0.22, 0.0014, 2.0, 0.25)],
-    # OPUS ITEM 12 tried to raise 'boot-cuff' to (-0.26, 0.13) so the crease
-    # bunches ABOVE the new boot shell instead of creasing rigid plastic, and
-    # REVERTED it — not because the placement was wrong, but because measuring
-    # it showed the move is worth nothing and costs a gate. rig.spec.js's
-    # crease-band variance gate reads 57159 with this band and 43692 with the
-    # raised one, and the 13600 difference is not fold relief: a folds-OFF bake
-    # (BODY_SABOTAGE_FOLDS=1) scores 43095 and a weave-OFF bake
-    # (BODY_SABOTAGE_WEAVE=1) scores 42362, i.e. everything displace_suit
-    # writes moves that metric by under 3%. The old window's extra 62732 texels
-    # carry mean |Laplacian| ~100000, double any cloth band — they are the
-    # BOOT's hard geometry edges. So the gate's dynamic range is the boot, the
-    # fold placement is invisible either way, and moving the band only blinds
-    # the gate. Reviewer question in docs/OPUS-NOTES.md; the placement belongs
-    # with item 3's fold design, once folds are deep enough to measure.
-    'lowerLeg': [('knee', 0.80, 0.22, 0.0017, 2.0, None),
-                 ('boot-cuff', -0.62, 0.18, 0.0015, 2.0, None)],
+    'upperArm': [('elbow', -0.74, 0.24, 0.0080, 2.0, None),
+                 ('armpit', 0.86, 0.20, 0.0050, 1.5, None)],
+    'lowerArm': [('elbow', 0.74, 0.22, 0.0075, 2.4, None),
+                 ('glove-cuff', -0.70, 0.18, 0.0050, 1.1, None)],
+    'upperLeg': [('knee', -0.76, 0.22, 0.0085, 2.2, None),
+                 ('hip', 0.74, 0.22, 0.0060, 2.2, 0.25)],
+    # OPUS ITEM 12 tried to raise 'boot-cuff' so the crease bunches ABOVE the
+    # boot shell instead of creasing rigid plastic, and reverted it because the
+    # only gate that could see it was rig.spec.js's crease-band variance test —
+    # whose dynamic range turned out to BE the boot. That gate is gone (session
+    # 12; see fold_ripple_gate), so the placement is measurable now and worth
+    # revisiting; boot-cuff is not in FOLD_MASK_ZONES, so nothing gates it yet.
+    'lowerLeg': [('knee', 0.80, 0.22, 0.0085, 2.0, None),
+                 ('boot-cuff', -0.62, 0.18, 0.0050, 1.6, None)],
+    # THE LOWER BACK HAD NO FOLDS AT ALL. The author's complaint from the very
+    # first review — "suit doesn't seem to fold over the back" — was reported
+    # against a SUIT_FOLDS table with four keys, none of them the torso: every
+    # crease in this suit was on an arm or a leg. The lumbar band is where a
+    # one-piece bunches when the athlete folds forward, so it is also where the
+    # tuck should show it. Back-biased (fbias < 0 ⇒ 1 + fbias·front is 1.7 at
+    # the back, 0.3 at the belly), and seated above the waistband step at
+    # along −0.72 so the two reliefs do not stack.
+    'torso': [('lower-back', -0.44, 0.20, 0.0090, 2.8, -0.70)],
 }
 
 # NEGATIVE CONTROL for rig.spec.js's crease-band variance gate ("fabric folds
@@ -5096,6 +5097,7 @@ def displace_suit(obj, lm):
     normals = [v.normal.copy() for v in verts]
     moved = 0
     fold_hit = {}
+    fold_amp = {}
     for i, v in enumerate(verts):
         x, y, z = v.co
         name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
@@ -5166,11 +5168,20 @@ def displace_suit(obj, lm):
                 a = amp * env * ridge * jit
                 if fbias is not None:
                     a *= 1.0 + fbias * front         # flexor side reads more
+                if name == 'torso':
+                    # The bib is a SEPARATE loose garment hanging off the suit
+                    # (item 3), so it does not crease with the back underneath
+                    # it: the lumbar folds run on the bare suit around the bib,
+                    # not through it. Without this the bib's own surface picks
+                    # up the suit's wrinkles and the two garments read as one.
+                    a *= 1.0 - bib_mask(name, along, front, lx)
                 if a > fold:
                     fold, fold_zone = a, zone
             if fold > 0.0002:
                 d += fold
                 fold_hit[fold_zone] = fold_hit.get(fold_zone, 0) + 1
+                pk = fold_amp.get(fold_zone, (0.0, 0.0))
+                fold_amp[fold_zone] = (max(pk[0], fold), pk[1] + fold)
             else:
                 # Fabric bunches where a limb bends, so the wrinkles
                 # concentrate near the ends of each segment and run around it
@@ -5225,6 +5236,9 @@ def displace_suit(obj, lm):
             v.co = (x + normals[i].x * d, y + normals[i].y * d, z + normals[i].z * d)
             moved += 1
     log(f'suit displacement applied to {moved}/{len(verts)} high-poly verts')
+    log('FOLD amplitude (mm): ' + ', '.join(
+        f'{z} peak {fold_amp[z][0]*1000:.1f} mean {fold_amp[z][1]/fold_hit[z]*1000:.1f}'
+        for z in sorted(fold_amp)))
     log('FOLD summary: ' + (', '.join(
         f'{z} {fold_hit[z]} verts' for z in sorted(fold_hit))
         + ' | bands: ' + ', '.join(
@@ -5240,8 +5254,13 @@ def displace_suit(obj, lm):
     # band move was reverted, so this reference is back to the measured 3312.
     # The gate caught that move exactly as designed, at 34% of the floor.)
     FOLD_GATE = 0.40
-    fold_ref = {'armpit': 836, 'boot-cuff': 3312, 'elbow': 1612,
-                'glove-cuff': 621, 'hip': 496, 'knee': 1806}
+    # Re-baselined in session 12: four bands were re-seated INSIDE their
+    # segments (see SUIT_FOLDS) because `along` clamps at +-1, so a band centred
+    # at 0.86 with a half-width of 0.22 had half its window off the end of the
+    # mesh and every vertex beyond the joint piled onto its edge.
+    fold_ref = {'armpit': 4636, 'boot-cuff': 7275, 'elbow': 2894,
+                'glove-cuff': 1291, 'hip': 1080, 'knee': 2980,
+                'lower-back': 705}
     missing = [z for z, n in fold_ref.items()
                if fold_hit.get(z, 0) < n * FOLD_GATE]
     if missing and SABOTAGE_FOLDS:
@@ -5965,6 +5984,7 @@ def make_highpoly(low, lm):
     log(f'high-poly: {len(high.data.vertices)} verts before displacement')
 
     displace_suit(high, lm)
+    fold_ripple_gate(high)
     paint_suit(high, lm)
     boot_paint_gate(high)
 
@@ -6497,32 +6517,31 @@ def patch_skin_binds_verify(path, want):
 SUIT_NM_FLOOR = 6.3   # 85% of the measured 7.48; pre-lane bake was 4.73
 
 
-def suit_nm_variance_gate(low, out_dir):
-    """Log and hard-floor the suit-region normal-map high-frequency energy."""
-    uvl = low.data.uv_layers.active.data
-    own = dominant_segments(low)
-    suit = {'torso', 'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
-            'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
-    tris = []
-    for poly in low.data.polygons:
-        vs_ = poly.vertices
-        if all(own[v] in suit for v in vs_):
-            uvs = [uvl[li].uv for li in poly.loop_indices]
-            for k in range(1, len(uvs) - 1):
-                tris.append((uvs[0], uvs[k], uvs[k + 1]))
+def _load_normal_laplacian(out_dir, sigma=None):
+    """(Laplacian field of the normal map's R channel, width, height).
+
+    `sigma` pre-blurs, turning the high-pass Laplacian into a band-pass centred
+    on ~4·sigma texels — see the fold gate's header for why that matters.
+    """
     img = bpy.data.images.load(os.path.join(out_dir, 'athlete_normal.png'))
     w, h = img.size
     buf = np.empty(w * h * 4, dtype=np.float32)
     img.pixels.foreach_get(buf)
     bpy.data.images.remove(img)
     R = buf[0::4].reshape(h, w)
+    if sigma:
+        R = _blur(R, sigma)
     lap = (4 * R[1:-1, 1:-1] - R[:-2, 1:-1] - R[2:, 1:-1]
            - R[1:-1, :-2] - R[1:-1, 2:])
+    return lap, w, h
+
+
+def _rasterize_uv(tris, w, h):
+    """Boolean (h, w) mask of the texels covered by a list of UV triangles."""
     mask = np.zeros((h, w), bool)
-    rs_x, rs_y = float(w - 1), float(h - 1)
+    rs = np.array([float(w - 1), float(h - 1)])
     for a, b, c in tris:
-        p = np.array([a, b, c], dtype=np.float64) \
-            * np.array([rs_x, rs_y])
+        p = np.array([a, b, c], dtype=np.float64) * rs
         x0, x1 = int(p[:, 0].min()), int(np.ceil(p[:, 0].max()))
         y0, y1 = int(p[:, 1].min()), int(np.ceil(p[:, 1].max()))
         x1, y1 = min(x1, w - 1), min(y1, h - 1)
@@ -6539,7 +6558,30 @@ def suit_nm_variance_gate(low, out_dir):
               + (p[0, 0] - p[2, 0]) * (ys - p[2, 1])) / d
         inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
         mask[ys[inside], xs[inside]] = True
-    m = mask[1:-1, 1:-1]
+    return mask
+
+
+def _poly_uv_tris(low, keep):
+    """UV triangles of every polygon whose vertex indices all satisfy `keep`."""
+    uvl = low.data.uv_layers.active.data
+    tris = []
+    for poly in low.data.polygons:
+        if not all(keep(v) for v in poly.vertices):
+            continue
+        uvs = [uvl[li].uv for li in poly.loop_indices]
+        for k in range(1, len(uvs) - 1):
+            tris.append((uvs[0], uvs[k], uvs[k + 1]))
+    return tris
+
+
+def suit_nm_variance_gate(low, out_dir):
+    """Log and hard-floor the suit-region normal-map high-frequency energy."""
+    own = dominant_segments(low)
+    suit = {'torso', 'upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
+            'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'}
+    tris = _poly_uv_tris(low, lambda v: own[v] in suit)
+    lap, w, h = _load_normal_laplacian(out_dir)
+    m = _rasterize_uv(tris, w, h)[1:-1, 1:-1]
     n = int(m.sum())
     if n < 10000:
         raise SystemExit(
@@ -6554,6 +6596,364 @@ def suit_nm_variance_gate(low, out_dir):
         raise SystemExit(
             f'[body] suit NM variance gate FAILED: {v:.2f} < {SUIT_NM_FLOOR:.2f}'
             f' — the fabric relief was erased from the bake')
+
+
+# ── Fold relief gate (reviewer ruling on session 10, (a)) ───────────────────
+#
+# The old gate — rig.spec.js's "fabric folds read at the creases" — was deleted
+# rather than recalibrated, on the reviewer's instruction, because it could not
+# tell a folds-OFF bake from a folds-ON one: it scored 57159 shipped against
+# 43095 with BODY_SABOTAGE_FOLDS=1, and the whole of that dynamic range was the
+# BOOT. Its crease windows included 'boot-cuff' and 'glove-cuff', whose texels
+# straddle the hard shell edge of a moulded plastic boot; those edges carry mean
+# |Laplacian| around 100000, double any cloth band, so the boot's contribution
+# swamped everything displace_suit writes.
+#
+# This gate measures the same physical quantity — normal-map Laplacian energy —
+# over the mask the ruling names: elbow, knee, groin (the upperLeg 'hip' band)
+# and the lower back. No cuffs, no armpit, no boot, and with the bib's border
+# lip and the stripe's relief band cut out, because both are hard steps this
+# gate is not asking about. What is left inside the mask is weave plus folds,
+# and the gate's job is that folds are a large enough share of it to SEE:
+# switching them off must drop the metric by at least FOLD_DROP_MIN.
+#
+# ONE MORE THING THE MEASUREMENT FORCED, and it is the reason the first two
+# attempts at this gate failed. A RAW per-texel Laplacian is a high-pass filter
+# whose response peaks at the Nyquist limit, so on this atlas (1 texel ≈ 1 mm of
+# suit) it is dominated by whatever has the SHORTEST wavelength — and that is
+# always the woven micro-normal, at λ ≈ 15 mm. The folds started at λ ≈ 50 mm
+# and moved 2.1% of the metric; deepening them to 8 mm and tightening them to
+# λ ≈ 20 mm still only reached 7.9%, because at λ 20 vs 15 the two features are
+# barely a factor 1.5 apart in scale and the weave still wins on a 1/λ² weighting.
+# Chasing that with more amplitude would have ended with a suit of corrugated
+# iron, measured by an instrument that still mostly reports the weave.
+#
+# So the gate BAND-PASSES to the fold's own scale: blur the normal map with a
+# Gaussian of FOLD_SIGMA texels first, then take the Laplacian. At σ = 4 the
+# 15 mm weave is attenuated to ~0.11 of its amplitude and a 40 mm fold passes at
+# ~0.74, which is the separation the raw operator never had. The folds are also
+# now placed where real cloth puts them — 3-5 cm apart, not 2 cm — which is both
+# what reference/images/aerial_suit.png shows at the knee and what the 3.5 mm
+# high-poly vertex spacing can actually resolve without aliasing the crest away.
+FOLD_MASK_ZONES = ('elbow', 'knee', 'hip', 'lower-back')
+FOLD_BAND_KEEP = 0.85     # fraction of each band's half-width kept in the mask
+FOLD_SIGMA = 4.0          # texels of pre-blur: the band-pass centre, ~4 cm
+FOLD_ERODE = 10           # texels trimmed off the mask, so island edges do not
+                          # leak their (build-invariant, dilutive) step into it
+# Floors are set on the measured numbers with margin, in the reviewer's 19:15
+# shape ("ship at an honest number and ratchet"). See docs/OPUS-NOTES.md.
+FOLD_RELIEF_FLOOR = None      # calibrated below, after the first measurement
+FOLD_DROP_MIN = 0.40          # ruling (b): folds-off must cost >= 40%
+
+
+def fold_region_mask(low):
+    """UV triangles of the crease regions the fold gate measures."""
+    own = dominant_segments(low)
+    slices = limb_slice_centroids(low, own,
+                                  ('upperLegL', 'lowerLegL', 'upperLegR',
+                                   'lowerLegR', 'upperArmL', 'lowerArmL',
+                                   'upperArmR', 'lowerArmR'))
+    ok = {}
+
+    def keep(vi):
+        hit = ok.get(vi)
+        if hit is not None:
+            return hit
+        co = low.data.vertices[vi].co
+        name = own[vi]
+        name, along, radial, out, front, local = segment_frame(co, name)
+        lx, ly, lz = local
+        base = name[:-1] if name[-1] in 'LR' else name
+        inband = any(
+            zone in FOLD_MASK_ZONES and abs((along - a0) / w) < FOLD_BAND_KEEP
+            for (zone, a0, w, amp, cyc, fb) in SUIT_FOLDS.get(base, ()))
+        if inband:
+            is_limb = name.startswith(('upperLeg', 'lowerLeg',
+                                       'upperArm', 'lowerArm'))
+            if is_limb and name.startswith(STRIPE_SEGMENTS):
+                # Cut the stripe out: its 0.9 mm printed-panel step and its
+                # seam groove are hard edges, not cloth. 1.6x the paint's own
+                # half-width so the ramp goes too.
+                azim = limb_azim(lx, ly, co.z, name, slices)
+                outward = 0.0 if out > 0 else math.pi
+                dphi = abs(math.atan2(math.sin(azim - outward),
+                                      math.cos(azim - outward)))
+                rad = limb_radius(lx, ly, co.z, name, slices)
+                if dphi < 1.6 * min(STRIPE_HALF_W / max(rad, 1e-4),
+                                    STRIPE_DPHI_MAX):
+                    inband = False
+            if inband and is_limb:
+                # ...and the panel seam groove up the outboard side.
+                azim = limb_azim(lx, ly, co.z, name, slices)
+                outward = 0.0 if out > 0 else math.pi
+                dphi = abs(math.atan2(math.sin(azim - outward),
+                                      math.cos(azim - outward)))
+                if dphi < 0.26:
+                    inband = False
+            if inband and name == 'torso':
+                # Anything the bib touches: its border lip is a hard step, and
+                # under it displace_suit suppresses the lumbar fold anyway
+                # (the bib is a separate garment). Neither is cloth crease.
+                if bib_mask(name, along, front, lx) > 0.01:
+                    inband = False
+                azim = math.atan2(ly, lx)
+                dphi = abs(math.atan2(math.sin(azim - math.pi),
+                                      math.cos(azim - math.pi)))
+                if dphi < 0.32:          # the spine seam groove
+                    inband = False
+        ok[vi] = inband
+        return inband
+
+    return _poly_uv_tris(low, keep)
+
+
+def _blur(img, sigma):
+    r = int(3 * sigma)
+    x = np.arange(-r, r + 1, dtype=np.float64)
+    k = np.exp(-x * x / (2.0 * sigma * sigma))
+    k /= k.sum()
+    out = img.astype(np.float64)
+    for axis in (0, 1):
+        out = np.apply_along_axis(
+            lambda v: np.convolve(v, k, mode='same'), axis, out)
+    return out
+
+
+def _erode(mask, r):
+    e = mask
+    for _ in range(r):
+        e = (e & np.roll(e, 1, 0) & np.roll(e, -1, 0)
+             & np.roll(e, 1, 1) & np.roll(e, -1, 1))
+    return e
+
+
+def fold_relief_instrument(low, out_dir):
+    """
+    Fold-band normal-map energy. AN INSTRUMENT, NOT THE GATE — and the reason
+    why is the session-12 finding.
+
+    The reviewer's session-10 ruling (a) asked for exactly this: Laplacian
+    energy of the baked normal map inside a crease mask, with folds-OFF failing.
+    The mask works — measured against a matched BODY_SABOTAGE_FOLDS=1 bake, the
+    normal map inside it changes by mean 13.98/255 while everything outside it
+    changes by 2.13/255, a 6.6x concentration, so the crease region is exactly
+    where this says it is. What does NOT work is the metric on top of it:
+
+        band-pass sigma   0     1     2     3     4     6     8
+        folds ON        6.28  2.83  1.58  1.29  1.17  1.04  0.97
+        folds OFF       6.07  2.73  1.53  1.28  1.16  1.06  1.00
+        drop             3.5%  3.2%  2.7%  1.3%  0.9% -2.7% -2.7%
+
+    and a difference-of-Gaussians band-pass over sigma pairs 2/10 through 6/24
+    tops out at 3.7%. Two reasons, both structural. A Laplacian measures
+    CURVATURE, and a 4 cm fabric fold is a smooth undulation whose curvature is
+    small next to a 1.5 cm woven grain no matter how deep the fold is — chasing
+    40% here means a suit of corrugated iron. And the mask's texels are thin
+    strips in a fragmented atlas, so at fold scale the baseline inside them is
+    dominated by build-invariant bake and island-seam structure, roughly 4x the
+    fold's own contribution, which dilutes any ratio taken against it.
+
+    So the enforcing gate moved to the GEOMETRY (fold_relief_gate below), where
+    the crease is measured directly and folds-off separates by an order of
+    magnitude. This function stays because the number above is the evidence for
+    that move, and because if the crease region ever stops being where the mask
+    says it is, the concentration ratio is what will show it.
+    """
+    tris = fold_region_mask(low)
+    lap, w, h = _load_normal_laplacian(out_dir, sigma=FOLD_SIGMA)
+    raw = _rasterize_uv(tris, w, h)
+    m = _erode(raw, FOLD_ERODE)[1:-1, 1:-1]
+    n = int(m.sum())
+    if os.environ.get('BODY_FOLD_DEBUG') == '1':
+        dbg = bpy.data.images.new('fold_mask', width=w, height=h)
+        px = np.zeros((h, w, 4), dtype=np.float32)
+        px[..., 0] = raw.astype(np.float32)
+        px[..., 1][1:-1, 1:-1] = m.astype(np.float32)
+        px[..., 3] = 1.0
+        dbg.pixels.foreach_set(px.ravel())
+        dbg.filepath_raw = os.path.join(out_dir, 'fold_mask.png')
+        dbg.file_format = 'PNG'
+        dbg.save()
+        log(f'BODY_FOLD_DEBUG: mask written to {dbg.filepath_raw} '
+            f'(R = raw, G = eroded)')
+    if n < 4000:
+        raise SystemExit(
+            f'[body] fold relief gate FAILED: the crease mask covers only '
+            f'{n} texels after erosion — a fold band was re-placed or a segment renamed')
+    v = float(np.abs(lap[m]).mean()) * 255.0
+    log(f'FOLD RELIEF: {v:.2f} mean|Laplacian|R over {n} crease texels '
+        f'(zones {"/".join(FOLD_MASK_ZONES)}, floor {FOLD_RELIEF_FLOOR})')
+    if SABOTAGE_FOLDS:
+        log('BODY_SABOTAGE_FOLDS=1: this is the NEGATIVE CONTROL reading — it '
+            'must sit below the floor above')
+        return v
+    if FOLD_RELIEF_FLOOR is not None and v < FOLD_RELIEF_FLOOR:
+        raise SystemExit(
+            f'[body] fold relief gate FAILED: {v:.2f} < {FOLD_RELIEF_FLOOR:.2f}'
+            f' — the creases flattened out of the bake')
+    return v
+
+
+# Ripple depth, peak-to-peak in mm, that each crease zone must show on the
+# displaced high-poly. Set on this build's measured numbers with margin — see
+# docs/OPUS-NOTES.md for the folds-on/folds-off table and the negative control.
+FOLD_RIPPLE_MIN_MM = 1.90      # measured: 2.31 mm shipped, 1.35 mm folds-OFF
+FOLD_RIPPLE_BIN = 0.004        # axial bin width in metres
+
+
+def _solve3(a, b):
+    """Gaussian elimination on a 3x3 normal-equation system."""
+    m = [list(a[i]) + [b[i]] for i in range(3)]
+    for c in range(3):
+        piv = max(range(c, 3), key=lambda r: abs(m[r][c]))
+        if abs(m[piv][c]) < 1e-18:
+            return [0.0, 0.0, 0.0]
+        m[c], m[piv] = m[piv], m[c]
+        for r in range(3):
+            if r == c:
+                continue
+            f = m[r][c] / m[c][c]
+            for k in range(c, 4):
+                m[r][k] -= f * m[c][k]
+    return [m[i][3] / m[i][i] for i in range(3)]
+
+
+def fold_ripple_report(high, tag):
+    """
+    Peak-to-peak axial ripple of each crease band, measured on the geometry.
+
+    The fold is a ring-shaped compression ridge, so it shows as an oscillation
+    of the segment's MEAN RADIUS along its axis: bin the band's vertices by
+    `along`, average the radius in each bin (which averages the weave and any
+    azimuthal asymmetry away), fit and remove the segment's own taper, and read
+    the peak-to-peak of what is left. A build with the folds switched off has
+    only the taper and a fraction of a millimetre of residual, so the two states
+    separate by an order of magnitude instead of the 3.5% the normal map gave.
+    """
+    owner = dominant_segments(high)
+    slices = limb_slice_centroids(high, owner,
+                                  ('upperLegL', 'lowerLegL', 'upperLegR',
+                                   'lowerLegR', 'upperArmL', 'lowerArmL',
+                                   'upperArmR', 'lowerArmR'))
+    prof = {}
+    for i, v in enumerate(high.data.vertices):
+        name = owner[i]
+        base = name[:-1] if name[-1] in 'LR' else name
+        bands = SUIT_FOLDS.get(base, ())
+        if not bands:
+            continue
+        nm, along, radial, out, front, local = segment_frame(v.co, name)
+        lx, ly, lz = local
+        # ONE AZIMUTH WINDOW, not the whole ring. The mean radius of a whole
+        # cross-section is only meaningful if the section is round and evenly
+        # sampled, and neither is true here: a limb's radius varies by
+        # centimetres between its anterior and outboard poles, so a bin that
+        # happens to hold more outboard vertices reads centimetres bigger for
+        # reasons that have nothing to do with cloth. Reading ONE narrow stripe
+        # down the segment removes that entirely — and the anterior pole also
+        # avoids the outboard panel seam and the blue stripe's relief.
+        if abs(lz) > SEGMENTS[name]['h'] * 0.51:
+            # `along` is CLAMPED to +-1, so every vertex beyond a segment's end
+            # keeps reading as its end and lands inside whichever band sits
+            # there. Without this the hip band swallowed 156 mm of leg.
+            continue
+        if nm == 'torso':
+            if front > 0:
+                continue                       # the lumbar band is the BACK
+            # THE FLANK, not the back pole. displace_suit suppresses the
+            # lumbar fold under the bib (a separate loose garment does not
+            # crease with the suit beneath it), and the bib's back panel covers
+            # the back pole out to |lat| = 0.10 m — so a window centred there
+            # measures the one place on the lower back that is deliberately
+            # smooth. The crease lives on the bare suit beside it.
+            dphi = math.atan2(abs(lx), -ly)
+            if not (0.85 < dphi < 1.25):
+                continue
+            r = math.hypot(lx, ly)
+        else:
+            # Azimuth AND radius about the limb's own quadratic axis (item
+            # 3 (d)), not about the segment centre: near a knee the two are a
+            # centimetre apart, which is enough to put the "anterior" window
+            # somewhere else entirely.
+            azim = limb_azim(lx, ly, v.co.z, name, slices)
+            dphi = math.atan2(math.sin(azim - math.pi / 2),
+                              math.cos(azim - math.pi / 2))
+            if abs(dphi) > 0.45:
+                continue
+            r = limb_radius(lx, ly, v.co.z, name, slices)
+        for (zone, a0, w, amp, cyc, fbias) in bands:
+            if zone not in FOLD_MASK_ZONES:
+                continue
+            if abs((along - a0) / w) >= FOLD_BAND_KEEP:
+                continue
+            key = (zone, name)
+            # BIN IN METRES. Binning on the dimensionless `along` at 0.002
+            # makes a 0.36 mm bin on a leg — finer than the vertex spacing, so
+            # most bins hold one or two vertices and the profile is sampling
+            # noise, not a profile.
+            b = int(round(lz / FOLD_RIPPLE_BIN))
+            st = prof.setdefault(key, {}).setdefault(b, [0.0, 0])
+            st[0] += r
+            st[1] += 1
+    out_rows = []
+    for (zone, name), bins in sorted(prof.items()):
+        pts = [(b * FOLD_RIPPLE_BIN, s[0] / s[1])
+               for b, s in sorted(bins.items()) if s[1] >= 6]
+        if len(pts) < 8:
+            continue
+        # Remove the segment's own shape. A straight line is NOT enough: a
+        # knee band sits on the anatomical bulge, and a linear detrend leaves
+        # 40 mm of thigh in the residual, which is what a fold-free build then
+        # scores too. A quadratic describes the limb over a 7 cm band, and the
+        # fold — two to three cycles across that band — survives it.
+        n = len(pts)
+        mx = sum(p[0] for p in pts) / n
+        cols = [[1.0, p[0] - mx, (p[0] - mx) ** 2] for p in pts]
+        ata = [[sum(c[i] * c[j] for c in cols) for j in range(3)]
+               for i in range(3)]
+        atb = [sum(c[i] * p[1] for c, p in zip(cols, pts)) for i in range(3)]
+        coef = _solve3(ata, atb)
+        res = [p[1] - sum(k * c[i] for i, k in enumerate(coef))
+               for c, p in zip(cols, pts)]
+        # RMS, NOT PEAK-TO-PEAK. p2p is the wrong statistic where anatomy is
+        # bigger than the fold: at the knee the residual is dominated by the
+        # patella bump, and a crease that lands in antiphase with it makes p2p
+        # go DOWN — measured, the folds-on shin read 11.98 mm against a
+        # folds-off 13.86. Uncorrelated signals add in quadrature, so an RMS
+        # can only rise when relief is added, whatever its phase.
+        rms = math.sqrt(sum(r * r for r in res) / n)
+        out_rows.append((zone, name, rms * 1000.0, n))
+    log(f'FOLD RIPPLE [{tag}]: ' + ', '.join(
+        f'{z}/{nm} {rms:.2f} mm ({n} bins)' for z, nm, rms, n in out_rows))
+    return out_rows
+
+
+def fold_ripple_gate(high):
+    """Every crease zone must actually crease. Negative control: folds OFF."""
+    rows = fold_ripple_report(high, 'high-poly')
+    if not rows:
+        raise SystemExit(
+            '[body] fold ripple gate FAILED: no crease band produced a profile '
+            '— a band was re-placed or a segment renamed')
+    mean_rms = sum(r[2] for r in rows) / len(rows)
+    worst = min(rows, key=lambda r: r[2])
+    zones = sorted({r[0] for r in rows})
+    if sorted(FOLD_MASK_ZONES) != zones:
+        raise SystemExit(
+            f'[body] fold ripple gate FAILED: measured zones {zones} are not '
+            f'the declared {sorted(FOLD_MASK_ZONES)}')
+    log(f'FOLD RIPPLE mean {mean_rms:.2f} mm over {len(rows)} bands, worst '
+        f'{worst[0]}/{worst[1]} {worst[2]:.2f} mm (floor {FOLD_RIPPLE_MIN_MM})')
+    if SABOTAGE_FOLDS:
+        log('BODY_SABOTAGE_FOLDS=1: NEGATIVE CONTROL — the worst zone above '
+            'must sit below the floor')
+        return mean_rms
+    if FOLD_RIPPLE_MIN_MM is not None and mean_rms < FOLD_RIPPLE_MIN_MM:
+        raise SystemExit(
+            f'[body] fold ripple gate FAILED: the crease bands carry only '
+            f'{mean_rms:.2f} mm RMS of relief (floor {FOLD_RIPPLE_MIN_MM:.2f} '
+            f'mm) — the suit stopped folding')
+    return mean_rms
 
 
 def main():
@@ -6849,6 +7249,7 @@ def main():
             f'from the baked albedo — the stripe is not landing on the legs '
             f'(paint azimuth or bake transfer)')
     suit_nm_variance_gate(low, out_dir)
+    fold_relief_instrument(low, out_dir)
 
     # Every build gate above has now measured the LOSSLESS bake. Only after
     # that does the delivery encoder run: it rewrites the three PNGs as WebP

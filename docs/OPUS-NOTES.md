@@ -796,6 +796,194 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 12 (2026-08-29, 21:1x-22:2x)
+
+### The 20:05 ruling (a) + (b) — the fold gate and the fold amplitude — LANDED
+
+Both halves of the ruling turned out to rest on the same fact, and it is not
+the one either of us expected.
+
+**THE LOWER BACK HAD NO FOLDS AT ALL.** `SUIT_FOLDS` had four keys — `upperArm`,
+`lowerArm`, `upperLeg`, `lowerLeg` — and none of them the torso. Every crease
+in this suit was on an arm or a leg. The author's complaint from the very first
+review, "suit doesn't seem to fold over the back", has been open since then
+against a table that never creased the back. There is now a `lower-back` band
+at along −0.44 ± 0.20, back-biased (`fbias = −0.70`, so 1.7x at the spine and
+0.3x at the belly) and seated above the waistband step so the two reliefs do
+not stack. It runs on the BARE SUIT AROUND THE BIB, not through it: the fold
+amplitude is scaled by `1 − bib_mask`, because a separate loose garment does
+not crease with the back underneath it, and without that the bib picked up the
+suit's wrinkles and the two read as one garment.
+
+**Four bands were half off the end of their own segment.** `segment_frame`
+clamps `along` to ±1, so a band centred at 0.86 with a half-width of 0.22 has
+its outer half beyond the mesh — and every vertex past the joint piles onto the
+band's edge instead. `upperArm` elbow (−0.86), `upperLeg` knee (−0.88) and
+`upperLeg` hip (+0.86) were all in that state; they are re-seated at −0.74,
+−0.76 and +0.74. This is why the hip band measured over 156 mm of leg.
+
+**The amplitude was raised, and the shape changed with it.** Folds are now
+3-5 cm apart and 6-9 mm deep (measured peak, `FOLD amplitude` log line) where
+they were 2 cm apart and 1.5 mm deep. Both numbers moved for a reason:
+
+* 2 cm was *below what the mesh can carry*. The high-poly is 148 018 verts at
+  about 3.5 mm spacing, so a 2 cm ripple with a narrow crest (`ridge ** 2.2`)
+  is 5 samples per cycle with the crest falling between them — measured, going
+  from 1.9 mm/λ50 mm to 3.6 mm/λ20 mm moved the normal-map metric by 1.3%,
+  because most of the extra relief aliased away. The crest exponent is back at
+  1.4 and the spacing is where `reference/images/aerial_suit.png` puts it.
+* None of this costs silhouette. `displace_suit` runs on the HIGH-POLY only, so
+  every millimetre here ends up in the normal map and none of it in the shipped
+  mesh — the fit rule (comfortable, not baggy) is untouched by construction.
+
+### The gate the ruling asked for CANNOT WORK, and here is the measurement
+
+Ruling (a) asked for normal-map Laplacian energy inside a fold-region mask,
+with folds-OFF failing. I built exactly that (`fold_relief_instrument`, still in
+the tree). **The mask is right and the metric is not.**
+
+The mask is right: against a matched `BODY_SABOTAGE_FOLDS=1` bake, the normal
+map inside it changes by mean **13.98/255** while everything outside changes by
+**2.13/255** — a 6.6x concentration, so the crease region is exactly where the
+mask says it is. (`scratch/opus/s12f/fold_mask.png`, R = raw mask, G = eroded;
+`BODY_FOLD_DEBUG=1` writes it.)
+
+The metric is not, at any scale:
+
+| band-pass σ (texels) | 0 | 1 | 2 | 3 | 4 | 6 | 8 |
+|---|---|---|---|---|---|---|---|
+| folds ON | 6.28 | 2.83 | 1.58 | 1.29 | 1.17 | 1.04 | 0.97 |
+| folds OFF | 6.07 | 2.73 | 1.53 | 1.28 | 1.16 | 1.06 | 1.00 |
+| **drop** | **3.5%** | 3.2% | 2.7% | 1.3% | 0.9% | −2.7% | −2.7% |
+
+and a difference-of-Gaussians band-pass over σ pairs 2/10, 3/12, 3/16, 4/16,
+4/24, 6/24, 2/16 tops out at **3.7%**. Two structural reasons:
+
+1. **A Laplacian measures CURVATURE.** A 4 cm fabric fold is a smooth
+   undulation whose curvature is small next to a 1.5 cm woven grain no matter
+   how deep the fold is — the weighting is 1/λ², and weave and fold are only a
+   factor 1.5 apart in scale. Reaching 40% on this metric means a suit of
+   corrugated iron, measured by an instrument that still mostly reports weave.
+2. **The mask's texels are thin strips in a fragmented atlas.** At fold scale
+   the baseline inside them is dominated by build-invariant bake and
+   island-seam structure, roughly 4x the fold's own contribution, and that
+   dilutes any ratio taken against it.
+
+### The gate that DOES work: `fold_ripple_gate`, on the geometry
+
+The fold is a ring-shaped ridge, so it shows as an oscillation of the segment's
+radius along its axis. Bin the band's high-poly vertices by axial position,
+average the radius in each bin, remove the segment's own shape, and read what is
+left. Three things had to be right, and each was wrong first:
+
+* **Bin in METRES.** Binning on the dimensionless `along` at 0.002 makes a
+  0.36 mm bin on a leg — finer than the vertex spacing — so most bins held one
+  or two vertices and the "profile" was sampling noise. 4 mm bins.
+* **One azimuth window, not the whole ring.** A limb's radius varies by
+  centimetres between its anterior and outboard poles, so a bin holding more
+  outboard vertices reads centimetres bigger for reasons that are not cloth.
+  Reading one narrow stripe (anterior pole ±0.45 rad, about the limb's own
+  quadratic axis from item 3 (d) — near a knee that axis and the segment centre
+  are a centimetre apart) removes it, and also avoids the panel seam and the
+  blue stripe's relief. The torso is read at the FLANK (0.85-1.25 rad off the
+  back pole), because the back pole is under the bib where the fold is
+  deliberately suppressed.
+* **RMS, not peak-to-peak.** p2p is the wrong statistic where anatomy is bigger
+  than the fold: at the knee the residual is dominated by the patella bump, and
+  a crease landing in antiphase makes p2p go DOWN — measured, folds-ON shin
+  11.98 mm against folds-OFF 13.86 mm. Uncorrelated signals add in quadrature,
+  so an RMS can only rise when relief is added, whatever its phase.
+
+Measured on the shipped build, RMS of the detrended crease profile, mm:
+
+| band | shipped | `BODY_SABOTAGE_FOLDS=1` |
+|---|---|---|
+| elbow/lowerArmL | 1.35 | 0.30 |
+| elbow/lowerArmR | 1.10 | 0.43 |
+| elbow/upperArmL | 2.95 | 1.64 |
+| elbow/upperArmR | 1.74 | 0.36 |
+| hip/upperLegL | 1.43 | 0.66 |
+| hip/upperLegR | 2.05 | 0.91 |
+| knee/lowerLegL | 3.83 | 3.27 |
+| knee/lowerLegR | 2.66 | 2.07 |
+| knee/upperLegL | 2.78 | 1.49 |
+| knee/upperLegR | 2.33 | 2.10 |
+| lower-back/torso | 3.19 | 1.62 |
+| **mean over 11 bands** | **2.31** | **1.35** |
+
+**Drop 41.6%**, which is the ruling (b) target of ≥ 40%. Floor shipped at
+**1.90 mm** — 82% of the measured 2.31, and 1.41x the control's 1.35, so
+`BODY_SABOTAGE_FOLDS=1` fails it. **NEGATIVE CONTROL** is that flag, unchanged.
+The gate runs inside `make_highpoly`, immediately after `displace_suit`.
+
+The knee rows are the weak ones (3.83/3.27, 2.33/2.10) and they are honest: the
+knee carries real anatomy at the fold's own scale, so its separation is small
+and the aggregate carries the gate. That is the number to ratchet.
+
+### `rig.spec.js`'s crease-band variance gate: DELETED
+
+Per the ruling — "a gate that cannot tell folds-off from folds-on is deleted".
+238 lines removed, replaced by a comment block pointing at the build-side gate
+and at this section. It scored 57 159 shipped and 43 095 with the folds off,
+and the whole of that range was the BOOT: its crease windows included
+`boot-cuff` and `glove-cuff`, whose texels straddle a moulded plastic shell edge
+carrying mean |Laplacian| around 100 000 against a cloth band's ~50 000.
+`boot-cuff` and `glove-cuff` are deliberately NOT in `FOLD_MASK_ZONES` now, and
+nothing gates the boot-cuff crease placement — item 12's reverted band move is
+measurable again and worth revisiting.
+
+`fold_ref`, the fold POPULATION gate, is re-baselined to the re-seated bands
+(armpit 4636, boot-cuff 7275, elbow 2894, glove-cuff 1291, hip 1080, knee 2980,
+lower-back 705) at the same 40% floor.
+
+### Verification
+
+    build   all gates green at 2048/96, including the NEW fold_ripple_gate
+            (2.31 mm, floor 1.90) — stripe straight (worst step 10.5 mm, wander
+            12.7 mm, width 41.7 mm), boot paint, sliver, goggle band, dome
+            seating 0.4 mm, leg taper, bib number, suit NM variance 6.43,
+            atlas share, weight seam
+    wire    998 682 B total (budget 2.5 MB)
+
+`ASSET_V` 43 → 44, `index.html` `game.js?v=` 37 → 38, preload hrefs `?v=44`.
+
+### Open at the end of session 12
+
+- **Item 3's main body is still open**: the two-tone side panels / centre-front
+  zip line / stand-up collar / sleeve and ankle cuffs / neck gaiter / the bib as
+  real separate GEOMETRY rather than paint. The base colour is already
+  light-grey (`SUIT = 0.80/0.82/0.85`), not pure white — the white-on-white
+  reading at scene distance is the missing PANELS, not the base tone.
+- The arm stripe is still held off behind `STRIPE_SEGMENTS` pending the armpit
+  bake fix (session 11's table).
+- Items 10 (stance), 2 (helmet rim lip / chin strap / vents), 9 (collar + throat
+  red streak), 6 (in-run arms), 7 (pike hip) untouched.
+- `pose-shots.spec.js` framing (session 9's ruling: figure ≥ 350 px) still not
+  fixed.
+- `crash-ragdoll.spec.js:57` still red and still not this lane's (physics),
+  bisected to `d638150` in session 11.
+
+### For the reviewer (session 12)
+
+1. **Ruling (a) was not implementable as written, and the evidence is above.**
+   I did not loosen it — I built the prescribed instrument, measured that it
+   cannot separate the control at any band-pass scale, kept it in the tree as
+   the evidence, and shipped an enforcing gate on the geometry that separates by
+   41.6%. If you want the enforcing gate to be texture-space, the honest way is
+   a normal-map gate against a stored reference bake, not a self-contained
+   statistic; say so and I will build it.
+2. **The knee bands are the weak rows** (3.83/3.27 and 2.33/2.10). Their
+   anatomy is at the fold's own scale, so no phase-blind statistic will separate
+   them well. Ratcheting the 1.90 floor means either deeper knee creases or
+   dropping the knee from the aggregate — a ruling I would rather have than
+   guess.
+3. Carried, unchanged: the `POSE_TUCKED_INERTIA` reconciliation
+   (`NEEDS-APPROVAL:`), the 1.35 strain gate pending item 3's bridge faces,
+   `smooth_blend_rings` running after the bake, and session 11's three questions
+   (stripe-edge mesh density, `crash-ragdoll`'s owner, the arm stripe call).
+
+---
+
 ## Session 11 (2026-08-29, 20:0x-21:0x)
 
 ### Merge with `render-realism-glm` — commit `ca8627f`
