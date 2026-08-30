@@ -3482,6 +3482,382 @@ def hand_ratio_gate(body):
             f'the hard gate {HAND_RATIO_GATE[0]:.2f}-{HAND_RATIO_GATE[1]:.2f}')
 
 
+# ── Relaxed hands (author, 23:40 HUMAN TESTING) ─────────────────────────────
+# "hands relaxed (fingers together, slight curl — never splayed)". The CC0 base
+# figure ships a flat, fully-abducted starfish hand — four fingers fanned with
+# open gaps and the thumb out at ~60 deg — and nothing downstream ever closed
+# it, so the author's screenshot of the in-run crouch showed claws on the ends
+# of the arms (shots/pose_inrun_side.png, session 15's open list).
+#
+# The pass is geometric, not artistic. BELOW the finger crotch the fingers are
+# separate connected components of the mesh, so they can be found by
+# connectivity rather than by guessing at coordinates: split the glove cluster
+# at a plane part-way down the hand, take the connected components, and swing
+# each one about its own base until it is within FINGER_RESIDUAL of the hand's
+# mean direction. Rotating about the BASE leaves the knuckles where they are
+# (they are already adjacent) and closes the fan at the tips, which is exactly
+# how a hand relaxes. A smoothstep fade over the top of each finger keeps the
+# palm continuous with it.
+FINGER_SPREAD_GATE = 15.0     # deg, the ruling's limit on the fan (max pair)
+FINGER_RESIDUAL = 2.0         # deg each finger keeps against the hand axis
+FINGER_TILT_MAX = 7.0         # deg of tilt the packing shear may add
+FINGER_GAP_GATE = 0.008       # metres — wider than this is a splayed claw
+FINGER_SPLIT = (0.45, 0.55, 0.62, 0.70, 0.78)   # candidate cut depths, see below
+FINGER_GAP = 0.002            # metres between packed fingers — they touch
+HAND_CURL_DEG = float(arg('--hand-curl', '16.0'))
+# Negative control for the spread gate: skip the pass and ship the splayed
+# starfish hand this project shipped up to session 15.
+SABOTAGE_HANDS = os.environ.get('BODY_SABOTAGE_HANDS') == '1'
+
+
+def _hand_cluster(body, side):
+    """Glove vertex indices (below the wrist plane) plus the hand metrics."""
+    m = hand_metrics(body, side)
+    if m is None:
+        return None
+    gi = {g.name: g.index for g in body.vertex_groups}
+    idx = gi.get('lowerArm' + side)
+    if idx is None:
+        return None
+    ids = [v.index for v in body.data.vertices
+           if v.co.z < m['wrist_z'] - 0.004
+           and next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.30]
+    m['ids'] = ids
+    return m
+
+
+def _components(body, ids):
+    """Connected components of the sub-mesh induced by `ids`, largest first."""
+    s = set(ids)
+    adj = {i: [] for i in s}
+    for e in body.data.edges:
+        a, b = e.vertices
+        if a in s and b in s:
+            adj[a].append(b)
+            adj[b].append(a)
+    seen, out = set(), []
+    for i in ids:
+        if i in seen:
+            continue
+        stack, comp = [i], []
+        seen.add(i)
+        while stack:
+            j = stack.pop()
+            comp.append(j)
+            for k in adj[j]:
+                if k not in seen:
+                    seen.add(k)
+                    stack.append(k)
+        out.append(comp)
+    out.sort(key=len, reverse=True)
+    return out
+
+
+def _finger_axes(body, side, split=None):
+    """
+    Split the glove below the crotch and measure one axis per finger.
+
+    The crotch depth is not assumed: the fingers are separate connected
+    components only BELOW it, so the cut depth that yields the most components
+    is the one that has cleared it. A 0.50 cut found two components on this
+    base mesh (the thumb, which parts higher, and the four fingers still webbed
+    together); the ladder finds the depth that parts all five. Ties go to the
+    shallowest, which gives each finger the longest lever.
+
+    Returns (fingers, hax, cut_z, m) where each finger is
+    {'ids', 'base', 'axis', 'n', 'len'} and `hax` is the vert-weighted mean
+    direction of the whole set — the direction a relaxed hand points.
+    """
+    m = _hand_cluster(body, side)
+    if m is None or len(m['ids']) < 30:
+        return None
+    co = body.data.vertices
+    best = None
+    for s in ((split,) if split is not None else FINGER_SPLIT):
+        cut_z = m['wrist_z'] - s * m['hand']
+        below = [i for i in m['ids'] if co[i].co.z < cut_z]
+        if len(below) < 20:
+            continue
+        fingers = []
+        for comp in _components(body, below):
+            if len(comp) < 8:
+                continue
+            pts = sorted((co[i].co.copy() for i in comp), key=lambda p: p.z)
+            k = max(3, len(pts) // 6)
+            tip = sum(pts[:k], Vector()) / k
+            base = sum(pts[-k:], Vector()) / k
+            ax = tip - base
+            if ax.length < 1e-5:
+                continue
+            fingers.append({'ids': comp, 'base': base, 'axis': ax.normalized(),
+                            'n': len(comp), 'len': ax.length})
+        if len(fingers) < 2:
+            continue
+        if best is None or len(fingers) > len(best[0]):
+            best = (fingers, cut_z, s)
+    if best is None:
+        return None
+    fingers, cut_z, s = best
+
+    # THE THUMB IS SHORT. It parts from the hand higher than any finger, but it
+    # also ENDS higher, so at the cut depth that finally separates the four
+    # fingers there is no thumb left to find — which is why the first version of
+    # this pass reported a 4-digit hand with an 8 deg spread while the render
+    # still showed a thumb out at 45 deg. Sweep the shallowest cut as well and
+    # take any component that shares no vertex with the deep set: a digit that
+    # exists up there and not down here is a short one.
+    deep = set()
+    for f in fingers:
+        deep |= set(f['ids'])
+    shal_z = m['wrist_z'] - FINGER_SPLIT[0] * m['hand']
+    for comp in _components(body, [i for i in m['ids'] if co[i].co.z < shal_z]):
+        if len(comp) < 8 or (deep & set(comp)):
+            continue
+        pts = sorted((co[i].co.copy() for i in comp), key=lambda p: p.z)
+        k = max(3, len(pts) // 6)
+        ax = (sum(pts[:k], Vector()) / k) - (sum(pts[-k:], Vector()) / k)
+        if ax.length < 1e-5:
+            continue
+        fingers.append({'ids': comp, 'base': sum(pts[-k:], Vector()) / k,
+                        'axis': ax.normalized(), 'n': len(comp),
+                        'len': ax.length, 'short': True})
+        cut_z = max(cut_z, shal_z)
+
+    # The hand's direction is the FINGERS' direction: a thumb swung 45 deg out
+    # would otherwise drag the target it is being aligned to halfway out with it.
+    hax = Vector()
+    for f in fingers:
+        hax += f['axis'] * (f['n'] * (0.1 if f.get('short') else 1.0))
+    if hax.length < 1e-6:
+        return None
+    return fingers, hax.normalized(), cut_z, m
+
+
+def _spread_deg(fingers):
+    """Widest angle between any two finger axes, in degrees."""
+    worst = 0.0
+    for i in range(len(fingers)):
+        for j in range(i + 1, len(fingers)):
+            worst = max(worst, math.degrees(
+                fingers[i]['axis'].angle(fingers[j]['axis'], 0.0)))
+    return worst
+
+
+def _finger_gap(body, fingers, hax):
+    """Widest gap between consecutive fingers, measured across the widest
+    direction of the knuckle spread (the same axis _pack_fingers packs on)."""
+    co = body.data.vertices
+    mid = sum((f['base'] for f in fingers), Vector()) / len(fingers)
+    wax = Vector()
+    for f in fingers:
+        p = f['base'] - mid
+        q = p - hax * p.dot(hax)
+        if q.length > wax.length:
+            wax = q
+    if wax.length < 1e-6:
+        return 0.0
+    wax = wax.normalized()
+    spans = []
+    for f in fingers:
+        w = sorted(co[i].co.dot(wax) for i in f['ids'])
+        k = max(0, int(0.03 * len(w)))
+        spans.append((w[k], w[-1 - k]))
+    spans.sort()
+    return max((spans[i + 1][0] - spans[i][1]
+                for i in range(len(spans) - 1)), default=0.0)
+
+
+def _pack_fingers(body, fingers, hax, wax, cut_z, m):
+    """
+    Shear the fingers together along `wax`. Returns (before, after), the worst
+    gap between consecutive fingers in metres.
+
+    The shift is applied as a FIELD over the whole glove below `shear_z`, not
+    per component: a vertex's shift is the per-finger shift interpolated at its
+    own position across the hand's width, ramped in from zero at `shear_z`.
+    Two reasons. The web between the fingers has to stretch with them or the
+    mesh tears at the crotch, and a shear that starts at the identification cut
+    — which is 3/4 of the way down the hand, because that is how deep you have
+    to go before the fingers are separate components — has a lever of 4 cm and
+    therefore buys 3 mm of closure before it is tilting the fingers more than
+    it is closing them.
+    """
+    co = body.data.vertices
+    spans = []
+    for f in fingers:
+        w = sorted(co[i].co.dot(wax) for i in f['ids'])
+        k = max(0, int(0.03 * len(w)))
+        lo, hi = w[k], w[-1 - k]
+        spans.append({'f': f, 'lo': lo, 'hi': hi, 'c': 0.5 * (lo + hi),
+                      'w': hi - lo,
+                      'tip_z': min(co[i].co.z for i in f['ids'])})
+    spans.sort(key=lambda s: s['c'])
+    before = max((spans[i + 1]['lo'] - spans[i]['hi']
+                  for i in range(len(spans) - 1)), default=0.0)
+
+    shear_z = m['wrist_z'] - 0.35 * m['hand']
+    tip_z = min(s['tip_z'] for s in spans)
+    lever = max(1e-4, shear_z - tip_z)
+    cap = lever * math.tan(math.radians(FINGER_TILT_MAX))
+    total = sum(s['w'] for s in spans) + FINGER_GAP * (len(spans) - 1)
+    mean = sum(s['c'] for s in spans) / len(spans)
+    x = mean - 0.5 * total
+    for s in spans:
+        # Pulling four splayed fingers all the way together would replace a fan
+        # with fingers crossing at the tips — the same number on any angle gate
+        # and no better to look at. Cap the shift at FINGER_TILT_MAX of tilt.
+        want = (x + 0.5 * s['w']) - s['c']
+        s['d'] = max(-cap, min(cap, want))
+        x += s['w'] + FINGER_GAP
+
+    # The field is CONSTANT across each finger's own width and interpolates
+    # only in the gaps between them. Interpolating through a finger instead
+    # (the first version of this) hands its far edge most of its neighbour's
+    # shift, so the finger squashes and the gap barely closes: measured, it
+    # bought 2.5 mm of a 14.6 mm gap. Constant-per-finger translates the
+    # finger and lets the web take the stretch.
+    knots = [(s['lo'], s['hi'], s['d']) for s in spans]
+    def shift(t):
+        if t <= knots[0][1]:
+            return knots[0][2]
+        if t >= knots[-1][0]:
+            return knots[-1][2]
+        for a, b in zip(knots, knots[1:]):
+            if t <= a[1]:
+                return a[2]
+            if t < b[0]:
+                f = (t - a[1]) / max(1e-9, b[0] - a[1])
+                return a[2] + f * (b[2] - a[2])
+        return knots[-1][2]
+
+    for i in m['ids']:
+        v = co[i]
+        if v.co.z >= shear_z:
+            continue
+        u = max(0.0, min(1.0, (shear_z - v.co.z) / lever))
+        d = shift(v.co.dot(wax))
+        if d:
+            v.co = v.co + wax * (d * u)
+    return before, _finger_gap(body, fingers, hax)
+
+
+def relax_hands(body):
+    """
+    Close the fan and add the relaxed curl. Runs on the posed, settled mesh so
+    the hand it measures is the hand that ships.
+    """
+    if SABOTAGE_HANDS:
+        log('relax_hands: SKIPPED (BODY_SABOTAGE_HANDS=1 — negative control, '
+            'the splayed starfish hand)')
+        return
+    for side in ('L', 'R'):
+        got = _finger_axes(body, side)
+        if got is None:
+            log(f'  hands{side}: no finger components found — skipped')
+            continue
+        fingers, hax, cut_z, m = got
+        before = _spread_deg(fingers)
+
+        # Hand frame: the fingers run along `hax`, the knuckles spread along
+        # the widest direction across it (`wax`), and the palm normal is the
+        # remaining axis. The curl turns the fingers about `wax`.
+        spread_pts = [f['base'] - sum((g['base'] for g in fingers), Vector())
+                      / len(fingers) for f in fingers]
+        wax = Vector()
+        for p in spread_pts:
+            q = p - hax * p.dot(hax)
+            if q.length > wax.length:
+                wax = q
+        wax = wax.normalized() if wax.length > 1e-6 else Vector((1, 0, 0))
+        pn = hax.cross(wax).normalized()
+
+        # Which way is the PALM? The thumb's metacarpal is rotated out of the
+        # plane of the other four, so the shortest finger's base is displaced
+        # toward the palm side. Measured, not assumed — and if the base mesh's
+        # hand is flat enough that the displacement is under 3 mm the curl is
+        # skipped rather than guessed.
+        thumb = min(fingers, key=lambda f: f['len'])
+        others = [f for f in fingers if f is not thumb] or fingers
+        mid = sum((f['base'] for f in others), Vector()) / len(others)
+        pal = (thumb['base'] - mid).dot(pn)
+        curl = math.radians(HAND_CURL_DEG) * (1.0 if pal >= 0 else -1.0)
+        if abs(pal) < 0.003:
+            curl = 0.0
+
+        fade = max(1e-4, 0.18 * m['hand'])
+        moved = 0
+        for f in fingers:
+            th = f['axis'].angle(hax, 0.0)
+            drop = max(0.0, th - math.radians(FINGER_RESIDUAL))
+            axis = f['axis'].cross(hax)
+            for i in f['ids']:
+                v = body.data.vertices[i]
+                u = min(1.0, (cut_z - v.co.z) / fade)
+                u = u * u * (3 - 2 * u)
+                p = v.co - f['base']
+                if drop > 1e-6 and axis.length > 1e-6:
+                    p = Matrix.Rotation(drop * u, 3, axis.normalized()) @ p
+                if curl:
+                    p = Matrix.Rotation(curl * u, 3, wax) @ p
+                v.co = f['base'] + p
+                moved += 1
+
+        # PACK THE TIPS. Closing the fan makes the fingers parallel; it does
+        # not make them TOUCH, and the base figure stands them a finger's width
+        # apart, which still reads as a splayed claw at game distance. Shear
+        # each finger along the width axis — linearly from 0 at the cut to full
+        # at its own tip, so nothing tears where it leaves the palm — until
+        # consecutive fingers are FINGER_GAP apart. The packed block keeps the
+        # fingers' own mean position, so the wrist does not move.
+        gap = _pack_fingers(body, fingers, hax, wax, cut_z, m)
+
+        after = _finger_axes(body, side)
+        aft = _spread_deg(after[0]) if after else float('nan')
+        log(f'  hands{side}: {len(fingers)} digits '
+            f'({sum(1 for f in fingers if f.get("short"))} short), cut '
+            f'{(m["wrist_z"] - cut_z) / m["hand"]:.2f} of the hand, spread '
+            f'{before:.1f} -> {aft:.1f} deg (residual {FINGER_RESIDUAL:.1f}), '
+            f'gap {gap[0] * 1000:.1f} -> {gap[1] * 1000:.1f} mm, curl '
+            f'{math.degrees(curl):+.1f} deg about the width axis (palm offset '
+            f'{pal * 1000:+.1f} mm), {moved} verts')
+
+
+def hand_spread_gate(body):
+    """
+    Hard gate on the FINAL geometry: no two fingers of either hand may
+    diverge by more than FINGER_SPREAD_GATE. Negative control:
+    BODY_SABOTAGE_HANDS=1.
+    """
+    worst, worst_side = 0.0, '?'
+    worst_gap, worst_gap_side = 0.0, '?'
+    for side in ('L', 'R'):
+        got = _finger_axes(body, side)
+        if got is None:
+            raise SystemExit(f'[body] hand spread gate: no finger components '
+                             f'on {side} — the glove cluster moved')
+        sp = _spread_deg(got[0])
+        gp = _finger_gap(body, got[0], got[1])
+        log(f'  hand{side}: {len(got[0])} fingers, widest pair {sp:.1f} deg, '
+            f'widest gap {gp * 1000:.1f} mm')
+        if sp > worst:
+            worst, worst_side = sp, side
+        if gp > worst_gap:
+            worst_gap, worst_gap_side = gp, side
+    log(f'HAND SPREAD summary: worst {worst:.1f} deg on {worst_side} '
+        f'(gate {FINGER_SPREAD_GATE:.0f}), worst gap {worst_gap * 1000:.1f} mm '
+        f'on {worst_gap_side} (gate {FINGER_GAP_GATE * 1000:.0f} mm)')
+    if worst_gap > FINGER_GAP_GATE:
+        raise SystemExit(
+            f'[body] the fingers stand {worst_gap * 1000:.1f} mm apart on '
+            f'{worst_gap_side} (gate {FINGER_GAP_GATE * 1000:.0f} mm) — that is '
+            f'a splayed hand, not a relaxed one (author 23:40)')
+    if worst > FINGER_SPREAD_GATE:
+        raise SystemExit(
+            f'[body] finger spread {worst:.1f} deg on {worst_side} exceeds the '
+            f'{FINGER_SPREAD_GATE:.0f} deg gate (author 23:40: "hands relaxed '
+            f'— fingers together, slight curl — never splayed")')
+
+
 # ── Loose suit (task 3, offset slice) ───────────────────────────────────────
 
 # Per-surface "proud of the body" offsets, in METRES. The author's brief: a race
@@ -7447,6 +7823,8 @@ def main():
     crown_probe(body, lm, 'after settle_limb_geometry')
     scale_hands(body)
     sliver_report(body, 'after scale_hands')
+    relax_hands(body)
+    sliver_report(body, 'after relax_hands')
     _arm_trace(body, 'after-settle')
     _arm_cloud_dbg(body, 'final')
     leg_profile(body, 'pre-girth ')
@@ -7474,6 +7852,7 @@ def main():
     # that actually passes them.
     armgates = arm_geometry_report(body)
     hand_ratio_gate(body)
+    hand_spread_gate(body)
     GATE_MODE = arg('--gate-mode', 'soft')
     if armgates is not None and GATE_MODE == 'hard' and (
             armgates['collinear'] > 0.010 or armgates['join'] > 0.010

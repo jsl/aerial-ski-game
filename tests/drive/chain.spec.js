@@ -70,9 +70,18 @@ test.describe('P13 chain joint anchors', () => {
                 // knee gap from the probe (cross-axis measure)
                 out['kneeGap' + side] = window._poseProbe(0.5, true, 0)['knee' + side];
                 const llc = Math.cos(ll.rotation.x), lls = Math.sin(ll.rotation.x);
+                // The ski's top face is half a ski-thickness along the SKI's
+                // own normal, not the shin's. The two used to be the same
+                // vector because _pinBootsToSkis nailed the shin to the ski
+                // normal; once the boot cuff leans (ruling 00:15 item b) they
+                // differ by the lean and this measured the wrong point —
+                // 0.1366 m against a 0.1361 m allowance at mid-blend, a
+                // 0.5 mm artefact of the measurement, not of the pose
+                // (measuring off the ski normal: 0.1344 m).
+                const skc = Math.cos(sk.rotation.x), sks = Math.sin(sk.rotation.x);
                 out['ankleGap' + side] = Math.hypot(
-                    (sk.position.y + 0.015 * llc) - (ll.position.y - 0.18 * llc),
-                    (sk.position.z + 0.015 * lls) - (ll.position.z - 0.18 * lls));
+                    (sk.position.y + 0.015 * skc) - (ll.position.y - 0.18 * llc),
+                    (sk.position.z + 0.015 * sks) - (ll.position.z - 0.18 * lls));
             }
             return out;
         });

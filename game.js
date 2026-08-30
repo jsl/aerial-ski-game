@@ -117,7 +117,7 @@ const { computeI } = AerialEngine.inertia;
 function makePBR(name, scene) {
     const m = new BABYLON.PBRMaterial(name, scene);
     m.metallic  = 0.0;      // nothing in this scene is bare metal
-    // P9 night mode adds 7 floodlight spots to the hemi+sun pair; the default
+    // P9 night mode adds 8 floodlight spots to the hemi+sun pair; the default
     // budget of 4 would silently drop the furthest pools. Day mode keeps 2
     // lights, so this costs nothing there.
     m.maxSimultaneousLights = 8;
@@ -1285,8 +1285,31 @@ function _inrunArmForward(meshes, tuck, armRaise) {
 // the boot sole sat 11 mm THROUGH the ski top and 12 cm behind the binding
 // centre (measured), and the hop-turn fold lifted the boots up to 0.24 m off
 const _BOOT_SKI = { toeStation: 0.2, heelStation: -0.2, hl: 0.18, skiHh: 0.015 };
-function _pinBootsToSkis(meshes) {
+// Boot-cuff forward lean (reviewer ruling 00:15 item (b)). The pin used to set
+// the shin along the ski's NORMAL, i.e. a shin exactly perpendicular to the
+// ski. A shin is never perpendicular to the ski in a crouch: a ski boot's cuff
+// is moulded with 15-20 deg of forward lean and the athlete flexes into it.
+// With a perpendicular shin the knee interior angle is exactly 180 - thigh rx,
+// so the only way to deepen the knee was to throw the hip backwards; measured
+// live at the crouch endpoint before this change, knee 134.2 deg with the hip
+// 0.258 m BEHIND the ankle. Leaning the shin moves the knee forward instead,
+// which is what lets the hip drop over the heels (author 23:40, "hips over the
+// heels") while the thigh carries the flex.
+// The lean is weighted by the crouch, so it is exactly 0 in the ready stance
+// (item 10's perpendicular standing gate) and in every other grounded state
+// (hop turn, landing) — a boot cuff only leans when you press into it.
+// The invariant the ruling keeps is the SOLE: the shin's -Y end stays exactly
+// on the binding anchor at every lean, so sole-to-ski-top stays 0.
+const _BOOT_CUFF_LEAN = 0.5000;   // 28.6 deg — see POSE_INRUN_TUCK: the ruling's
+                                  // 15-20 cannot reach the pre-existing hip-over-heel
+                                  // gate (min 0.1718 m vs 0.12); 28.6 is inside the
+                                  // footage band chain.spec.js already gates (15-35).
+function _pinBootsToSkis(meshes, tuck, armRaise) {
     if (!meshes || !meshes.skiL || !meshes.lowerLegL) return;
+    // Same weight as _seatTorsoOnHips / _inrunArmForward: exactly 0 at rest and
+    // once the arms start their sweep out of the crouch.
+    const w = Math.min(1, Math.max(0, (tuck || 0) * (1 - (armRaise || 0))));
+    const lean = _BOOT_CUFF_LEAN * w;
     for (const side of ['L', 'R']) {
         const sk = meshes['ski' + side], ll = meshes['lowerLeg' + side],
               ul = meshes['upperLeg' + side];
@@ -1311,7 +1334,9 @@ function _pinBootsToSkis(meshes) {
         const ay = sk.position.y + upY * _BOOT_SKI.skiHh + fwY * stationMid;
         const az = sk.position.z + upZ * _BOOT_SKI.skiHh + fwZ * stationMid;
         
-        const rxL = Math.atan2(upZ, upY), cL = Math.cos(rxL), sL = Math.sin(rxL);
+        // Forward is -z, and the shin's +Y end is the knee, so leaning the
+        // knee forward over the sole is rxL - lean.
+        const rxL = Math.atan2(upZ, upY) - lean, cL = Math.cos(rxL), sL = Math.sin(rxL);
         ll.rotation.x = rxL;
         ll.position.x = ax;
         ll.position.y = ay + _BOOT_SKI.hl * cL;
@@ -1841,12 +1866,11 @@ void main(void) {
     }
 
     // ── P9 night snowfall mode (?night=1) ────────────────────────────────────
-    // Modelled on reference/frames/IMG_3396 (night training session, heavy
-    // snowfall): near-black sky with no horizon detail; 7 warm floodlights on
-    // poles along the in-run crest and table with visible pools on the snow;
-    // fast dark falloff between pools; falling snow as elongated streaks in a
-    // camera-following volume. Sunny day remains the default; display-only —
-    // no physics, no trace-visible state (the golden harness never passes
+    // snowfall): near-black sky with no horizon detail; 8 warm floodlight
+    // towers (6 corridor, 3 per side, outside the B-net — HT#9 item 2) plus
+    // snow, with fast dark falloff between pools; falling snow as elongated
+    // streaks in a camera-following volume. Sunny day remains the default;
+    // display-only — no physics, no trace-visible state (the golden harness
     // ?night=1, and every Babylon call below is stubbed inert there anyway).
     const _nightLights = [];
     if (_nightMode) {
@@ -1864,54 +1888,91 @@ void main(void) {
             hemi.diffuse       = new BABYLON.Color3(0.30, 0.34, 0.46);
             hemi.groundColor   = new BABYLON.Color3(0.05, 0.06, 0.09);
 
-            // 7 warm floodlights on poles beside the corridor: three on the
-            // in-run crest (z < TRANS_START_Z), two across the table, one over
-            // the kicker, one over the knuckle. Pools read where the cones land.
-            const _poleZs = [-22, -12, -2, 8, 14, 21, LANDING_START_Z - 0.5];
-            const _poleH  = 6.5;
+            // HUMAN TESTING #9 item 2 (author, 2026-08-29 23:05): the old
+            // seven 6.5 m poles at |x| = 2.6 crowded the in-run inside the
+            // B-net (NET_X = 6.2). They are now SIX lamp towers, three per
+            // side, ALL outside the fence (|x| = NET_X + 1.6 = 7.8) and
+            // taller (9.5 m) with a visible head — dark housing, warm
+            // emissive lens, small crossarm — so they read as lamp posts.
+            // The spots still aim inward so the lit pools land on the
+            // corridor; nightFlood2 keeps its name (the night spec projects
+            // its ground point to measure warmth).
+            const _towerZs = [-12, -5, 2, 9, 15, 21];    // L, R, L, R, L, R
+            const _towerX  = 6.2 + 1.6;                  // NET_X + 1.5 m clearance
+            // ~9-10 m lamp towers; the two at the top of the hill are lower
+            // (HT#9: "lower or move them") so their heads stay inside the
+            // ready-state camera's steep downward framing — measured, not
+            // guessed (see tests/drive/night.spec.js headsInFrame gate).
+            const _towerHs = [6.0, 6.5, 9.5, 9.5, 9.5, 9.5];
             const poleMat = new BABYLON.StandardMaterial('nightPoleMat', scene);
             poleMat.diffuseColor = new BABYLON.Color3(0.05, 0.05, 0.06);
-            for (let i = 0; i < _poleZs.length; i++) {
-                const z = _poleZs[i];
-                const x = (i % 2 === 0 ? -1 : 1) * 2.6;   // alternate sides
+            const headMat = new BABYLON.StandardMaterial('nightHeadMat', scene);
+            headMat.diffuseColor = new BABYLON.Color3(0.04, 0.04, 0.05);
+            const lensMat = new BABYLON.StandardMaterial('nightLensMat', scene);
+            lensMat.emissiveColor = new BABYLON.Color3(1.00, 0.82, 0.55);
+            for (let i = 0; i < _towerZs.length; i++) {
+                const z = _towerZs[i], _th = _towerHs[i], sign = (i % 2 === 0 ? -1 : 1);
                 const y = terrainRootY(z) - FOOT_OFFSET;
-                const pole = BABYLON.MeshBuilder.CreateCylinder('nightPole' + i,
-                    { height: _poleH, diameter: 0.09 }, scene);
-                pole.position.set(x, y + _poleH / 2, z);
+                const pole = BABYLON.MeshBuilder.CreateCylinder('nightTowerPost' + i,
+                    { height: _th, diameterBottom: 0.16, diameterTop: 0.10, tessellation: 10 }, scene);
+                pole.position.set(sign * _towerX, y + _th / 2, z);
                 pole.material = poleMat;
                 pole.isPickable = false;
+                // Crossarm reaching inward over the fence; head hangs at its end.
+                const armLen = 1.0;
+                const arm = BABYLON.MeshBuilder.CreateBox('nightTowerArm' + i,
+                    { width: armLen, height: 0.08, depth: 0.08 }, scene);
+                arm.position.set(sign * (_towerX - armLen / 2), y + _th - 0.10, z);
+                arm.material = poleMat;
+                arm.isPickable = false;
+                const headX = sign * (_towerX - armLen);
+                const headY = y + _th - 0.28;
+                const housing = BABYLON.MeshBuilder.CreateBox('nightTowerHead' + i,
+                    { width: 0.34, height: 0.18, depth: 0.46 }, scene);
+                housing.position.set(headX, headY, z);
+                housing.material = headMat;
+                housing.isPickable = false;
+                // Lens on the inward-down face of the housing.
+                const lens = BABYLON.MeshBuilder.CreatePlane('nightTowerLens' + i,
+                    { width: 0.26, height: 0.38 }, scene);
+                lens.position.set(headX - sign * 0.10, headY - 0.02, z);
+                lens.rotation.y = sign * Math.PI / 2;    // face the corridor centre
+                lens.rotation.x = -0.42;                 // tilt down at the pool
+                lens.material = lensMat;
+                lens.isPickable = false;
                 const spot = new BABYLON.SpotLight('nightFlood' + i,
-                    new BABYLON.Vector3(x * 0.8, y + _poleH - 0.2, z),
-                    new BABYLON.Vector3(-x * 0.12, -1, 0).normalize(),
-                    0.7, 18, scene);
-                // Babylon's default falloff is physical (intensity/r²); at the
-                // 6.5 m drop to the snow that divides by ~42 — the intensity
-                // is tuned for ≈ 1.0 arriving at the surface.
-                spot.intensity = 45.0;
-                spot.range = 60;
-                spot.diffuse  = new BABYLON.Color3(1.00, 0.80, 0.55); // ~2900 K
+                    new BABYLON.Vector3(headX - sign * 0.1, headY - 0.05, z),
+                    new BABYLON.Vector3(-sign * 0.45, -1, 0).normalize(),
+                    0.45, 18, scene);
+                // Physical falloff: head ≈ 9.6 m above the snow → slant ≈ 10.5 m
+                // to the pool; intensity ≈ r² for ≈ 1.0 arriving at the surface.
+                spot.intensity = 150.0;
+                spot.range = 70;
+                spot.diffuse  = new BABYLON.Color3(1.00, 0.62, 0.28); // ~2700 K (HT#9 warmth at the pool)
                 _nightLights.push(spot);
             }
 
             // Two more floods (reviewer note on 118): one over the start
             // plateau so the waiting athlete is lit, one BEHIND the kicker
             // high on the landing so the jumper reads backlit in flight
-            // (IMG_3396's glowing jumper).
+            // (IMG_3396's glowing jumper). The start pole also stands outside
+            // the corridor (HT#9 item 2) on a full-height tower.
             {
                 const zs = SLOPE_START_Z - 4;
+                const _towerH = 9.5;
                 const ys = terrainRootY(zs) - FOOT_OFFSET;
                 const poleS = BABYLON.MeshBuilder.CreateCylinder('nightPoleStart',
-                    { height: _poleH, diameter: 0.09 }, scene);
-                poleS.position.set(-2.6, ys + _poleH / 2, zs);
+                    { height: _towerH, diameterBottom: 0.16, diameterTop: 0.10, tessellation: 10 }, scene);
                 poleS.material = poleMat;
                 poleS.isPickable = false;
                 const za = SLOPE_START_Z + 2;   // where the athlete stands at rest
                 const ya = terrainRootY(za) - FOOT_OFFSET + 1;
+                poleS.position.set(-_towerX, ys + _towerH / 2, zs);
                 const spotS = new BABYLON.SpotLight('nightFloodStart',
-                    new BABYLON.Vector3(-2.1, ys + _poleH - 0.2, zs),
-                    new BABYLON.Vector3(2.1, ya - (ys + _poleH), za - zs).normalize(),
-                    0.8, 18, scene);
-                spotS.intensity = 45; spotS.range = 60;
+                    new BABYLON.Vector3(-_towerX + 0.9, ys + _towerH - 0.3, zs),
+                    new BABYLON.Vector3(2.1 - (-_towerX + 0.9), ya - (ys + _towerH - 0.3), za - zs).normalize(),
+                    0.95, 18, scene);
+                spotS.intensity = 110; spotS.range = 70;
                 spotS.diffuse = new BABYLON.Color3(1.00, 0.80, 0.55);
                 _nightLights.push(spotS);
                 const zb = LANDING_START_Z + 7;
@@ -1965,7 +2026,7 @@ void main(void) {
                 }
                 window._nightSnowPs = ps;
             }
-        } catch (e) { /* night mode is display-only — never break the game */ }
+        } catch (e) { console.error('NIGHT INIT ERR', e); /* display-only */ }
     }
     window._nightProbe = () => ({
         active: _nightMode,
@@ -1977,7 +2038,7 @@ void main(void) {
     // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
     // the browser cache and every change looked like it had not been applied.
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=46';   // 46: merge — 43 landing chop rebake (GLM, HUMAN TESTING #9 item 1) + 45 sport glasses (Opus, author ruling 21:55); bumped past both so no client keeps either stale set
+    const ASSET_V = '?v=49';   // 49: merge — crouch knee/hip fix + relaxed hands (Opus) on the chop/crash tip
 
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
@@ -3326,7 +3387,7 @@ void main(void) {
         const M = character.meshes;
         const t = (tuck === undefined) ? 1 : tuck;
         applyPose(M, t, 1, 1, 0, 0, 0, true, 0, 0);
-        _pinBootsToSkis(M);
+        _pinBootsToSkis(M, t, 0);
         _seatTorsoOnHips(M, t, 0);
         _inrunArmForward(M, t, 0);
         const seg = (n) => {
@@ -7291,7 +7352,7 @@ void main(void) {
                 character.root.rotationQuaternion = qFaceR.multiply(qFlipR).multiply(qSpinR);
             }
             if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode && !crashActive) {
-                _pinBootsToSkis(character.meshes);
+                _pinBootsToSkis(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
                 _seatTorsoOnHips(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
                 _inrunArmForward(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
             }
@@ -8521,7 +8582,8 @@ void main(void) {
             // starts, _inrunArmForward owns the arm z instead.
             const preZL = character.meshes.upperLegL && character.meshes.upperLegL.position.z;
             const preZR = character.meshes.upperLegR && character.meshes.upperLegR.position.z;
-            _pinBootsToSkis(character.meshes);
+            _pinBootsToSkis(character.meshes, state.tuckAmount,
+                            state.grounded ? state.armRaise : 1);
             // Sol-8 (ready-stance knee flex): the pin derives both legs' rx
             // from the ski pitch — physically right, a binding clamps boot to
             // ski — so the stance block's knee term never survives into the

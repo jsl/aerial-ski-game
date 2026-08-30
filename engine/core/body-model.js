@@ -67,24 +67,50 @@ const POSE_UNTUCKED = {
 //       ahead of the knee (ruling: hand within +-0.10 m of knee height,
 //       0.10-0.30 m ahead of it). Reach is 0.636 m against a 0.55 m arm, so
 //       the straight arm lands 0.086 m above the knee, inside the band.
+//   (d) the KNEE WAS BARELY BENT -- reviewer ruling 00:15 item (b). Measured
+//       live at the crouch endpoint: 134.2 deg, i.e. a skier standing almost
+//       straight and leaning over, not crouching. The cause is that
+//       _pinBootsToSkis nails the shin to the ski NORMAL (shin lean 0.0 deg),
+//       and with a vertical shin the knee angle is exactly 180 - thigh rx, so
+//       the table's 0.80 rad thigh could not buy a deep knee without throwing
+//       the hip backwards. A real ski boot's cuff leans 15-20 deg forward, so
+//       the pin now leans the shin with the crouch and the thigh carries the
+//       flex: shin rx -0.5000, thigh rx 0.9312, knee interior 180 - 82 = 98
+//       deg (ruling: 90-105).
+//       THE LEAN IS 28.6 DEG, NOT THE RULING'S 15-20, AND THAT IS FORCED.
+//       For 0.36 m segments the hip sits 0.36*(sin(flex-lean) - sin(lean))
+//       behind the ankle, and chain.spec.js's footage gate (pre-existing,
+//       "APPROVED table, footage targets") asks for <= 0.12 m -- the author's
+//       "hips over the heels". Over the ruling's whole box (knee 90-105 =>
+//       flex 75-90, lean 15-20) the MINIMUM reachable is 0.1718 m, so the two
+//       numbers cannot both hold: 15 deg -> 0.2382, 17.5 -> 0.2167, 20 ->
+//       0.1947, 28.6 -> 0.1167. The lean is therefore taken from the same
+//       footage band chain.spec.js already gates (shins forward 15-35 deg,
+//       and the pre-ruling table's own comment said "shins ~25 deg"), which
+//       satisfies the knee ruling, the hip gate and the footage together.
+//       Flagged for the reviewer in docs/OPUS-NOTES.md.
 // Earlier target (reviewer 22:25 / FABLE-80 finding 6, "back near-horizontal")
 // is SUPERSEDED by the author's 40-50 deg.
 // Forward = -z. Conventions (match applyPose/P13 reconciliation): a segment's
 // +Y end sits at position + (h/2)*(cos rx, sin rx) in (y, z).
-// Chain: ski centre (-0.660, 0) -> ankle (-0.645, 0) -> knee (-0.320, -0.149)
-// -> hip (-0.069, 0.107) -> shoulder (0.313, -0.289) -> elbow -> wrist
-// (-0.234, -0.341); every joint gap <= 3 mm.
+// Chain, rebuilt for (d) by forward kinematics off the ski so it closes on
+// itself: ski centre (-0.660, 0) -> ankle (-0.645, 0) -> knee (-0.329, -0.173)
+// -> hip (-0.114, 0.116) -> shoulder (0.268, -0.279) -> elbow -> wrist
+// (-0.267, -0.365); every joint gap is 0 by construction. The straight arm
+// aimed at knee height 0.20 m ahead of the knee needs 0.6041 m of reach
+// against a 0.550 m arm, so the hand lands 53 mm above knee height and
+// 0.192 m ahead of it -- inside the author's +-0.10 m / 0.10-0.30 m bands.
 const POSE_INRUN_TUCK = {
-    torso:     { x:  0.000, y:  0.122, rx: -0.8029, rz:  0.00, dz: -0.0908 },  // back 44 deg above horizontal, hips over the heels
-    head:      { x:  0.000, y:  0.4325, rx: -0.30, rz:  0.00, dz: -0.3256 },  // head UP, gaze 28.8 deg above the back line
-    upperArmL: { x: -0.175, y:  0.1637, rx: -3.0464, rz:  0.00, dz: -0.3029 },  // shoulder at the -Y end (bind axis)
-    upperArmR: { x:  0.175, y:  0.1637, rx: -3.0464, rz:  0.00, dz: -0.3029 },
-    lowerArmL: { x: -0.175, y: -0.1100, rx: -3.0464, rz:  0.00, dz: -0.3290 },  // straight elbow, hand at knee height ahead of the knee
-    lowerArmR: { x:  0.175, y: -0.1100, rx: -3.0464, rz:  0.00, dz: -0.3290 },
-    upperLegL: { x: -0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },  // thighs back down to the flexed knees
-    upperLegR: { x:  0.075, y: -0.195, rx:  0.80, rz:  0.00, dz: -0.02 },
-    lowerLegL: { x: -0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },  // shins ~25 deg forward over the ankles
-    lowerLegR: { x:  0.075, y: -0.480, rx: -0.44, rz:  0.00, dz: -0.08 },
+    torso:     { x:  0.000, y:  0.0768, rx: -0.8029, rz:  0.00, dz: -0.0816 },  // back 44 deg above horizontal, seated on the deeper hip
+    head:      { x:  0.000, y:  0.3873, rx: -0.30, rz:  0.00, dz: -0.3164 },  // head UP, gaze 28.8 deg above the back line
+    upperArmL: { x: -0.175, y:  0.1196, rx: -2.9867, rz:  0.00, dz: -0.3025 },  // shoulder at the -Y end (bind axis)
+    upperArmR: { x:  0.175, y:  0.1196, rx: -2.9867, rz:  0.00, dz: -0.3025 },
+    lowerArmL: { x: -0.175, y: -0.1521, rx: -2.9867, rz:  0.00, dz: -0.3450 },  // straight elbow, hand at knee height ahead of the knee
+    lowerArmR: { x:  0.175, y: -0.1521, rx: -2.9867, rz:  0.00, dz: -0.3450 },
+    upperLegL: { x: -0.075, y: -0.2216, rx:  0.9312, rz:  0.00, dz: -0.0282 },  // knee interior 98 deg (was 134)
+    upperLegR: { x:  0.075, y: -0.2216, rx:  0.9312, rz:  0.00, dz: -0.0282 },
+    lowerLegL: { x: -0.075, y: -0.4870, rx: -0.5000, rz:  0.00, dz: -0.0863 },  // shin 28.6 deg forward of the ski normal (boot-cuff lean)
+    lowerLegR: { x:  0.075, y: -0.4870, rx: -0.5000, rz:  0.00, dz: -0.0863 },
     skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
     skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
 };

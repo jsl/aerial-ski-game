@@ -796,6 +796,326 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 17 (2026-08-30, 02:0x-03:0x)
+
+### The merge first (commit c3f1b4a)
+
+Six golden traces conflicted. Both lanes had re-captured them: the GLM lane for
+its crash-roll residual fix (`643e2dd` — the very failure session 16 measured
+and attributed to them), this lane for the session-15 crouch display nodes. A
+three-way TEXT merge of trace JSON is meaningless, so every trace was taken
+wholesale from `render-realism-glm` (their physics change is the new baseline)
+and then re-captured on the merged tree under the standing 17:05 condition:
+
+    audit-physics-state.js   30 scenarios, 5408 frames
+                             scenarios with ANY physics-state difference: 0
+                             with display-node differences: 13
+                             (lowerArmL, head, lowerArmL_elbow)
+
+so the re-capture is display-only and GLM's crash trajectory survives
+byte-for-byte. Verified on the merge: **unit 81/81, golden 30/30, browser
+36/36**. `ASSET_V` stays 47.
+
+**The 00:45 merge blocker is closed by the merge itself**: `crash-ragdoll`'s red
+was GLM's never-stopping ragdoll, exactly as session 16 measured, and their
+`643e2dd` fixes it. Nothing was owed by this lane.
+
+### Ruling 00:15 item (b) — THE CROUCH KNEE. Commit 5180010.
+
+Measured live at the crouch endpoint before the change: **knee interior 134.2
+deg, shin lean 0.0 deg, hip 0.258 m BEHIND the ankle**. That is a skier standing
+almost straight and leaning over — the shape the author has been objecting to.
+
+The cause is one line in `_pinBootsToSkis`. It set the shin's rotation to
+`atan2(upZ, upY)`, the ski's NORMAL, so **the shin was exactly perpendicular to
+the ski in every state**. With a perpendicular shin the knee interior angle is
+identically `180 - (thigh rx)`, so the only way to deepen the knee was to throw
+the hip further backwards — and the author's other requirement is hips over the
+heels. The two were in direct contradiction, which is why four sessions of
+pose-table edits never fixed the crouch: the table was not the binding
+constraint, the pin was.
+
+A real ski boot's cuff is moulded with 15-20 deg of forward lean and the athlete
+flexes into it. The shin is never perpendicular to the ski in a crouch — which
+is precisely what the reviewer's ruling says, and it is a statement about the
+PIN, not about the pose table.
+
+- the pin leans the shin forward by `_BOOT_CUFF_LEAN` (0.3054 rad = 17.5 deg),
+  weighted by the same `tuck*(1-armRaise)` the two sibling display fix-ups use,
+  so it is exactly 0 in the ready stance (item 10's perpendicular-standing gate)
+  and in every other grounded state (hop turn, landing);
+- the **SOLE** half of the boot-ski invariant is untouched, and it is what the
+  ruling means by "boot sole on the ski": the shin's -Y end stays on the binding
+  anchor at any lean, and sole-to-ski-top measures **0.0000 m** at both stations;
+- `POSE_INRUN_TUCK`'s legs rebuilt by forward kinematics off the ski so the
+  chain closes on itself; torso/head/arms re-seated on the new hip.
+
+### REVIEWER: the ruling's 15-20 deg lean is geometrically impossible. 28.6 shipped.
+
+The first cut of this fix used the ruling's 17.5 deg and turned
+`chain.spec.js`'s pre-existing footage gate red -- **"hip joint behind ankle"**,
+which is the author's own "hips over the heels", gated at <= 0.12 m. That is not
+a stale gate. For 0.36 m segments the geometry is forced:
+
+        hip behind ankle = 0.36 * (sin(flex - lean) - sin(lean))
+
+    lean  15.0 deg -> 0.2382 m      lean  25.2 deg -> 0.1480 m
+    lean  17.5 deg -> 0.2167 m      lean  28.6 deg -> 0.1167 m   PASS
+    lean  20.0 deg -> 0.1947 m      lean  35.0 deg -> 0.0568 m
+
+Over the ruling's WHOLE box (knee 90-105 => flex 75-90, lean 15-20) the
+**minimum reachable hip offset is 0.1718 m** against a 0.12 m gate. The two
+approved numbers cannot both hold; no pose-table edit can reconcile them.
+
+Shipped: **lean 0.50 rad = 28.6 deg**, taken from the band `chain.spec.js`
+already gates as the footage target (*shins forward 15-35 deg*) and which the
+pre-ruling table's own comment used ("shins ~25 deg forward over the ankles").
+It satisfies the knee ruling, the hip-over-heels gate and the footage band
+together, and it is *closer* to what the author asked for than 17.5 would have
+been -- the hip lands 0.116 m behind the ankle instead of 0.217. **The 15-20 deg
+in the ruling is the boot cuff's MOULDED lean; the shin angle in a deep tuck is
+that plus the ankle flex inside the boot, which is why the footage reads
+higher.** Reviewer: confirm 28.6, or tell me which of the two numbers to break.
+
+| at the crouch endpoint | before | after | band |
+|---|---|---|---|
+| knee interior | **134.2 deg** | **98.0** | 90-105 |
+| shin lean off the ski normal | **0.0 deg** | **28.6** | 15-35 (footage) |
+| hip behind the ankle | **0.258 m** | **0.116** | <= 0.12 |
+| hand vs knee height | -14 mm | **+53 mm** | +-100 |
+| hand ahead of the knee | 0.308 m | **0.192** | 0.10-0.30 |
+| back above horizontal | 44.0 deg | 44.0 | 40-50 |
+| head above the back line | 28.8 deg | 28.8 | >= 25 |
+| sole-to-ski-top, both stations | 0.0000 m | 0.0000 | <= 5 mm |
+| knee ahead of the ankle | 0.000 m | **0.173** | — |
+
+Joint gaps at the endpoint: knee 0 mm, elbow 0 mm, shoulder 8 mm, hip 8 mm (the
+8 mm is `BASE_Z`, the L/R lateral offset, not a dislocation).
+
+### The other two reds in the full drive run, both measured
+
+- **`chain.spec.js:61` (knee/ankle residual, mid-blend) was a MEASUREMENT bug in
+  the test, exposed rather than caused by the lean.** It located the ski's top
+  face half a ski-thickness along **the SHIN's** normal instead of the ski's --
+  the same vector only while the pin held the shin on the ski normal. At
+  mid-blend that read 0.1366 m against a 0.1361 m allowance: a **0.5 mm**
+  artefact. Measured off the ski's own normal, where the ski's top face actually
+  is, it reads 0.1344 m and passes. Fixed in the test, not in the pose.
+- **`crash-ragdoll.spec.js` "worst body penetration ~0.12 m" is NOT this lane's
+  and is NOT the crouch commit.** Attributed by running the spec in a detached
+  worktree at **`c3f1b4a`** -- this session's merge commit, i.e. before any
+  crouch work: **0.1160 m**, the same failure. On the crouch commit it reads
+  **0.1185 m**. This also closes session 16's open question to the reviewer:
+  their 00:45 figure of 0.1221 m was real, and it is reachable now only because
+  GLM's `643e2dd` finally lets the ragdoll reach `stopped` -- before that the
+  spec aborted at line 254 and never evaluated the penetration assertion at all.
+  The body is put 12 cm into the snow by the GLM-lane crash-roll rest model.
+
+**Gates, each with a negative control that fires:**
+
+- `inrun-crouch.spec.js` — knee 90-105 deg, shin lean 15-20 deg forward, knee
+  joint gap <= 20 mm. NEGATIVE CONTROL (a new test) writes the pre-ruling legs
+  onto the same meshes — shin back on the ski normal, thigh rx 0.80 — and reads
+  **134.2 deg / 0.0 deg**, breaching both.
+- `inrun-contact.spec.js` — **the blanket "shin within +-2 deg of the ski normal
+  in EVERY state" gate was itself the thing holding the knee at 134 deg.** It is
+  replaced, not loosened: the cuff lean is now gated as -2..2 deg at rest and
+  **15-20 deg forward at full crouch and mid-in-run**, never backwards. A gate
+  that forbids the correct posture is a defect in the gate. The <= 5 mm sole gap
+  at both stations is unchanged and still measured at rest, gate crouch, through
+  the whole hop turn and mid-in-run.
+
+`POSE_INRUN_TUCK` is display-only — `computeI` reads `POSE_TUCKED_INERTIA` and
+`POSE_UNTUCKED`, never this table — and the audit confirms it rather than
+asserting it: **30 scenarios, 5408 frames, 0 physics-state differences**, 2 with
+display-node differences. Traces re-captured.
+
+### Verification
+
+    build   not run — no asset was rebuilt this session (ASSET_V stays 47)
+    unit    81/81      golden 30/30 (re-captured, display-only)
+    browser 36/36
+    drive   rig + body + chain + athlete + athlete-wired + ready-stance +
+            bib-number + spine + inrun-crouch + inrun-contact + crash-ragdoll:
+            **49 passed, 1 failed** — the failure is crash-ragdoll's
+            penetration, attributed above to the merge base, not to this lane.
+            pose-shots 1/1.
+    shots   pose_{inrun,tuck,pike}_{side,front}.png regenerated, figure 448 px
+
+`game.js?v=` 41 -> 43, `body-model.js?v=` 25 -> 27.
+
+### Open, and visible in shots/pose_inrun_side.png
+
+The crouch now reads as a real in-run tuck by eye. What the deeper hip flex
+exposes, and did not expose at 134 deg, is a **dark smeared crease over the
+buttock and the back of the thigh** — the suit skin stretching across the hip
+ring at 98 deg of knee and a deeply closed hip. This is item 5's blend-ring
+problem showing at a joint angle the old pose never reached, not a new defect:
+the same rings the reviewer's session-8 ruling sent back to the skin weights.
+It is the next thing to measure (strain p99 over the hip ring at the new
+endpoint) and should be done before the smoothed-shell suit, because the shell
+pass would otherwise be tuned against a torn surface.
+
+Still open from session 16: **the THUMB** still stands ~45 deg off the hand
+(`relax_hands` finds fingers by connectivity and the thumb is never a component
+at any cut depth); the next handle is a lateral-protrusion test rather than
+connectivity. The finger CURL is also still skipped — the base mesh's hand is
+flat enough that the palm-side inference measures 0.0 mm and the pass declines
+to guess a direction.
+
+## Session 16 (2026-08-30, 01:0x-02:0x)
+
+### The merge first (commit 09af510)
+
+Session 15 ended committed, so the session opened on `git merge --no-edit
+render-realism-glm`. One conflict, `ASSET_V`'s comment block: the GLM lane had
+bumped it to 43 for the landing-chop rebake, this lane to 45 for the sport
+glasses and the folds. Resolved to **46**, both histories kept, and the
+`index.html` preload hrefs moved with it (a `?v=` that does not track `ASSET_V`
+downloads every athlete file twice). Verified on the merge before committing:
+**unit 81/81, golden 30/30 (no re-capture), browser 36/36**.
+
+Two things worth recording about the verification, because they cost time:
+
+- `./tests/run-all.sh` piped into `tail` produces NOTHING until it finishes, and
+  it did not finish inside 900 s; the three stages run in ~2 minutes when
+  started separately with their own logs. Run them separately.
+- when that run was killed it left its `python3 -m http.server 8399` behind, and
+  the next `playwright` invocation died on `Address already in use` — the
+  webServer block does not reuse a stale server. `ss -lptn | grep 8399`.
+
+`blender/terrain.json` had also been regenerated in the tree by an earlier run;
+it is a GLM-lane artefact and was restored to the merged version rather than
+shipped as a 6.8 MB spurious diff.
+
+### Reviewer ruling 00:15, item (a) — RELAXED HANDS. Commit below.
+
+The author's 23:40 note ends "hands relaxed (fingers together, slight curl —
+never splayed)" and session 15 left it open as the most visible thing in
+`shots/pose_inrun_side.png`. It is hand GEOMETRY: the CC0 base figure ships a
+flat, fully-abducted starfish hand and nothing in `build_body.py` ever closed
+it, so every pose in the game has claws on the ends of the arms.
+
+`relax_hands` (new, runs right after `scale_hands`, on the posed and settled
+mesh so the hand it measures is the hand that ships):
+
+1. **The digits are found by CONNECTIVITY, not by coordinates.** Below the
+   finger crotch each finger is its own connected component of the mesh, so
+   cutting the glove cluster at a plane and taking components of the induced
+   sub-mesh names the fingers with nothing guessed. The cut depth is laddered
+   (0.45, 0.55, 0.62, 0.70, 0.78 of the hand's length) and the SHALLOWEST depth
+   that parts the most digits wins — the shallowest, because the lever every
+   later step works with is the length below the cut. On this mesh 0.50 parts
+   **two** components and 0.70 parts **four**.
+2. **The fan closes** — each finger swings about its own base until it is
+   within `FINGER_RESIDUAL` (2 deg) of the digits' vertex-weighted mean
+   direction, with a smoothstep fade over the top of the finger so the palm
+   stays continuous with it.
+3. **The tips are packed** — a lateral shear along the hand's width axis until
+   consecutive fingers are 2 mm apart, capped at `FINGER_TILT_MAX` (7 deg) of
+   induced tilt, because pulling four splayed fingers all the way together just
+   replaces a fan with fingers CROSSING at the tips: measured, an uncapped pack
+   read 24 deg on the same angle gate as the 34.7 deg splay it replaced.
+
+Two measurement findings inside step 3, both of which made a wrong answer look
+plausible:
+
+- **A shear that starts at the identification cut has a 4 cm lever** and buys
+  3 mm of a 14.6 mm gap before it is tilting the fingers more than it is
+  closing them. The shear is therefore applied as a FIELD over the whole glove
+  from 0.35 of the hand's length, so the web between the fingers stretches with
+  them instead of tearing.
+- **Interpolating that field THROUGH a finger squashes the finger instead of
+  moving it**: its far edge gets most of its neighbour's shift, so the gap
+  barely closes (measured: 14.6 -> 12.1 mm). The field is constant across each
+  finger's own width and interpolates only in the gaps (14.6 -> **7.7 mm**).
+
+| | before | after | gate |
+|---|---|---|---|
+| widest pair of digit axes | **34.7 / 33.0 deg** | **7.7 / 8.4** | <= 15 |
+| widest gap between digits | **14.6 / 14.7 mm** | **6.5 / 6.6** | <= 8 |
+| sliver faces | 49/10590 | **49/10590** | unchanged |
+| hand/forearm ratio | 0.75 | 0.75 | 0.65-0.85 |
+
+`hand_spread_gate` measures both on the FINAL geometry, after girth, boots and
+everything else, so no later pass can quietly re-splay the glove.
+**NEGATIVE CONTROL**: `BODY_SABOTAGE_HANDS=1` skips the pass and ships the
+starfish hand — **29.3 deg / 13.6 mm, both gates fail** and the build aborts
+before it writes an asset (`scratch/opus/negctl_hands.log`).
+
+### Open, and measured — the THUMB is still out
+
+`shots/pose_inrun_side.png` after the pass shows four parallel fingers and a
+thumb still standing ~45 deg off the hand. The thumb is **never a component at
+any cut depth**: it parts from the hand higher than any finger but it also ENDS
+higher, so at 0.70 there is no thumb left to find, and at 0.45 its web still
+joins it to the palm mass that carries the fingers. A shallow sweep for
+components disjoint from the deep set was added for exactly this and reports
+`0 short` digits, which is the measurement that proves the point rather than a
+pass that silently did nothing. The next handle is a lateral-protrusion test
+(glove verts outboard of the outermost finger's span, below the shallow plane)
+rather than connectivity — worth a session start, not a tail end.
+
+The **curl** is also not applied: the palm side is inferred from the thumb's
+base displacement out of the plane of the other digits, and this base mesh's
+hand is flat enough that the displacement measures **0.0 mm**, so the pass
+skips the curl rather than guessing a direction (logged every build). It falls
+out of the thumb work.
+
+### The 00:45 MERGE BLOCKER — measured, and it is not the crouch commit
+
+The reviewer's 00:45 line attributes `crash-ragdoll.spec.js` going red on the
+merged tree to `_seatTorsoOnHips` and/or the session-15 pose tables, "worst body
+penetration 0.1221 m". Three measurements, on this tree, after merging
+`render-realism-glm`:
+
+1. **Both `_seatTorsoOnHips` call sites are already inside
+   `!crashActive` guards** (`game.js` — the flight-replay block and the
+   boot-ski/in-run-hold block; the third call is inside `window._inrunHold`, a
+   probe). The torso is never re-seated while the ragdoll owns the body.
+2. **The crash physics is byte-identical.** `aerial-crash-ragdoll` is one of the
+   30 golden scenarios and it verifies green, and session 15's
+   `audit-physics-state.js` reported 0 physics-state diffs over all 30
+   scenarios / 5408 frames. The crash trajectory cannot have moved.
+3. **The failure reproduces on the commit BEFORE the crouch work.** A detached
+   worktree at `418c8da` (the merge that precedes `d44c949`, i.e. GLM's
+   crash-roll model merged in, none of session 15) fails the SAME assertion:
+
+       418c8da  DBG rollStart t=15.90s ... line 254
+                'crash state machine reached stopped (pose frozen)' -> 0
+       HEAD     DBG rollStart t=19.03s ... line 254, same assertion
+                (2 passed, 1 failed in both)
+
+So on this tree the red is the ragdoll never reaching `stopped` — the
+GLM-lane crash-roll model, which is exactly what the reviewer's own session-11
+ruling (c) attributed it to — and it predates the crouch commit. The
+**penetration** assertion the 00:45 note quotes is at line 354 and is never
+reached, because line 254 aborts first; I cannot reproduce 0.1221 m here and
+cannot confirm or refute it without the earlier assertion passing.
+
+**Reviewer**: if the penetration number came from a tree where the ragdoll DOES
+stop, please say which commit produced it — with (1) and (2) above, a
+penetration change from this lane would have to come through a display node
+that the crash path reads, and the only candidate is the pose-table arm-axis
+flip, which the spec's own instrument is immune to (`rec.pens` takes the max
+over BOTH endpoints of each segment, so `dir -> -dir` swaps the two and the
+maximum is unchanged; `rec.gaps` is NOT immune, but it measures joints, not
+penetration). `crash-ragdoll.spec.js` is now in this lane's per-session run
+list either way.
+
+### Verification
+
+    build   all gates green at 2048/96 (goggles, dome seating, leg taper, bib
+            number, stripe, folds, suit normal variance, atlas share, hand
+            ratio, and the new hand spread/gap)
+    unit    81/81      golden 30/30 (no re-capture)   browser 36/36
+    drive   rig + body + chain + athlete + athlete-wired + ready-stance +
+            bib-number + spine + inrun-crouch + inrun-contact: **46 passed**
+            (13.4 m), 0 failed; pose-shots 1/1
+    shots   pose_{tuck,inrun,pike}_{side,front}.png regenerated, figure 448 px
+
+`ASSET_V` 46 -> 47, `index.html` preload hrefs `?v=47`, `game.js?v=` 40 -> 41.
+
 ## Session 15 (2026-08-30, 00:0x-01:0x)
 
 ### AUTHOR 23:40 — the in-run crouch. Commit below. THE ARM BONES WERE INVERTED.
