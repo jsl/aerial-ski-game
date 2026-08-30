@@ -60,7 +60,9 @@ test('day snowing mode: default day untouched; greyer sky, softer sun, snowfall 
     expect(day.probe.daySnow).toBe(false);
     expect(day.dome).toBe(true);
     expect(day.psCount).toBe(0);
+    const dayHemi = day.probe.hemi, dayShadow = day.probe.shadow;
     const daySunI = day.sun ? day.sun.intensity : null;
+    const daySunDisc = day.probe.sunDisc;
     const dayFog = await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.fogDensity);
     const dayPix = await grabPixels(page);
     const daySky = regionStats(dayPix, 0.25, 0.02, 0.75, 0.12);
@@ -87,14 +89,23 @@ test('day snowing mode: default day untouched; greyer sky, softer sun, snowfall 
     expect(snow.psNames.some(n => n === 'daySnowfall')).toBe(true);
     expect(snow.dome).toBe(true);                   // day dome, not the night sky
     expect(snow.nightLights).toBe(0);               // no floodlights in day mode
-    expect(snow.sun).toBeCloseTo(0.95, 5);          // softer than the day 1.35
-    expect(snow.fog).toBeGreaterThan(dayFog);       // greyer, thicker air
-
+    expect(snow.probe.shadow).toBeGreaterThan(dayShadow); // overcast: shallower cast shadows
+    expect(snow.probe.shadow).toBeCloseTo(0.55, 5);
+    expect(snow.probe.hemi).toBeGreaterThan(dayHemi);     // stronger ambient fill under overcast
+    expect(snow.sun).toBeCloseTo(0.95, 5);                 // softer than the day 1.35
+    expect(snow.probe.hemi).toBeCloseTo(0.58, 5);
+    expect(snow.probe.env).toBeGreaterThan(day.probe.env); // IBL fill rises with hemi
+    expect(snow.probe.sunDisc).toBe(0);                    // sun disc faded out entirely
+    expect(daySunDisc).toBe(1);                            // day keeps the disc at full
+    expect(snow.fog).toBeGreaterThan(dayFog);              // greyer, thicker air
     // Image: overcast sky — dimmer and less blue than the day sky; and NOT
     // the night mode (luminance stays day-like, well above the night < 0.16).
     const snowPix = await grabPixels(page);
     const snowSky = regionStats(snowPix, 0.25, 0.02, 0.75, 0.12);
-    expect(snowSky.lum).toBeLessThan(daySky.lum);   // greyer than sunny day
+    // Greyer = NEUTRAL, not darker: an overcast dome is physically brighter
+    // than a deep-blue zenith, and the raised fill lights the treeline in the
+    // band. Greyness is measured by the blue dominance dropping vs the day sky.
+    expect(Math.abs(snowSky.rb)).toBeLessThan(Math.abs(daySky.rb));
     expect(Math.abs(snowSky.rb)).toBeLessThan(0.15); // near-neutral grey, not deep blue
     expect(snowSky.lum).toBeGreaterThan(0.25);      // ...but still daylight
 });

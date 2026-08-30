@@ -1799,8 +1799,11 @@ function _startGame() {
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
-    hemi.intensity   = 0.42; // iter 51: UNCHANGED by the 32°-sun rebalance — measured A/B:
-                         // the shadow contrast comes from the sun's 0.82→1.35, not the
+    // Snowing mode (iter 131): an overcast day has no strong beam, so the fill
+    // carries the scene — raise hemi + IBL (below) and soften the sun's cast
+    // shadows (shadowGen block) so the grey rig is not just a dimmer day.
+    hemi.intensity   = _snowingMode ? 0.58 : 0.42; // iter 51: the shadow contrast comes
+                         // from the sun's 0.82→1.35, not the
                          // fill cut (drop 0.767 at hemi 0.30 vs gate 0.15), while the cut
                          // cost the in-run/kicker bands 8.6%→1.3% relative (entry 51)
                          // this split re-tuned in iter 17 (kicker faces, below)
@@ -1841,11 +1844,15 @@ function _startGame() {
     sunLight.position  = new BABYLON.Vector3(
         -100 * Math.cos(SUN_ELEV), 100 * Math.sin(SUN_ELEV), 0);
     sunLight.intensity = _snowingMode ? 0.95 : 1.35;  // snowing: overcast softens the direct sun (day snowfall mode)
-    sunLight.diffuse   = new BABYLON.Color3(1.0, 0.96, 0.85); // warm afternoon tint
-    sunLight.specular  = new BABYLON.Color3(1.0, 0.96, 0.85);
+    // Snowing mode: the warm beam tint goes neutral-cool overcast, and the
+    // cast shadows soften (darkness 0.55 = shadowed areas keep 55% light) —
+    // the entry-130 "snowing flatness" residual. Day/night branches untouched.
+    sunLight.diffuse   = _snowingMode
+        ? new BABYLON.Color3(0.90, 0.93, 0.98)     // snowing: neutral overcast light
+        : new BABYLON.Color3(1.0, 0.96, 0.85);     // warm afternoon tint
+    sunLight.specular  = sunLight.diffuse;
 
     // Shadow generator — cascaded shadow maps for the sun (P2).
-    //
     // A single 2048 map auto-fits its ortho frustum around EVERY caster. With the
     // trees and the whole run in that list it stretched over hundreds of metres
     // (~20 cm per texel), so the athlete's shadow dissolved into mush while tree
@@ -1904,6 +1911,9 @@ function _startGame() {
             ? new BABYLON.Color3(0.70, 0.74, 0.80)   // snowing: overcast haze (matches the greyed dome horizon)
             : new BABYLON.Color3(0.62, 0.76, 0.92);  // = skyShader horizonColor
     }
+    // Snowing mode: overcast shadows are soft-edged and shallow. Display-only
+    // (ADR-0002); the day/night generators keep their settings.
+    if (shadowGen && _snowingMode) { try { shadowGen.setDarkness(0.55); } catch (e) { /* older generator */ } }
 
     // ShaderMaterial so the golden harness's inert stub — which deliberately
     // lacks it — skips the whole block: the dome is display-only and must not
@@ -1925,7 +1935,8 @@ void main(void) {
         BABYLON.Effect.ShadersStore.skyFragmentShader = `
 precision highp float;
 varying vec3 vDir;
-uniform vec3 sunDir;
+uniform float sunAmount;
+uniform float cloudAmount;
 uniform vec3 zenithColor;
 uniform vec3 horizonColor;
 float _hash(vec2 p) {
@@ -1963,10 +1974,9 @@ void main(void) {
     // gates stay deterministic.
     if (dir.y > 0.015) {
         vec2 uv = dir.xz / (dir.y + 0.10);
-        float f = _fbm(uv * 1.35 + vec2(13.1, 7.7));
         float cov = smoothstep(0.52, 0.66, f);
         float fade = smoothstep(0.02, 0.16, dir.y);
-        float dens = cov * fade;
+        float dens = cov * fade * cloudAmount;
         // Lit tops near-white, dense centres shaded blue-grey.
         vec3 cloudCol = mix(vec3(1.02, 1.04, 1.08), vec3(0.74, 0.80, 0.90),
                             smoothstep(0.35, 0.75, f) * 0.55);
@@ -1977,15 +1987,14 @@ void main(void) {
     float d = max(dot(dir, sunDir), 0.0);
     float disc = smoothstep(0.99988, 0.99996, d);
     float halo = pow(d, 700.0) * 0.9 + pow(d, 90.0) * 0.30 + pow(d, 12.0) * 0.10;
-    col += vec3(1.30, 1.24, 1.10) * (disc * 2.2 + halo);
+    col += vec3(1.30, 1.24, 1.10) * (disc * 2.2 + halo) * sunAmount;
     gl_FragColor = vec4(col, 1.0);
 }`;
         try {
             const skyMat = new BABYLON.ShaderMaterial('skyShader', scene,
                 { vertex: 'sky', fragment: 'sky' },
                 { attributes: ['position'],
-                  uniforms: ['worldViewProjection', 'sunDir', 'zenithColor', 'horizonColor'] });
-            // The disc sits where the light COMES FROM (opposite its travel).
+                  uniforms: ['worldViewProjection', 'sunDir', 'zenithColor', 'horizonColor', 'sunAmount', 'cloudAmount'] });
             const sd = sunLight.direction.clone().normalize().scale(-1);
             skyMat.setVector3('sunDir', sd);
             skyMat.setColor3('zenithColor', _snowingMode
@@ -1994,6 +2003,13 @@ void main(void) {
             skyMat.setColor3('horizonColor', _snowingMode
                 ? new BABYLON.Color3(0.70, 0.74, 0.80)   // matches the snowing fog colour
                 : new BABYLON.Color3(0.60, 0.72, 0.88));
+            window._skyMat = skyMat;   // probe hook
+            window._skySunAmount = _snowingMode ? 0.0 : 1.0;   // probe hook (snowing.spec sunDisc gate)
+            // Reviewer ruling on 129: the cumulus layer fades out under overcast.
+            skyMat.setFloat('cloudAmount', _snowingMode ? 0.35 : 1.0);
+            // Snowing: the reviewer's ruling on 129 — the sun disc fades out
+            // entirely under overcast (day keeps the disc + halo at full).
+            skyMat.setFloat('sunAmount', _snowingMode ? 0.0 : 1.0);
             skyMat.backFaceCulling = false;
             const sky = BABYLON.MeshBuilder.CreateSphere('skyDome',
                 { diameter: 4000, segments: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
@@ -2022,7 +2038,9 @@ void main(void) {
         // side/back walls plywood-tan. The cool hemi rig above now carries the
         // vertical fill; measured A/B in tests/drive + RENDER-PROGRESS entry 17.
         // Iter 51: UNCHANGED by the 32°-sun rebalance (see the hemi note above).
-        scene.environmentIntensity = 0.32;
+        // Snowing mode: the overcast sky dome is the light source, so the IBL
+        // fill rises with hemi (see the lighting block) instead of shrinking.
+        scene.environmentIntensity = _snowingMode ? 0.42 : 0.32;
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
@@ -2211,10 +2229,13 @@ void main(void) {
         snow: !!(window._nightSnowPs && window._nightSnowPs.isStarted && window._nightSnowPs.isStarted()),
         snowing: _snowingMode,
         daySnow: !!(window._daySnowPs && window._daySnowPs.isStarted && window._daySnowPs.isStarted()),
+        hemi: hemi.intensity,
+        shadow: shadowGen ? shadowGen.getDarkness() : null,
+        sunDisc: (window._skySunAmount !== undefined) ? window._skySunAmount : null,
+        env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=52';   // 52: OPUS item 5 — the half-angle helpers EXTENDED TO THE SHOULDERS AND ELBOWS (reviewer ruling 2026-08-30 03:40). The armpit was the knee's defect one joint up: session 18 measured upperArmR 0.495 / spine_02 0.490 on an edge going 6.9 mm at rest to 76.3 mm posed, and linear blend skinning collapses such a ring by cos(theta/2) whatever the weights are. Four more bones (hlpShoulder{L,R}, hlpElbow{L,R}) on the lattice spine_03-hlpShoulder-upperArm-hlpElbow-lowerArm, by the same hat projection on the weighted-mean chain coordinate; add_joint_helpers now runs over a LIST of chains, each with its own root vertebra (legs off spine_01, arms off spine_03). What the arms added is that their drivers BIND FLIPPED at rx = -pi (armSweep at armDrop = 1, the hang), so updateJointHelpers takes the half-angle between each bone's DELTA from its own bind rather than between raw Euler angles (raw would have put the shoulder helper 90 deg off at rest), and walks a flipped segment's outer end along MINUS its driver's local +Y; the arm segments are also unequal (0.30 / 0.25 vs the leg's 0.36 / 0.36), so the half-lengths are per-helper. JOINTSPAN 1467/1467 vertices over half a joint -> 0/1551, max span 1.00 -> 0.50, 0 hit the 4-influence cap; WEIGHTSEAM in the folded basis p99 0.336 max 0.779 with 0 hot edges, byte-identical to the pre-helper skin, which is the continuity proof; LOCALITY 0 offenders. hlpShoulder carries 85.9/89.3 weight units and hlpElbow 72.7/73.1. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 skips the pass and the span gate rejects the result. 51: OPUS item 5 — HALF-ANGLE HELPER BONES at the hips and knees (reviewer approval 2026-08-30 02:40). With the trunk on three vertebrae and the leg weight localised, the worst edge left in the skinned buffer was the KNEE — 22.1 mm at rest, 1.28 mm at the crouch endpoint, strain 17.2 — between vertices weighted upperLegR 0.648/0.352 and 0.506/0.494. That is not a bad weight, it is what linear blend skinning DOES: Babylon averages the two bones' MATRICES and the average of two rotations theta apart is that rotation scaled by cos(theta/2), so at a knee closing 98 deg the ring lands at 0.66 of its radius and pinches. Four new bones (hlpHip{L,R}, hlpKnee{L,R}) carry the half-angle of the pair they sit between, and add_joint_helpers re-projects the leg skin onto the finer lattice spine_01-hlpHip-upperLeg-hlpKnee-lowerLeg by hat functions on the vertex's weighted-mean chain coordinate: at most two ADJACENT lattice nodes per vertex, so no vertex is blended across more than half a joint and the worst pair the shader averages is ~49 deg (cos 0.91, not 0.66). JOINTSPAN 604/604 vertices over half a joint -> 0/618, max span 1.00 -> 0.50, with NO extra influence per vertex (0 hit the 4-influence cap). It is inert at rest by construction — bind == driver, so every bone contributes identity there and any partition of unity reproduces the bind mesh. The seam metric now folds helpers back onto their neighbours 50/50 before measuring, because raw weight L1 on a lattice of half the spacing counts the same physical gradient twice (the hip edge read 0.72 -> 1.36 while moving no differently); in that basis the shipped skin measures p50 0.000 p99 0.336 max 0.779 with 0 hot edges, IDENTICAL to before the helpers, which is the continuity proof. NEGATIVE CONTROL BODY_SABOTAGE_HELPERS=1 reports 604 spanning vertices and the gate rejects it. 50: OPUS — the bib back plate is NOT mirrored. bib_orientation_report bins each face's plate ink along that face's OWN viewer-right axis R = Z x N, so neither face is privileged and no frame convention is assumed (the torso frame's sense has now been misread twice). Front reads a clean structured '30' (one '3' stem, then the '0' pair); the back matches neither the front (L1 1.022) nor its mirror (L1 1.066) — it is flat where the front is peaked and runs ink hard onto both plate edges where the front keeps the glyph rects' margins, and under BODY_SABOTAGE_BIBMIRROR=1 it barely moves where a real mirror would come back reversed. So GLM review 125's 'front is mirrored' is wrong and the 16:30 'flip U on the back panel' ruling does not address the defect. Reported, not gated, until the horizontal clipping is root-caused. 49: merge of the GLM lane's tip (lamp towers, crash-flake docs) with this lane's weight-locality skin. 48: OPUS item 5 — WEIGHT LOCALITY. The crouch smear over the buttock and back of the thigh was chest and ribcage skin weighted 17-25% to `upperLegL/R`: at the deep-hip endpoint those vertices are flung with the thigh and the edges between them go from 23 mm at rest to 210 mm posed, which is the streaking. New localise_weights takes each bone's influence off skin further than 1.70 x that bone's own reach (the p98 distance of the skin it drives at >= 0.5), on a smoothstep ramp from 1.25 so it cuts no hinge; it runs after the bake like smooth_blend_rings, and the order is localise -> re-relax -> localise because the ramp still ends at a boundary. LOCALITY 24 offenders -> 0, d/reach p99 1.50 -> 1.32; WEIGHTSEAM max 0.715 -> 0.779, still 0 hot. NEGATIVE CONTROL BODY_SABOTAGE_LOCALITY=1. 47: OPUS — RELAXED HANDS (author 23:40, reviewer 00:15 item (a)): the CC0 base figure's flat starfish hand shipped unchanged into every pose, so the author's crouch screenshot had claws on the ends of the arms. relax_hands finds the digits by CONNECTIVITY (below the crotch each finger is its own component of the mesh, so no coordinate is guessed; the cut depth is laddered and the shallowest depth that parts the most digits wins), swings each about its own base to within 2 deg of the hand's mean direction, then packs the tips together with a shear field that is constant across each finger and interpolates only in the gaps — interpolating THROUGH a finger squashes it instead and bought 2.5 mm of a 14.6 mm gap. Fan 34.7 -> 8.4 deg, worst gap 14.6 -> 6.6 mm, sliver count unchanged at 49/10590. Gates hand_spread_gate (spread <= 15 deg, gap <= 8 mm) on the final geometry; NEGATIVE CONTROL BODY_SABOTAGE_HANDS=1 reads 29.3 deg / 13.6 mm and fails both. 46: merge of the GLM lane's landing chop rebake (was their 43) with this lane's athlete work (was 45). landing chop rebake — NORMAL_GAIN 0.35 damps the normal map's shading amplitude (HUMAN TESTING #9 item 1: the full-slope normals + 1.2 m SSAO radius painted the whole landing dark grey in daytime; ratio chop/flat 0.52). Height tile unchanged — the 3D relief is geometry. 45: AUTHOR RULING 21:55 — the eyewear is SHOOTER-STYLE SPORT GLASSES, not goggles. The shield narrows 0.40..0.57h -> 0.44..0.57h (29.4 mm = 0.128h on a 229 mm chin-to-crown), the frame becomes a THIN BROW BAR on the top edge only (the lower rim stroke that drew a dark line under the eyes is gone; what is left at the bottom is a nose-bridge notch), and the 0.10h navy STRAP that closed round the whole skull is replaced by thin TEMPLE ARMS — dark moulded plastic, 16 verts a side, running back over the ears at 0.520h (under the 0.55h side rim) and stopping at 2.45 rad, pushed 2.50 mm PROUD where the strap was a groove RECESSED into the shell. Three new build gates, each with a negative control that fires: the shield bottom must clear the UN-PUSHED skull's nose tip (0.440h vs 0.357h; --lens-lo 0.28 fails at 0.280h), the band window tightens to 0.44..0.57 +-0.03, and the temple arms must exist on both sides with 0 verts behind 2.75 rad and >=1.5 mm of realised push (BODY_SABOTAGE_GOGGLES=1 reads 0.00 and fails). OPUS item 3, folds — THE LOWER BACK HAD NO FOLDS AT ALL (SUIT_FOLDS had four keys, none of them the torso, so the author's "suit doesn't seem to fold over the back" was reported against a table that never creased it); a lumbar band now runs on the bare suit AROUND the bib, which as a separate loose garment does not crease with the back under it. Fold relief raised to a real cloth scale: 3-5 cm apart and 6-9 mm deep instead of 2 cm and 1.5 mm, which is both what reference/images/aerial_suit.png shows at the knee and what the 3.5 mm high-poly vertex spacing can resolve without aliasing the crest away. Four bands re-seated INSIDE their segments (`along` clamps at +-1, so a band at 0.86 +-0.22 had half its window off the end of the mesh). rig.spec.js's crease-band variance gate DELETED per the reviewer's ruling — it could not tell folds-off from folds-on because its dynamic range was the boot's shell edge; replaced by build-side fold_ripple_gate, which measures each crease band's relief on the displaced high-poly: 2.31 mm RMS shipped vs 1.35 mm with BODY_SABOTAGE_FOLDS=1, a 41.6% drop. 43: OPUS item 3 (d) — the outer-seam STRIPE stops being a staircase. limb_azim's reference axis was the nearest 4 cm z-bucket's centroid median, piecewise constant in z, so every 4 cm the whole angular window jumped sideways and the painted band stepped with it (shots/figure_side.png, session 10: a blue staircase down arm and leg). The axis is now a weighted least-squares QUADRATIC through 2 cm cross-section centroids — smooth by construction, never falling back to the driver centre — and the band is a fixed 5 cm of ARC (STRIPE_HALF_W) rather than a fixed angle, so it does not narrow to a pinstripe wherever the limb does. The arm band is built but held OFF behind STRIPE_SEGMENTS: it lands on TORSO texels through the bake (body.spec.js torso back blue 0.019 legs-only -> 0.121 with arms, gate < 0.10) and capping it below the shoulder barely moves it (0.110), so it leaks the whole chest wall where the arm and torso shells meet — item 3's armpit geometry, not the stripe. New stripe_straight_gate measures the seam's 5th/95th-percentile edges per 2 cm rung: worst step 10.8 mm, worst wander 14.3 mm, median width 41.2 mm, against 33.0 mm / 34.7 mm for the negative control BODY_SABOTAGE_STRIPE=1. 42: OPUS item 12 — THE LEG NOW ENDS IN A BOOT. The boot GEOMETRY has existed since rigid_boots/seat_soles and leg_taper_gate already measured its cuff breadth, but nothing ever PAINTED it, so the suit ran white onto the ski (negative control BODY_SABOTAGE_BOOT=1 measures that shipped skin: 90.7% of the boot band light, mean luma 0.764). Measuring also moved the number: the segment model has no foot below the ankle (sole and ankle both z=-0.995), so the old cuff step at along -0.74 left only 47 mm of mesh under it; the shell is now the lower shin from along -0.40, 112 mm tall, mean luma 0.078, 0 light verts, with a lighter liner lip at its rim. SUIT_FOLDS' boot-cuff crease moved -0.62+-0.18 -> -0.26+-0.13 so the cloth bunches ABOVE the shell instead of creasing plastic. 41: OPUS item 5 (skin weights) — every seam in the shipped skin was cut by the three OWNERSHIP passes, not by the bind: heat-map skin ships max edge weight-L1 0.636 with ZERO hot edges, sharpen_limb_weights takes it to 1.599, reclaim_chest_wall to a bare 2.000 hinge at the armpit (100% torso next to 100% upperArmR). Those passes exist to make pose_onto_segments transport the limbs, which is baked into the rest mesh and done by then, so smooth_blend_rings now relaxes the seams over 4 rings on the SHIPPED low-poly after the bake: max 1.538 -> 0.715, 151 hot edges -> 0, head group share 0.1954 -> 0.1955. 40: OPUS — THE SHARDS WERE narrow_shoulders' SIGN BUG: its outboard test compared s*x against the SIGNED plane x_b, so on the left side it selected the whole trunk and the far arm and rescaled them about the left shoulder plane (279 verts moved vs 42 on the right, worst 226.8 mm, x +0.172 -> -0.055 through the chest); the faces bridging moved and unmoved verts stretched to 240 mm and shaded anywhere — the silvery shards on the suit at rest. Shard faces 157/9558 (1.64%) -> 50/9509 (0.53%), longest 240 -> 139 mm; weave 1.1 -> 2.1 mm p-p to give back the NM variance the tear was supplying (8.24 -> 5.96 -> 6.36, floor 6.30); chest sanity floor 0.30 -> 0.25 (the old floor was cleared by 28 mm of smear: 303 -> 275 mm). 39: OPUS item 5 — the armature gets a SPINE (spine_01..03 between pelvis and neck, torso weight split by a partition of unity along the torso axis); game.js drives the chain from the hip anchor, coupled to the thigh and head deviations, closing exactly onto the torso's own neck end; 38: bib number — back plate un-clipped from bib_mask's wrap ramp (bake ink front/back 0.377/0.175 -> 0.110/0.109), digit aspect 0.33 -> 0.57, navy waistband moved off the bib's lower edge to the hip; 37: item 11 — leg taper (calf/thigh 0.937 -> 0.718): the shin is sized by the taper target, not by the calf/hip lower bound that inflated it; 36: goggles moved onto the eyes (band 0.40-0.57h, mirrored blue) + helmet re-seated on the skull (cranium bbox midpoint, not centroid); 35: athlete head atlas share 4.9%->28.3% + maps re-encoded PNG->WebP (8.26 MB -> 1.12 MB); 34: P5 chopped-landing bake
-
+    const ASSET_V = '?v=54';   // 54: merge — GLM 131 snowing flatness pass + Opus shoulder/elbow helpers; bumped past both sides
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
