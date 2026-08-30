@@ -217,6 +217,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 132 | **Mountains follow-up LANDED — peaks de-"glassed": per-peak materials (tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m, all sharing the ridge band map), ridges' RIDGE_SNOWLINE_M-scale elevation UV replacing the compressed 30 m divisor (rock banding below the caps), backFaceCulling ON + alpha 1; new ridges3d peak gate #5** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, alpha 1 + cull true ×11, 11 unique tints, in-frame mask 0.055, peak-pixel mean 0.672 / std 0.092 — rock-banded, not flat white); look 4/4; scene.png bands 0–20% 0.661 / 20–35% 0.618 / 35–50% 0.794. See entry 132. |
+| — | Iteration 134 | **Entry-133 blotch fix — `makeRidgeSurface` gains a STRATA mode (band-edge jitter 0.12→0.04, snow-band outcrop contrast 3.6→1.6, rock-fracture dark mix 0.9→0.45, near-horizontal sediment strata ±0.22 keyed on elevation, bump strength 2.2); peaks AND mid/far ridge materials now use it (near ridge keeps the full-detail forest map)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); ridges3d 5/5 (peak gate: 11 peaks, mask 0.053, mean 0.677 / std 0.0846 vs 0.05 floor; ridge-only contrast + fogged control still discriminate); look 4/4; scene.png bands 0.663/0.616/0.778; by-eye: mid/far ridge faces read as layered strata, blotches gone. See entry 134. |
 | — | Iteration 133 | **Review-125 B-net near-post read FIXED — `bnetMat.alphaCutOff` 0.5 → 0.3 (the tile's ~45% rope coverage mip-averages BELOW 0.5, so the whole near-side strip was alpha-culled at grazing angles and the fence read as floating dark posts); new venue-dressing test 5 with an in-page negative control at cutoff 0.5** | venue-dressing 5/5 (grazing gate: mask 0.0151 @ 0.3 vs 0.0039 @ 0.5 control, 0.0092 @ 0.4 — monotone); unit 81/81, golden 30/30 (verify.js last before commit, no re-capture — display-only); look 4/4; scene.png by eye: near-left net now visible between its posts. See entry 133. |
 | — | Iteration 131 | **Snowing flatness pass (entry-130 item 1, display-only): sun disc + cumulus faded out under overcast (`sunAmount`/`cloudAmount` sky-shader uniforms), cast shadows softened (`setDarkness(0.55)`), ambient fill raised (hemi 0.42→0.58, IBL 0.32→0.42), sun tint neutral-cool; `_nightProbe` gains `hemi/shadow/sunDisc/env`; snowing.spec lum gate replaced with a chroma gate (overcast sky is physically brighter, not darker)** | unit 81/81, golden 30/30 (verify.js last before commit, no re-capture); snowing.spec 1/1, night.spec 1/1, look 4/4; measured day→snowing: shadow drop 0.027→0.012, sunDisc 1→0, hemi 0.42→0.58, env 0.32→0.42, sky |r−b| −0.055→−0.047. See entry 131. |
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
@@ -8000,6 +8001,60 @@ commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
 
+
+### 134 — entry-133 blotch fix: STRATA band map for the peaks and the
+mid/far ridges — the dark outcrop/fracture noise read as camouflage
+blotches; now layered rock strata
+
+**Order acted on:** entry-133 open question 1 (its by-eye finding: "the dark
+bands read as camouflage blotches, not rock" on the UPPER-LEFT RIDGE/PEAK
+faces). No `docs/NEXT.md`. No Reviewer feedback beyond the standing rules.
+
+**Root cause (seen in the raster, not guessed):** the peaks and the
+mid/far ridges all shared `makeRidgeSurface`'s default map. On the cones one
+texture width spans the whole 2π circumference (~130 m), and on the ridge
+faces the rock band's `mix(ROCK, DARK, (r−0.55)·0.9)` fractures plus the
+snow band's `mix(SNOW, ROCK, (d−0.47)·3.6)` outcrops render as irregular
+high-contrast dark blobs — camouflage, not geology.
+
+**Fix (display-only):**
+- `render/textures.js` `makeRidgeSurface(..., { strata: true })`: band-edge
+  jitter 0.12 → 0.04, snow-band outcrop contrast 3.6 → 1.6, rock-fracture
+  dark mix 0.9 → 0.45, plus near-horizontal sediment strata
+  `sin(v·2π·9 + small jitter)` mixing ±0.22 rock/dark tones keyed on
+  elevation. Default (non-strata) output byte-identical.
+- `game.js`: `_ridgeMat` gains a `texOpts` pass-through; `peakMatBase`,
+  `matMid`, `matFar` build the strata map (bump strength 2.2); the NEAR
+  ridge keeps the full-detail forest map (tree-line strokes read up close).
+- `index.html` `game.js?v=51`.
+
+**Verification:** unit **81/81**; golden **30/30** ("30/30 scenarios match
+the golden traces", verify.js the last command before this commit —
+display-only, no re-capture); `ridges3d.spec` **5/5** twice (with peaks-only,
+then with mid/far ridges on strata): peak gate mask 0.053, peak-pixel mean
+**0.677** / std **0.0846** (floor 0.05), ridge-only contrast gates and the
+fogged negative control still discriminate; `look` **4/4**, shots
+regenerated. `scene.png` luminance bands 0–20% **0.663** / 20–35% **0.616** /
+35–50% **0.778** (133: 0.661/0.618/0.794 — unchanged within noise). BY EYE
+(raster, this session): the mid-left ridge face that was dark-mottled now
+reads as smooth layered grey strata; the right-hand cones are pale with
+faint streaks and clean white below the snowline. B-net still continuous on
+both edges (133's fix intact).
+
+**Open:** (1) a few mid-ridge crests still carry dark-GREEN forest-band caps
+(the near-ridge map's forest band appears on the mid ridge wherever its
+crest v ≈ 0.42–0.5); options: give `ridge_mid` its own crest elevation or a
+higher forestEdge in strata mode — next mountain touch; (2) forest remainder
+(P4), polish.
+
+**Open questions for the reviewer:** (1) confirm by eye that the strata
+reads as rock layers rather than blotches in `shots/scene.png`; (2) should
+the near ridge also lose its green crest caps, or is tree-line green on the
+near hills wanted?
+
+**No changes:** `engine/`, `assets/`, ASSET_V, athlete-lane files, DoF
+block, nothing added to the scene. Scratch removed from
+`~/aerial-agents/scratch/iter-134/`.
 
 ### 133 — review-125 B-net near-post read fixed: the grazing-angle strip was
 alpha-culled by mip averaging (cutoff 0.5 → 0.3); new venue-dressing gate
