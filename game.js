@@ -2266,11 +2266,10 @@ void main(void) {
     // once per material while uv2 is assigned per mesh.
     window._bakedApplied = 0;
 
-    // Entry-138: REBAKE LANDED — the iteration-13 off switch flips back ON.
-    // The bake is current (blender/bake_lightmap.py now path-traces the forest
-    // as alpha-cutout card occluders, and the corridor's vertices are unshared
-    // so the per-vertex uv2 sidecar can describe it). baked.spec.js asserts
-    // the applied state.
+    // Entry-138 rebake stays ON, with ONE exception (iter-145): the corridor
+    // ribbon is skipped in the loop below — its baked multipliers darkened it
+    // into a grey slab (the P0), so it is back on the shared unbaked
+    // terrainMats. baked.spec.js asserts the corridor-unbaked state.
     window._bakeLightmapEnabled = true;
     (function applyBakedLighting() {
         if (!window._bakeLightmapEnabled) return;
@@ -2334,6 +2333,19 @@ void main(void) {
 
                     let applied = 0;
                     for (const name of Object.keys(data.meshes)) {
+                        // Iter-145 P0 (author screenshot 08-30, reviewer A/B
+                        // before/after 138): the corridor rendered as a dark
+                        // blue-grey slab against white flanks. The 138 rewire
+                        // moved it from terrainMats (no UV2) to terrainMats_baked
+                        // (UV2) and the baked skyvis/shadow multipliers darkened
+                        // the whole ribbon (corrected grey-attr instrument:
+                        // corridor 0.6475 vs flank 0.8271 on the regressed
+                        // build). REVERT for the corridor: it stays on the
+                        // shared, unbaked terrainMats; only wUpperMtn keeps the
+                        // bake (its terrain reads fine and carries the dappled
+                        // tree shadows). The corridor's vertex unsharing and the
+                        // sidecar data are harmless to leave in place.
+                        if (name === 'terrainCorridor') continue;
                         const mesh = scene.getMeshByName(name);
                         if (!mesh || !mesh.getTotalVertices()) continue;
 

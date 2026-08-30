@@ -1,13 +1,12 @@
 'use strict';
 // ── Scene instrument: corridor vs flank + near-black pixel attribution ──────
-// Iter-141 findings, both closing entry-140's scene findings:
-//   1. GREY RAMP: since P1 slice 2 the corridor and flanks are ONE mesh
-//      (terrainCorridor, ±55 m, shared snowMat), so any residual deficit is
-//      pure lighting. Ray-classified measurement at the scene framing
-//      (look.spec: radius 14, beta π/2.7, alpha 1.35π): corridor 0.7185 vs
-//      flank 0.6077 — the run is the BRIGHTER surface. Entry-140's −9.8%
-//      "corridor vs flank" came from fixed fractional pixel boxes sampling
-//      other surfaces; the ramp is closed.
+// GREY RAMP (REWRITTEN iter-145): the iter-141/142 numbers were read through a
+// spurious y-flip of the readPixels buffer (see measure() below); corrected,
+// the regressed 4992619 build reads corridor 0.6475 vs flank 0.8271 — the
+// 138/142 lightmap rewire WAS darkening the run (the P0 the author
+// screenshot shows). After the iter-145 corridor unbake (game.js skips
+// terrainCorridor in applyBakedLighting) the ramp gate lives at the in-run
+// framing (corridor ≥ 0.95 × flank; scene framing is a canary — see below).
 //   2. BLACK BAND: ~2.8% of scene-view samples read near-black (lum < 60),
 //      attributed by ray-cast to the bnet strips' OPAQUE CSM shadow on the
 //      landing (terrainCorridor) and the down-facing terrainBase disc. Both
@@ -29,11 +28,18 @@ async function measure(page) {
         // Two renders: the first flushes pending state, the second is on the
         // canvas when readPixels runs (stale-frame countermeasure).
         scene.render(); scene.render();
-        // readPixels is BOTTOM-UP (GL convention); classify with flipped y.
+        // Iter-145: NO y-flip. Babylon's readPixels output rows are indexed
+        // in screen order (the same top-down row index createPickingRay's
+        // screen coordinates use). The iter-141 note recorded the GL
+        // bottom-up convention and 142 closed the ramp on mirrored numbers:
+        // the flipped read said corridor 0.6783 > flank 0.5873 while the
+        // author's screenshot showed the corridor plainly DARKER. Measured
+        // both ways on the regressed build in one pass (iter-145 probe,
+        // scene framing): as-is corridor 0.6475 / flank 0.8271 (corridor
+        // darker — matches the screenshot); flipped 0.8357 / 0.7262
+        // (mirrored). As-is is correct.
         const px = await eng.readPixels(0, 0, W, H);
-        const at = (x, yTop) => (yTop) * W + x; // luminance reads via lumAt(px bottom-up row)
-        const lumAt = (x, yTop) => {
-            const y = H - 1 - yTop;   // bottom-up framebuffer rows
+        const lumAt = (x, y) => {
             const i = (y * W + x) * 4;
             return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
         };
@@ -104,9 +110,15 @@ test('scene: run at least as bright as its flanks; no near-black band', async ({
 
     expect(r.nCor).toBeGreaterThan(40);
     expect(r.nFlank).toBeGreaterThan(40);
-    // The run reads at least as bright as the snow beside it (0.005 noise
-    // floor). Measured 0.7185 vs 0.6077 — a clear margin, not a knife edge.
-    expect(r.corridor).toBeGreaterThanOrEqual(r.flank - 0.005);
+    // Scene framing: mean-luminance CANNOT carry the 0.95 gate here — the
+    // ray-classified corridor mean includes the B-net/fence shadow band and
+    // sun-angled inrun geometry, so even the pre-138 GOOD build (worktree
+    // probe, iter-145) reads corridor 0.6581 vs flank 0.8360 = 0.787, and the
+    // baked regressed build reads 0.78 — indistinguishable. The defect the
+    // 0.95 gate catches lives at the in-run framing (see the test below:
+    // baked 0.7613/0.8155 = 0.933 FAIL vs unbaked 0.7869/0.816 = 0.964 PASS).
+    // So here: a regression canary only.
+    expect(r.corridor).toBeGreaterThanOrEqual(r.flank * 0.75);
     // The 141 fix's contract: the alpha-cut net strips do NOT cast in the
     // CSM (the depth pass rendered them as opaque solids → one solid band).
     // Structural assert — the luminance instrument cannot carry this gate:
@@ -135,4 +147,40 @@ test('scene: run at least as bright as its flanks; no near-black band', async ({
         .toEqual([]);
     expect(r.darkFrac, `near-black budget ${r.darkFrac} (control spread 2.36–2.86%)`)
         .toBeLessThan(0.035);
+});
+
+test('inrun: corridor ≥ 0.95 × flank at the canonical in-run framing', async ({ page }) => {
+    // NEXT.md (2026-08-30): the corridor slab was first SEEN in inrun.png, so
+    // the ramp gate must hold there too, not only at the scene framing.
+    // Camera = look.spec's canonical in-run shot (athlete-anchored, 8 m
+    // uphill / 6 m above the chest).
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function',
+        null, { timeout: 30_000 });
+    await page.waitForFunction(() => window._surfacesApplied !== undefined,
+        null, { timeout: 30_000 });
+    await page.waitForFunction(() => window._bnetSeated === true,
+        null, { timeout: 20_000 });
+    await page.waitForTimeout(1000);
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        const gs = window._getGameState();
+        const body = scene.meshes.find((m) => (m.name || '').indexOf('athleteBody') === 0);
+        const p = body ? body.getAbsolutePosition() : { x: 0, y: -2.5, z: gs.posZ };
+        cam.setTarget(new BABYLON.Vector3(0, p.y + 1, p.z));
+        cam.alpha = -Math.PI / 2;
+        cam.beta = Math.atan2(8, 6);
+        cam.radius = 10;
+        cam.fov = 0.8;
+    });
+    await page.waitForTimeout(600);
+
+    const r = await measure(page);
+    console.log('INRUN_INSTRUMENT ' + JSON.stringify(r));
+    expect(r.nCor).toBeGreaterThan(40);
+    expect(r.nFlank).toBeGreaterThan(20);
+    expect(r.corridor).toBeGreaterThanOrEqual(r.flank * 0.95 - 0.005);
 });
