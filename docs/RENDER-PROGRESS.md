@@ -239,6 +239,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ## Status board
 | — | Iteration 148 | **NEXT.md step 2 slice 1 — shell curvature gates EXTENDED to the upper arms and thighs, ALL 8 gated segments now ≤ 0.35: upperArm 0.160/0.324 (was 1.037/0.715), thighs 0.343/0.242 (was 0.529/0.455), torso 0.088 (was 0.644, still reported-not-gated). Chest-wall verts excluded from the upper-arm fit/move via the torso's own fitted tube; thigh iron freed 6→16 mm under the reviewer's garment-`thigh_depth` ruling (gate re-attached to the shipped garment); inner-thigh gap 45.5 mm ≥ 40 (session-28 open item CLOSED); arm/thigh 0.498 ≤ 0.55; ASSET_V 67** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43. See entry 148. |
 | — | Iteration 149 | **NEXT.md reviewer-ruling instrument fix — garment `thigh_depth` sampling widened until n ≥ 100 (single-thigh bands cap at n=84, so the instrument now POOLS BOTH THIGHS and computes depth/breadth per 2 cm rung, reporting the median rung ratio per side); citable reading 1.663 (n=103, band ±6 cm, 6 rungs/side), gate ≥ 0.90 green. NEXT.md step 3 (arm stripe) VERIFIED on the merged branch: blue band on BOTH arms' outer seams in figure_front/figure_side, default flag state, leak gates green. Geometry untouched — assets byte-identical, NO ASSET_V bump** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43 (kneeMax 1.0); shots regenerated + inspected. See entry 149. |
+| — | Iteration 150 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, browser+mutation+coverage PASS, look 6/6, shots regenerated. The 149 "magenta patches" ROOT-CAUSED — they are the session-30 bib sponsor band (`BIB_WAIST`) and its rib wrap, not a defect. NEW P0 REGRESSION: grey-attr scene gate RED — corridor 0.5952 vs flank 0.8335 (ratio 0.714, gate ≥ 0.75 × flank; 145's canary was 0.788) — introduced somewhere in 146–149, unmeasured there; 151 must root-cause it before slice 2 paints panels** | two deterministic grey-attr solo failures; magenta = code-read + by-eye confirmation in figure_front/figure_side. See entry 150. |
 | — | Iteration 146 | **NEXT.md step 0 (FACEDIST) LANDED — the sabotage control was UN-BUILDABLE at this tip (the later temple-arm + required-region gates aborted `BODY_SABOTAGE_FACE=1` before export; exempted under the flag), and the face-discrimination gates are no longer fatal to `figure_side.png` (deferred behind the side-shot gates); measured on the merged branch: honest FACEDIST 0.1802 PASS, sabotage 0.1784 + back lensFrac 0.1655 + front−back 0.024 → spec FAILS as required — the `≤` inversion NEXT.md asked for is measurably impossible here (it would fail the honest build) and is recorded as an open question** | honest: look 6/6, FACEDIST 0.1802, figure_side.png written; sabotage: spec fails exactly on the two lens gates, figure_side.png STILL written (the point of the rework); unit 81/81, golden 30/30, rig 13/13; ASSET_V 64→65, `game.js?v=65`, preloads `?v=65`. See entry 146. |
 | — | Iteration 145 | **P0 corridor grey slab FIXED — corridor unbaked (game.js skips `terrainCorridor` in `applyBakedLighting`; the 138/142 baked multipliers were the in-run slab); grey-attr y-flip corrected (141/142 closed the ramp on MIRRORED numbers); corridor gate rebased on the corrected instrument** | negative control (baked 4992619, inrun framing): 0.7613/0.8155 = 0.933 — FAILS the 0.95 gate; fixed build: 0.7869/0.816 = 0.964 — PASSES; scene framing canary 0.6573/0.8337 (mean there cannot discriminate — pre-138 good build measures 0.787; see entry); by eye inrun.png is white again, matching `before_138`. unit 81/81, golden 30/30 (audit 0 diffs × 30/5408), look 6/6. See entry 145. |
 | — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
@@ -1429,6 +1430,55 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 150 — REVIEW-ONLY: suite green, shots inspected; magenta patches ROOT-CAUSED (they are the bib's sponsor band); NEW P0 regression — grey-attr scene canary red (corridor 0.595 vs flank 0.834, ratio 0.714 < 0.75)
+
+**Scope.** Review-only slot per the driver and the 16:25 authorization (150 stays review-only). No
+source or asset change; NEXT.md step 2 slice 2 (panels/collar/cuffs + the 16:45 mirror-completion
+ruling) starts in 151.
+
+**Verification (this tree, unchanged from 149's tip plus docs):** unit 81/81; golden 30/30; browser
+integration PASS + mutation/coverage PASS; look 6/6 (figure/scene/inrun/kicker + pose shots
+regenerated 17:01–17:04). `run-all.sh`'s Playwright drive-through was cut off by a 20-minute wrapper
+timeout mid-suite (same as 140) — unit/golden/mutation/coverage had already passed inside it; look
+and grey-attr were then run solo. FACEDIST not re-cited (146's disposition closed step 0; look 6/6
+green is the check).
+
+**ROOT CAUSE — the "magenta waist/hip patches" (149's observation 2, ruled root-cause-first at
+16:45): NOT a defect. The only magenta in the build is `BIB_WAIST` = (0.62, 0.14, 0.30)
+(`blender/build_body.py:169`), the session-30 three-band bib's sponsor band, painted wherever
+`bib_mask > 0.5` and `along < BIB_WAIST_A1` (line 7752). `bib_mask` wraps the bib round the ribs
+(front to |lat| ≈ 0.14, back panel to ≈ 0.10), so the band reads as: a pink strip just under the
+"30" plate in figure_front.png (by design — the reference layout), and TWO pink lobes at the
+waist/hip in figure_side.png (the front-wrap and back-panel lobes). No marker/debug magenta exists
+anywhere in the build (grep: no other magenta/pink tone; no repair pass writes one). There is
+nothing to fix unless the reviewer rules the band's LATERAL wrap wrong for the reference — question
+filed below. Slice 2 is clear to paint panels; it must not paint over the band (the
+`bib_band_gate` already forbids that).
+
+**NEW P0 REGRESSION — grey-attr scene gate is RED at this tip: corridor 0.5952 vs flank ≈ 0.8335
+(gate ≥ 0.75 × flank = 0.6251), deterministic across two solo runs.** 145's scene canary measured
+0.6573/0.8337 = 0.788 (passing); the corridor term has since dropped ~10%. Assets were last rebuilt
+in 148 (athlete-only) and 149 verified only spine+rig+chain+look, so the regression was introduced
+somewhere in 146–149 / the Opus merge and went unmeasured — the scene canary was not in those
+iterations' verification sets. By eye scene.png still reads white-on-white (no grey slab like the
+12:45 defect), so this is a graded dimming, not the baked-multiplier failure mode; suspects: shadow
+changes from the venue-dressing/CSM work, or the sample region now catching tree shade. By-eye
+scene observations to fold into the 151 diagnosis: (a) a dark-green jagged band spans the midground
+between the ridge bases and the treeline — reads as intended near-ridge forest, but it sits near
+the flank sample's territory; (b) a pale blue lake band at the left valley floor (pre-existing?
+unreviewed). RECOMMENDED ORDER for 151: (1) root-cause the corridor dimming BEFORE slice 2 — if it
+is the P0 class again, it outranks the suit paint; (2) then slice 2 per NEXT.md + the 16:45
+mirror-completion ruling.
+
+**Open questions for the reviewer:**
+1. The magenta band's lateral wrap (pink lobes at the hip in side view) — correct per the reference
+   bib, or should the band be bounded to the front-facing wrap only? (Code refs above; no change
+   made.)
+2. The dark-green midground band and the blue lake band in scene.png — intended scene content, or
+   new since the last reviewed scene shot? If unintended they belong to the 151 corridor diagnosis.
+3. Process: run-all's drive leg timed out again (as in 140) — should the drive suite be split out
+   of run-all into its own longer-budget script so review slots stop truncating it?
 
 ### 149 — NEXT.md: the `thigh_depth` instrument made citable (n ≥ 100); step 3 stripe verified on the merged branch
 
