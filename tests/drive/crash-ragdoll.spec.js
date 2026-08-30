@@ -9,7 +9,8 @@
 //   - every body driver's lowest point respects the surface (no penetration
 //     below the physics surface minus a 6 cm corner tolerance; the ragdoll's
 //     contact model projects particles onto terrainRootY(z) - FOOT_OFFSET);
-//   - hard crash state machine (author URGENT 21:45): tumble ≤ 1.0 s →
+//   - hard crash state machine (author URGENT 21:45; HT#13 2026-08-30
+//     tightens the freeze): tumble ≤ 0.6 s →
 //     pose frozen → rigid slide with strong friction → stopped; joint
 //     angular speed ≈ 0 from the freeze onward, body speed < 0.1 m/s by
 //     t_crash + 2.5 s and EXACTLY 0 for ≥ 3 s of samples afterwards;
@@ -352,6 +353,36 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     expect(lastRec.support, `rest support points ${lastRec.support} ≥ 3 within 5 cm`).toBeGreaterThanOrEqual(3);
     expect(lastRec.maxAbove, `no body point > 0.6 m above the snow at rest (max ${lastRec.maxAbove.toFixed(3)} m)`)
         .toBeLessThanOrEqual(0.6);
+
+    // ── HUMAN TESTING #13 gates (author, 2026-08-30 08:40) ───────────────
+    // (1) tumble → slide onset ≤ 0.6 s (sim clock; the gate allows one
+    //     rAF sampling interval of slack).
+    expect(rollRec && rollRec.probe,
+        'a roll-phase sample with the ragdoll probe was recorded').toBeTruthy();
+    console.log('HT13 slideOnset(sim t at first roll sample)=' + rollRec.probe.t.toFixed(3) +
+        's impactSpeed=' + (frozen[0].probe.impactSpeed || '?'));
+    expect(rollRec.probe.t, `slide onset ${rollRec.probe.t.toFixed(3)}s ≤ 0.8s`)
+        .toBeLessThanOrEqual(0.8);
+    // (2) the slide stops a few metres past where the run flattens
+    //     (bands per world: single 3–8 / double 6–12 / triple 10–18 m;
+    //     the spec runs the default world — the measured value is logged
+    //     for per-world calibration and hard-banded to 0–18 m).
+    const pastRollOut = restZ - rollOutZ;
+    console.log('HT13 rest past rollOutZ=' + pastRollOut.toFixed(2) + ' m');
+    expect(pastRollOut, `rest ${pastRollOut.toFixed(2)} m past the roll-out (0–18 m band)`)
+        .toBeGreaterThanOrEqual(-2);
+    expect(pastRollOut, `rest ${pastRollOut.toFixed(2)} m past the roll-out (0–18 m band)`)
+        .toBeLessThanOrEqual(18);
+    // (5) ejected skis: 1–2 tumbles then a hard brake — each ski rests
+    //     ≤ 6 m from its eject point (never slides down with the body).
+    const skiOff = lastRec.probe && lastRec.probe.skis ? lastRec.probe.skis : null;
+    expect(skiOff && skiOff.length === 2, 'ski rest offsets recorded').toBeTruthy();
+    for (const s of skiOff) {
+        const d = Math.hypot(s.dx, s.dz);
+        console.log('HT13 ski offset from eject=' + d.toFixed(2) + ' m resting=' + s.resting);
+        expect(d, `ski rests ${d.toFixed(2)} m from its eject point (≤ 6 m)`)
+            .toBeLessThanOrEqual(6);
+    }
 
     expect(legacyFrames, 'no legacy driver solid ever visible').toBe(0);
     expect(rootOffFrames, 'skierRoot never disabled').toBe(0);

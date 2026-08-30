@@ -2982,6 +2982,7 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 impactSpeed: ragdoll.impactSpeed,
                  // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
                  // and peak spine bend (deg) for the crash-spec gates.
                  peakExcDeg: (ragdoll.peakExc || 0) * 180 / Math.PI,
@@ -2993,7 +2994,14 @@ void main(void) {
                      kneeR: ang(B.kneeR, B.hipR, B.ankleR),
                      elbL: ang(B.elbowL, B.shL, B.wristL),
                      elbR: ang(B.elbowR, B.shR, B.wristR),
-                 } };
+                 },
+                 // HT#13 (2026-08-30): ski rest offsets from the eject point.
+                 skis: (ragdoll.skis || []).map((s) => ({
+                     dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),
+                     dz: s.pos.z - (s.eject ? s.eject.z : s.pos.z),
+                     resting: !!s.resting,
+                 })),
+             };
     };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
@@ -6004,6 +6012,9 @@ void main(void) {
                 yaw: Math.atan2(fwd.x, fwd.z || 1e-6),
                 vyaw: (Math.random() - 0.5) * 5.0,
                 resting: false, y0: 0.015,
+                // HT#13 (2026-08-30): eject point for the "skis stop within
+                // 6 m of the eject point" gate — pos at release.
+                eject: { x: pos.x, z: pos.z },
             });
         }
 
@@ -6333,9 +6344,10 @@ void main(void) {
         // (non-contacting) parts that the static-friction stop never
         // touches — so a propped body sits in a visible limit cycle at or
         // above the 0.12 m/s threshold and never yields 8 quiet frames. A
-        // wall of time is frame-rate independent: tumble at most 1.0 s,
+        // wall of time is frame-rate independent: tumble at most 0.6 s
+        // (HUMAN TESTING #13: slide onset ≤ 0.6 s after impact),
         // then freeze the pose and slide it as ONE rigid piece.
-        if (R.phase === 'tumble' && R.t >= 1.0) {
+        if (R.phase === 'tumble' && R.t >= 0.6) {
             // Freeze: capture the body's mean horizontal velocity, kill all
             // internal velocities (prev = p), switch to the rigid slide.
             let _sx = 0, _sz = 0;
@@ -6391,7 +6403,15 @@ void main(void) {
                 R.slideV.x *= _dec; R.slideV.z *= _dec;
             } else if (_onSteep) {
                 const _th = Math.atan(Math.abs(_slope));
-                const _a = Math.max(0, 14 * (Math.sin(_th) - 0.5 * Math.cos(_th)));
+                // HT#13 addendum 08:55: the chopped landing is steep but
+                // ROUGH — μ_chop 0.55 (vs the 0.50 corduroy steep value)
+                // so the body still accelerates on the steep but reaches
+                // the roll-out 10–20 % slower. window._crashChopMu is the
+                // negative-control override (0.5 = old model).
+                const _mu = (typeof window !== 'undefined' &&
+                    window._crashChopMu !== undefined &&
+                    R.torso.z < OUTRUN_Z - 2) ? window._crashChopMu : 0.55;
+                const _a = Math.max(0, 14 * (Math.sin(_th) - _mu * Math.cos(_th)));
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
@@ -6399,8 +6419,16 @@ void main(void) {
                 }
             } else {
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
+                // HT#13: flat roll-out friction — window._crashFlatDecel is
+                // the tuning/negative-control override (default 8.0 m/s²,
+                // raised from 7.0 so the slide stops a few metres past the
+                // transition, targets single 3–8 / double 6–12 / triple
+                // 10–18 m past the roll-out radius end).
                 if (_vH0 > 1e-6) {
-                    const _k = Math.max(0, _vH0 - 0.5 * 14 * dt) / _vH0;
+                    const _dec = (typeof window !== 'undefined' &&
+                        window._crashFlatDecel !== undefined)
+                        ? window._crashFlatDecel : 8.0;
+                    const _k = Math.max(0, _vH0 - _dec * dt) / _vH0;
                     R.slideV.x *= _k; R.slideV.z *= _k;
                 }
             }
@@ -6587,7 +6615,13 @@ void main(void) {
         // points by the root's per-FRAME delta before the ticks, so the
         // rendered body tracks the sliding root exactly (per-frame because
         // the root's own motion is engine-driven at frame granularity).
-        if (R.phase !== 'tumble') {
+        // HT#13 (2026-08-30): the ride ENDS at the roll-out — past OUTRUN_Z
+        // the machine's own flat friction brakes the body to rest a few
+        // metres past the transition (targets single 3–8 / double 6–12 /
+        // triple 10–18 m); without this cut the engine's crashed root keeps
+        // re-accelerating down the out-run and drags the body ~30 m past
+        // the flat (measured rest 33.5 m past rollOutZ at the 8 m/s² brake).
+        if (R.phase !== 'tumble' && R.torso.z < OUTRUN_Z) {
             if (R._lastRoot) {
                 const _rd = _crashVSub(rootPos, R._lastRoot);
                 for (const pt of R.parts) {
@@ -6602,9 +6636,6 @@ void main(void) {
                     if (pt.prev) {
                         pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
                     }
-                }
-                for (const sk of R.skis) {
-                    sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
                 }
             }
             R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
