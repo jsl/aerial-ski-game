@@ -1,11 +1,13 @@
 'use strict';
-// P4 forest slices 1+2: the forest is thin-instanced cross-card impostors
-// sampling SIX distinct Blender-baked variants (blender/bake_trees.py →
-// assets/tree_spruce_card_0..3.png + assets/tree_birch_card_4..5.png + the
-// 8-view atlases), mixed ~60% bare deciduous / 40% spruce (iter 98).
-// Gates the plan's P4 acceptance: instance count, ≤ 20 draw calls for the whole
-// forest (6 shipped: one per variant mesh), alpha-cut materials wired to the
-// baked cards, planted on the terrain with the corridor kept clear.
+// P4 forest slices 1+2 + understory: the forest is thin-instanced
+// cross-card impostors sampling SEVEN distinct Blender-baked variants
+// (blender/bake_trees.py → assets/tree_spruce_card_0..3.png +
+// assets/tree_birch_card_4..5.png + assets/tree_under_card_6.png + the
+// 8-view atlases), mixed ~60% bare deciduous / 40% spruce (iter 98) plus
+// clustered understory shrubs along the corridor edges (iter 143).
+// Gates the plan's P4 acceptance: instance count, ≤ 20 draw calls for the
+// whole forest (7 shipped: one per variant mesh), alpha-cut materials wired
+// to the baked cards, planted on the terrain with the corridor kept clear.
 //
 // Iter 59: orientation + seating gates (reviewer URGENT after iter 56 —
 // the forest rendered UPSIDE DOWN because the card texture was built with
@@ -222,11 +224,11 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
     // ── Scene-side gates ────────────────────────────────────────────────────
     expect(s.legacy, 'legacy per-tree trunk/foliage cylinders must be gone').toBe(0);
     expect(s.hasCards, 'treeCards impostor meshes exist').toBe(true);
-    expect(s.meshCount, 'SIX variant meshes: 4 spruce + 2 birch (iter 98)')
-        .toBe(6);
+    expect(s.meshCount, 'SEVEN variant meshes: 4 spruce + 2 birch + 1 understory (iter 143)')
+        .toBe(7);
     expect(s.total, 'a real forest, not a token row').toBeGreaterThan(150);
     const birchInstances = s.variants[4].instances + s.variants[5].instances;
-    const birchShare = birchInstances / s.total;
+    const birchShare = birchInstances / (s.total - s.variants[6].instances);
     expect(birchShare, 'bare deciduous is the forest majority (~60%, iter 98): got ' +
         (birchShare * 100).toFixed(1) + '%').toBeGreaterThanOrEqual(0.50);
     expect(birchShare, 'birch share does not crowd out the conifers')
@@ -261,8 +263,8 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
         expect(v.tex.url, v.name + ' samples its OWN variant card, not another’s')
             .toContain('_' + v.name.slice(-1) + '.png');
     }
-    expect(s.forestActive, 'whole forest renders in ≤ 6 draw calls (plan cap 20)')
-        .toBeLessThanOrEqual(6);
+    expect(s.forestActive, 'whole forest renders in ≤ 7 draw calls (plan cap 20)')
+        .toBeLessThanOrEqual(7);
 
     // Review-60 (c) scale band + spread: per-instance 0.7–1.4, not a clone row.
     expect(s.minScale, 'instance scale ≥ 0.7 (review-60 (c))').toBeGreaterThanOrEqual(0.695);
@@ -278,8 +280,8 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
         expect(card.error, tag + ' sampled without error').toBeUndefined();
 
         // Iter-62 gates re-derived for the camera-orbit bake. Bands index 0 =
-        // the file's TOP rows (canvas py=0). Species split (iter 98):
-        // cards 0-3 spruce, 4-5 bare deciduous birch.
+        // the file's TOP rows (canvas py=0). Species split: cards 0-3
+        // spruce, 4-5 bare deciduous birch, 6 understory shrub (iter 143).
         expect(card.runs[0].vis, tag + ' starts with an empty sky margin').toBe(false);
         expect(card.runs[card.runs.length - 1].vis,
             tag + ' tree runs through the file bottom (trunk seated)').toBe(true);
@@ -324,7 +326,7 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
 
             expect(card.trunkSides, tag + ' no canopy at the base sides (bare trunk)')
                 .toBeLessThan(0.01);
-        } else {
+        } else if (vi < 6) {
             // ── Bare-deciduous gates (iter 98). A bare crown legitimately
             // has transparent row-gaps (you see sky through the branches)
             // and a far lower opaque fraction than a conifer skirt — the
@@ -350,6 +352,23 @@ test('forest is thin-instanced impostor draw calls fed by the baked spruce varia
             expect(card.lum, tag + ' mean impostor luminance ≥ 0.15, got ' + card.lum)
                 .toBeGreaterThanOrEqual(0.15);
             expect(card.meanRGB[0], tag + ' bare-branch red leads green (deciduous, not conifer)')
+                .toBeGreaterThan(card.meanRGB[1]);
+        } else {
+            // ── Understory gates (iter 143). The shrub is baked in its own
+            // 4 m frame, so a large empty sky margin at the top is the
+            // correct read; the mass must sit in the LOWER half (a
+            // ground-hugging mound, not a pole), and twig-bark red leads.
+            expect(card.runs[0].bot, tag + ' bush mass in the lower half of its frame')
+                .toBeGreaterThanOrEqual(0.35);
+            const moundMax = Math.max(...card.widths.slice(8));
+            expect(moundMax, tag + ' understory mound reads at the base')
+                .toBeGreaterThanOrEqual(0.03);
+            const skyMax = Math.max(...card.widths.slice(0, 6));
+            expect(skyMax, tag + ' upper frame stays sky (short shrub)')
+                .toBeLessThanOrEqual(0.01);
+            expect(card.lum, tag + ' mean impostor luminance ≥ 0.15, got ' + card.lum)
+                .toBeGreaterThanOrEqual(0.15);
+            expect(card.meanRGB[0], tag + ' twig bark red leads green (deciduous, not conifer)')
                 .toBeGreaterThan(card.meanRGB[1]);
         }
         // (trunkCentre + bottom-run + top-corner gates are shared above)

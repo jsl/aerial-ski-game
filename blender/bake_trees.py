@@ -292,6 +292,67 @@ def build_deciduous(cfg):
         _branch(Vector((0, 0, top * rng.uniform(0.86, 0.96))), d,
                 top * rng.uniform(0.07, 0.12), 0.05, 0)
 
+
+# ── Understory (P4 remainder, iter 143): a bushy snow-dusted shrub ────────────
+# The plan's third species: "one bushy understory". A low mound of short
+# stems fanning from the base, each forking twice into bare twigs, snow on
+# the steeply up-facing surfaces only (the birch rule). Rendered in its OWN
+# bake frame (BUSH_FRAME_W x BUSH_FRAME_H): a 1.5 m shrub in the shared
+# 7.3 x 14.6 tree frame would spend ~85% of the card on empty sky and
+# starve the alpha-cut texels. game.js sizes the bush card quad from the
+# same numbers.
+
+BUSH_FRAME_H = 4.0
+BUSH_FRAME_W = BUSH_FRAME_H * (512 / 1024)   # 2.0 — keeps the 1:2 card aspect
+
+UNDERSTORY_VARIANTS = [
+    dict(tag='6', seed=44501, top_z=1.5),
+]
+
+
+def build_understory(cfg):
+    rng = random.Random(cfg['seed'])
+    top = cfg['top_z']
+    mat_stem = _mat_snow('stem', (0.28, 0.21, 0.15), 0.35, 0.75, 0.45)
+
+    def _twig(start, d, length, r0, depth):
+        quat = d.to_track_quat('Z', 'Y')
+        centre = start + d * (length / 2)
+        _add_cone(r0, r0 * 0.35, length, mat_stem, centre, quat, seg=5)
+        if depth >= 3:
+            return
+        end = start + d * length
+        for k in range(2):
+            phi = rng.uniform(0, 2 * math.pi)
+            perp = Vector((math.cos(phi), math.sin(phi), 0)).cross(d)
+            if perp.length < 1e-4:
+                perp = Vector((1, 0, 0))
+            perp.normalize()
+            nd = (d + perp * math.tan(rng.uniform(0.5, 1.0))).normalized()
+            # outward-and-up bias so the bush mounds instead of drooping
+            nd = Vector((nd.x, nd.y, abs(nd.z) * rng.uniform(0.4, 1.0))).normalized()
+            _twig(end - d * length * 0.10, nd,
+                  length * rng.uniform(0.55, 0.75), r0 * 0.6, depth + 1)
+
+    n_stems = 14
+    for i in range(n_stems):
+        phi = (i * 2 * math.pi / n_stems) + rng.uniform(-0.25, 0.25)
+        lean = math.radians(rng.uniform(18, 55))
+        d = Vector((math.cos(phi) * math.cos(lean),
+                    math.sin(phi) * math.cos(lean),
+                    math.sin(lean)))
+        base = Vector((math.cos(phi) * 0.05, math.sin(phi) * 0.05, 0.0))
+        h = top * rng.uniform(0.65, 1.0)
+        _twig(base, d, h * rng.uniform(0.45, 0.6), 0.055, 0)
+    # two short interior stems so the mound centre is not hollow — kept at
+    # half height: full-height uprights read as dead sticks over the mound
+    for k in range(2):
+        phi = rng.uniform(0, 2 * math.pi)
+        elev = math.radians(rng.uniform(50, 65))
+        d = Vector((math.cos(phi) * math.cos(elev), math.sin(phi) * math.cos(elev),
+                    math.sin(elev)))
+        _twig(Vector((0, 0, 0)), d, top * rng.uniform(0.4, 0.55), 0.06, 1)
+
 # ── Lighting / camera ─────────────────────────────────────────────────────────
 
 def setup_world_and_sun():
@@ -412,8 +473,9 @@ def main():
     tmp = os.path.join(args.out, '_tree_tmp')
     os.makedirs(tmp, exist_ok=True)
 
-    # Fixed frame for every variant — the card quad's window (game.js
-    # CARD_W/CARD_H). --ortho only overrides for calibration probes.
+    # Per-species frame: trees share the 7.3 x 14.6 card window (game.js
+    # CARD_W/CARD_H); the understory bush uses its own smaller window.
+    # --ortho only overrides for calibration probes.
     frame_h = FRAME_H
     ortho_w = args.ortho if args.ortho > 0 else FRAME_W
 
@@ -421,24 +483,28 @@ def main():
               'variants': []}
 
     SPECIES = [
-        # (configs, builder, output prefix, tile/card coverage band)
-        (VARIANTS, build_spruce, 'tree_spruce', 0.05, 0.60),
+        # (configs, builder, output prefix, tile/card coverage band, frame_h)
+        (VARIANTS, build_spruce, 'tree_spruce', 0.05, 0.60, FRAME_H),
         # bare deciduous: thin bare geometry legitimately has far less
         # opaque area than a layered conifer skirt
-        (DECIDUOUS_VARIANTS, build_deciduous, 'tree_birch', 0.010, 0.60),
+        (DECIDUOUS_VARIANTS, build_deciduous, 'tree_birch', 0.010, 0.60, FRAME_H),
+        # understory shrub: sparse twigs in a small frame
+        (UNDERSTORY_VARIANTS, build_understory, 'tree_under', 0.010, 0.60,
+         BUSH_FRAME_H),
     ]
-    for cfgs, builder, prefix, cov_lo, cov_hi in SPECIES:
+    for cfgs, builder, prefix, cov_lo, cov_hi, sp_frame_h in SPECIES:
+      sp_ortho_w = args.ortho if args.ortho > 0 else sp_frame_h * (512 / 1024)
       for cfg in cfgs:
         _clear()          # also removes the previous iteration's camera
         builder(cfg)
         setup_world_and_sun()
-        bpy.ops.object.camera_add(location=(0, -30, frame_h / 2))
+        bpy.ops.object.camera_add(location=(0, -30, sp_frame_h / 2))
         scn.camera = bpy.context.active_object
 
         vrep = {'tag': cfg['tag'], 'topZ': cfg['top_z'], 'tiles': []}
 
         card_p = os.path.join(tmp, 'card_%s.png' % cfg['tag'])
-        render_view(card_p, cw, ch, 0.0, ortho_w, frame_h)
+        render_view(card_p, cw, ch, 0.0, sp_ortho_w, sp_frame_h)
         card = load_rgba(card_p)
         save_rgba(card, os.path.join(args.out, '%s_card_%s.png' % (prefix, cfg['tag'])))
         vrep['card'] = dict(size=[cw, ch], **stats(card))
@@ -448,7 +514,7 @@ def main():
         for k in range(args.views):
             yaw = k * 360.0 / args.views
             p = os.path.join(tmp, 'tile_%s_%d.png' % (cfg['tag'], k))
-            render_view(p, tw, th, yaw, ortho_w, frame_h)
+            render_view(p, tw, th, yaw, sp_ortho_w, sp_frame_h)
             tile = load_rgba(p)
             atlas[:, k * tw:(k + 1) * tw] = tile
             vrep['tiles'].append({'view': int(yaw), **stats(tile)})

@@ -2237,8 +2237,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=57';   // 57: entry-138 rebake — corridor unshared + lightmap with tree occluders applied
-    // ── Baked lighting for the static scenery ───────────────────────────────
+    const ASSET_V = '?v=58';   // 58: iter-143 — understory bush variant added to the tree bake
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
@@ -4251,9 +4250,14 @@ void main(void) {
     // every variant is baked at the SAME frame (14.6 m tall, 7.3 m wide), so
     // one quad size serves all variants; per-instance scale does the rest.
     const CARD_W = 7.3, CARD_H = 14.6;
-    // The six baked variants (blender/bake_trees.py): four snow-loaded
+    // The seven baked variants (blender/bake_trees.py): four snow-loaded
     // spruce (review-60 (c)) + two bare-deciduous birch (iter 98, P4 slice
-    // 2 — the plan's mixed-woodland delta). All six share the 14.6 m frame.
+    // 2) + one understory shrub (iter 143, P4 remainder — the plan's
+    // "one bushy understory"). Spruce/birch share the 14.6 m frame; the
+    // bush is baked in its own 4.0 m window (BUSH_FRAME_H), so its card
+    // quad is scaled by 4.0/14.6 below.
+    const TREE_UNDER_INDEX = 6;
+    const TREE_UNDER_FRAME_H = 4.0;
     const TREE_CARD_URLS = [
         'assets/tree_spruce_card_0.png',
         'assets/tree_spruce_card_1.png',
@@ -4261,6 +4265,7 @@ void main(void) {
         'assets/tree_spruce_card_3.png',
         'assets/tree_birch_card_4.png',
         'assets/tree_birch_card_5.png',
+        'assets/tree_under_card_6.png',
     ];
     const TREE_BIRCH_START = 4;
     // Species mix: ~60% bare deciduous (footage: mostly bare deciduous
@@ -4270,11 +4275,12 @@ void main(void) {
     const pickVariant = (gx, gz) => {
         const sub = _tRng(gx * 29 + 3, gz * 31 + 5);
         if (_tRng(gx * 53 + 7, gz * 59 + 11) < TREE_BIRCH_SHARE) {
-            return TREE_BIRCH_START + Math.floor(sub * (TREE_CARD_URLS.length - TREE_BIRCH_START));
+            return TREE_BIRCH_START + Math.floor(sub * (TREE_UNDER_INDEX - TREE_BIRCH_START));
         }
         return Math.floor(sub * TREE_BIRCH_START);
     };
     const spots = [];
+    const bushSpots = [];
     for (let gx = -xCells; gx <= xCells; gx++) {
         for (let gz = 0; gz < zCells; gz++) {
             const rx = _tRng(gx,         gz);
@@ -4311,30 +4317,56 @@ void main(void) {
             });
         }
     }
+
+    // Understory clusters (iter 143): the plan P4 delta "clustered placement
+    // closer to the landing". Bushes hug the corridor edges — a dense band
+    // from the fence line out to ~20 m, thinning beyond — planted on the
+    // same visual field, never inside the |x| < 7 corridor. Separate hash
+    // rolls so the bush layout is uncorrelated with the tree layout.
+    for (let gx = -xCells; gx <= xCells; gx++) {
+        for (let gz = 0; gz < zCells; gz++) {
+            const rx = _tRng(gx * 101 + 5, gz * 103 + 9);
+            const rz = _tRng(gx * 107 + 11, gz * 109 + 13);
+            const tx = gx * cellX + (rx - 0.5) * cellX * 0.75;
+            const tz = zStart + gz * cellZ + (rz - 0.5) * cellZ * 0.75;
+            const absTx = Math.abs(tx);
+            if (absTx < 7.0) continue;   // clear course corridor
+            if (absTx > 40) continue;    // understory lives near the course
+            const distFromCourse = absTx - 7.0;
+            // dense right at the fence, exponential falloff outward
+            const prob = 0.85 * Math.exp(-distFromCourse * 0.09);
+            if (_tRng(gx * 113 + 3, gz * 127 + 7) > prob) continue;
+            bushSpots.push({
+                x: tx, y: _fieldTopY(tx, tz), z: tz,
+                s: 0.8 + _tRng(gx * 131, gz * 137) * 0.5,   // 0.8–1.3
+                yaw: _tRng(gx * 139, gz * 149) * Math.PI,
+                v: TREE_UNDER_INDEX,
+            });
+        }
+    }
     // Drive-spec probe (trees.spec.js): the exact planting function, so the
     // seating gate can prove card bases sit on the visual field — the reason
     // this slice plants on _fieldTopY and not the physics-only height.
     window._treeFieldY = _fieldTopY;
 
-    if (spots.length) {
+    if (spots.length || bushSpots.length) {
         // ONE cross-card shape, built once per variant (fresh planes each
         // time — Mesh.clone is not in the golden harness's BABYLON stub and
-        // 6 quads cost nothing): a merged mesh + material + thin-instance
-        // matrix buffer per variant = 6 draw calls for the whole
+        // 7 quads cost nothing): a merged mesh + material + thin-instance
+        // matrix buffer per variant = 7 draw calls for the whole
         // forest (the plan's P4 cap is ≤ 20).
-        const buildCardMesh = (name) => {
+        const buildCardMesh = (name, w, h) => {
             const q1 = BABYLON.MeshBuilder.CreatePlane(name + '_q1',
-                { width: CARD_W, height: CARD_H }, scene);
-            q1.position.set(0, CARD_H / 2, 0);
+                { width: w, height: h }, scene);
+            q1.position.set(0, h / 2, 0);
             const q2 = BABYLON.MeshBuilder.CreatePlane(name + '_q2',
-                { width: CARD_W, height: CARD_H }, scene);
-            q2.position.set(0, CARD_H / 2, 0);
+                { width: w, height: h }, scene);
+            q2.position.set(0, h / 2, 0);
             q2.rotation.y = Math.PI / 2;
             const merged = BABYLON.Mesh.MergeMeshes([q1, q2], true, true);
             merged.name = name;
             return merged;
         };
-
         // V orientation (the iter-56 upside-down-forest regression): the card
         // PNGs are authored upright (trunk at the file's bottom row) and the
         // plane UVs are Babylon-default, so the texture must flip on upload —
@@ -4345,6 +4377,7 @@ void main(void) {
         // order.
         const byVariant = TREE_CARD_URLS.map(() => []);
         spots.forEach(t => byVariant[t.v].push(t));
+        bushSpots.forEach(t => byVariant[t.v].push(t));
         const _compose = (t, buf, i) => {
             BABYLON.Matrix.Compose(
                 new BABYLON.Vector3(t.s, t.s, t.s),
@@ -4353,7 +4386,10 @@ void main(void) {
             ).copyToArray(buf, i * 16);
         };
         TREE_CARD_URLS.forEach((url, vi) => {
-            const mesh = buildCardMesh('treeCards' + vi);
+            const under = vi === TREE_UNDER_INDEX;
+            const mesh = buildCardMesh('treeCards' + vi,
+                under ? TREE_UNDER_FRAME_H / 2 : CARD_W,
+                under ? TREE_UNDER_FRAME_H : CARD_H);
             const mat = makePBR('forestCardMat' + vi, scene);
             mat.albedoTexture = new BABYLON.Texture(url + ASSET_V, scene, false, true);
             mat.albedoTexture.hasAlpha = true;
@@ -4394,7 +4430,7 @@ void main(void) {
         proxies.name = 'treeShadowProxy';
         proxies.material = proxyMat;
         const proxyBuf = new Float32Array(spots.length * 16);
-        spots.forEach((t, i) => _compose(t, proxyBuf, i));
+        spots.forEach((t, i) => _compose(t, proxyBuf, i));   // bushes: too short to shadow the course
         proxies.thinInstanceSetBuffer('matrix', proxyBuf, 16, true);
         proxies.freezeWorldMatrix();
         proxyMat.freeze();

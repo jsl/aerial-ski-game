@@ -226,6 +226,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 142 | **Iteration-141's crashed tree LANDED — b-net strips off the CSM (shadow depth pass rendered the alpha-cut strips as opaque solids), terrainBase disc normal flipped up, venue-dressing strip gate re-aimed face-on with a full-cull control, grey-attr scene instrument landed. Root-caused: the near-black budget (2.36–2.86%) is legitimate content — unpickable ridges' shaded flanks misattribute to terrainBase/sky; CSM cleared ⇒ darkFrac 0.0236→0.0235, i.e. entry-140's "black band" is gone** | unit 81/81; golden 30/30 after 141's re-capture (audit 0 physics × 30/5408, 0 display diffs); verify.js 30/30 last before commit; grey-attr 1/1 (corridor 0.6783 vs flank 0.5873); venue-dressing 2/2; look 6/6. See entry 142. |
+| — | Iteration 144 | **Iter-143's crashed understory tree LANDED and finished — 7th baked variant (`tree_under_card_6.png`, own 4.0 m bake frame), clustered bush planting hugging the corridor fence line, ASSET_V 58; shrub rebalanced after by-eye (14 stems, fork depth 3, browner bark 0.28/0.21/0.15 with snow from n·z 0.35, interior uprights halved — the first bake read as sparse white sticks)** | unit 81/81; golden 30/30 (census-only re-capture from 143, `audit-physics-state.js` **0 physics-state diffs × 30 scenarios / 5408 frames, 0 display-node diffs**); trees.spec 1/1 (7 variant meshes, 7 draw calls, bush gates: mound, lower-half mass, sky-top, bark red>green); look 6/6, shots regenerated; bush card inspected by eye — low bare mound, correct; scene.png shows dark shrubs along both fence lines. See entry 144. |
 | — | Iteration 137 | **Tree-shadow smudge root-caused + lightmap bake GROUNDWORK: `bake_lightmap.py` gains `add_tree_occluders` (`blender/trees.json` = the game's 152 thin-instance trees dumped from the running page, baked as per-variant alpha-cutout crossed cards so tree shadows get crown structure and dappled penumbra); the full rewire is BLOCKED this iteration and recorded as a proposal** | unit 81/81; golden **30/30** (verify.js the last command before this commit — no game-side change, nothing to re-capture); findings: baked lighting `applied: 0` (the 08-25 sidecar's mesh names/vertex counts match no current mesh), corridor uv2 has 2204 per-vertex conflicts, the flank "dirt smudges" are the solid `treeShadowProxy` cone wedges — the ONLY tree shadowing actually live. See entry 137. |
 | — | Iteration 140 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6, shots inspected + measured. Top finding: a hard black diagonal band crosses the landing in scene.png (mid-band 2.67% of pixels lum<60, p5=80 vs p50=213) — the tree-shadow cone-wedge defect is still live at the tip; corridor still ~10% darker than flank snow (194 vs 215); background peaks read at 0.98× sky luminance (glassy). No code change; defects recorded in entry 140** | run-all drive-through phase timed out at 30 min under SwiftShader contention (unit/golden/mutation/coverage had already passed inside it); re-verified unit + golden + look solo. See entry 140. |
 | — | Iteration 136 | **Reviewer-135 leftover LANDED — sky shader restored (declared `float f` for the cloud fbm + the `sunDir` uniform `main()` already used; it had failed GLSL compilation); terrain.json float jitter reverted. Then entry-134 open item 1 — strata-mode `forestEdge` 0.42→0.20, so the mid/far ridge crests (v ≈ 0.42–0.5) leave the forest band and read rock/snow; near ridge untouched; `textures.js?v=23`** | unit 81/81; golden **30/30** (verify.js the last command before this commit, display-only); ridges3d 5/5; look 4/4; scene.png upper-55% green-dominant pixel fraction **0.00041** (was clearly visible crest caps in 134's by-eye); sky bands 0–15% b−r **+36**, 15–30% **+22** — blue sky reads above the ridgelines again. See entry 136. |
@@ -1404,6 +1405,52 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 144 — Iter-143's crashed understory landed + the shrub made to read: 7th baked tree variant, clustered planting, ASSET_V 58
+
+**Scope:** iteration 143 (understory bush, plan P4 remainder "one bushy
+understory") crashed before committing; its full worktree was verified and
+landed, then the shrub itself was rebalanced after a by-eye check of the
+card.
+
+**Landed from 143's worktree:** `blender/bake_trees.py` gains
+`build_understory` + `UNDERSTORY_VARIANTS` (tag 6, seed 44501) rendered in
+its OWN bake frame (`BUSH_FRAME_H` 4.0 m, `BUSH_FRAME_W` 2.0 m — a 1.5 m
+shrub in the shared 7.3 × 14.6 tree frame would starve the alpha-cut texels);
+the SPECIES loop is frame-parameterised. `game.js`: `TREE_UNDER_INDEX` 6,
+`TREE_UNDER_FRAME_H` 4.0 (card quad scaled 4.0/14.6), the bush is excluded
+from the birch-share denominator and from the shadow proxies (too short to
+shadow the course), and a new bush planting pass: separate hash rolls, |x|
+7–40 m from the corridor centre, density 0.85·exp(−0.09·dist) hugging the
+fence line, scale 0.8–1.3, never inside |x| < 7. `tests/drive/trees.spec.js`:
+7-variant gates (mesh count 7, ≤ 7 draw calls, per-variant texture URL,
+understory block: mass in the lower half, mound width ≥ 0.03, top rows sky,
+lum ≥ 0.15, bark red > green). ASSET_V 57 → 58. Golden traces re-captured
+(143's census change).
+
+**144's own change (by-eye rebalance):** 143's card read as sparse white
+sticks. `build_understory` now grows 14 stems (was 7), fork depth 3 (was 2),
+thicker twigs (r0 0.055/0.06, longer 0.55–0.75 child fraction), browner bark
+(0.28, 0.21, 0.15) with snow mixing from n·z 0.35 at gain 0.45 (was 0.10/0.80
+- nearly every twig surface snowed white), and the interior uprights halved
+to top·0.4–0.55 at 50–65° elevation (full-height uprights read as dead sticks
+over the mound; this was the worst offender). Re-baked
+`assets/tree_under_card_6.png` + atlas.
+
+**Verification:** `node --check` clean; unit **81/81**; golden **30/30**
+after 143's census-only re-capture — `audit-physics-state.js`: **0
+physics-state diffs × 30 scenarios / 5408 frames, 0 display-node diffs**;
+trees.spec **1/1** (7 variant meshes, forestActive 7, 197 thin instances,
+all understory card gates green); look **6/6**, all shots regenerated with
+the final assets. By eye: `tree_under_card_6.png` reads as a low bare
+snow-dusted shrub mound (correct silhouette, bark brown, mass in the lower
+third); `scene.png` shows dark understory clumps along both B-net fence
+lines near the kicker and landing edges.
+
+**Open:** nothing new. Athlete-lane residuals carried (Opus); P6 horizon read
+remains the top scene defect (entry 120 list). First `look` run during the
+bake produced one look.spec red + stale shots — re-run against the final
+bake: 6/6; treat as mid-bake asset churn, not a regression.
 
 
 ### 87 — Goggles as GEOMETRY (FABLE-80 finding 2, face pass 2): lens +
