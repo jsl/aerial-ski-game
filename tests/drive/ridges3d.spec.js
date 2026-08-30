@@ -137,7 +137,11 @@ const CONTRAST_SRC = `
 // lowered, peaks scaled): with less ridge in frame the remaining ridge pixels are
 // crest tops, so the fixed state reads mean 0.58 / std 0.175 and the fogged control
 // 0.68 / 0.092 — the mean ceiling moves to 0.63 (margin ≥ 0.05 both ways); std unchanged.
-const CONTRAST_MIN_STD = 0.14, CONTRAST_MAX_MEAN = 0.63, MASK_MIN = 0.02;
+// Re-measured 2026-08-30 after the band map's elevation axis was corrected (forest
+// at the base, snow on the crests — HUMAN TESTING #11): the visible ridge pixels are
+// now mostly forest, so the fixed state reads mean 0.32 / std 0.133 and the fogged
+// control 0.57 / 0.118. The MEAN is the discriminator (0.25 apart); std floor 0.10.
+const CONTRAST_MIN_STD = 0.10, CONTRAST_MAX_MEAN = 0.45, MASK_MIN = 0.02;
 
 async function contrastProbe(page) {
     await page.goto('/index.html');
