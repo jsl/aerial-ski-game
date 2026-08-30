@@ -911,14 +911,51 @@ function _spineRestDeltas() {
 // IT IS INERT AT REST for the same reason the spine is: bind == driver for
 // every bone, so at the rest pose each contributes identity and any partition
 // of unity reproduces the bind mesh exactly.
-const JOINT_HELPERS = [
-    { name: 'hlpHipL',  a: 'spine_01',  b: 'upperLegL', at: 'top' },
-    { name: 'hlpHipR',  a: 'spine_01',  b: 'upperLegR', at: 'top' },
-    { name: 'hlpKneeL', a: 'upperLegL', b: 'lowerLegL', at: 'knee' },
-    { name: 'hlpKneeR', a: 'upperLegR', b: 'lowerLegR', at: 'knee' },
-];
+//
+// EXTENDED TO THE SHOULDERS AND ELBOWS by the reviewer's ruling of 2026-08-30
+// 03:40, on the same evidence one joint up: session 18 measured the armpit at
+// upperArmR 0.495 / spine_02 0.490, an edge going 6.9 mm at rest to 76.3 mm
+// posed. Two things had to become explicit to reach the arms, and both are in
+// the per-helper table below rather than in the loop:
+//
+//   `ra`/`rb` — each bone's BIND rotation about x. The spine and leg drivers
+//   bind at 0, but the ARM drivers bind at -pi: the athlete's rest pose is
+//   armSweep(armDrop = 1), the hang, whose rx is -pi. What the shader averages
+//   is each bone's DELTA from its own bind, not its absolute Euler angle, so
+//   the half-angle must be taken between the deltas. Taking it between the raw
+//   angles would have put the shoulder helper 90 degrees off at rest and torn
+//   the very seam it is there to close.
+//
+//   `ha`/`hb` — the two segments' half-lengths, which are equal on the leg
+//   (0.18/0.18) and are not on the arm (0.15/0.125).
+//
+// A bone that binds flipped also has its segment's TOP along MINUS its
+// driver's local +Y, which is the `sA`/`sB` sign below: at rest the left
+// shoulder must come out at y = +0.15 above the upper-arm centre, and
+// _localUp(-pi, 0) points at -y.
 const LEG_HALF  = 0.18;    // SEGMENTS.upperLegL.h / 2
 const SHIN_HALF = 0.18;    // SEGMENTS.lowerLegL.h / 2
+const ARM_HALF  = 0.15;    // SEGMENTS.upperArmL.h / 2
+const FARM_HALF = 0.125;   // SEGMENTS.lowerArmL.h / 2
+const ARM_BIND_RX = -Math.PI;   // armSweep(name, up, 1).rx — the hang pose
+const JOINT_HELPERS = [
+    { name: 'hlpHipL',  a: 'spine_01',  b: 'upperLegL', at: 'top',
+      ha: SPINE_LEN / 2, hb: LEG_HALF,  ra: 0, rb: 0 },
+    { name: 'hlpHipR',  a: 'spine_01',  b: 'upperLegR', at: 'top',
+      ha: SPINE_LEN / 2, hb: LEG_HALF,  ra: 0, rb: 0 },
+    { name: 'hlpKneeL', a: 'upperLegL', b: 'lowerLegL', at: 'knee',
+      ha: LEG_HALF,   hb: SHIN_HALF, ra: 0, rb: 0 },
+    { name: 'hlpKneeR', a: 'upperLegR', b: 'lowerLegR', at: 'knee',
+      ha: LEG_HALF,   hb: SHIN_HALF, ra: 0, rb: 0 },
+    { name: 'hlpShoulderL', a: 'spine_03', b: 'upperArmL', at: 'top',
+      ha: SPINE_LEN / 2, hb: ARM_HALF,  ra: 0, rb: ARM_BIND_RX },
+    { name: 'hlpShoulderR', a: 'spine_03', b: 'upperArmR', at: 'top',
+      ha: SPINE_LEN / 2, hb: ARM_HALF,  ra: 0, rb: ARM_BIND_RX },
+    { name: 'hlpElbowL', a: 'upperArmL', b: 'lowerArmL', at: 'knee',
+      ha: ARM_HALF,   hb: FARM_HALF, ra: ARM_BIND_RX, rb: ARM_BIND_RX },
+    { name: 'hlpElbowR', a: 'upperArmR', b: 'lowerArmR', at: 'knee',
+      ha: ARM_HALF,   hb: FARM_HALF, ra: ARM_BIND_RX, rb: ARM_BIND_RX },
+];
 
 // Shortest signed difference b - a, so a half-angle never jumps a full turn:
 // the naive mean of +3.0 and -3.0 rad is 0 where the answer is pi.
@@ -946,25 +983,36 @@ function updateJointHelpers(meshes) {
         if (!node || !A || !B) continue;
         const arx = A.rotation.x, arz = A.rotation.z || 0;
         const brx = B.rotation.x, brz = B.rotation.z || 0;
-        const rx = arx + _wrapPi(brx - arx) / 2;
+        // Deltas from each bone's own bind, so the arms (which bind at -pi)
+        // are measured on the same footing as the legs (which bind at 0).
+        const da = _wrapPi(arx - (h.ra || 0)), db = _wrapPi(brx - (h.rb || 0));
+        // The helper's own bind is translation-only (build_body.py:
+        // helper_matrix), so its rotation IS the half-angle delta. rest_h
+        // cancels out of the skinning delta anyway; keeping it at zero makes
+        // the helper bind identical in form to the spine's.
+        const rx = da + _wrapPi(db - da) / 2;
         const rz = arz + _wrapPi(brz - arz) / 2;
+        // World direction of each segment's bind-up: a flipped bind sends the
+        // segment's top along MINUS the driver's local +Y.
+        const sA = h.ra ? -1 : 1, sB = h.rb ? -1 : 1;
         let px, py, pz;
         if (h.at === 'top') {
-            // The hip: the TOP of the thigh, walked off the thigh driver. The
-            // spine's own hip anchor is on the midline; this one is per-leg.
+            // The hip / shoulder: the OUTER end of the proximal limb segment,
+            // walked off its own driver. The spine's hip anchor is on the
+            // midline; these are per-limb.
             const u = _localUp(brx, brz);
-            px = B.position.x + u[0] * LEG_HALF;
-            py = B.position.y + u[1] * LEG_HALF;
-            pz = B.position.z + u[2] * LEG_HALF;
+            px = B.position.x + sB * u[0] * h.hb;
+            py = B.position.y + sB * u[1] * h.hb;
+            pz = B.position.z + sB * u[2] * h.hb;
         } else {
-            // The knee: the MIDPOINT of the thigh's bottom and the shin's top.
-            // They coincide whenever the chain is closed; when the P13
-            // reconciliation leaves a gap, splitting it keeps the helper
-            // continuous rather than picking a side.
+            // The knee / elbow: the MIDPOINT of the proximal segment's bottom
+            // and the distal segment's top. They coincide whenever the chain
+            // is closed; when the P13 reconciliation leaves a gap, splitting
+            // it keeps the helper continuous rather than picking a side.
             const ua = _localUp(arx, arz), ub = _localUp(brx, brz);
-            px = ((A.position.x - ua[0] * LEG_HALF) + (B.position.x + ub[0] * SHIN_HALF)) / 2;
-            py = ((A.position.y - ua[1] * LEG_HALF) + (B.position.y + ub[1] * SHIN_HALF)) / 2;
-            pz = ((A.position.z - ua[2] * LEG_HALF) + (B.position.z + ub[2] * SHIN_HALF)) / 2;
+            px = ((A.position.x - sA * ua[0] * h.ha) + (B.position.x + sB * ub[0] * h.hb)) / 2;
+            py = ((A.position.y - sA * ua[1] * h.ha) + (B.position.y + sB * ub[1] * h.hb)) / 2;
+            pz = ((A.position.z - sA * ua[2] * h.ha) + (B.position.z + sB * ub[2] * h.hb)) / 2;
         }
         node.position.x = px;
         node.position.y = py;
@@ -972,8 +1020,8 @@ function updateJointHelpers(meshes) {
         node.rotation.x = rx;
         node.rotation.z = rz;
         out[h.name] = {
-            halfDeg: +(Math.abs(_wrapPi(brx - arx)) * 90 / Math.PI).toFixed(2),
-            spanDeg: +(Math.abs(_wrapPi(brx - arx)) * 180 / Math.PI).toFixed(2),
+            halfDeg: +(Math.abs(_wrapPi(db - da)) * 90 / Math.PI).toFixed(2),
+            spanDeg: +(Math.abs(_wrapPi(db - da)) * 180 / Math.PI).toFixed(2),
         };
     }
     return out;
@@ -2187,7 +2235,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = '?v=51';   // 51: OPUS item 5 — half-angle helper bones at hips/knees (see git history)
+    const ASSET_V = '?v=54';   // 54: merge — GLM 131 snowing flatness pass + Opus shoulder/elbow helpers; bumped past both sides
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
