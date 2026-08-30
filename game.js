@@ -1059,11 +1059,16 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
                 const rx = uMesh.rotation.x, rz = uMesh.rotation.z;
                 const crz = Math.cos(rz);
                 // dir = M_x(rx) * M_z(rz) * (0,1,0): the arm's local +Y in
-                // parent space (Euler order YXZ, ry = 0).
+                // parent space (Euler order YXZ, ry = 0). +Y runs toward the
+                // WRIST (POSE_UNTUCKED, armSweep, applyGamepadLateral and the
+                // armature's own head->tail), so the SHOULDER is the -Y end.
+                // This read +0.150 until the author's 23:40 crouch ruling: the
+                // sign matched the two pose tables that were themselves rolled
+                // 180 deg out of the bind axis (see POSE_INRUN_TUCK).
                 const dirY = crz * Math.cos(rx);
                 const dirZ = crz * Math.sin(rx);
-                const dY = shoulderY - (uMesh.position.y + 0.150 * dirY);
-                const dZ = shoulderZ - (uMesh.position.z + 0.150 * dirZ);
+                const dY = shoulderY - (uMesh.position.y - 0.150 * dirY);
+                const dZ = shoulderZ - (uMesh.position.z - 0.150 * dirZ);
                 uMesh.position.y += dY; uMesh.position.z += dZ;
                 lMesh.position.y += dY; lMesh.position.z += dZ;
             }
@@ -1099,12 +1104,11 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     // toward the wrist end, so the glove stays fixed at +halfH during any drop.
     // Only during tuck (arm folds forward with rx≠0) do we slide it toward the
     // elbow so it doesn't poke through the knees.
-    if (meshes.gloveL) {
-        meshes.gloveL.mesh.position.y = lerp(meshes.gloveL.halfH, -meshes.gloveL.halfH, tuck);
-    }
-    if (meshes.gloveR) {
-        meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, tuck);
-    }
+    // The tucked tables used to roll the arm 180 deg out of its bind axis, so
+    // the glove had to be slid to the OTHER end to land on the wrist. With the
+    // axis fixed (author 23:40) the wrist is the +Y end in every pose.
+    if (meshes.gloveL) meshes.gloveL.mesh.position.y = meshes.gloveL.halfH;
+    if (meshes.gloveR) meshes.gloveR.mesh.position.y = meshes.gloveR.halfH;
 
     // The spine reads the FINAL torso/thigh/head transforms, so it runs last.
     updateSpineChain(meshes);
@@ -1161,27 +1165,94 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
     }
 }
 
-// ── In-run crouch: hands forward (human-testing #2 item 5, 2026-08-28) ─────
-// While grounded with the crouch engaged the arms hold the footage's in-run
-// posture — hands ahead of the hips by 0.25–0.40 m in the body frame, below
-// shoulder height (IMG_3768 in-run frames) — instead of hanging behind them
-// (measured pre-fix: hand z − hip z = −0.09…−0.15 m). The upward sweep starts
-// only at the kicker transition (see the armLTarget override in the frame
-// loop), so this blend must yield to armRaise: weight w = tuck·(1−armRaise).
+// ── In-run crouch: the torso sits on the pinned hips (author 23:40) ────────
+// The boot–ski pin re-derives both legs from the SKI every frame, so in the
+// crouch the thigh's hip joint ends up as much as 0.20 m from the torso's own
+// hip end (measured at the start gate: torso hip (-0.070, 0.105), thigh hip
+// (-0.007, 0.294)) — and the P13 reconciler is deliberately inert at the pose
+// endpoints, so nothing closed it. Under linear-blend skinning that gap IS the
+// author's "suit smears over the back" / "back separating": the pelvis ring
+// and the lumbar ring are a fifth of a metre apart.
+// The legs are pinned to the skis, which are on the snow, so the TORSO is the
+// side that moves: translate the torso and everything hanging off it (head,
+// both arm chains) onto the hips. Weighted by the same w as the arm hold, so
+// it is exactly zero at rest and in flight. Renderer-side only (ADR-0002).
+function _seatTorsoOnHips(meshes, tuck, armRaise) {
+    const w = (tuck || 0) * (1 - (armRaise || 0));
+    if (w <= 0.001) return null;
+    const t = meshes.torso;
+    if (!t) return null;
+    let hy = 0, hz = 0, n = 0;
+    for (const side of ['L', 'R']) {
+        const ul = meshes['upperLeg' + side];
+        if (!ul) continue;
+        const c = Math.cos(ul.rotation.x), sn = Math.sin(ul.rotation.x);
+        hy += ul.position.y + 0.18 * c;
+        hz += ul.position.z + 0.18 * sn;
+        n++;
+    }
+    if (!n) return null;
+    hy /= n; hz /= n;
+    const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
+    const dy = (hy - (t.position.y - 0.275 * tc)) * w;
+    const dz = (hz - (t.position.z - 0.275 * ts)) * w;
+    for (const nm of ['torso', 'head', 'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR']) {
+        const m = meshes[nm];
+        if (!m) continue;
+        m.position.y += dy;
+        m.position.z += dz;
+    }
+    return { dy: dy, dz: dz };
+}
+
+// ── In-run crouch: arms straight, down-forward to knee height ──────────────
+// Author, 23:40 (screenshot reference/shots/author_inrun_crouch_2026-08-29.png):
+// "zombie arms" — both arms straight out FORWARD at shoulder height with
+// splayed fingers. Two causes, both here:
+//
+//  (a) the old target was built on the FIXED shoulder pivot (y = 0.150,
+//      z = BASE_Z) plus a hand-tuned z bias, and the crouch torso puts the
+//      real shoulder at (0.180, -0.385) — measured 0.68 m from where the arms
+//      were anchored. The skin bridged the gap, which is what reads as the
+//      arms leaving the body.
+//  (b) it aimed at nothing: a constant angle, so the hands landed wherever the
+//      pin happened to leave the legs.
+//
+// Now: the shoulder comes from the LIVE torso (its +Y end, the same anchor the
+// P13 reconciler uses) and the hand is aimed at the LIVE knee — knee height,
+// HAND_AHEAD in front of it (footage IMG_3523 f_040-f_070; ruling: hand within
+// ±0.10 m of knee height, 0.10-0.30 m ahead of it). Elbows straight: the arm
+// is one straight line from the shoulder, both segments on it, +Y toward the
+// wrist (the bind axis — see POSE_INRUN_TUCK). Shoulder-to-target is ~0.61 m
+// against a 0.55 m arm, so the straight arm falls short of the target and
+// lands just above knee height, which is the footage posture.
 // Renderer-side only (ADR-0002): lives OUTSIDE applyPose so the solver stays
 // byte-identical to computePose (the pose-solver differential unit test).
-// Target construction reuses the shipped applyGamepadLateral pivot maths at
-// stickX = 0, drop = 0.72: gap-free shoulder pivot, dir = (0, cos φ, −sin φ).
+const _INRUN_HAND_AHEAD = 0.20;
 function _inrunArmForward(meshes, tuck, armRaise) {
     const w = (tuck || 0) * (1 - (armRaise || 0));
     if (w <= 0.001) return;
-    const phi   = Math.PI * 0.60;
-    const dirY  = Math.cos(phi), dirZ = -Math.sin(phi);
-    // Forward bias: with the boot–ski pin also moving the thigh (the hip
-    // reference) forward in the crouch, the pivot target plus this bias must
-    // land hand z − hip z inside the author's −0.40…−0.25 band (browser-
-    // measured: −0.47…−0.48 at bias −0.05 → −0.05 + 0.09 correction).
-    const zBias = 0.29;
+    const t = meshes.torso;
+    if (!t) return;
+    const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
+    const shY = t.position.y + 0.275 * tc;
+    const shZ = t.position.z + 0.275 * ts;
+    let ky = 0, kz = 0, n = 0;
+    for (const side of ['L', 'R']) {
+        const ul = meshes['upperLeg' + side];
+        if (!ul) continue;
+        const c = Math.cos(ul.rotation.x), sn = Math.sin(ul.rotation.x);
+        ky += ul.position.y - 0.18 * c;   // knee = the thigh's -Y end
+        kz += ul.position.z - 0.18 * sn;
+        n++;
+    }
+    if (!n) return;
+    ky /= n; kz /= n;
+    let dy = ky - shY, dz = (kz - _INRUN_HAND_AHEAD) - shZ;
+    const len = Math.hypot(dy, dz);
+    if (len < 1e-6) return;
+    dy /= len; dz /= len;
+    const rx = Math.atan2(dz, dy);   // +Y end (the wrist) along (dy, dz)
     const sides = [
         { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.175 },
         { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.175 },
@@ -1190,16 +1261,21 @@ function _inrunArmForward(meshes, tuck, armRaise) {
         const uMesh = meshes[s.upper], lMesh = meshes[s.lower];
         if (!uMesh || !lMesh) continue;
         const zBase = BASE_Z[s.upper] || 0;
-        const tu = { x: s.xPivot, y: 0.150 + dirY * 0.150, z: zBase + dirZ * 0.150 + zBias };
-        const tl = { x: s.xPivot, y: 0.150 + dirY * 0.425, z: zBase + dirZ * 0.425 + zBias };
+        // Centres at 0.150 and 0.425 from the shoulder: upper arm h = 0.30,
+        // lower arm h = 0.25, so the wrist is at 0.550 — the same radii
+        // applyGamepadLateral uses.
+        const tu = { x: s.xPivot, y: shY + dy * 0.150, z: zBase + shZ + dz * 0.150 };
+        const tl = { x: s.xPivot, y: shY + dy * 0.425, z: zBase + shZ + dz * 0.425 };
         uMesh.position.x += (tu.x - uMesh.position.x) * w;
         uMesh.position.y += (tu.y - uMesh.position.y) * w;
         uMesh.position.z += (tu.z - uMesh.position.z) * w;
-        uMesh.rotation.x += (-phi - uMesh.rotation.x) * w;
+        uMesh.rotation.x += (rx - uMesh.rotation.x) * w;
+        uMesh.rotation.z += (0  - uMesh.rotation.z) * w;
         lMesh.position.x += (tl.x - lMesh.position.x) * w;
         lMesh.position.y += (tl.y - lMesh.position.y) * w;
         lMesh.position.z += (tl.z - lMesh.position.z) * w;
-        lMesh.rotation.x += (-phi - lMesh.rotation.x) * w;
+        lMesh.rotation.x += (rx - lMesh.rotation.x) * w;
+        lMesh.rotation.z += (0  - lMesh.rotation.z) * w;
     }
 }
 
@@ -3204,9 +3280,10 @@ void main(void) {
             if (ua) {
                 const crz = Math.cos(ua.rotation.z);
                 const dY = crz * Math.cos(ua.rotation.x), dZ = crz * Math.sin(ua.rotation.x);
+                // Shoulder = the arm's -Y end (bind axis; see the P13 note).
                 gaps['shoulder' + side] = +Math.hypot(
-                    (ua.position.y + 0.150 * dY) - topY,
-                    (ua.position.z + 0.150 * dZ) - topZ).toFixed(4);
+                    (ua.position.y - 0.150 * dY) - topY,
+                    (ua.position.z - 0.150 * dZ) - topZ).toFixed(4);
             }
             const ul = M['upperLeg' + side], ll = M['lowerLeg' + side], sk = M['ski' + side];
             if (!ul || !ll) continue;
@@ -3224,6 +3301,54 @@ void main(void) {
                 (sk.position.z + 0.015 * ls) - (ll.position.z - 0.18 * ls)).toFixed(4);
         }
         return gaps;
+    };
+
+    // In-run crouch hold (display-side, ADR-0002). _poseProbe applies the POSE
+    // TABLE only; what the player actually sees in the crouch is that table
+    // plus the three display fix-ups the frame loop runs after it — the
+    // boot–ski pin, the torso seat and the arm hold. The author's 23:40 ruling
+    // is about the picture, so its gates (and the in-run pose shot) have to
+    // measure the composition, not the table. Same maths as the frame loop
+    // because it IS the frame loop's calls; the next rendered frame overwrites
+    // the meshes, so no game state is touched.
+    window._inrunHold = function (tuck) {
+        const M = character.meshes;
+        const t = (tuck === undefined) ? 1 : tuck;
+        applyPose(M, t, 1, 1, 0, 0, 0, true, 0, 0);
+        _pinBootsToSkis(M);
+        _seatTorsoOnHips(M, t, 0);
+        _inrunArmForward(M, t, 0);
+        const seg = (n) => {
+            const m = M[n];
+            return { y: m.position.y, z: m.position.z, rx: m.rotation.x };
+        };
+        const torso = seg('torso');
+        const tc = Math.cos(torso.rx), ts = Math.sin(torso.rx);
+        const out = {
+            hip:      [torso.y - 0.275 * tc, torso.z - 0.275 * ts],
+            shoulder: [torso.y + 0.275 * tc, torso.z + 0.275 * ts],
+            backDeg:  Math.atan2(0.55 * tc, -0.55 * ts) * 180 / Math.PI,
+            headVsBackDeg: (M.head.rotation.x - torso.rx) * 180 / Math.PI,
+            sides: {},
+        };
+        for (const side of ['L', 'R']) {
+            const ul = seg('upperLeg' + side), ua = seg('upperArm' + side),
+                  la = seg('lowerArm' + side);
+            const uc = Math.cos(ul.rx), us = Math.sin(ul.rx);
+            const ac = Math.cos(ua.rx), as = Math.sin(ua.rx);
+            const lc = Math.cos(la.rx), ls = Math.sin(la.rx);
+            out.sides[side] = {
+                thighHip: [ul.y + 0.18 * uc, ul.z + 0.18 * us],
+                knee:     [ul.y - 0.18 * uc, ul.z - 0.18 * us],
+                // Shoulder = the arm's -Y end, hand = the fore-arm's +Y end
+                // (the bind axis; see POSE_INRUN_TUCK).
+                armRoot:  [ua.y - 0.150 * ac, ua.z - 0.150 * as],
+                elbow:    [ua.y + 0.150 * ac, ua.z + 0.150 * as],
+                elbowLo:  [la.y - 0.125 * lc, la.z - 0.125 * ls],
+                hand:     [la.y + 0.125 * lc, la.z + 0.125 * ls],
+            };
+        }
+        return out;
     };
 
     window.applySkierColors = function() {
@@ -7131,6 +7256,7 @@ void main(void) {
             }
             if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode && !crashActive) {
                 _pinBootsToSkis(character.meshes);
+                _seatTorsoOnHips(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
                 _inrunArmForward(character.meshes, f.tuckAmount, f.grounded ? f.armRaise : 1);
             }
             camera.target.y = f.rootY;
@@ -8381,6 +8507,8 @@ void main(void) {
                                     + 0.18 * Math.sin(_ulL.rotation.x);
                 }
             }
+            _seatTorsoOnHips(character.meshes, state.tuckAmount,
+                             state.grounded ? state.armRaise : 1);
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1);
             if (readyState && state.tuckAmount < 0.05) {

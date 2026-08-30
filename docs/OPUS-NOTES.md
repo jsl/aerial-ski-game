@@ -796,6 +796,135 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 15 (2026-08-30, 00:0x-01:0x)
+
+### AUTHOR 23:40 — the in-run crouch. Commit below. THE ARM BONES WERE INVERTED.
+
+The author's screenshot (`reference/shots/author_inrun_crouch_2026-08-29.png`)
+listed four things: flat plank torso, head hanging down, zombie arms straight
+out forward with clawed fingers, suit smearing over the back. Measured in the
+browser at the crouch endpoint (a scratch probe, now deleted), all four are one
+table and two missing display fix-ups:
+
+| | before | after | ruling |
+|---|---|---|---|
+| back angle above horizontal | **26.97 deg** | **43.99** | 40-50 |
+| head vs the back line | **17.2 deg** | **28.8** | >= 25 |
+| hand vs knee height | +0.261 m | **+0.086** | +-0.10 |
+| hand ahead of the knee | 0.603 m | **0.192** | 0.10-0.30 |
+| torso hip vs thigh hip | **0.199 m** | **0.008** | (the smear) |
+| shoulder joint gap | **0.293 / 0.304 m** | **0.008** | |
+| elbow gap | **0.533 m** | **0.000** | straight |
+
+**THE FINDING: every arm bone in both tucked pose tables was rolled 180 deg out
+of its bind axis.** `POSE_UNTUCKED`, `armSweep`, `applyGamepadLateral` and the
+armature itself (`build_body.py`: "a bone runs head -> tail, and for a hanging
+arm that is shoulder -> hand") all run the arm's local **+Y toward the WRIST**.
+`POSE_INRUN_TUCK` and `POSE_TUCKED` both placed the **shoulder** at the +Y end,
+i.e. each arm segment was drawn on the right line with its bone pointing the
+wrong way — the elbow-tapered end of the sleeve at the shoulder, and the hand
+bone (a child, not independently driven) swung to the opposite end of the
+fore-arm. That is session 3's "the arms are absorbed into the mass under the
+chest" in the flight tuck, and half of the author's zombie arms.
+
+It survived because **everything that measured it used the same wrong sign**:
+the P13 shoulder reconciliation, `_poseProbe`'s shoulder gap, `chain.spec.js`'s
+old-table control and `tuck-tear-negative.test.js` all read
+`ua.position + 0.150*dir`. A chain gate that measures the joint at the wrong
+end is green on an inverted bone by construction. There was even a compensator
+in the tree: `applyPose` slid the glove from `+halfH` to `-halfH` as the tuck
+came on "so it doesn't poke through the knees" — i.e. to the end where the
+wrist actually was. All five are corrected here (same limits, opposite end);
+the glove slide is gone.
+
+`POSE_TUCKED`'s arms are flipped in place: `dir = (-sin rz, cos rz cos rx,
+cos rz sin rx)`, so `dir -> -dir` is exactly `rx -> rx -+ pi, rz -> -rz`. The
+segment centres are untouched, a capsule is symmetric about its centre, so the
+drawn primitives and every joint gap are **unchanged** — only the skinned axis
+moves. The flight tuck's own shape is not otherwise touched this session.
+
+### What shipped
+
+1. **`POSE_INRUN_TUCK` rebuilt** (approved by the ruling: "fix the pose
+   endpoint ... same class as the tuck hip gap"). Torso `rx -1.10 -> -0.8029`
+   (44 deg back), head `rx -0.80 -> -0.30` (gaze 28.8 deg above the back line,
+   head up the in-run), arms straight in the bind convention aimed at knee
+   height 0.20 m ahead of the knee. Legs and skis untouched. Chain closes to
+   <= 3 mm.
+2. **`_seatTorsoOnHips`** (new, display-side): the boot-ski pin re-derives both
+   legs from the SKI every frame, and at the crouch endpoint that left the
+   thigh's hip **0.199 m** from the torso's hip — with the P13 reconciler
+   deliberately inert at the endpoints, nothing closed it. Under linear-blend
+   skinning that gap **is** the "suit smears over the back". The legs are
+   pinned to the skis, so the torso is the side that moves: translate torso +
+   head + both arm chains onto the mean hip. Weighted by the same
+   `w = tuck*(1-armRaise)` as the arm hold, so it is exactly zero at rest and
+   in flight.
+3. **`_inrunArmForward` rewritten.** It anchored the arms at the FIXED shoulder
+   pivot (y = 0.150, z = BASE_Z) plus a hand-tuned z bias, while the crouch
+   torso puts the real shoulder at (0.180, -0.385) — **0.68 m away**, bridged by
+   the skin. It now takes the shoulder from the live torso's +Y end and aims the
+   straight arm at the live knee (knee height, 0.20 m ahead). Reach is 0.61 m
+   against a 0.55 m arm, so the hand lands just above the knee, which is the
+   footage posture.
+4. **`window._inrunHold(tuck)`** (new probe): applies the table AND the three
+   display fix-ups, i.e. the composition the player sees. `_poseProbe` applies
+   the table only, so the in-run pose SHOT and the new gates were previously
+   measuring a pose that never reaches the screen.
+5. **`pose-shots.spec.js` framing fixed** (reviewer, session 9, still open since
+   then): shots are 640x640, the camera radius is derived from the pose's own
+   skinned extent so the figure fills ~70% of the frame in every pose, and the
+   projected figure height is now a gate — **448 px** against a `FIG_MIN_PX`
+   floor of 350, where the in-run crouch used to be ~120 px. The in-run shot is
+   rendered through `_inrunHold`.
+
+### Gates and the negative control
+
+`tests/drive/inrun-crouch.spec.js`, 2/2. The measurement is re-implemented in
+the spec rather than read back from `_inrunHold` (a gate that trusts the code
+under test to describe itself measures nothing). **NEGATIVE CONTROL**: the
+pre-ruling table's own literals, written onto the same drivers and measured by
+the same code — back **26.97 deg** (< 40, fails), head **17.2 deg** (< 25,
+fails), shoulder **0.293 m** (> 0.020, fails).
+
+`chain.spec.js`'s in-run band moved 55-75 deg from vertical -> **40-50**: the
+55-75 window IS the plank (27 deg above horizontal at its own midpoint) and it
+came from the reviewer's 22:25 "back near-horizontal" target, which the author's
+23:40 ruling supersedes. Same 20 deg width, and the old table now fails it.
+
+### Verification
+
+    unit      81/81 (incl. the corrected tuck-tear-negative control)
+    browser   36/36
+    mutation  all caught     coverage  all scenarios differentiate
+    golden    audit-physics-state: 30 scenarios, 5408 frames, **stateDiffs 0**,
+              13 scenarios with display-node differences -> display-only
+              re-capture (reviewer's standing condition, 17:05) -> verify 30/30
+    drive     chain 10/10, inrun-contact 2/2, ready-stance 1/1,
+              inrun-crouch 2/2, pose-shots 1/1
+    versions  index.html body-model.js v24->25, game.js v39->40. No asset
+              changed, so ASSET_V stays at 45 (session 8 precedent).
+
+### Open / found on the way
+
+- **The fingers are still splayed** ("clawed", author 23:40). That is hand
+  GEOMETRY in `build_body.py`, not the pose; not started. It is the most
+  visible thing left in `shots/pose_inrun_side.png`.
+- **The knee is at 127 deg in the shipped crouch, not the ruling's 90-100.**
+  The boot-ski pin forces the shin parallel to the ski (physically right — a
+  binding clamps boot to ski), so at the flat start gate the shin is vertical
+  and the thigh alone carries the flex. Deepening it means moving the hip down
+  and back, which is the ready-stance geometry (item 10) — measured, not
+  guessed, and left for that item rather than fought here.
+- **At REST the same hip gap is 0.10 m** (torso hip (-0.275, 0), thigh hip
+  (-0.224, 0.087)) and `_seatTorsoOnHips` is deliberately inert there. Seating
+  it at rest would move the pelvis 8.7 cm BACK and 5 cm up — which is exactly
+  what item 10 asks for ("hips still a little more forward"). That is the first
+  thing to try when item 10 starts.
+- The flight tuck now has its arm bones the right way round but its SHAPE is
+  untouched (knees to chest, hands on shins, head neutral) — the second half of
+  the author's 23:40 note.
+
 ## Session 14 (2026-08-29, 23:0x-23:5x)
 
 ### Item 1 (re-issued) — the eyewear is SPORT GLASSES, not goggles. Commit `8a460f8`
