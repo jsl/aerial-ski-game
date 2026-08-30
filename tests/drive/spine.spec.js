@@ -55,8 +55,14 @@ const MEASURE = function (pose) {
     for (const mesh of parts) {
         try { mesh.skeleton.prepare(true); } catch (e) { mesh.skeleton.prepare(); }
     }
-    const out = { n: 0, strain: [], rest: [], back: [], knee: [],
-                  kneeWorst: null };
+    const out = { n: 0, strain: [], rest: [], back: [], knee: [], pit: [],
+                  kneeWorst: null, pitWorst: null };
+    // The helper spans for THIS probe pose. Read here, inside the same
+    // synchronous block as the pose and the prepare(): a second
+    // page.evaluate() would report the LIVE frame's drivers instead, which is
+    // the same trap the prepare() note above records — measured, every pose
+    // came back with identical spans until this moved inside.
+    out.helpers = window._helperProbe ? window._helperProbe() : null;
     const M = window._characterMeshes;
     const torso = M && M.torso;
     // The torso's own frame, so "along the back" means along the spine and not
@@ -141,6 +147,22 @@ const MEASURE = function (pose) {
                                           z: +mz.toFixed(3) };
                     }
                 }
+                // THE ARMPIT BAND, in rest coordinates: outboard of the chest
+                // wall (|x| > 0.11, the trunk's own half-width is ~0.10) and
+                // between the elbow and the collarbone. Session 18 measured
+                // the worst seam in the whole skin here — upperArmR 0.495 /
+                // spine_02 0.490 at (0.163, 0.045), an edge going 6.9 mm at
+                // rest to 76.3 mm posed — and it is what the shoulder/elbow
+                // helpers were approved to close (reviewer 2026-08-30 03:40).
+                // Lateral, so it cannot be confused with the upper-back band.
+                const mx = (pos[a * 3] + pos[b * 3]) / 2;
+                if (Math.abs(mx) > 0.13 && my > 0.0 && my < 0.20) {
+                    out.pit.push(s);
+                    if (!out.pitWorst || s > out.pitWorst.s) {
+                        out.pitWorst = { s: +s.toFixed(3), x: +mx.toFixed(3),
+                                         y: +my.toFixed(3), z: +mz.toFixed(3) };
+                    }
+                }
             }
         }
     }
@@ -173,6 +195,11 @@ const MEASURE = function (pose) {
         kneeP999: pct(out.knee, 0.999),
         kneeMax: out.knee.length ? +Math.max.apply(null, out.knee).toFixed(3) : null,
         kneeWorst: out.kneeWorst,
+        spans: out.helpers,
+        pitN: out.pit.length,
+        pitP999: pct(out.pit, 0.999),
+        pitMax: out.pit.length ? +Math.max.apply(null, out.pit).toFixed(3) : null,
+        pitWorst: out.pitWorst,
         backN: out.back.length,
         backP999: pct(out.back, 0.999),
         backMax: out.back.length ? +Math.max.apply(null, out.back).toFixed(3) : null,
@@ -350,6 +377,49 @@ test.describe('OPUS item 5 — the spine carries the bend', () => {
                 .toBeLessThanOrEqual(KNEE_MAX);
         });
     }
+
+    // ── OPUS item 5: the ARMPIT, where the shoulder/elbow helpers act ──────
+    //
+    // INSTRUMENT, NOT A GATE, and the measurement is why. The reviewer
+    // extended the half-angle helpers to the shoulders and elbows on
+    // 2026-08-30 03:40 on session 18's finding: the worst seam in the whole
+    // skin was the armpit, upperArmR 0.495 / spine_02 0.490 at (0.163, 0.045),
+    // an edge going 6.9 mm at rest to 76.3 mm posed. The helpers landed and
+    // are correct (JOINTSPAN 1467 spanning vertices -> 0), and the shoulders
+    // and elbows really do bend in these poses — spans logged below read
+    // 44.8 / 60.5 / 90.1 deg at the shoulder and 52.9 deg at the elbow in the
+    // tuck. And the band's worst edge does not move by one part in a thousand:
+    //
+    //     pose            pre-helper (5a0037c)   with hlpShoulder/hlpElbow
+    //     neutral                       1.000              1.000
+    //     in-run crouch                 5.161              5.161
+    //     flight tuck                   4.854              4.854
+    //     pike                          6.207              6.207
+    //
+    // So the armpit's residue is NOT a blend-span defect. The two worst edges
+    // (0.145, 0.020, -0.094) and (0.195, 0.045, 0.002) do not move when the
+    // lattice under them is halved, which is what a bake-geometry stretch
+    // does and what a candy wrapper cannot do — the same verdict the crotch
+    // bridge face already carries, and it belongs to item 3.
+    //
+    // Gating a number the change under test does not move would be
+    // decoration, exactly as the front/back bib ink ratio was found to be, so
+    // this ships logged, with the pre/post pair above as its record. What the
+    // helpers are gated on is the joint-span gate in the build (negative
+    // control BODY_SABOTAGE_HELPERS=1, which now reports 1467 spanning
+    // vertices and is rejected) and the knee band above.
+    test('INSTRUMENT: the armpit band, with the joint spans that drive it',
+        async ({ page }) => {
+            const rows = {};
+            for (const { name, pose } of POSES) {
+                const r = await page.evaluate(MEASURE, pose);
+                rows[name] = { n: r.pitN, p999: r.pitP999, max: r.pitMax,
+                               worst: r.pitWorst, spans: r.spans };
+                expect(r.pitN, `${name}: no armpit-band edges measured`)
+                    .toBeGreaterThan(200);
+            }
+            console.log('PITTABLE ' + JSON.stringify(rows));
+        });
 
     // ── Is the residue a WEIGHT defect, or the LBS bound? ──────────────────
     //

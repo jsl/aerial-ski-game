@@ -6648,6 +6648,36 @@ def bib_number_gate(low, out_dir):
             str(vt[i]) for i in range(10)))
 
     if os.environ.get('BODY_BIB_ASCII') == '1':
+        # Where each plate LIVES in the atlas, and how many texels it gets.
+        # A plate whose island is tiny, stretched or shared with another
+        # island cannot render a legible glyph however the paint is drawn.
+        for fname, fsign in (('front', 1.0), ('back', -1.0)):
+            uvs, area_uv, area_w = [], 0.0, 0.0
+            for poly in low.data.polygons:
+                vids = list(poly.vertices)
+                vis = [patch_pos_of(vi) for vi in vids]
+                if any(d is None or d[0] != fsign for d in vis):
+                    continue
+                cuv = [tuple(uvl[li].uv) for li in poly.loop_indices]
+                uvs.extend(cuv)
+                for k in range(1, len(vids) - 1):
+                    a, b, c3 = cuv[0], cuv[k], cuv[k + 1]
+                    area_uv += abs((b[0]-a[0])*(c3[1]-a[1])
+                                   - (c3[0]-a[0])*(b[1]-a[1])) / 2.0
+                    pa = low.data.vertices[vids[0]].co
+                    pb = low.data.vertices[vids[k]].co
+                    pc = low.data.vertices[vids[k + 1]].co
+                    area_w += (pb - pa).cross(pc - pa).length / 2.0
+            if not uvs:
+                continue
+            us = [u for u, _ in uvs]
+            vs = [v for _, v in uvs]
+            log(f'bib atlas [{fname}]: uv bbox u {min(us):.4f}..{max(us):.4f} '
+                f'({(max(us)-min(us))*w:.0f} px) v {min(vs):.4f}..{max(vs):.4f} '
+                f'({(max(vs)-min(vs))*h:.0f} px), island area '
+                f'{area_uv * w * h:.0f} texels over {area_w * 1e4:.0f} cm2 '
+                f'= {area_uv * w * h / max(1e-9, area_w * 1e4):.1f} texels/cm2')
+
         for _f in ('front', 'back'):
             NU, NV = 30, 18
             g = [[[0, 0] for _ in range(NU)] for _ in range(NV)]
