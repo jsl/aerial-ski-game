@@ -796,6 +796,145 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 28 (2026-08-30, 09:2x-10:5x)
+
+Tree clean at start (session 27 committed, `cc05ab2`). `render-realism-glm` has
+not moved since `9fcbd1f`, so there was again no merge to take. Took the
+author's HUMAN TESTING #12 item 1 (+ item 4) — the suit SHELL — which is the
+reviewer's standing order and the author's most visible open ask.
+
+### Author #12 items 1 + 4 — the suit is a fitted SHELL — LANDED (partial, measured)
+
+**What was there.** `relax_suit` irons the muscle relief with a z-Gaussian and
+a gate that asks for a 55% RMS drop. That is a FILTER, and by construction it
+leaves 45% of the relief — which is what the author is still looking at after
+reporting it twice (#7 21:45 and #12 09:10).
+
+**What landed.** `suit_shell` fits ONE superellipse cross-section per suit
+segment and moves every suit vertex onto it along its own radius:
+
+* semi-axes A (lateral) and B (fore-aft) are solved per 2 cm rung by least
+  squares in the `1/r^n` domain, where the superellipse is LINEAR in
+  `(A^-n, B^-n)` — closed form, no iteration;
+* A(z), B(z) are then a LINEAR function of z on the limbs (a straight tapered
+  tube, second derivative identically zero, so the silhouette cannot inflect)
+  and a quadratic on the torso (shoulder -> waist -> hip is a real shape);
+* azimuth and z never change, so the stripe/bib/seam paint (which is
+  azimuthal) lands where it always did and every contact gate — sole seating,
+  boot-ski, binding clamp — is untouched by construction;
+* the weight fades to zero over |along| 0.55..0.90, so elbows, knees,
+  shoulders and hips keep their anatomy and only the SEGMENTS between them
+  become tubes, which is exactly the author's wording;
+* four Jacobi passes of a radius-field Laplacian follow, to take out the
+  relief that survives at the shell's own boundary.
+
+**Shipped numbers** (`SHELLCURV`, interior radial-relief variance, before ->
+after, on the shipped low-poly):
+
+| segment | before | after | ratio | gated |
+|---|---|---|---|---|
+| lowerArmL/R | 8.00e-07 / 7.92e-07 | 1.22e-07 / 1.29e-07 | **0.153 / 0.163** | yes |
+| lowerLegL/R | 5.20e-06 / 6.59e-06 | 2.39e-07 / 4.49e-07 | **0.046 / 0.068** | yes |
+| upperArmL/R | 1.93e-05 / 7.02e-05 | 2.00e-05 / 5.02e-05 | 1.037 / 0.715 | no — open |
+| upperLegL/R | 4.74e-06 / 3.85e-06 | 2.51e-06 / 1.75e-06 | 0.529 / 0.455 | no — open |
+| torso | 1.63e-04 | 1.05e-04 | 0.644 | no — open |
+
+Silhouette inflections (second-derivative sign changes of the aft profile):
+lowerArm 1/1 -> **0/0**, lowerLeg 0/0, upperArm 1/0 -> 1/0, upperLeg 3/3
+(unchanged — see below).
+
+Item 4 on the shell: upper-arm tube **57.8 mm** vs thigh **106.0 mm** =
+**0.545** (gate <= 0.55; upper-arm slim factor 0.78, forearm 0.82), shoulder
+**398 mm** / hip **446 mm** = **0.893** (gate <= 1.35), inner-thigh gap
+**+23.7 -> +31.0 mm** (the author's >= 40 mm is NOT reached).
+
+Everything else stayed green: sliver 0.568% (limit 0.60), leg taper
+calf/thigh 0.691, ankle/calf 0.498, boot/shin 1.352, thighD/B 0.901 (gate
+0.90), bideltoid 398 mm, bib number front/back ink 0.136 / 0.135.
+
+**NEGATIVE CONTROL** `BODY_SHELL_OFF=1` skips the pass; the gate rejects the
+bare body (ratios all 1.000, upperLeg inflections 3). Verified, exit 1.
+
+### The three measurement bugs, each of which made a wrong answer look right
+
+1. **The axis polynomial is an OFFSET, not a position.** The rung medians are
+   taken in the bone's frame (`co - bl(nm)`), so the fitted `(cx, cy)` had to
+   have the bone centre added back. Without it the arm axis sat 175 mm off the
+   arm; the residual read a +138 mm median, four candidate verts in five were
+   then dropped as "off-surface", and the curvature gate PASSED at 0.24 on the
+   19% that survived. A green gate measuring a fifth of the garment.
+2. **`dominant_segments` is an ownership answer, not a geometric one.**
+   `upperArmR` owns a sheet of the right chest wall (the same defect
+   `LEG_GIRTH_SANITY` records for the chest breadth) and each thigh owns a
+   sheet of the other one at the crotch. Fitting a tube through those clouds
+   produced a right thigh of 114 mm against the left's 80 and threw vertices
+   236 mm. Every rung now drops what lies outside 1.6x / inside 0.45x its own
+   median radius before anything is fitted, and each segment then trims to the
+   85th percentile of its OWN residual (25-60 mm) rather than to one number
+   for the whole body.
+3. **A single-vertex silhouette is noise, not anatomy.** The thigh carries ~9
+   verts per 2 cm rung, so which azimuth happens to be hindmost changes row to
+   row; the profile swung 145 mm over 6 cm and the second-derivative sign count
+   read three "muscle inflections" in it. The profile is now the median of the
+   verts within +-40 deg of the segment's own aft direction, twice smoothed,
+   with a 1 mm deadband.
+
+### Four things the pass had to be, each found by measuring a wrong answer
+
+* **Shrink-only, provably.** No vertex may end further from its segment axis
+  than it started — in the move OR in the Laplacian. The Laplacian was
+  uncapped, and that is where the thigh's depth went: capping the radial move
+  at 6 mm changed the measured depth by 1 mm because the smoothing that
+  followed was free to take the other 9 (thighD/B 0.935 -> 0.865 with the
+  radial move already capped at ZERO outward).
+* **The ease is `loosen_suit`'s job, not the shell's.** The author's ease
+  requirement (shell >= body + 25 mm of circumference on the legs, 15 on the
+  arms) is met by `SUIT_OFFSET`, which stands the suit off by 20 mm on the
+  thigh and 12 on the shin — 126 and 75 mm of circumference — and runs before
+  the shell. A second, outward ease in the shell only widened silhouettes.
+* **Ease must preserve the section's proportions.** Adding the same radial
+  offset to both semi-axes circularises a section, and the thigh's
+  depth/breadth fell through the leg-girth gate on exactly that.
+* **The bib is not the suit.** Shelling under the finished panel moved the
+  number patch off its plate and the front plate's ink fell to 0.058 against a
+  [0.10, 0.45] band. The panel is excluded from the pass by its own mask.
+
+### Where the pass runs, and why (one full experiment, recorded)
+
+It runs LAST of the shaping passes, after `leg_girth_pass`. Running it BEFORE
+`loosen_suit` — which would have let the bib be built on top of the shell —
+was tried and measured: the shell's own ratio was 0.531 at the pass and
+**0.901 by the time the mesh shipped**, because `loosen_suit`, `relax_suit`,
+`straighten_chest` and `leg_girth_pass` all move the same vertices again. The
+garment has to be fitted on the geometry that is exported.
+
+### OPEN, with numbers — for the reviewer
+
+1. **The gate binds on the forearms and shins only** (`SHELL_CURV_GATED`).
+   The upper arms and thighs measure 1.037/0.715 and 0.529/0.455 and do not
+   clear 0.35. Both causes are named and neither is fixable inside this pass:
+   * the THIGH's iron is capped at 6 mm by `LEG_GIRTH_GATE['thigh_depth']`
+     (>= 0.90). The shipped thigh sits at 0.935, i.e. 7.5 mm of depth to
+     spend, and the quad/hamstring relief needs ~10 — ironing a thigh takes
+     DEPTH and not breadth, because the relief is fore-aft. **This wants
+     either a per-azimuth iron or a `thigh_depth` re-derived on a garment
+     rather than on skin; the second is a reviewer call and I have not made
+     it.**
+   * the UPPER ARM's vertex cloud is not the upper arm (finding 2 above).
+     This is item 5's ownership work, not the shell's.
+   Gating them at their measured values would be calibrating the gate to the
+   defect, so the gate ships binding where the pass is honest and the rest is
+   here, in numbers. **Reviewer: this is the call to check.**
+2. **The torso's metric reads the BIB, not the garment.** The panel is a
+   designed 6 mm step, an order of magnitude above the 0.5-2 mm relief the
+   metric exists to find, so the torso ratio (0.644) is not a statement about
+   muscle contour. A bib-aware torso mask would fix the measurement.
+3. **Inner-thigh gap +31.0 mm against the author's >= 40 mm.** The gap is
+   geometrically bounded: the feet are 150 mm apart (ski spacing) and a thigh
+   that satisfies `thigh_hip >= 0.62` is ~90 mm across, so 40 mm of daylight
+   at mid-thigh needs either a wider stance or a thinner thigh than the
+   leg-dominance gates allow. Recorded, not silently dropped.
+
 ## Session 27 (2026-08-30, 08:3x-09:5x)
 
 Tree clean at start (session 26 committed). `render-realism-glm` has not moved
