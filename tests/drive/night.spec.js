@@ -102,6 +102,21 @@ test('P9 night mode: default day untouched; night rig, snowfall, dark sky + lit 
     // ── Image: dark sky, bright warm-lit pools ──────────────────────────────
     await page.setViewportSize({ width: 800, height: 600 });
     await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    // Camera-independent vantage: the start camera now frames the athlete
+    // from behind (HUMAN TESTING #7 fix), which puts the corridor pools 20 m+
+    // away at a grazing angle where blue ambient + night fog dominate the
+    // pixel (measured 2026-08-29: pool 2 r-b +0.05 at 8 m, -0.056 at 25 m).
+    // Lighting is judged from a fixed orbit 10 m from corridor flood #2's
+    // pool; free-look is active in the ready state so the follow block will
+    // not clobber it.
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene, cam = scene.activeCamera;
+        const s = scene.lights.find(l => l.name === 'nightFlood2');
+        if (!s) return;
+        const g = s.position.add(s.direction.scale(6.3 / -s.direction.y));
+        cam.lowerRadiusLimit = 3; cam.upperRadiusLimit = 80;
+        cam.setTarget(g.clone()); cam.radius = 10; cam.alpha = Math.PI * 0.5; cam.beta = Math.PI / 2.7;   // looking UPHILL at the pool (measured r-b +0.05; from uphill -0.027 — backscatter into the blue fog)
+    });
     await page.waitForTimeout(500);
     const f = await grabPixels(page);
     const snow = brightStats(f, 0.05, 0.35, 0.95, 0.95, 0.02); // brightest 2% = lit pools
@@ -122,7 +137,25 @@ test('P9 night mode: default day untouched; night rig, snowfall, dark sky + lit 
     });
     expect(fog, 'night fog colour luminance (measured ' + fog + ')').toBeLessThan(0.05);
     expect(snow.lum, 'lit snow pool luminance, brightest 2% (measured ' + snow.lum + ')').toBeGreaterThan(0.45);
-    expect(snow.rb, 'lit snow warm under floodlights (r-b ' + snow.rb + ')').toBeGreaterThan(0.0);
+    // Warmth is measured AT a floodlit pool, not on "the brightest 2 % of the
+    // frame": since the start camera frames the athlete from behind (HUMAN
+    // TESTING #7 fix) the brightest pixels are the white suit / pole strips,
+    // which are neutral by design. Project corridor flood #2's ground point
+    // to the screen and read a small window there.
+    const pool = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene, cam = scene.activeCamera, eng = scene.getEngine();
+        const s = scene.lights.find(l => l.name === 'nightFlood2') || scene.lights.find(l => l.name.indexOf('nightFlood') === 0);
+        if (!s) return null;
+        const t = (s.position.y - (window._terrainRootYAt ? window._terrainRootYAt(s.position.z) : s.position.y - 6.3)) / -s.direction.y;
+        const g = s.position.add(s.direction.scale(t));
+        const p = BABYLON.Vector3.Project(g, BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+            cam.viewport.toGlobal(eng.getRenderWidth(), eng.getRenderHeight()));
+        return { x: p.x / eng.getRenderWidth(), y: p.y / eng.getRenderHeight(), inFrame: p.z > 0 && p.z < 1 && p.x >= 0 && p.x <= eng.getRenderWidth() && p.y >= 0 && p.y <= eng.getRenderHeight() };
+    });
+    expect(pool && pool.inFrame, 'a floodlit pool is in the start view').toBe(true);
+    const poolPx = regionStats(f, Math.max(0, pool.x - 0.03), Math.max(0, pool.y - 0.03), Math.min(1, pool.x + 0.03), Math.min(1, pool.y + 0.03));
+    expect(poolPx.lum, 'floodlit pool luminance (measured ' + poolPx.lum + ')').toBeGreaterThan(0.30);
+    expect(poolPx.rb, 'lit snow warm under floodlights at the pool (r-b ' + poolPx.rb + ')').toBeGreaterThan(0.0);
     // Reviewer gate (note on 118, 18:50): the snow REGION reads blue-grey
     // (≈ 0.18-0.25), not near-black and not washed out.
     const snowMean = regionStats(f, 0.05, 0.35, 0.95, 0.95);
