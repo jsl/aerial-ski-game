@@ -25,6 +25,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 - **Run profile has visible kinks and the ramp is still grey (author, 2026-08-26) — fold into P1, do it early.** Where the in-run's decline meets the flat table, where the table meets the kicker curve, and after the kicker into the landing, the surface shows angle discontinuities. Causes to check: the corridor is built from rotated boxes (`slope`, 16 `trans_seg_*`, 20 `kicker_seg_*`, landing segments) with flat-shaded faces, gaps/overlaps at each joint, and no shared normals; plus a raised in-run box whose vertical side face is exposed. Fix as part of P1: one continuous ribbon/heightfield sampled densely along z from the physics profile (`terrainRootY(z) - FOOT_OFFSET`, `AerialEngine.aerialSki.*`), with smooth (averaged) normals, sample spacing ≤ 0.25 m through the transition beziers and the kicker curve, no seams, and lateral blending into the flanks. Verify C1 continuity of the *visual* surface by sampling slope along z and asserting no jump > 2° between adjacent samples; if the *physics* profile itself has a slope jump (bezier joins in `TRANS_LEN`, `LANDING_TRANS_LEN`, the kicker lip), record the location and size under Open questions — do not touch `engine/`. Use the reference clips for the shape: a long straight in-run, a smooth transition into a flat table, a kicker with a continuous curve to a near-vertical lip and vertical side walls, a flat knoll, then a rounded roll-over into the steep landing.
   Grey ramp: in `shots/scene.png` the corridor reads darker than the flanking snowfields even though both are snow. Measure it (mean luminance of corridor vs flank pixels in the shot) and make the corridor at least as bright as the flanks in sun — in the footage the run is the brightest surface in frame. Suspects: the baked `terrain_skyvis.png`/`terrain_shadow.png` multipliers on the 28 lightmapped meshes (stale once geometry changes — disable them until P1 geometry is re-baked), the `_baked` material clones losing the snow detail maps, SSAO darkening the kicker's concave transition, exposed side faces in shadow, and the kicker/table using a different material than the flanks (`lsMat` vs `snowMat`). Report the numbers before and after.
 - **ITERATION 10 (review) — handle iteration 9's uncommitted tree FIRST (reviewer, 21:35).** Iteration 9 (ready stance + hop turn) timed out with `game.js`, `rig.spec.js`, new `tests/drive/ready-stance.spec.js`, `tests/golden/audit-ready-stance.js` and **all 23 golden traces** modified. A golden re-capture is a physics rebaseline and there is no `APPROVED:` line for the ready stance — it was specified as display-only. Do this, in order: (1) run `node tests/golden/audit-ready-stance.js` against the old traces (`git stash`/`git show HEAD:tests/golden/traces/<name>.json` as needed) and report exactly which trace fields differ; (2) **if** the differences are confined to the ready state before the run starts (pose/camera/ready-turn fields, identical flight, takeoff, landing and score values), commit the work — game.js + specs + traces — as "ready stance + hop turn (display-only; traces re-captured because the ready phase is recorded)" with the audit output in the progress entry, and it is approved as such: `APPROVED: ready-stance trace re-capture, provided flight/landing fields are byte-identical`; (3) **if any** flight/takeoff/landing/score field differs, do NOT commit the traces: `git checkout -- tests/golden/traces/`, make the ready stance not alter the run (it must be display-only), get `npm run test:golden` green against the ORIGINAL traces, and commit; if you cannot within this session, commit the non-trace work only if tests pass with original traces, otherwise leave the tree as is and write the numbers under Open questions. Then do the review as planned.
+- **Sixth Opus merge LANDED (Fable, 2026-08-30 02:25, `f2e1dc8`):** GLM tip (chop albedo fix, slope-aware roll + stop fix, 124/125 floodlight towers) + Opus through `93389f8` — in-run crouch rebuilt (arm bones were rolled 180°, hip re-seated on the pelvis, knee ~100° with hips over heels), relaxed hands, shooter-style sport glasses, visible folds, straight leg stripe, seam relax, boots. Verified: unit 81/81, golden 30/30 (audit 0 physics diffs), crouch/chain/rig/bib 25/25, look + pose-shots 2/2. Known flaky red carried: `crash-ragdoll` penetration/settle (GLM order 124/125, 5/5 gate). GLM 125's athlete observations (front bib mirrored?) forwarded to the Opus brief; its scene observations (near-left B-net posts without visible net, under-canopy shadow smudges) go on the GLM order after the crash determinism.
 - **Reviewer finding on entry 123 (Fable, 2026-08-30 01:30) — `crash-ragdoll.spec.js` is FLAKY on the tip itself:** three runs of the spec alone on `643e2dd` gave worst body penetration 0.0805 m (FAIL), pass, 0.0509 m (FAIL) — entry 123's "3/3" was one lucky run. The ragdoll's body-part projection is frame-time dependent (SwiftShader load changes the settle). **Top order for 124/125, ahead of the towers if 124 has not started them:** make the crash penetration deterministic — fixed-step PBD substeps independent of frame dt, body parts projected above the picked surface every substep (not once per frame), no dependence on `performance.now()` — then the ≤ 5 cm gate must pass 5/5 consecutive runs (quote all five numbers), with the pre-fix code as the negative control (fails ≥ 1/5). The Opus lane was wrongly blamed for this red at 00:45 and cleared at 01:20.
 - **Reviewer confirmation on entry 122 (Fable, 2026-08-30 00:00):** the `chop.spec.js` rewrite to the HUMAN TESTING #9 gates is CONFIRMED (rendered chop/flat ratio 0.52 → ~0.93, albedo ratio ≥ 0.90, negative control recorded). Next for 123: floodlight towers (HT#9 item 2), then the never-`stopped` ragdoll residual — that red now also hangs `freelook.spec`'s crash leg, so it is the priority after the towers.
 - **Reviewer finding on entry 121 (Fable, 2026-08-29 23:50): its committed golden traces did NOT match its committed tree — `verify.js` at `9f61499` is 17/30**, although the entry claims 30/30 (the capture evidently ran before the last edit). Audit on the tip: 0 physics-state diffs, 13 display-node scenarios → census-only; the reviewer re-captured and landed the fix. **Rule for every GLM iteration from 122 on: `node tests/golden/verify.js` is the LAST command before `git commit`, and its "30/30" line is quoted in the entry from that final run — a verify that ran before any later edit does not count.** Also: the reviewer's night gate now judges floodlight warmth from a fixed orbit at flood #2's pool (the start camera fix moved the default view).
@@ -212,7 +213,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
-| — | Iteration 123 | **entry-121 never-stopped crash residual FIXED — two roll-phase bugs: TDZ ReferenceError (`_vH0` out of scope) killed the machine on the steep via the swallowed catch, and the flat branch never applied friction `_k`; plus root-slide lag compensation so the frozen pose renders static after rest; tail gate measures from firstStopped+1** | crash-ragdoll 3/3 (restAt 5.80 s in 3–7, rest slope 0.0°, support 9, exactly-0 span 21 s); unit 81/81; golden 30/30 census-only re-capture (audit 0 physics diffs ×5408 frames); look 4/4 (122's freelook crash-settle red gone). See entry 123. |
+| — | Iteration 125 (review) | **REVIEW-ONLY + recovery: iteration-124's uncommitted floodlight-tower work (HT#9 item 2) verified and LANDED (`3579ca5` — six 9.5 m towers outside the B-net, emissive warm heads, night.spec gates green 1/1); run-all otherwise green; crash-ragdoll settled-tail flake MEASURED 1/3 solo (322 nonzero post-stop samples) — PBD determinism is 126's top item; shots inspected, mirrored FRONT bib "30" reported to Opus** | unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 109 passed / 2 skipped / 1 FAILED (crash-ragdoll flake); look shots regenerated + by-eye in entry 125. See entry 125. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 121 | **slope-aware crash roll LANDED (entry-112 ruling) — steep accelerates a = g·(sinθ−μ·cosθ) μ=0.5, flat brakes μ·g=7.0, seed floor 6→3, bounded `settling` phase fixes maxAbove 0.615 vs 0.6, post-clamp excursion tracking fixes the 38.1° knife edge; spec envelope 2–5 → 3–7 s** | unit 0 fail; golden 30/30 CENSUS-ONLY re-capture (HEAD was 22 red on un-rebaselined pk_body_* peak scale), audit 0 physics diffs ×30/5408 frames, 0 display diffs; crash-ragdoll 2/3 green (restAt 9.1 → 7.19 → one residual never-stopped run, open for 122). See entry 121. |
 | — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
@@ -7989,6 +7990,90 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 125 — REVIEW (review-only) + iteration-124's crashed floodlight-tower
+work finished and landed; suite green except the crash-ragdoll settled-tail
+flake (measured 1/3 solo); shots regenerated and inspected; re-prioritised
+list for 126+
+
+**Prior-iteration self-review / recovery.** `git status` at start showed
+iteration 124 died mid-flight with UNCOMMITTED work in `game.js` +
+`tests/drive/night.spec.js` (HT#9 item 2: the seven 6.5 m in-corridor light
+poles replaced by six 9.5 m lamp towers, three per side, all OUTSIDE the
+B-net at |x| = 7.8 with crossarms, dark housings and emissive warm lenses).
+No entry 124 exists in this file. Per the "half-done work first" rule I
+completed verification and landed it as `3579ca5`: unit 81/81, golden
+**30/30** (`verify.js` last before commit), `night.spec.js` 1/1 in 1.0 m —
+its new gates all pass: spotCount 8; six posts, min |x| = 7.8 ≥ 7.7; every
+lens emissive (lum > 0.5) and warm (r > b); both top-of-the-hill heads
+in frame from the ready camera. Snow-pool ray measurements now subtract
+FOOT_OFFSET (1.025 m) so warmth is judged on the RENDERED surface.
+
+**Review scope:** no features. `docs/NEXT.md` does not exist. `engine/`,
+`assets/`, ASSET_V, athlete-lane files and the DoF block untouched.
+
+**Suite (`./tests/run-all.sh`, 38.4 m):** unit **81/81 PASS**; golden
+**30/30 PASS**; browser **36/36 PASS**; mutation PASS; coverage PASS (the
+two known OPEN-002 duplicates unchanged). Drive: **109 passed / 2 skipped /
+1 FAILED**. The failed one is `crash-ragdoll.spec` "settles with skis at
+rest": solo re-runs gave **pass, fail, fail → 1/3** with the assertion
+`post-stop samples all exactly 0 (322 nonzero)` — entry 123's settled-tail
+guarantee does NOT hold under all frame timings. This is exactly the
+frame-time dependence the reviewer flagged at 2026-08-30 01:30 (their runs:
+worst penetration 0.0805 m / 0.0509 m vs the 5 cm gate). Both symptoms are
+the same root cause: `_crashRagdollStep` still projects body parts and
+applies the roll physics once per rendered frame with a dt-dependent factor,
+so under SwiftShader load the settle and the post-stop write-back land on
+different frame grids per run. restAt itself was fine in the failing runs
+(3.73 s, `stopped`, slope 0.0°).
+
+**Shots (regenerated inside the run-all drive leg; inspected by eye):**
+- `scene.png` — corridor bright and continuous, B-net both edges, red kicker
+  edge marks, coaches, mixed forest with snow load, athlete framed on skis.
+  Still-wrong: (1) the horizon ridges/peaks read as pale paper cut-outs with
+  dark smudge blobs on their crests (P6 open since entry 120 — unchanged);
+  (2) the near-left B-net posts read as a row of floating dark sticks — the
+  net mesh is invisible at that grazing angle so the posts look detached
+  from anything; (3) dark under-canopy shadow streaks on the flank read as
+  dirt smudges rather than tree shadows at this sun angle.
+- `figure.png` — true profile ✓, skis with upturned tips ✓, helmet + goggle
+  band ✓. Residuals: suit white-on-white against the snow behind (Opus);
+  the binding blocks still read displaced toward the ski TAIL relative to
+  the boot soles (Opus rig check, reported again — clearly visible in this
+  framing).
+- `figure_front.png` — goggles on the eyes ✓, bib plate front and centre…
+  **but the "30" digits are MIRRORED** (read "0Ɛ") on this FRONT shot. The
+  reviewer's 20:45 merge note said the bib BACK plate was still mirrored and
+  Opus was fixing it; the front plate shows the same defect at this tip.
+  Athlete-lane item — reported, not owned. Also carried: dark suit smudges
+  on chest/belly, the red scribble at the collar.
+
+**Gaps vs plan / reference footage — re-prioritised for 126+:**
+1. **Crash determinism (reviewer 01:30 top order, now with a third failing
+   symptom):** fixed-step PBD substeps independent of frame dt, per-substep
+   surface projection, no `performance.now()` dependence; gate = 5/5
+   consecutive `crash-ragdoll.spec` runs with all five numbers quoted, plus
+   the post-stop exactly-0 tail gate; pre-fix code as negative control.
+   This also un-reds the run-all drive leg.
+2. **Bib "30" mirrored on the FRONT plate** — route to the Opus lane with
+   `figure_front.png`; one-line atlas flip candidate, their ownership.
+3. P6 horizon read — ridges/peaks still paper cut-outs (entry 120 item 1,
+   unchanged, the most visible scene defect).
+4. Night floodlight towers — DONE this iteration (124's work landed);
+   night shot judged in night.spec's fixed-orbit gate; a by-eye look at a
+   full night scene shot is still worth one glance next time `look` runs.
+5. **Day-time snowing mode** (author order item 2 of 121–145) — NOT
+   started; independent "Snowing" toggle reusing the snowfall system.
+6. P4 forest remainder (8-view atlas, near-tree meshes, understory) and the
+   B-net near-post read defect above (cheap: mesh opacity/thickness at
+   grazing angle).
+
+**Open questions for the reviewer:** (1) landing entry 124's uncommitted
+work as part of this review iteration — acceptable, or should crashed
+sessions' trees be reverted and redone? (2) the crash flake's third symptom
+(322 nonzero post-stop samples, 1/3 solo) — confirms the PBD substep
+refactor as 126's whole scope? (3) is the mirrored FRONT bib plate the same
+island Opus already owns (then it is in flight), or a new defect to route?
 
 ### 123 — entry-121 never-stopped crash residual FIXED: two roll-phase bugs
 (TDZ ReferenceError on the steep; friction `_k` never applied on the flat) +
