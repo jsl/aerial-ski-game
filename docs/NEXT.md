@@ -47,6 +47,12 @@ Order:
    render space (silhouette daylight in `figure_front.png`, ≥ 3 cm projected at mid-thigh) — the existing
    45.5 mm mesh-space gap gate passed while the author sees touching thighs, so it does not count as
    evidence here; the current build is the failing negative control.
+2c. **HUMAN TESTING #16 (author, 17:50) — REAL SKI BOOTS.** Full spec in the #16 Reviewer-feedback
+   entry; reference image `reference/shots/author_boot_ref_2026-08-30.jpg`. The current foot reads as a
+   shoe with visible toes — replace with a two-part rigid boot (clog + cuff, ribbed tongue, smooth toe
+   box with NO toe contours, sole ledges at toe/heel, 2–3 buckles + strap, no logos), cuff at mid-shin
+   with the suit shin tube ending inside it. Binding-contact and boot-on-ski gates stay green; the
+   current toed shoe is the failing negative control.
 3. **Arm stripe — VERIFY, do not redo.** Session 32 shipped it (`9e81fcc`: repair pass enabled on the
    zero-overlap unwrap; torso-back blueFrac 0.135 → 0.073, gate < 0.10). Confirm on the merged branch:
    leak gate green, stripe visible on BOTH arms as a band on the outer seam in the figure shots, default
