@@ -203,6 +203,24 @@ BOOT_HEIGHT_MIN = 0.09      # metres of shell from the sole to the cuff lip
 # Negative control for the boot gate: skip the boot paint and ship the white
 # blob this project shipped up to session 9.
 SABOTAGE_BOOT = os.environ.get('BODY_SABOTAGE_BOOT') == '1'
+# OPUS ITEM 3 (d): the outer-seam stripe is a 5 cm CUT PANEL, so it is measured
+# in metres of arc, not in radians (see paint_suit). STRIPE_DPHI_MAX caps the
+# wrap on a thin segment — a true 50 mm band round a 40 mm-radius forearm would
+# reach 0.63 rad and read as a blue sleeve.
+STRIPE_HALF_W = 0.025       # metres each side of the outboard pole => 5 cm band
+# The cap is what entry-75 was really protecting when it wrote 0.32 rad: a
+# fixed angle wraps a thin segment. 0.46 lets the 5 cm arc rule govern the
+# whole leg (the shin needs 0.455 at its 55 mm radius) and narrows only the
+# arms, which is what the reference suit does — its sleeve stripe is visibly
+# narrower than its leg stripe.
+STRIPE_DPHI_MAX = 0.46
+# Straightness of the painted seam (stripe_straight_gate), in metres of
+# fore/aft travel — the direction the old nearest-bucket axis made it stagger.
+# Set on session 11's measurements with margin, to be ratcheted down as the
+# suit geometry improves: worst step 10.8 mm and worst wander 13.1 mm on the
+# fitted axis, against 33.0 mm and 34.7 mm for BODY_SABOTAGE_STRIPE=1.
+STRIPE_STEP_MAX = 0.014     # max |change| in seam centre between 2 cm rungs
+STRIPE_WANDER_MAX = 0.020   # max |deviation| from the segment's own straight fit
 def log(m):
     print(f'[body] {m}', flush=True)
 
@@ -4730,9 +4748,18 @@ def digit30_mask(u, v):
 
 # ── Limb cross-section frames ───────────────────────────────────────────────
 
+# Spacing of the sampled cross-sections the limb axis is fitted through.
+SLICE_DZ = 0.02
+# NEGATIVE CONTROL for the stripe-straightness gate: reproduce the axis this
+# project shipped up to session 10 — nearest 4 cm bucket, no interpolation, no
+# smoothing, (0,0) wherever a bucket was too sparse to have a centroid.
+SABOTAGE_STRIPE = os.environ.get('BODY_SABOTAGE_STRIPE') == '1'
+
+
 def limb_slice_centroids(obj, owner, names):
     """
-    Per (segment, z-slice) centroid of the MESH's own cross-section.
+    A CONTINUOUS axis per limb segment: the centroid of its own cross-section,
+    resampled on a uniform z ladder, smoothed, and meant to be interpolated.
 
     Stripe/seam angles are azimuths ABOUT the limb axis, but the axis that
     matters is the one the surface actually wraps — not the driver centre in
@@ -4743,28 +4770,232 @@ def limb_slice_centroids(obj, owner, names):
     air beside the leg and the stripe painted only the soles (which cross
     ly=0). Measuring from each slice's own centroid puts the pole back on the
     visible outboard face, whatever the anatomy does.
+
+    OPUS ITEM 3 (d) — why this stopped being a dict of buckets. The old version
+    returned {(segment, round(z/0.04)): centroid} and limb_azim looked the
+    query point's bucket up by NEAREST. Three consequences, all of them
+    visible in shots/figure_side.png as a blue STAIRCASE down the arm and leg
+    rather than a seam:
+
+      * the reference axis is piecewise CONSTANT in z, so every 4 cm the whole
+        angular window jumps sideways by however far the centroid moved —
+        which on a tapering, curving limb is millimetres to a centimetre. The
+        stripe's edge steps by that much, in one row, and the step is the
+        4 cm bucket tall. That is exactly the staircase;
+      * a per-bucket median over as few as five vertices is noisy, and the
+        noise is uncorrelated between adjacent buckets, so the steps alternate
+        direction instead of drifting;
+      * `.get(..., (0.0, 0.0))` silently substituted the DRIVER centre for any
+        bucket with fewer than five vertices — the very failure mode the
+        paragraph above says this function exists to avoid — and the sparse
+        buckets are the segment ends, i.e. the joints, where the seam is most
+        obviously broken.
+
+    So: sample at SLICE_DZ (2 cm), drop sparse rungs, fill the gaps and both
+    ends by holding the nearest measured centroid (never the driver centre),
+    then smooth. limb_azim interpolates between rungs, so the axis it sees is
+    C0 in z and the seam it produces is a line.
     """
     import statistics
-    buckets = {}
+    if SABOTAGE_STRIPE:
+        buckets = {}
+        for i, v in enumerate(obj.data.vertices):
+            nm = owner[i]
+            if nm not in names:
+                continue
+            c = bl(nm)
+            buckets.setdefault((nm, round(v.co.z / 0.04)), []).append(
+                (v.co.x - c.x, v.co.y - c.y))
+        out = {'__staircase__': True}
+        for key, pts in buckets.items():
+            if len(pts) >= 5:
+                out[key] = (statistics.median(p[0] for p in pts),
+                            statistics.median(p[1] for p in pts))
+        log('BODY_SABOTAGE_STRIPE=1: limb axis back to nearest 4 cm bucket '
+            '(negative control for the stripe-straightness gate)')
+        return out
+
+    rungs = {}
     for i, v in enumerate(obj.data.vertices):
         nm = owner[i]
         if nm not in names:
             continue
         c = bl(nm)
-        key = (nm, round(v.co.z / 0.04))
-        buckets.setdefault(key, []).append((v.co.x - c.x, v.co.y - c.y))
-    out = {}
-    for key, pts in buckets.items():
-        if len(pts) >= 5:
-            out[key] = (statistics.median(p[0] for p in pts),
-                        statistics.median(p[1] for p in pts))
-    return out
+        rungs.setdefault(nm, {}).setdefault(
+            int(math.floor(v.co.z / SLICE_DZ)), []).append(
+                (v.co.x - c.x, v.co.y - c.y))
+
+    axes = {}
+    for nm, by_k in rungs.items():
+        # (z, cx, cy, weight) per rung with enough section to have a centroid.
+        obs = [((k + 0.5) * SLICE_DZ,
+                statistics.median(p[0] for p in by_k[k]),
+                statistics.median(p[1] for p in by_k[k]),
+                float(len(by_k[k])))
+               for k in sorted(by_k) if len(by_k[k]) >= 5]
+        if len(obs) < 4:
+            if obs:
+                axes[nm] = (obs[0][0], (obs[0][1], 0.0, 0.0),
+                            (obs[0][2], 0.0, 0.0))
+            continue
+        # A weighted least-squares QUADRATIC in z, not the sampled polyline.
+        # Interpolating the rungs directly — even after several [1 2 1]
+        # passes — still carries the per-rung median noise, and measured, that
+        # noise alone stepped the painted seam 14.5 mm across one 2 cm rung on
+        # the thigh (build log s11_build1). A limb segment's axis is a gently
+        # bowed line: three coefficients describe it, cannot staircase by
+        # construction, and their derivative bounds the seam's step.
+        z0 = sum(o[0] * o[3] for o in obs) / sum(o[3] for o in obs)
+        axes[nm] = (z0, _wls_quad(obs, 1, z0), _wls_quad(obs, 2, z0))
+    return axes
+
+
+def _wls_quad(obs, col, z0):
+    """Weighted least-squares fit of obs[col] to a + b*t + c*t^2, t = z - z0."""
+    n = 3
+    a = [[0.0] * (n + 1) for _ in range(n)]
+    for (z, cx, cy, w) in obs:
+        t = z - z0
+        basis = (1.0, t, t * t)
+        val = (cx, cy)[col - 1]
+        for r in range(n):
+            for c in range(n):
+                a[r][c] += w * basis[r] * basis[c]
+            a[r][n] += w * basis[r] * val
+    for i in range(n):                                   # Gauss-Jordan
+        p = max(range(i, n), key=lambda r: abs(a[r][i]))
+        if abs(a[p][i]) < 1e-18:
+            return (a[i][n] / a[i][i] if abs(a[i][i]) > 1e-18 else 0.0, 0.0, 0.0)
+        a[i], a[p] = a[p], a[i]
+        d = a[i][i]
+        a[i] = [v / d for v in a[i]]
+        for r in range(n):
+            if r != i and a[r][i]:
+                f = a[r][i]
+                a[r] = [v - f * u for v, u in zip(a[r], a[i])]
+    return (a[0][n], a[1][n], a[2][n])
+
+
+def limb_axis_at(z, nm, slices):
+    """The limb axis' (cx, cy) at height z, from its fitted quadratic."""
+    if slices.get('__staircase__'):
+        return slices.get((nm, round(z / 0.04)), (0.0, 0.0))
+    ax = slices.get(nm)
+    if not ax:
+        return (0.0, 0.0)
+    z0, fx, fy = ax
+    t = z - z0
+    return (fx[0] + fx[1] * t + fx[2] * t * t,
+            fy[0] + fy[1] * t + fy[2] * t * t)
 
 
 def limb_azim(lx, ly, z, nm, slices):
     """Azimuth of a point about its slice's own cross-section centroid."""
-    cen = slices.get((nm, round(z / 0.04)), (0.0, 0.0))
-    return math.atan2(ly - cen[1], lx - cen[0])
+    cx, cy = limb_axis_at(z, nm, slices)
+    return math.atan2(ly - cy, lx - cx)
+
+
+def limb_radius(lx, ly, z, nm, slices):
+    """Distance of a point from its slice's own cross-section centroid."""
+    cx, cy = limb_axis_at(z, nm, slices)
+    return math.hypot(lx - cx, ly - cy)
+
+
+def stripe_straight_gate(stripe_dbg):
+    """
+    GATE (brief item 3 (d)): the outer-seam stripe is a straight 5 cm band.
+
+    The author's word for it was "a ragged blob across the shin"; in
+    shots/figure_side.png (session 10) it is a STAIRCASE with treads the
+    height of the old 4 cm axis bucket. So the gate measures the two things
+    that distinguish a seam from a staircase, and it measures them against a
+    reference the painting code does not use — each vertex's fore/aft offset
+    from its DRIVER centre, `ly`, which is what segment_frame already handed
+    paint_suit. (Measuring against the smoothed axis the paint used would be
+    circular: any axis makes its own band look centred.)
+
+      step   the seam centre's fore/aft move between adjacent 2 cm rungs.
+             A smooth axis drifts; a bucketed one jumps by the whole distance
+             the centroid moved, in one rung. This is the staircase metric.
+      wander the seam centre's deviation from a straight least-squares fit up
+             the segment. Catches a seam that spirals or slides off the
+             outboard face even if every individual step is small.
+      width  the band's fore/aft extent. For a band centred on the lateral
+             pole this IS its width, with no trigonometry and no axis: the
+             brief asks for ~5 cm and this reads it in metres.
+
+    Both the centre and the width are read off the band's EDGES at the 5th and
+    95th percentile of ly, not off its mean or its extremes. The mean is the
+    wrong estimator here and the first version of this gate used it: the suit
+    mesh's vertices come in rows, so how many of them land inside a 43 mm band
+    varies rung to rung, and the mean of a clumpy sample moves several
+    millimetres on its own. Measured, that noise made the metric read 14.4 mm
+    on a smooth axis and 14.5 mm on the bucketed one — it could not tell the
+    staircase from the fix, which is the definition of a gate not worth
+    having. The band's edges are geometric, so percentiles of them are stable.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_STRIPE=1 restores the nearest-4 cm-bucket
+    axis and must fail `step`.
+    """
+    def pct(vals, q):
+        s = sorted(vals)
+        i = q * (len(s) - 1)
+        lo = int(i)
+        return s[lo] + (s[min(lo + 1, len(s) - 1)] - s[lo]) * (i - lo)
+
+    per = {}
+    for (x, y, z, lx, ly, nm) in stripe_dbg:
+        per.setdefault(nm, {}).setdefault(
+            int(math.floor(z / SLICE_DZ)), []).append(ly)
+    if not per:
+        raise SystemExit('stripe straightness gate: no stripe verts at all')
+    worst_step = worst_wander = 0.0
+    worst_step_seg = worst_wander_seg = '-'
+    widths = []
+    for nm in sorted(per):
+        rungs = sorted(k for k, v in per[nm].items() if len(v) >= 12)
+        if len(rungs) < 4:
+            continue
+        edges = {k: (pct(per[nm][k], 0.05), pct(per[nm][k], 0.95)) for k in rungs}
+        cen = {k: 0.5 * (edges[k][0] + edges[k][1]) for k in rungs}
+        wid = {k: edges[k][1] - edges[k][0] for k in rungs}
+        step = max((abs(cen[b] - cen[a])
+                    for a, b in zip(rungs, rungs[1:]) if b == a + 1),
+                   default=0.0)
+        n = len(rungs)
+        mz = sum(rungs) / n
+        mc = sum(cen[k] for k in rungs) / n
+        sxx = sum((k - mz) ** 2 for k in rungs)
+        slope = (sum((k - mz) * (cen[k] - mc) for k in rungs) / sxx) if sxx else 0.0
+        wander = max(abs(cen[k] - (mc + slope * (k - mz))) for k in rungs)
+        med_w = sorted(wid[k] for k in rungs)[n // 2]
+        widths.append(med_w)
+        log(f'stripe straight {nm:10s} rungs={n:3d} step={step * 1000:6.1f} mm '
+            f'wander={wander * 1000:6.1f} mm width={med_w * 1000:5.1f} mm')
+        if step > worst_step:
+            worst_step, worst_step_seg = step, nm
+        if wander > worst_wander:
+            worst_wander, worst_wander_seg = wander, nm
+    if not widths:
+        raise SystemExit('stripe straightness gate: no segment had enough '
+                         'stripe verts to measure')
+    log(f'stripe straight gate: worst step {worst_step * 1000:.1f} mm '
+        f'({worst_step_seg}, max {STRIPE_STEP_MAX * 1000:.0f}), worst wander '
+        f'{worst_wander * 1000:.1f} mm ({worst_wander_seg}, max '
+        f'{STRIPE_WANDER_MAX * 1000:.0f}), median width '
+        f'{sorted(widths)[len(widths) // 2] * 1000:.1f} mm'
+        + (' [SABOTAGED]' if SABOTAGE_STRIPE else ''))
+    if worst_step > STRIPE_STEP_MAX:
+        raise SystemExit(
+            f'stripe straightness gate: {worst_step_seg} steps '
+            f'{worst_step * 1000:.1f} mm between 2 cm rungs (max '
+            f'{STRIPE_STEP_MAX * 1000:.0f}) — the seam is a staircase, not a '
+            f'seam (negative control: BODY_SABOTAGE_STRIPE=1)')
+    if worst_wander > STRIPE_WANDER_MAX:
+        raise SystemExit(
+            f'stripe straightness gate: {worst_wander_seg} wanders '
+            f'{worst_wander * 1000:.1f} mm off a straight seam (max '
+            f'{STRIPE_WANDER_MAX * 1000:.0f})')
 
 
 # ── Fabric folds (task 3, folds slice) ──────────────────────────────────────
@@ -4938,10 +5169,15 @@ def displace_suit(obj, lm):
                 outward = 0.0 if out > 0 else math.pi
                 dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
                 d -= 0.0016 * math.exp(-((dphi / 0.13) ** 2))
-                if is_leg and dphi < 0.30:
-                    # The blue stripe is a printed panel, very slightly proud of
-                    # the fabric — enough for the light to catch its edge.
-                    d += 0.0009 * (1.0 - (dphi / 0.30) ** 6)
+                # The blue stripe is a printed panel, very slightly proud of
+                # the fabric — enough for the light to catch its edge. Its
+                # relief has to use the SAME arc-width band the paint uses
+                # (item 3 (d)), or the lit edge and the colour edge part
+                # company; and it now runs on the arms too.
+                rad = limb_radius(lx, ly, z, name, slices)
+                halfphi = min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX)
+                if dphi < halfphi:
+                    d += 0.0009 * (1.0 - (dphi / halfphi) ** 6)
             if name == 'torso':
                 dphi = abs(math.atan2(math.sin(azim - math.pi), math.cos(azim - math.pi)))
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
@@ -5022,7 +5258,8 @@ def paint_suit(obj, lm):
     owner = dominant_segments(obj)
     paint_slices = limb_slice_centroids(obj, owner,
                                         ('upperLegL', 'lowerLegL', 'upperLegR',
-                                         'lowerLegR'))
+                                         'lowerLegR', 'upperArmL', 'lowerArmL',
+                                         'upperArmR', 'lowerArmR'))
     attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     stripe_dbg = []
@@ -5110,18 +5347,32 @@ def paint_suit(obj, lm):
             # below paint it would have run royal blue down the shell.
             col, tag = ((BOOT_CUFF, 'bootlip') if along >= BOOT_LIP_ALONG
                         else (BOOT, 'boot'))
-        elif name.startswith(('upperLeg', 'lowerLeg')):
+        elif name.startswith(('upperLeg', 'lowerLeg', 'upperArm', 'lowerArm')):
             # See displace_suit for the transverse-angle convention: outboard is
             # angle 0 or pi depending on side, measured about the slice's own
             # cross-section centroid so the stripe tracks the visible face of
             # the calf/thigh rather than a pole in empty air beside the axis.
+            #
+            # OPUS ITEM 3 (d): the band is now a fixed ARC WIDTH, not a fixed
+            # angle. A constant dphi is a constant fraction of the
+            # circumference, so the same 0.32 rad that made a 5.4 cm panel on
+            # an 85 mm-radius thigh made a 3.5 cm pinstripe on a 55 mm shin and
+            # 2.9 cm on the forearm — the stripe narrowed exactly where the
+            # limb did, which is not what a cut-and-sewn 5 cm panel does. The
+            # angular cap survives from entry-75: on a thin segment a true
+            # 5 cm band would wrap most of the way round, so STRIPE_DPHI_MAX
+            # holds the wrap and the band narrows only there.
+            #
+            # ITEM 3 also puts the stripe on the ARMS ("down the OUTSIDE seam
+            # of each arm, shoulder to cuff, and each leg, hip to ankle" —
+            # reference/images/aerial_suit.png). The glove and boot branches
+            # are above this one, so the arm band stops at the glove cuff and
+            # the leg band at the boot cuff, which is where the reference's do.
             azim = limb_azim(lx, ly, z, name, paint_slices)
             outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
-            # Entry-75 item 2: 0.26 read as a pinstripe at 3 m; 0.32 is a
-            # broad panel. Kept under the 0.38 that wrapped most of the way
-            # round the shin and made the leg read all blue.
-            if dphi < 0.32:
+            rad = limb_radius(lx, ly, z, name, paint_slices)
+            if dphi < min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX):
                 col, tag = STRIPE, 'stripe'
 
         # A real competition numeral: dark navy "30" on the white plate, on
@@ -5152,7 +5403,7 @@ def paint_suit(obj, lm):
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
         counts[tag] = counts.get(tag, 0) + 1
         if tag == 'stripe':
-            stripe_dbg.append((x, y, z, lx, ly))
+            stripe_dbg.append((x, y, z, lx, ly, name))
     log(f'suit painted: {counts}')
     if stripe_dbg:
         zs = sorted(p[2] for p in stripe_dbg)
@@ -5160,6 +5411,7 @@ def paint_suit(obj, lm):
         lys = sorted(p[4] for p in stripe_dbg)
         log(f'stripe dbg: n={len(zs)} z {zs[0]:+.3f}..{zs[-1]:+.3f} '
             f'lx {lxs[0]:+.3f}..{lxs[-1]:+.3f} ly {lys[0]:+.3f}..{lys[-1]:+.3f}')
+    stripe_straight_gate(stripe_dbg)
     seg_counts, arm_along = {}, []
     for i, v in enumerate(mesh.vertices):
         nm, al, _r, _o, _f, _l = segment_frame(v.co, owner[i])
