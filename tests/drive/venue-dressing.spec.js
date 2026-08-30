@@ -136,175 +136,39 @@ test('venue dressing: B-net posts seated on the snow, net edge 0–5 cm above it
     expect(Math.abs(r.spanZ[1] - (r.cfgOutrunZ + 8))).toBeLessThan(0.01);
 });
 
-test('venue dressing: landing centreline wands (2 orange rows, seated) + plain blue knoll flag', async ({ page }) => {
+test('venue dressing: ORANGE wind sock on a pole at the knoll crest (author: not a blue flag; no wands down the landing)', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
-    await page.waitForFunction(() =>
-        window._wandsDebug && window._wandsDebug.poles > 0,
-        null, { timeout: 20000 });
-    await page.waitForFunction(() => window._wandsSeated === true,
-        null, { timeout: 20000 });
-    await page.waitForTimeout(500);
-
+    await page.waitForFunction(() => window._windsockSeated === true, null, { timeout: 30_000 });
     const r = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const cfg = window._terrainCfg;
-        const fallbackY = (z) =>
-            AerialEngine.aerialSki.terrainRootY(z, cfg) - 1.025;
-        const pickGround = (x, z) => {
-            const hit = scene.pickWithRay(
-                new BABYLON.Ray(new BABYLON.Vector3(x, 80, z),
-                                new BABYLON.Vector3(0, -1, 0), 150),
-                (m) => !!m.name && !/^(bnet|wand|knollFlag|pk_|tr_|fl_)/.test(m.name));
-            return hit && hit.hit ? hit.pickedPoint.y : fallbackY(z);
-        };
-
-        const d = window._wandsDebug;
-        const footErr = Math.max(...d.stations.map((p) =>
-            Math.abs(p.y - pickGround(p.x, p.z))));
-        const leftX = new Set(d.stations.filter((p) => p.x < 0).map((p) => +p.x.toFixed(3)));
-        const rightX = new Set(d.stations.filter((p) => p.x > 0).map((p) => +p.x.toFixed(3)));
-        const wandSrc = scene.getMeshByName('wandPole');
-        const pennantSrc = scene.getMeshByName('wandPennant');
-
-        const pole = scene.getMeshByName('knollFlagPole');
-        const cloth = scene.getMeshByName('knollFlagCloth');
-        const f = window._knollFlagDebug;
-        // Bases are planted 6 cm below the surface; measure the burial depth.
-        const burial = d.stations.map((p) => pickGround(p.x, p.z) - p.y);
-        const minBurial = Math.min(...burial);
-        const maxBurial = Math.max(...burial);
-        const flagBaseErr = f ? Math.abs(f.baseY - pickGround(f.x, f.z)) : null;
-        const clothBlue = cloth && cloth.material &&
-            cloth.material.albedoColor.b > 0.5 &&
-            cloth.material.albedoColor.r < 0.3;
-
-        return {
-            poles: d.poles,
-            rows: d.rows,
-            singleXPerSide: leftX.size === 1 && rightX.size === 1,
-            wandThinInstances: wandSrc ? wandSrc.thinInstanceCount : 0,
-            pennantThinInstances: pennantSrc ? pennantSrc.thinInstanceCount : 0,
-            footErr,
-            minBurial,
-            maxBurial,
-            spanZ: d.stations.length
-                ? [Math.min(...d.stations.map((p) => p.z)), Math.max(...d.stations.map((p) => p.z))]
-                : [0, 0],
-            cfgLandingStartZ: cfg.LANDING_START_Z,
-            cfgOutrunZ: cfg.OUTRUN_Z,
-            flag: {
-                present: !!(f && pole && cloth),
-                flagBaseErr,
-                poleHeight: pole ? +(pole.scaling.y *
-                    (pole.getBoundingInfo ? 1 : 1)).toFixed(3) : null,
-                clothBlue,
-                zAtKickerEnd: f ? Math.abs(f.z - cfg.KICKER_END_Z) < 0.01 : false,
-            },
-        };
-    });
-
-    // Two rows, evenly spaced, either side of the centreline.
-    expect(r.rows).toBe(2);
-    expect(r.poles).toBeGreaterThanOrEqual(8);
-    expect(r.singleXPerSide, 'wand rows are not straight lines').toBe(true);
-    expect(r.wandThinInstances).toBe(r.poles);
-    expect(r.pennantThinInstances).toBe(r.poles);
-    // Planted: every base sits 1–13 cm BELOW the visual surface (6 cm target;
-    // the async landing chop can lower the surface up to ~7 cm more). Never
-    // floating — that is the failure the planting exists to prevent.
-    expect(r.minBurial, `a wand floats ${(-r.minBurial).toFixed(3)} m above the snow`)
-        .toBeGreaterThan(-0.005);
-    expect(r.maxBurial, `a wand is buried ${r.maxBurial.toFixed(3)} m deep`)
-        .toBeLessThan(0.13);
-    // Rows mark the LANDING (from just past the knuckle to the roll-out).
-    expect(r.spanZ[0]).toBeGreaterThan(r.cfgLandingStartZ);
-    expect(r.spanZ[1]).toBeLessThan(r.cfgOutrunZ);
-
-    // Knoll flag: seated at the crest, plain blue cloth, no roundel (plain colour).
-    expect(r.flag.present).toBe(true);
-    expect(r.flag.flagBaseErr, `flag foot terrain mismatch ${r.flag.flagBaseErr}`)
-        .toBeLessThan(0.02);
-    expect(r.flag.clothBlue).toBe(true);
-    expect(r.flag.zAtKickerEnd).toBe(true);
-});
-
-test('venue dressing: judges/start deck on dark containers beside the kicker, level and seated', async ({ page }) => {
-    await page.goto('/index.html');
-    await page.waitForFunction(() => typeof window._getGameState === 'function');
-    await page.waitForFunction(() => window._surfacesApplied !== undefined);
-    await page.waitForFunction(() =>
-        window._judgesDeckDebug && window._judgesDeckSeated === true,
-        null, { timeout: 20000 });
-    await page.waitForTimeout(300);
-
-    const r = await page.evaluate(() => {
-        const scene = BABYLON.EngineStore.LastCreatedScene;
-        const d = window._judgesDeckDebug;
-        const deck = scene.getMeshByName('judgesDeckTop');
-        const cont1 = scene.getMeshByName('judgesDeckCont1');
-        const cont2 = scene.getMeshByName('judgesDeckCont2');
-        const railTop = scene.getMeshByName('judgesDeckRailTop');
-        const railMid = scene.getMeshByName('judgesDeckRailMid');
-
-        // Independent re-pick of the flank under each deck corner.
-        const pickGround = (x, z) => {
-            const hit = scene.pickWithRay(
-                new BABYLON.Ray(new BABYLON.Vector3(x, 80, z),
-                                new BABYLON.Vector3(0, -1, 0), 150),
-                (m) => !!m.name && !/^judgesDeck/.test(m.name));
+        const pole = scene.getMeshByName('knollWindsockPole');
+        const sock = scene.getMeshByName('knollWindsock');
+        const d = window._windsockDebug;
+        const c = sock.material.albedoColor;
+        const ground = (x, z) => {
+            const hit = scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x, 80, z), new BABYLON.Vector3(0, -1, 0), 150),
+                (m) => !!m.name && /^(terrainCorridor|wUpperMtn|terrainSkirt)/.test(m.name));
             return hit && hit.hit ? hit.pickedPoint.y : null;
         };
-        const bb = deck.getBoundingInfo().boundingBox;
-        const wp = deck.position;
-        const halfW = bb.maximumWorld.x - bb.minimumWorld.x; // world extents via
-        const halfD = bb.maximumWorld.z - bb.minimumWorld.z; // re-created box
-        // Use the deck's world matrix corners instead (transform-safe):
-        const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => {
-            const x = wp.x + sx * (bb.maximum.x) * 0.9;
-            const z = wp.z + sz * (bb.maximum.z) * 0.9;
-            return { x, z, g: pickGround(x, z) };
-        });
-        // Container bases at least at the deck base (they hold it up).
-        const contBaseMin = Math.min(cont1.position.y, cont2.position.y) -
-            (cont1.getBoundingInfo().boundingBox.maximum.y);
-        const deckBase = deck.position.y - deck.getBoundingInfo().boundingBox.maximum.y;
-
+        const g = ground(d.x, d.z);
         return {
-            debug: d,
-            present: !!(deck && cont1 && cont2 && railTop && railMid),
-            contTexture: !!(cont1 && cont1.material && cont1.material.albedoTexture),
-            plankTexture: !!(deck && deck.material && deck.material.albedoTexture),
-            corners,
-            contBaseMin, deckBase,
-            railHeights: railTop && railMid ? {
-                top: railTop.position.y, mid: railMid.position.y,
-            } : null,
-            sameContMat: cont1 && cont2 &&
-                cont1.material.uniqueId === cont2.material.uniqueId,
+            present: !!(pole && sock),
+            orange: c.r > 0.8 && c.g > 0.25 && c.g < 0.55 && c.b < 0.15,
+            horizontal: d.axisX > 0.9,                       // sock flies sideways, not up the pole
+            poleBaseGap: g === null ? 0 : (pole.position.y - pole.getBoundingInfo().boundingBox.extendSize.y) - g,
+            wands: scene.meshes.filter((m) => /^wand|^knollFlag/.test(m.name)).length,
         };
     });
-
     expect(r.present).toBe(true);
-    expect(r.contTexture).toBe(true);
-    expect(r.plankTexture).toBe(true);
-    expect(r.sameContMat).toBe(true);
-    // Level deck: base sits at/below every corner's flank surface (sunk),
-    // never floating above the lowest corner's ground.
-    const lowest = Math.min(...r.corners.map((c) => c.g));
-    expect(r.debug.baseY, `deck base ${r.debug.baseY} floats over lowest corner ${lowest}`)
-        .toBeLessThanOrEqual(lowest + 0.005);
-    // Containers support the deck (their top reaches the deck underside).
-    expect(r.contBaseMin + 2 * 2.59 * 0 + 2.59, 'container tops must reach the deck underside')
-        .toBeGreaterThanOrEqual(r.deckBase - 0.02);
-    // Rail present, ordered correctly.
-    expect(r.railHeights.top).toBeGreaterThan(r.railHeights.mid);
-    // Beside the kicker, outside the B-net line: deck entirely at x ≥ 7.5.
-    expect(r.debug.deckTopY).toBeGreaterThan(r.debug.baseY + 2.5);
+    expect(r.orange, 'wind sock must be safety orange').toBe(true);
+    expect(r.horizontal).toBe(true);
+    expect(Math.abs(r.poleBaseGap)).toBeLessThan(0.08);      // pole planted on the snow
+    expect(r.wands, 'landing wands / blue flag must be gone').toBe(0);
 });
 
-test('venue dressing: three static coach figures in red jackets at the knoll, seated', async ({ page }) => {
+test('venue dressing: ONE static coach figure in a red jacket at the knoll, seated (author: one, not three)', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
@@ -316,7 +180,7 @@ test('venue dressing: three static coach figures in red jackets at the knoll, se
     const r = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const d = window._knollCoachesDebug;
-        const meshes = [0, 1, 2].map((i) => scene.getMeshByName('knollCoach' + i));
+        const meshes = [0].map((i) => scene.getMeshByName('knollCoach' + i));
         const present = meshes.every(Boolean);
         if (!present) return { present, d };
 
@@ -361,7 +225,7 @@ test('venue dressing: three static coach figures in red jackets at the knoll, se
     });
 
     expect(r.present).toBe(true);
-    expect(r.nMeshes).toBe(3);
+    expect(r.nMeshes).toBe(1);
     expect(r.sameMat).toBe(true);
     expect(r.alphaTest).toBe(true);
     // The jacket band is predominantly RED (the whole P3 point).

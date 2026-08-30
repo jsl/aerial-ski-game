@@ -721,7 +721,9 @@
 
                 // ── Realistic mode: hide competitive UI ──────────────────
                 if (_realisticMode) {
-                    ['trophyBtn','customBtn','settingsBtn','compBtn','olympicsBtn','helpBtn','compHUD','powerMeter',
+                    // Author (2026-08-29): Settings stays reachable in realistic mode — it holds
+                    // the Night / snowfall toggle and the input options; only the competitive UI hides.
+                    ['trophyBtn','customBtn','compBtn','olympicsBtn','helpBtn','compHUD','powerMeter',
                      'congratsOverlay','grandUnlockOverlay','quintWorldItem','customWorldItem'].forEach(function(id) {
                         var el = document.getElementById(id);
                         if (el) el.style.display = 'none';
