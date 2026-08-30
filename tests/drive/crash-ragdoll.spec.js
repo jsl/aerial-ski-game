@@ -81,7 +81,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         null, { timeout: 90_000 });
     // Arm past the kicker lip (airborne beyond KICKER_END_Z), NOT on the
     // ready-turn hop: the hop's touchdown is on the in-run, where a forced
-    // crash never settles in the 2–5 s envelope. The pump owns the arming.
+    // crash never settles in the 3–7 s envelope. The pump owns the arming.
     await page.evaluate(() => {
         window._pump = { down: false, tuck: false, armed: false, stop: false };
         const send = (type, code) => window.dispatchEvent(
@@ -97,7 +97,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
             }
             // Arm past the kicker lip (airborne beyond KICKER_END_Z), NOT on
             // the ready-turn hop: the hop's touchdown is on the in-run,
-            // where a forced crash never settles in the 2–5 s envelope.
+            // where a forced crash never settles in the 3–7 s envelope.
             if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._pump.armed) {
                 window._pump.armed = true;
                 window._debugTriggerCrash();
@@ -244,7 +244,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     //   1. the machine reaches 'stopped' (probe.resting);
     //   2. joint angular speed ≤ 90°/s (π/2 rad/s) after t+1.0 s — the roll
     //      is rigid, so the measured value is float noise ~1e-12;
-    //   3. total body motion 2–5 s from the trigger, EXACTLY 0 speed for
+    //   3. total body motion 3–7 s from the trigger, EXACTLY 0 speed for
     //      ≥ 3 s of samples afterwards;
     //   4. the rendered torso agrees (motion end ≤ 5.5 s).
     const frozen = traceR.filter(r => r.probe && r.probe.resting);
@@ -290,15 +290,18 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         if (r.probe && typeof r.probe.maxSpeed === 'number' && r.probe.maxSpeed > 0.1)
             bodyMotionEnd = (r.t - trace.crashedAt) / 1000;
     }
-    // Total motion 2–5 s in SIMULATION time (probe.t is the ragdoll's own
+    // Total motion 3–7 s in SIMULATION time (probe.t is the ragdoll's own
     // clock; wall clock in the SwiftShader suite runs 2–4× slow, so wall
     // gates would be flaky — frozen[0].probe.restAt IS the stop time).
+    // Envelope 3–7 s per the entry-112 ruling: the slope-aware roll
+    // ACCELERATES on the steep (a = g·(sinθ − μ·cosθ) > 0), so rest comes
+    // later than the old decelerate-on-the-steep model's 2–5 s.
     expect(frozen[0].probe.restAt,
-        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 2–5 s`)
-        .toBeGreaterThanOrEqual(2.0);
+        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 3–7 s`)
+        .toBeGreaterThanOrEqual(3.0);
     expect(frozen[0].probe.restAt,
-        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 2–5 s`)
-        .toBeLessThanOrEqual(5.0);
+        `total motion restAt(sim)=${frozen[0].probe.restAt.toFixed(2)}s in 3–7 s`)
+        .toBeLessThanOrEqual(7.0);
     const firstStopped = traceR.findIndex(r => r.probe && r.probe.resting);
     const afterStop = traceR.slice(firstStopped).filter(r => r.probe);
     const notZero = afterStop.filter(r => r.probe.maxSpeed !== 0);
