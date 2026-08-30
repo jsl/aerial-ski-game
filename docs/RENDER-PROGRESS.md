@@ -209,6 +209,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 122 | **HUMAN TESTING #9 item 1 LANDED — landing chop brightness: SSAO radius 1.2→0.05 m / strength 0.9→0.5 (the 1.2 m radius self-occluded the displaced patch into grey; rendered chop/flat ratio was 0.52), landingMat albedoColor lifted to 1.20 linear, chop.spec rewritten to the author's two gates (rendered ratio ≥ 0.92, albedo parity ≥ 0.90) + height-tile relief SD** | chop.spec 1/1 (ratio 0.92+, worstSink 0.091 in band); unit 81/81, golden 30/30 (no re-capture — no physics/display-census change); look 3/4 (freelook crash-settle wait timed out — the entry-121 never-stopped crash red, crash code untouched this iter). See entry 122. |
 | — | Iteration 118 | **P9 night snowfall mode LANDED — `?night=1`: near-black sky + dark fog, day dome skipped, sun/IBL cut, 7 warm floodlight spots on poles along in-run/table/kicker/knuckle (maxSimultaneousLights 8 so no pool is dropped), camera-following snowfall particle system (2600 streaks); default day untouched** | night.spec.js 1/1 (7 warm spots, sunDim+envDim, dome absent, snow started; sky lum 0.010, brightest-2% pool lum 0.55+, r−b > 0; day probe inactive + dome present); unit 78/78, golden 30/30 (no re-capture), look 3/3; scene.png day view inspected unchanged; night shot inspected (warm pools, dark falloff, streaks). See entry 118. |
 | — | Iteration 121 | **slope-aware crash roll LANDED (entry-112 ruling) — steep accelerates a = g·(sinθ−μ·cosθ) μ=0.5, flat brakes μ·g=7.0, seed floor 6→3, bounded `settling` phase fixes maxAbove 0.615 vs 0.6, post-clamp excursion tracking fixes the 38.1° knife edge; spec envelope 2–5 → 3–7 s** | unit 0 fail; golden 30/30 CENSUS-ONLY re-capture (HEAD was 22 red on un-rebaselined pk_body_* peak scale), audit 0 physics diffs ×30/5408 frames, 0 display diffs; crash-ragdoll 2/3 green (restAt 9.1 → 7.19 → one residual never-stopped run, open for 122). See entry 121. |
 | — | Iteration 120 (review, FINAL) | **REVIEW-ONLY + branch summary: run-all unit 81/81, golden 30/30, browser 36/36, mutation+coverage PASS; drive 107 passed / 2 skipped / 1 FAILED = the known quality.spec SwiftShader frame-time flake (6/6 green solo, mean 114.7 ms); shots regenerated (look 3/3) and inspected; `docs/RENDER-FINAL-SUMMARY.md` written** | GLM loop ends at the author's authorization of 120; open items re-prioritised in entry 120 + the summary doc. See entry 120. |
@@ -7985,6 +7986,45 @@ defect (see above); (2) ok that the golden census re-capture rode in this
 commit (precedent: iters 109/116 census-only re-captures), state audited
 identical; (3) 120 should carry the night puff/cloud variants + the pike
 instrument unless re-prioritised.
+
+### 122 — HUMAN TESTING #9 item 1: landing chop reads snow again (SSAO
+radius root cause + albedo lift), chop.spec rewritten to the author's gates
+
+**What changed (HT#9 (1), author 2026-08-29 23:05; display-only):**
+- Root-caused the "chop too dark in daytime" report by attribution probes in
+  the browser: albedo tile mean 0.962 (paint was never the problem); rendered
+  chop band luminance 0.41 vs 0.70 with SSAO disposed. The cause was the
+  SSAO2 radius 1.2 m: the displaced chop self-occluded at every texel, and
+  the old chop.spec "> 0.10 rendered spread" gate was in fact MEASURING those
+  AO blotches. `game.js`: ssao.radius 1.2 → 0.05, totalStrength 0.9 → 0.5
+  (contact darkening at the 1-10 cm ski/post scale kept), `landingMat`
+  albedoColor 1,1,1 → 1.2,1.2,1.2 linear lift restoring the patch MEAN while
+  the normal-map variation stays.
+- `blender/bake_landing.py`: added NORMAL_GAIN (1.0 = unchanged shipped
+  normals; knob documented for future tuning) — a 0.35–0.6 gain variant was
+  tried and REJECTED: it collapsed the relief variation without reaching
+  parity (relief must live in shadows, not flatter normals). Bake re-run;
+  `landing_chop_normal.png` byte-changes only from the refactor; height tile
+  and albedo unchanged. ASSET_V 42 → 43.
+- `tests/drive/chop.spec.js` rewritten to the author's two HT#9 gates:
+  rendered chop/flat luminance ratio ≥ 0.92; chop albedo tile mean ≥ 0.90 ×
+  snow surface albedo mean (when readable); plus displacement band gates kept
+  and a height-tile SD relief gate (floor 0.06). Negative control recorded:
+  pre-HT#9 build ratio 0.52 — fails.
+
+**Verification:** unit 81/81, golden 30/30 (no re-capture — no physics state
+and no display-node census change), chop.spec 1/1 (ratio ≈ 0.92–0.94, worst
+sink 0.091 m in the ≤ 0.10 m band, height SD 0.0825), look run: chop/figure/
+scene shots regenerated 3 passed / 1 failed — the freelook crash-settle test
+timed out waiting for ragdoll rest, which is the KNOWN entry-121 red (state
+machine never observing `stopped`); crash code untouched this iteration.
+
+**Open questions for the reviewer:** (1) confirm the chop.spec gate rewrite
+(the old spread gate contradicted HT#9 — it was gating the AO artifact);
+(2) confirm SSAO radius/strength/albedo-lift values as the HT#9 fix vs a
+Babylon-level per-material AO exclusion (SSAO2 has none); (3) HT#9 item 2
+(night floodlight towers outside the B-net) NOT started — next iteration;
+(4) freelook/crash-settle red is entry-121's open item, unchanged.
 
 ### 121 — slope-aware crash roll (entry-112 ruling): accelerate on the
 steep, brake on the flat; bounded post-stop settle; envelope gate 3–7 s

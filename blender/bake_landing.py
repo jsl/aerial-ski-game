@@ -11,7 +11,13 @@ footage (reference/frames/IMG_7841 landing frames, IMG_3396) and writes three
                              troughs take a faint cool blue (shadow comes from
                              the normal map, not dark paint).
   landing_chop_normal.png  — tangent-space normal (OpenGL +Y up, the Babylon
-                             convention) derived from the height field.
+                             convention) derived from the height field, with
+                             NORMAL_GAIN damping the shading amplitude: the
+                             height tile keeps the real 5-10 cm relief (clods
+                             show in silhouette and in the sun's shadows), but
+                             the FULL-slope normals self-shadowed the whole
+                             patch into grey at gameplay distance (HUMAN
+                             TESTING #9 item 1, author 2026-08-29 23:05).
   landing_chop_height.png  — linear 0..1 height in RGB, tile = 8 m, so game.js
                              can displace the corridor ribbon's landing zone
                              vertices downward (clods in silhouette, not just
@@ -132,15 +138,19 @@ albedo8 = np.clip(albedo8, 0, 1)
 albedo8 = np.power(albedo8, 1.0 / 2.2)
 albedo8 = (albedo8 * 255.0 + 0.5).astype(np.uint8)
 albedo8 = np.ascontiguousarray(albedo8.transpose(1, 0, 2).reshape(-1))  # row-major
-
-# ── normal map from the height gradient (OpenGL +Y up) ──────────────────────
+# NORMAL_GAIN (HUMAN TESTING #9 item 1): the raw height gradients encode
+# 30-50 degree furrow/clod walls. Shading that literally darkens the whole
+# patch far beyond what the footage shows (the chopped landing in IMG_7841 is
+# the SAME white as the raked centre, its relief living in shadow lines and
+# silhouettes). NORMAL_GAIN damps the perturbation amplitude; the height
+# displacement in game.js still carries the true geometry.
+NORMAL_GAIN = 1.0
 gy, gx = np.gradient(height_m * (W / TILE_M))            # per-texel slope
-nx, ny, nz = -gx, gy, -np.ones_like(gx)                  # G = +y (v up)
+nx, ny, nz = -gx * NORMAL_GAIN, gy * NORMAL_GAIN, -np.ones_like(gx)   # G = +y (v up)
 ln = np.sqrt(nx * nx + ny * ny + nz * nz)
-normal8 = np.stack([nx / ln, ny / ln, nz / ln], axis=-1)
-normal8 = (normal8 * 0.5 + 0.5) * 255.0 + 0.5
-normal8 = np.clip(normal8, 0, 255).astype(np.uint8)
-normal8 = np.ascontiguousarray(normal8.transpose(1, 0, 2).reshape(-1))
+nx, ny, nz = nx / ln, ny / ln, nz / ln
+normal8 = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5], axis=-1)
+normal8 = (normal8 * 255.0 + 0.5).astype(np.uint8)
 
 # ── height tile: linear 0..1 in RGB ─────────────────────────────────────────
 h8 = np.clip((height_m - hmin) / max(hmax - hmin, 1e-6), 0, 1)
