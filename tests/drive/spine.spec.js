@@ -55,7 +55,8 @@ const MEASURE = function (pose) {
     for (const mesh of parts) {
         try { mesh.skeleton.prepare(true); } catch (e) { mesh.skeleton.prepare(); }
     }
-    const out = { n: 0, strain: [], rest: [], back: [], worst: null };
+    const out = { n: 0, strain: [], rest: [], back: [], knee: [],
+                  kneeWorst: null };
     const M = window._characterMeshes;
     const torso = M && M.torso;
     // The torso's own frame, so "along the back" means along the spine and not
@@ -125,6 +126,21 @@ const MEASURE = function (pose) {
                 const mz = (pos[a * 3 + 2] + pos[b * 3 + 2]) / 2;
                 const along = my * cT + mz * sT;        // up the spine
                 if (my > 0.02 && my < 0.30 && mz > 0.02 && along > -0.40) out.back.push(s);
+                // THE KNEE BAND, in rest coordinates. The knee joint sits at
+                // y = -0.635 (the thigh's bottom and the shin's top), and this
+                // is where OPUS item 5's half-angle helpers act: before them
+                // the crouch's worst edge in the whole body was here, at 17.22
+                // with endpoints weighted upperLegR 0.648/0.352 — the candy
+                // wrapper. Measured in every pose so a regression in the
+                // helper drivers or the lattice shows up as itself and not as
+                // a shift in a whole-body percentile.
+                if (my > -0.72 && my < -0.55) {
+                    out.knee.push(s);
+                    if (!out.kneeWorst || s > out.kneeWorst.s) {
+                        out.kneeWorst = { s: +s.toFixed(3), y: +my.toFixed(3),
+                                          z: +mz.toFixed(3) };
+                    }
+                }
             }
         }
     }
@@ -153,6 +169,10 @@ const MEASURE = function (pose) {
         p99: pct(out.strain, 0.99),
         p999: pct(out.strain, 0.999),
         max: out.strain.length ? +Math.max.apply(null, out.strain).toFixed(3) : null,
+        kneeN: out.knee.length,
+        kneeP999: pct(out.knee, 0.999),
+        kneeMax: out.knee.length ? +Math.max.apply(null, out.knee).toFixed(3) : null,
+        kneeWorst: out.kneeWorst,
         backN: out.back.length,
         backP999: pct(out.back, 0.999),
         backMax: out.back.length ? +Math.max.apply(null, out.back).toFixed(3) : null,
@@ -296,6 +316,40 @@ test.describe('OPUS item 5 — the spine carries the bend', () => {
                 expect(v.n, `${k}: no skinned edges measured`).toBeGreaterThan(1000);
             }
         });
+
+    // ── OPUS item 5: the KNEE, where the half-angle helpers act ────────────
+    //
+    // GATE, with the measured A/B behind it. The reviewer approved helper
+    // bones at the hips and knees on 2026-08-30 02:40 because no weight edit
+    // can reach a 50/50 blend across a joint closing 98 degrees: linear blend
+    // averages the two bones' matrices and lands the ring at cos(theta/2) of
+    // its radius. Measured on this tree, in the in-run crouch:
+    //
+    //     pre-helper skin (28ffa34^)   worst edge in the WHOLE body 17.223,
+    //                                  and it was at y = -0.628 — the knee
+    //     with the helpers             knee band max KNEE_MAX below, and the
+    //                                  body's worst edge has moved off the
+    //                                  knee to the crotch bridge face at
+    //                                  y = -0.03 (item 3 geometry, not skin)
+    //
+    // NEGATIVE CONTROL: the build's BODY_SABOTAGE_HELPERS=1, which skips
+    // add_joint_helpers and is rejected by the joint-span gate at 604
+    // spanning vertices — the skin this gate would fail on cannot be built.
+    // The historical number above is the same shape of control the seam gate
+    // carries: what it rejects is a mesh that really went out.
+    const KNEE_MAX = 8.0;
+    for (const { name, pose } of POSES) {
+        test(`${name}: the knee does not collapse`, async ({ page }) => {
+            const r = await page.evaluate(MEASURE, pose);
+            console.log(`KNEE ${name} ` + JSON.stringify({
+                n: r.kneeN, p999: r.kneeP999, max: r.kneeMax,
+                worst: r.kneeWorst }));
+            expect(r.kneeN, `${name}: no knee-band edges measured`)
+                .toBeGreaterThan(200);
+            expect(r.kneeMax, `${name}: worst knee-band edge strain`)
+                .toBeLessThanOrEqual(KNEE_MAX);
+        });
+    }
 
     // ── Is the residue a WEIGHT defect, or the LBS bound? ──────────────────
     //

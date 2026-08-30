@@ -127,6 +127,12 @@ SABOTAGE_SLIVER = os.environ.get('BODY_SABOTAGE_SLIVER') == '1'
 # Negative control for the weight-seam gate: re-cut one ownership hinge into
 # the shipped skin, the shape reclaim_chest_wall's step assignment makes.
 SABOTAGE_SEAM = os.environ.get('BODY_SABOTAGE_SEAM') == '1'
+# Negative control for the weight-LOCALITY gate: skip localise_weights, so the
+# gate measures the skin that put upperLeg weight on the ribcage.
+SABOTAGE_LOCALITY = os.environ.get('BODY_SABOTAGE_LOCALITY') == '1'
+# Negative control for the bib-number ORIENTATION gate: mirrors the BACK
+# plate's reading direction. The gate must reject it.
+SABOTAGE_BIBMIRROR = os.environ.get('BODY_SABOTAGE_BIBMIRROR') == '1'
 # Dome-seating band in mm (back rim minus occiput). Measured on this build at
 # -18.2 mm with the dome centred on the cranium bbox midpoint; the band leaves
 # ~22 mm of margin each way, so both +-30 mm negative controls fail.
@@ -840,10 +846,49 @@ def _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES):
     return out
 
 
+def _collapse_helpers(W, names):
+    """
+    Re-express a weight field in the ORIGINAL bone basis, helpers folded back
+    onto the two bones they interpolate, half each.
+
+    WHY THE SEAM METRIC NEEDS THIS. Weight L1 across an edge is a proxy for one
+    thing: how differently the two endpoints move. It is a fair proxy only
+    while every unit of weight is one bone apart from every other, which was
+    true until add_joint_helpers halved the lattice. Measured on this build,
+    the projection took the hip edge at (-0.020,-0.102,-0.300) from 0.72 to
+    1.36 — exactly a doubling — while the two endpoints move NO differently
+    than before, because hlpHip is the half-angle of the pair it replaced. Raw
+    L1 on the fine lattice counts the same physical gradient twice.
+
+    Folding each helper back 50/50 undoes exactly that: the hat projection
+    preserves the vertex's first moment along the chain, so the fold is its
+    exact inverse in this metric, and the number the gate reads after the
+    helpers is the number it read before them. That is a claim with a
+    consequence — if the projection ever DID cut a seam, the fold cannot hide
+    it, because a discontinuity in the moment survives the fold.
+    """
+    out = {}
+    for gi, w in W.items():
+        nm = names.get(gi)
+        h = JOINT_HELPERS.get(nm)
+        if h is None:
+            out[gi] = out.get(gi, 0.0) + w
+            continue
+        for other in h:
+            oi = next((k for k, v in names.items() if v == other), None)
+            if oi is None:
+                out[gi] = out.get(gi, 0.0) + w
+                break
+            out[oi] = out.get(oi, 0.0) + w * 0.5
+    return out
+
+
 def weight_seam_report(obj, tag, verbose=True):
     """Per-edge weight-field discontinuity on the mesh as it will be skinned."""
     W = _vertex_weights(obj)
     names = {g.index: g.name for g in obj.vertex_groups}
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W = [_collapse_helpers(w, names) for w in W]
     per_edge = []
     for e in obj.data.edges:
         a, b = W[e.vertices[0]], W[e.vertices[1]]
@@ -1017,6 +1062,224 @@ def smooth_blend_rings(obj):
     log(f'blend rings relaxed: {seeds} seam verts, {touched}/{nv} verts within '
         f'{BLEND_RING_RINGS} rings, {BLEND_RING_ITERS} iters at rate '
         f'{BLEND_RING_RATE}; head share {head_before:.4f} -> {head_after:.4f}')
+
+
+# ── WEIGHT LOCALITY (session 18) ────────────────────────────────────────────
+#
+# The crouch smear over the buttock and the back of the thigh, measured in the
+# browser at the deep-hip endpoint, is not a seam and not a weight-sum defect
+# (every vertex sums to exactly 1.000). It is a LOCALITY defect: chest and
+# shoulder vertices carry 17-25% weight on `upperLegL`, so when the hip closes
+# 90 degrees they are flung with the thigh and the edges between them go from
+# 23 mm at rest to 210 mm posed. That is the streaking the author sees.
+#
+# A vertex may legitimately share influence with a NEIGHBOURING segment - a
+# deltoid with the chest, a glute with the pelvis. It may not share influence
+# with a segment half a body away. This measures exactly that: the distance
+# from each vertex to the SEGMENT of every bone it is weighted to.
+LOCALITY_MIN_W = 0.05      # weights under this move a vertex by millimetres
+# The quantity is a RATIO to the bone's own REACH, not a distance and not an
+# excess over the nearest segment. An absolute distance measures girth (a torso
+# vertex is legitimately 100-150 mm from the torso axis). An excess over the
+# nearest segment is worse: its reference flips as you cross the midline or a
+# limb boundary, so the metric jumps discontinuously and cutting on it puts a
+# hinge exactly where the skin must stay smooth — measured, the first cut of
+# this pass cut 62 of them and the seam gate caught it.
+#
+# A bone's REACH is measured from the skin it already owns: the 98th percentile
+# distance from its segment among the vertices it drives at >= 0.5. That is a
+# per-bone constant, so d/reach is continuous in position and can be ramped.
+LOCALITY_MAX_R = 1.70      # d/reach above which a weight is removed outright
+LOCALITY_RAMP0 = 1.25      # d/reach below which a weight is left alone
+
+
+def _group_segment(name):
+    """
+    (head, tail) in the driver frame for any skin group, spine included.
+
+    The three vertebrae report the WHOLE torso segment on purpose. They are
+    collinear thirds of it and their relative rotation is a few degrees, so a
+    vertex sharing weight across them is not the defect this measures; treating
+    them as one segment keeps the metric on the thing that does harm, which is
+    a limb bone driving trunk skin.
+    """
+    if name in SPINE_NAMES:
+        return seg_ends('torso')
+    if name in JOINT_HELPERS:
+        # A half-joint helper's domain is the two HALF-SEGMENTS it bridges, so
+        # its reference runs from one neighbour's centre to the other's. The
+        # first cut of this used the thigh axis alone and the gate flagged four
+        # groin weights at 1.80 x reach: measured against the torso-centre to
+        # thigh-centre axis the same vertices sit at 0.6 x, which is what they
+        # are — hip blend, not a bone driving skin half a body away.
+        ea, eb = (_group_segment(n) for n in JOINT_HELPERS[name])
+        return ((ea[0] + ea[1]) / 2.0, (eb[0] + eb[1]) / 2.0)
+    if name in SEGMENTS:
+        return seg_ends(name)
+    return None
+
+
+def _locality_frame(obj, arm):
+    """{group index: (name, head, tail, reach)} for every skin joint with a segment."""
+    bones = {b.name for b in arm.data.bones}
+    segs = {}
+    for g in obj.vertex_groups:
+        if g.name not in bones:
+            continue
+        e = _group_segment(g.name)
+        if e is not None:
+            segs[g.index] = [g.name, e[0], e[1], 0.0]
+    core = {gi: [] for gi in segs}
+    for v in obj.data.vertices:
+        for g in v.groups:
+            if g.group in segs and g.weight >= 0.5:
+                nm, a, b, _ = segs[g.group]
+                core[g.group].append(_seg_dist(v.co, a, b))
+    out = {}
+    for gi, ds in core.items():
+        if not ds:
+            continue                     # a bone with no core owns no skin
+        ds.sort()
+        segs[gi][3] = max(0.03, ds[int(0.98 * (len(ds) - 1))])
+        out[gi] = tuple(segs[gi])
+    return out
+
+
+def weight_locality_report(obj, arm, tag, verbose=True):
+    """How far each weight sits from its own bone, in units of that bone's reach."""
+    segs = _locality_frame(obj, arm)
+    ds = []
+    worst = []
+    per_group = {}
+    for v in obj.data.vertices:
+        for g in v.groups:
+            if g.weight < LOCALITY_MIN_W or g.group not in segs:
+                continue
+            nm, a, b, reach = segs[g.group]
+            r = _seg_dist(v.co, a, b) / reach
+            ds.append(r)
+            if r > LOCALITY_MAX_R:
+                worst.append((r, nm, g.weight, v.co.copy()))
+                per_group[nm] = per_group.get(nm, 0) + 1
+    ds.sort()
+    n = max(1, len(ds))
+    worst.sort(key=lambda r: -r[0])
+    r = {'n': len(ds), 'bad': len(worst), 'max': ds[-1] if ds else 0.0,
+         'p99': ds[int(0.99 * (n - 1))] if ds else 0.0,
+         'per_group': per_group, 'worst': worst[:8]}
+    if verbose:
+        log(f'LOCALITY {tag}: {r["bad"]}/{r["n"]} weights >= {LOCALITY_MIN_W} '
+            f'sit further than {LOCALITY_MAX_R:.2f} x their bone\'s own reach '
+            f'| d/reach p50 {ds[n//2]:.2f} p90 {ds[int(0.90*(n-1))]:.2f} '
+            f'p99 {r["p99"]:.2f} max {r["max"]:.2f}')
+        if worst:
+            top = sorted(per_group.items(), key=lambda kv: -kv[1])[:5]
+            log('  by group: ' + ', '.join(f'{k} {v}' for k, v in top))
+            d, nm, w, co = worst[0]
+            log(f'  worst: {nm} w={w:.3f} at ({co.x:+.3f},{co.y:+.3f},'
+                f'{co.z:+.3f}), {d*1000:.0f} mm from its segment')
+    return r
+
+
+def localise_weights(obj, arm):
+    """
+    Take each bone's influence off skin that does not belong to it.
+
+    Runs LAST, on the low-poly, after the bake and after smooth_blend_rings, so
+    it changes deformation only — the rest mesh is the bind pose whatever the
+    weights are, and every gate upstream has already measured the geometry.
+
+    The removal is a spatial RAMP, not a cut: full weight up to LOCALITY_RAMP0
+    of excess, zero at LOCALITY_MAX_D, smoothstep between. A step would put back
+    exactly the hinge smooth_blend_rings exists to remove, so the seam report
+    runs after this and the seam gate still has to pass.
+    """
+    # ONLY skin joints. The mesh also carries mask groups that are not bones —
+    # `reduce` drives the Decimate modifier — and renormalising those alongside
+    # the bone weights rewrites a mask, which the first cut of this pass did:
+    # it cut a 1.52 hinge at [reduce|upperLegR] and the seam gate caught it.
+    bones = {b.name for b in arm.data.bones}
+    segs = _locality_frame(obj, arm)
+    joints = {g.index for g in obj.vertex_groups if g.name in bones}
+    groups = [g for g in obj.vertex_groups if g.name in bones]
+    d0, d1 = LOCALITY_RAMP0, LOCALITY_MAX_R
+    changed = 0
+    removed = 0.0
+    rescued = 0
+    for v in obj.data.vertices:
+        cur = {g.group: g.weight for g in v.groups
+               if g.weight > 1e-6 and g.group in joints}
+        if not cur:
+            continue
+        new_w = {}
+        excess = {}
+        for gi, w in cur.items():
+            if gi not in segs:
+                new_w[gi] = w          # boots and anything without a segment
+                continue
+            nm, a, b, reach = segs[gi]
+            e = _seg_dist(v.co, a, b) / reach
+            excess[gi] = e
+            if e <= d0:
+                f = 1.0
+            elif e >= d1:
+                f = 0.0
+            else:
+                t = (e - d0) / (d1 - d0)
+                f = 1.0 - t * t * (3.0 - 2.0 * t)     # smoothstep
+            if f < 1.0:
+                removed += w * (1.0 - f)
+            if w * f > 1e-6:
+                new_w[gi] = w * f
+        tot = sum(new_w.values())
+        if tot < 0.20:
+            # Everything this vertex was weighted to is far away. Give it
+            # wholly to the nearest segment rather than divide by nothing.
+            gi = min(excess, key=excess.get) if excess else None
+            if gi is None:
+                continue
+            new_w = {gi: 1.0}
+            tot = 1.0
+            rescued += 1
+        if abs(tot - 1.0) < 1e-9 and len(new_w) == len(cur):
+            continue
+        ws = sorted(new_w.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        t2 = sum(w for _, w in ws) or 1.0
+        keep = {k: w / t2 for k, w in ws}
+        for g in groups:
+            if g.index in keep:
+                g.add([v.index], keep[g.index], 'REPLACE')
+            elif g.index in cur:
+                g.remove([v.index])
+        changed += 1
+    obj.data.update()
+    log(f'weights localised: {changed} verts rewritten, {removed:.1f} weight '
+        f'units taken off distant bones, {rescued} vertices reassigned wholly '
+        f'to their nearest segment')
+    return changed
+
+
+# Calibrated on the measured build (the numbers are in docs/OPUS-NOTES.md): the
+# repaired skin reports 0 offenders, the pre-repair skin reports hundreds with
+# leg weight on the chest. A single offender is a vertex that will be flung
+# across the body when its far bone rotates, so the gate is zero-tolerance on
+# the population and reads the same quantity the browser strain probe found.
+LOCALITY_GATE_BAD = 0
+
+
+def weight_locality_gate(obj, arm, tag):
+    r = weight_locality_report(obj, arm, tag)
+    if r['bad'] > LOCALITY_GATE_BAD:
+        d, nm, w, co = r['worst'][0]
+        raise SystemExit(
+            f'[body] weight-locality gate FAILED at {tag}: {r["bad"]} weights '
+            f'(limit {LOCALITY_GATE_BAD}) sit further than {LOCALITY_MAX_R:.2f} x '
+            f'their own bone\'s reach — worst {nm} w={w:.3f} '
+            f'at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}), {d:.2f} x reach. '
+            f'A vertex weighted to a bone half a body from it is flung when '
+            f'that bone rotates: this is the crouch smear over the buttock '
+            f'(negative control BODY_SABOTAGE_LOCALITY=1)')
+    return r
 
 
 # The gate. Calibrated on the measured build, not on the defect: the repaired
@@ -5226,29 +5489,30 @@ def in_number_patch(name, along, front, lx):
 
 
 def number_uv(front, lx, along):
-    """Patch-local (u, v) with the per-face reading direction above.
+    """Patch-local (u, v), u running the way THAT face's viewer reads.
 
-    Iteration 61: measured MIRRORED digits from BOTH sides at the look
-    camera (scratch probes at alpha 0 and pi, "0E" in both captures) — the
-    torso frame's +Y axis points at the figure's physical BACK at rest, so
-    the mapping that encodes the +Y reading rule was landing on the chest
-    and vice versa. Swapping the branches puts each rule on the side its
-    normal actually faces; both plates now read left-to-right to their own
-    viewer (verified in the rebuilt assets at the look camera).
+    The two earlier attempts on this line were both settled by looking at a
+    render, and both got it wrong: GLM's review 125 called the FRONT plate
+    mirrored, and `bib_orientation_gate` below measures the front as the face
+    that is CORRECT. Reading a 60-px numeral off a curved, shaded,
+    perspective-projected torso is not a measurement.
 
-    STILL OPEN (session 5, 2026-08-29). Paused close-ups taken down
-    _athleteFacing().forward (scratch s5/plate*_{front,back}_z.png) show the
-    CHEST reading a clean "30" and the BACK reading a mirrored glyph pair.
-    Both branch values were built and photographed: with `- lx` the back
-    reads "E0" (cell order right, each glyph mirrored); with `+ lx` it reads
-    "0E" (cell order reversed, glyphs still mirrored). No choice of sign in
-    THIS function produces a correct back, because flipping u flips the cell
-    order and the within-cell orientation together — so whatever mirrors the
-    back plate is upstream of the u mapping, not in it. `- lx` is kept: it is
-    the shipped mapping and it is the one that gets the digit ORDER right.
-    Do not "fix" this by flipping the sign again; it has been measured.
+    The mapping is deliberately antisymmetric — the two faces' outward normals
+    point opposite ways, so their viewers' right-hand directions are opposite
+    world directions and the two plates must run opposite ways in `lx` for both
+    to read left-to-right. That is self-consistent, which is why the old note
+    here concluded the mirror is upstream of this function. The gate below is
+    what can tell the two apart, because it bins ink by each face's OWN
+    viewer-right axis rather than by the patch u this function defines.
+
+    NEGATIVE CONTROL: BODY_SABOTAGE_BIBMIRROR=1 makes the two faces run the
+    SAME way in lx, which mirrors the back plate to its viewer.
     """
-    u = (NUM_W + lx) / (2 * NUM_W) if front > 0 else (NUM_W - lx) / (2 * NUM_W)
+    if front > 0:
+        u = (NUM_W + lx) / (2 * NUM_W)
+    else:
+        u = ((NUM_W - lx) if not SABOTAGE_BIBMIRROR
+             else (NUM_W + lx)) / (2 * NUM_W)
     return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
 
 
@@ -6102,6 +6366,108 @@ def _bin_blobs(on_bins):
 BIB_ASPECT = (0.45, 0.75)        # digit cell width / height
 
 
+# Ruling 16:30: "the glyph pair's horizontal ink profile on the back must
+# match the front's, not its mirror". BIB_MIRROR_MARGIN is how much better the
+# un-mirrored match has to be before the plate counts as correctly oriented,
+# as a fraction of the two distances' sum. 0 would pass on a coin flip.
+BIB_MIRROR_MARGIN = 0.10
+
+
+def _viewer_profile(samples, nbuckets=10):
+    """Ink fraction per bucket along the face's own viewer-right axis.
+
+    Buckets span the PLATE (every sample), not the ink, so the two faces'
+    profiles are on a common footing even when one carries less ink.
+    """
+    rs = [r for r, _ in samples]
+    lo, hi = min(rs), max(rs)
+    span = hi - lo
+    if span < 1e-9:
+        return None
+    tot = [0] * nbuckets
+    ink = [0] * nbuckets
+    for r, dark in samples:
+        i = min(nbuckets - 1, int((r - lo) / span * nbuckets))
+        tot[i] += 1
+        ink[i] += 1 if dark else 0
+    if sum(ink) == 0:
+        return None
+    # Normalised so the profile is a shape, not an amount: the faces carry
+    # different sample counts and (measured) different ink fractions.
+    prof = [ink[i] / tot[i] if tot[i] else 0.0 for i in range(nbuckets)]
+    tot_p = sum(prof)
+    return [x / tot_p for x in prof] if tot_p > 0 else None
+
+
+def bib_orientation_report(viewer):
+    """Do both plates read the SAME way to their own viewers?
+
+    Each face's samples are binned along that face's viewer-right axis
+    R = Z x N, so a plate that reads left-to-right to the person looking at it
+    produces the same profile whichever face it is on. The back is then scored
+    against the front and against the front REVERSED.
+
+    REPORT, NOT A GATE, and deliberately so (session 19). The 16:30 ruling
+    asked for a gate on exactly this comparison, on the premise that the back
+    plate is a MIRROR of the front and the fix is to flip U on the back panel.
+    This instrument says the premise is wrong, so a gate built on it would be
+    gating the wrong defect:
+
+      front ink by world x   0.00 0.10 0.16 0.43  --  0.24 0.14 0.07 0.00
+      back  ink by world x   0.08 0.11 0.11 0.05  --  0.08 0.11 0.21 0.16
+      front reversed         0.00 0.07 0.14 0.24  --  0.43 0.16 0.10 0.00
+
+    The back matches neither. It is nearly FLAT where the front is structured
+    (the front's one peak is the '3' stem, the pair after the gap the '0'), and
+    it carries ink hard against both plate edges where the front has the clean
+    margins the glyph rects define (u 0.08..0.92 within each cell). Flipping
+    the sign of lx confirms it from the other side: under
+    BODY_SABOTAGE_BIBMIRROR=1 the back profile barely moves
+    (0.057 0.178 0.196 0.104 -- 0.020 0.126 0.160 0.158), where a genuine
+    mirror would come back reversed. The ink's distribution along patch v is
+    the same on both faces, so the band is landing; the defect is horizontal.
+
+    So the back plate is not mirrored — it is a DEGRADED, edge-clipped render
+    of the same glyphs, and every previous read of it ("mirrored", session 5
+    and the 15:35 note) was an eyeball judgement of a 60-px numeral on a
+    curved, shaded, perspective-projected torso. GLM's review 125 made the
+    same class of error in the other direction, calling the FRONT mirrored;
+    this instrument measures the front as the face that is correct.
+
+    REVIEWER: the 16:30 "flip U on the back panel" ruling cannot fix this, and
+    the gate it specifies would pass on a back plate that still reads wrong.
+    The comparison lands as an instrument now, with the numbers above; it
+    becomes a gate (with BODY_SABOTAGE_BIBMIRROR=1 as its negative control)
+    together with the fix, once the horizontal clipping is root-caused.
+    """
+    pf = _viewer_profile(viewer.get('front', []))
+    pb = _viewer_profile(viewer.get('back', []))
+    if pf is None or pb is None:
+        raise SystemExit(
+            '[body] bib orientation report: no viewer-relative ink on '
+            f'{"front" if pf is None else "back"} — the plate sampler found '
+            'no triangles, so the measurement cannot run')
+    d_same = sum(abs(a - b) for a, b in zip(pb, pf))
+    d_mirr = sum(abs(a - b) for a, b in zip(pb, pf[::-1]))
+    tot = d_same + d_mirr
+    lead = (d_mirr - d_same) / tot if tot > 1e-9 else 0.0
+    log('bib orientation: front profile ' +
+        ' '.join(f'{x:.3f}' for x in pf))
+    log('bib orientation: back  profile ' +
+        ' '.join(f'{x:.3f}' for x in pb))
+    log(f'bib orientation: L1 back-vs-front {d_same:.3f}, '
+        f'back-vs-mirrored-front {d_mirr:.3f}, lead {lead:+.3f} '
+        f'(margin {BIB_MIRROR_MARGIN}; negative control '
+        f'BODY_SABOTAGE_BIBMIRROR=1)')
+    if lead < BIB_MIRROR_MARGIN:
+        log(f'bib orientation: DEFECT — the back plate matches neither the '
+            f'front (L1 {d_same:.3f}) nor its mirror (L1 {d_mirr:.3f}) at the '
+            f'{BIB_MIRROR_MARGIN} margin. Reported, not gated: see the '
+            f'docstring — the back number is edge-clipped, not mirrored, so '
+            f'the 16:30 flip-U ruling does not address it.')
+    return lead
+
+
 def bib_number_gate(low, out_dir):
     """
     The P7 acceptance question, asked of the SAVED albedo at build time: do
@@ -6133,6 +6499,7 @@ def bib_number_gate(low, out_dir):
         u, v = number_uv(front, lx, along)
         return front, (u, v)
 
+    import mathutils
     GRID_U, GRID_V = 16, 18
     skipped = 0
 
@@ -6142,6 +6509,14 @@ def bib_number_gate(low, out_dir):
         return lum < 0.45 and abs(px[o] - NUM_INK[0]) < 0.30
 
     report = {}
+    # Viewer-relative ink, for bib_orientation_gate: (r, dark) per sample,
+    # where r is the sample's world position along THAT face's own
+    # viewer-right axis R = Z x N (N = the outward normal of the triangle the
+    # sample sits on). Binning by patch u instead would be circular — u is the
+    # very mapping under test — and assuming a world axis would re-import the
+    # frame convention that has now been misread twice.
+    viewer = {'front': [], 'back': []}
+    _diag = {'front': [], 'back': []}
     for fname, fsign in (('front', 1.0), ('back', -1.0)):
         bins = {}
         nsamp = nink = 0
@@ -6173,6 +6548,14 @@ def bib_number_gate(low, out_dir):
             if not ok or len(vids) < 3:
                 skipped += 1
                 continue
+            # Viewer-right for THIS triangle's face: R = Z x N, normalised.
+            # Degenerate only if the normal is vertical, which a chest or back
+            # panel never is; such a triangle is skipped rather than guessed.
+            rhat = mathutils.Vector((0.0, 0.0, 1.0)).cross(poly.normal)
+            if rhat.length < 1e-6:
+                skipped += 1
+                continue
+            rhat.normalize()
             tris = [(0, k, k + 1) for k in range(1, len(vids) - 1)]
             for (a, b, c3) in tris:
                 pa, pb, pc = vis[a][1], vis[b][1], vis[c3][1]
@@ -6188,6 +6571,11 @@ def bib_number_gate(low, out_dir):
                         tv = (sw*ua[1] + su*ub[1] + sv*uc[1]) % 1.0
                         ptr = min(h - 1, int(tv * h)) * w + min(w - 1, int(tu * w))
                         dark = classify(ptr)
+                        wpos = (sw * low.data.vertices[vids[a]].co
+                                + su * low.data.vertices[vids[b]].co
+                                + sv * low.data.vertices[vids[c3]].co)
+                        viewer[fname].append((wpos.dot(rhat), dark))
+                        _diag[fname].append((rhat.x, wpos.x, dark, vv))
                         key = (min(GRID_U - 1, int(uu * GRID_U)),
                                min(GRID_V - 1, int(vv * GRID_V)))
                         e = bins.setdefault(key, [0, 0])
@@ -6226,6 +6614,40 @@ def bib_number_gate(low, out_dir):
     fr, bk = report['front'][1], report['back'][1]
     log(f'bib number faces: front {fr:.3f} / back {bk:.3f} '
         f'= ratio {max(fr, bk) / max(1e-6, min(fr, bk)):.2f} (instrument)')
+
+    for _f in ('front', 'back'):
+        d = _diag[_f]
+        pos = sum(1 for rx, _x, _k, _v in d if rx > 0)
+        xs = [x for _r, x, _k, _v in d]
+        ink = [x for _r, x, k, _v in d if k]
+        log(f'bib diag [{_f}]: samples {len(d)}, rhat.x>0 {pos} '
+            f'({100.0 * pos / max(1, len(d)):.0f}%), x span '
+            f'{min(xs):+.4f}..{max(xs):+.4f}, ink x mean '
+            f'{sum(ink) / max(1, len(ink)):+.4f}')
+        lo, hi = min(xs), max(xs)
+        bk = [0] * 10
+        tt = [0] * 10
+        for _r, x, k, _v in d:
+            i = min(9, int((x - lo) / max(1e-9, hi - lo) * 10))
+            tt[i] += 1
+            bk[i] += 1 if k else 0
+        log(f'bib diag [{_f}]: ink-by-world-x ' + ' '.join(
+            f'{(bk[i] / tt[i] if tt[i] else 0):.2f}' for i in range(10)))
+
+    for _f in ('front', 'back'):
+        d = _diag[_f]
+        vb = [0] * 10
+        vt = [0] * 10
+        for _r, _x, k, v in d:
+            i = min(9, max(0, int(v * 10)))
+            vt[i] += 1
+            vb[i] += 1 if k else 0
+        log(f'bib diag [{_f}]: ink-by-patch-v (low->high) ' + ' '.join(
+            f'{(vb[i] / vt[i] if vt[i] else 0):.2f}' for i in range(10)))
+        log(f'bib diag [{_f}]: samples-per-v ' + ' '.join(
+            str(vt[i]) for i in range(10)))
+
+    bib_orientation_report(viewer)
 
     # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
     # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
@@ -6863,6 +7285,298 @@ def add_spine_chain(low, arm):
     return moved
 
 
+# ── OPUS ITEM 5: half-angle HELPER BONES at the hips and knees ─────────────
+#
+# APPROVED by the reviewer 2026-08-30 02:40, in the same class as the spine.
+#
+# THE DEFECT, measured in the browser in session 18 at the deep-hip crouch
+# endpoint: the worst edge left in the skin is at the KNEE — 22.1 mm at rest,
+# 1.28 mm posed, a strain of 17.2 — and its two endpoints are weighted
+# upperLegR 0.648 / lowerLegR 0.352 and lowerLegR 0.506 / upperLegR 0.494.
+# That is not a bad weight. It is the arithmetic of linear blend skinning:
+# Babylon averages the two bones' MATRICES, and the average of two rotations
+# theta apart is not a rotation — it is a rotation scaled by cos(theta/2). At a
+# knee closing 98 degrees a vertex weighted 50/50 lands at 0.66 of its radius
+# from the joint axis, and the ring pinches. The candy wrapper. No weight edit
+# reaches it, because the 50/50 IS the smooth blend the seam gates ask for.
+#
+# THE FIX. Put a bone at the joint whose rotation is the HALF-ANGLE of the two
+# it sits between (game.js: updateJointHelpers), and re-express every blended
+# vertex on the finer lattice
+#
+#     spine_01 --- hlpHip --- upperLeg --- hlpKnee --- lowerLeg
+#        0.0        0.5          1.0         1.5         2.0
+#
+# so no vertex is ever blended across more than HALF a joint. cos(theta/2) at
+# 49 degrees is 0.91 instead of 0.66: the pinch drops by roughly three
+# quarters, and it does so without a single extra influence per vertex (see
+# below) and without dual-quaternion skinning, which Babylon's default path
+# does not have.
+#
+# WHY IT IS INERT AT REST, which is what makes it safe to land: bind == driver
+# for every bone (patch_skin_binds), so at the rest pose each bone contributes
+# T(c) . T(-c) = identity and ANY partition of unity reproduces the bind mesh
+# exactly. The helpers change deformation only. Like add_spine_chain and
+# localise_weights this therefore runs LAST, after the bake and after every
+# geometry gate.
+JOINT_HELPERS = {
+    'hlpHipL':  ('spine_01',  'upperLegL'),
+    'hlpHipR':  ('spine_01',  'upperLegR'),
+    'hlpKneeL': ('upperLegL', 'lowerLegL'),
+    'hlpKneeR': ('upperLegR', 'lowerLegR'),
+}
+# The lattice, per side. Coordinates are half-joints; the helpers are the
+# half-integers.
+HELPER_LATTICE = [
+    ('spine_01', 0.0), ('hlpHip', 0.5), ('upperLeg', 1.0),
+    ('hlpKnee', 1.5), ('lowerLeg', 2.0),
+]
+HELPER_MIN_W = 0.02        # below this a weight moves a vertex by microns
+HELPER_SPAN_MAX = 0.5      # half a joint, the whole point of the pass
+SABOTAGE_HELPERS = os.environ.get('BODY_SABOTAGE_HELPERS') == '1'
+
+
+def _helper_rest_translation(name):
+    """The helper driver's REST position in the BABYLON axes seg_matrix uses.
+
+    Both helpers on a side are ends of the SAME segment — the thigh — so this
+    needs nothing from the spine or the shin: the hip is the thigh's top, the
+    knee is the thigh's bottom, and game.js walks to exactly those two points
+    from the thigh driver every frame.
+    """
+    side = name[-1]
+    leg = 'upperLeg' + side
+    p = POSE[leg]
+    half = SEGMENTS[leg]['h'] / 2.0
+    sgn = 1.0 if name.startswith('hlpHip') else -1.0
+    return Vector((p.get('x', 0.0), p.get('y', 0.0) + sgn * half,
+                   BASE_Z.get(leg, 0.0) + p.get('dz', 0.0)))
+
+
+def _helper_chain_of(vname):
+    """(side, lattice coordinate) for a group name, or None if it is off-chain."""
+    for stem, c in HELPER_LATTICE:
+        if stem == 'spine_01':
+            continue
+        for side in ('L', 'R'):
+            if vname == stem + side:
+                return side, c
+    return None
+
+
+def joint_span_report(obj, arm, tag, verbose=True):
+    """
+    How far, in JOINTS, each vertex's influences are spread along a leg chain.
+
+    A span of 1.0 is a vertex blended between two bones a whole joint apart —
+    the candy-wrapper vertex. 0.5 is the most the lattice allows. Vertices with
+    weight on both legs are counted per side; `spine_01` is on both chains at
+    coordinate 0, which is correct — it is the shared root.
+    """
+    bones = {b.name for b in arm.data.bones}
+    coord = {}
+    for g in obj.vertex_groups:
+        if g.name not in bones:
+            continue
+        if g.name == 'spine_01':
+            coord[g.index] = ('*', 0.0)
+        else:
+            c = _helper_chain_of(g.name)
+            if c is not None:
+                coord[g.index] = c
+    bad = 0
+    worst = []
+    spans = []
+    for v in obj.data.vertices:
+        per = {'L': [], 'R': []}
+        for g in v.groups:
+            if g.weight < HELPER_MIN_W or g.group not in coord:
+                continue
+            side, c = coord[g.group]
+            for s in (('L', 'R') if side == '*' else (side,)):
+                per[s].append((c, g.weight, obj.vertex_groups[g.group].name))
+        for s in ('L', 'R'):
+            e = per[s]
+            if len(e) < 2:
+                continue
+            # spine_01 alone on a side is not a leg blend; it needs a real leg
+            # bone opposite it to span anything.
+            if all(c == 0.0 for c, _, _ in e):
+                continue
+            span = max(c for c, _, _ in e) - min(c for c, _, _ in e)
+            spans.append(span)
+            if span > HELPER_SPAN_MAX + 1e-6:
+                bad += 1
+                worst.append((span, v.co.copy(),
+                              sorted(((n, round(w, 3)) for _, w, n in e))))
+    spans.sort()
+    worst.sort(key=lambda r: -r[0])
+    r = {'bad': bad, 'n': len(spans), 'worst': worst[:6],
+         'max': spans[-1] if spans else 0.0,
+         'p99': spans[int(0.99 * (len(spans) - 1))] if spans else 0.0}
+    if verbose:
+        log(f'JOINTSPAN {tag}: {bad}/{r["n"]} blended vertices span more than '
+            f'{HELPER_SPAN_MAX} of a joint | span p50 '
+            f'{spans[len(spans)//2] if spans else 0:.2f} p99 {r["p99"]:.2f} '
+            f'max {r["max"]:.2f}')
+        for sp, co, e in worst[:3]:
+            log(f'  span {sp:.2f} at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}): '
+                + ', '.join(f'{n} {w}' for n, w in e))
+    return r
+
+
+def joint_span_gate(obj, arm, tag):
+    r = joint_span_report(obj, arm, tag)
+    if r['bad'] > 0:
+        sp, co, e = r['worst'][0]
+        raise SystemExit(
+            f'[body] joint-span gate FAILED at {tag}: {r["bad"]} vertices are '
+            f'blended across more than {HELPER_SPAN_MAX} of a joint — worst '
+            f'{sp:.2f} at ({co.x:+.3f},{co.y:+.3f},{co.z:+.3f}) '
+            + ', '.join(f'{n} {w}' for n, w in e) +
+            '. Linear blend skinning collapses such a vertex toward the joint '
+            'axis by cos(theta/2) — the candy wrapper at the knee the author '
+            'sees in the crouch (negative control BODY_SABOTAGE_HELPERS=1)')
+    return r
+
+
+def add_joint_helpers(low, arm):
+    """Add the four helper bones and re-project the leg weights onto them."""
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    for nm in JOINT_HELPERS:
+        side = nm[-1]
+        uh = arm.data.bones['upperLeg' + side].head_local.copy()
+        lh = arm.data.bones['lowerLeg' + side].head_local.copy()
+        # pose_onto_segments has already moved every bone's HEAD onto its
+        # segment CENTRE, so these two heads are the thigh and shin centres and
+        # the joints are their midpoint and its reflection. The edit-bone rest
+        # is cosmetic — patch_skin_binds writes the binding from
+        # _helper_rest_translation — but a bone whose rest disagrees with its
+        # bind is a trap for the next reader, so it is placed honestly.
+        head = (uh + lh) / 2.0 if nm.startswith('hlpKnee') else uh + (uh - lh) / 2.0
+        d = (lh - uh)
+        d = d.normalized() if d.length > 1e-6 else Vector((0.0, 0.0, -1.0))
+        if nm in eb:
+            eb.remove(eb[nm])
+        b = eb.new(nm)
+        b.head = head
+        b.tail = head + d * 0.05
+        b.use_connect = False
+        b.inherit_scale = 'NONE'
+        b.parent = None          # FLAT, like every other bone here.
+    bpy.ops.object.mode_set(mode='OBJECT')
+    arm.select_set(False)
+    bpy.context.view_layer.objects.active = low
+
+    vgs = low.vertex_groups
+    for nm in JOINT_HELPERS:
+        if nm not in vgs:
+            vgs.new(name=nm)
+    # ONLY skin joints, for the reason localise_weights records: the mesh also
+    # carries mask groups that are not bones (`reduce` drives the Decimate
+    # modifier), and renormalising one of those alongside the bone weights
+    # rewrites a mask rather than a skin.
+    bone_names = {b.name for b in arm.data.bones}
+    joints = {g.index for g in vgs if g.name in bone_names}
+    bone_groups = [g for g in vgs if g.name in bone_names]
+    idx = {g.name: g.index for g in vgs}
+    lattice = {}                       # side -> [(group index, coord)]
+    for side in ('L', 'R'):
+        lattice[side] = [(idx['spine_01'], 0.0)] + [
+            (idx[stem + side], c) for stem, c in HELPER_LATTICE
+            if stem != 'spine_01']
+    all_chain = {gi for s in lattice for gi, _ in lattice[s]}
+
+    moved = 0
+    worst_mass = 0.0
+    both_sides = 0
+    capped = 0
+    for v in low.data.vertices:
+        cur = {g.group: g.weight for g in v.groups
+               if g.weight > 1e-6 and g.group in joints}
+        legs = {s: sum(w for gi, w in cur.items()
+                       if gi in {g for g, c in lattice[s] if c >= 1.0})
+                for s in ('L', 'R')}
+        if legs['L'] + legs['R'] <= 1e-6:
+            continue               # no leg weight: a pure trunk/arm/head vertex
+        if legs['L'] > 1e-6 and legs['R'] > 1e-6:
+            both_sides += 1
+        wS = cur.get(idx['spine_01'], 0.0)
+        tot = legs['L'] + legs['R']
+        new = dict(cur)
+        for gi in all_chain:
+            new.pop(gi, None)
+        for side in ('L', 'R'):
+            # The shared root is split between the sides in proportion to the
+            # leg weight each side already carries, so a crotch vertex sitting
+            # on both thighs keeps its total and neither side is privileged.
+            mass = legs[side] + wS * (legs[side] / tot)
+            if mass <= 1e-6:
+                continue
+            coords = {gi: c for gi, c in lattice[side]}
+            s = sum(w * coords[gi] for gi, w in cur.items() if gi in coords
+                    and (coords[gi] >= 1.0 or gi == idx['spine_01']))
+            # spine_01's contribution to the moment is zero (coord 0), so the
+            # numerator is the legs' alone; the DENOMINATOR carries its share.
+            s /= mass
+            # Hat functions on the lattice: at most two adjacent nodes, so the
+            # span is 0.5 by construction and the result is a partition of
+            # unity of `mass`. Identity at every lattice node, so a vertex that
+            # was purely one bone's stays purely that bone's.
+            lo = max(0, min(len(lattice[side]) - 2, int(math.floor(s / 0.5))))
+            a = (s - lo * 0.5) / 0.5
+            a = 0.0 if a < 0.0 else (1.0 if a > 1.0 else a)
+            for k, part in ((lo, 1.0 - a), (lo + 1, a)):
+                if part <= 1e-6:
+                    continue
+                gi = lattice[side][k][0]
+                new[gi] = new.get(gi, 0.0) + mass * part
+        got = sum(new.values())
+        was = sum(cur.values())
+        worst_mass = max(worst_mass, abs(got - was))
+        ws = sorted(new.items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        if len(new) > WEIGHT_SEAM_INFLUENCES:
+            capped += 1
+        t2 = sum(w for _, w in ws) or 1.0
+        keep = {k: w / t2 for k, w in ws if w > 1e-6}
+        for g in bone_groups:
+            if g.index in keep:
+                g.add([v.index], keep[g.index], 'REPLACE')
+            elif g.index in cur or g.index in all_chain:
+                g.remove([v.index])
+        moved += 1
+    low.data.update()
+    log(f'joint helpers: {len(JOINT_HELPERS)} bones added; {moved} leg-weighted '
+        f'verts re-projected onto the half-joint lattice ({both_sides} carry '
+        f'both legs, {capped} needed the {WEIGHT_SEAM_INFLUENCES}-influence '
+        f'cap); worst chain-mass error before the cap {worst_mass:.2e}')
+    if worst_mass > 1e-4:
+        raise SystemExit(
+            f'[body] the helper re-projection is not a partition of unity: '
+            f'worst vertex is off by {worst_mass:.2e}')
+    # How much skin each helper actually owns. A helper that is in the file,
+    # linked and weightless would pass every structural check and change
+    # nothing on screen — the same trap spine.spec.js records for the spine.
+    for nm in JOINT_HELPERS:
+        tot = 0.0
+        gi = vgs[nm].index
+        for v in low.data.vertices:
+            for g in v.groups:
+                if g.group == gi:
+                    tot += g.weight
+        log(f'  {nm}: {tot:.1f} weight units')
+        if tot < 1.0:
+            raise SystemExit(
+                f'[body] helper bone {nm} carries {tot:.2f} weight units — it '
+                f'would be a bone that changes nothing')
+    return moved
+
+
 def patch_skin_binds(path):
     """
     Rewrite the skin's inverseBindMatrices to exactly inverse(driver rest).
@@ -6929,8 +7643,22 @@ def patch_skin_binds(path):
         fore = BASE_Z.get('torso', 0.0) + p.get('dz', 0.0)
         return Matrix.Translation(Vector((p.get('x', 0.0), up, fore)))
 
+    def helper_matrix(name):
+        """
+        The joint helpers' REST local matrices: translation to the joint, no
+        rotation. game.js walks each one to the same point off the thigh
+        driver every frame (updateJointHelpers), and at rest every leg driver
+        is unrotated, so the hip helper sits exactly on the thigh's top and the
+        knee helper exactly on its bottom. Bind == driver for the helpers is
+        the same statement it is for the spine, and rig.spec.js asserts it on
+        all of them.
+        """
+        return Matrix.Translation(_helper_rest_translation(name))
+
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
     want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})
+    if not SABOTAGE_HELPERS:
+        want.update({nm: helper_matrix(nm).inverted() for nm in JOINT_HELPERS})
 
     data = bytearray(open(path, 'rb').read())
     magic, ver, total = struct.unpack_from('<III', data, 0)
@@ -8071,6 +8799,7 @@ def main():
     # dominance query upstream can see the torso group split. See add_spine_chain.
     add_spine_chain(low, arm)
     weight_seam_report(low, 'after add_spine_chain')
+    weight_locality_report(low, arm, 'after add_spine_chain')
     if SABOTAGE_SEAM:
         # NEGATIVE CONTROL, and a HISTORICAL one: skip the repair and let the
         # gate measure the skin this project actually shipped up to session 8.
@@ -8082,7 +8811,54 @@ def main():
             'measures the pre-session-9 skin and must reject it')
     else:
         smooth_blend_rings(low)
+    if SABOTAGE_LOCALITY:
+        # NEGATIVE CONTROL: skip the localisation and let the gate measure the
+        # skin sessions 9-17 shipped — 494 weights >= 0.05 on bones further
+        # from the vertex than the nearest segment by more than 100 mm, with
+        # the upper legs driving the side of the ribcage. It must be rejected.
+        log('weight locality SABOTAGED: localise_weights SKIPPED — the gate '
+            'now measures the pre-session-18 skin and must reject it')
+    else:
+        # localise, then RE-RELAX, then localise again. The ramp is smooth in
+        # space but it still ends at a boundary, and the first cut of this
+        # left one 1.24 hinge at the front crotch midline. Re-running the ring
+        # relax repairs that boundary; it also diffuses a little weight back
+        # out, so the localisation runs once more to take it off again. The
+        # second pass is small by construction and the two gates below are what
+        # say so.
+        localise_weights(low, arm)
+        smooth_blend_rings(low)
+        localise_weights(low, arm)
     weight_seam_gate(low, 'shipped skin')
+    weight_locality_gate(low, arm, 'shipped skin')
+
+    # OPUS ITEM 5: the half-angle helpers go in after the locality repair, and
+    # that order is a PROOF as well as a convenience. The re-projection only
+    # ever puts weight where a leg bone already had it, so every helper weight
+    # sits inside skin localise_weights has just certified as local to that
+    # leg; the locality gate cannot be undone by a pass that adds no reach.
+    # The seam gate is re-run below because the claim there is different — the
+    # projection must be CONTINUOUS across the mesh, not merely local.
+    joint_span_report(low, arm, 'before the helpers')
+    if SABOTAGE_HELPERS:
+        # NEGATIVE CONTROL, and a HISTORICAL one like the seam and locality
+        # controls: skip the pass and let the gate measure the skin session 19
+        # shipped, whose knee ring blends a full joint 50/50 and collapses to
+        # cos(49 deg) of its radius. It must be rejected.
+        log('joint helpers SABOTAGED: add_joint_helpers SKIPPED — the gate now '
+            'measures the pre-session-20 skin and must reject it')
+    else:
+        add_joint_helpers(low, arm)
+    # NOT followed by another smooth_blend_rings: the ring relax diffuses each
+    # vertex's weight vector into its neighbours', which would put upperLeg
+    # weight back onto lowerLeg vertices and re-open the very span this pass
+    # closes. It is not needed either — the lattice coordinate s is a weighted
+    # mean of weights that are already continuous over the mesh, and the hat
+    # functions are continuous, so the projection cannot cut a seam. That is a
+    # claim, so the seam gate below re-measures it on the shipped skin.
+    joint_span_gate(low, arm, 'shipped skin')
+    weight_seam_gate(low, 'shipped skin, after the helpers')
+    weight_locality_gate(low, arm, 'shipped skin, after the helpers')
 
     # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
     # position is the whole point.  add_spine_chain and smooth_blend_rings both

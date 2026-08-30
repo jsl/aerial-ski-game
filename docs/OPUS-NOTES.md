@@ -796,6 +796,431 @@ Item 5's scope now also includes the reviewer's note that the upper-back
 tear shows at REST, not only in the tuck.
 
 
+## Session 20 (2026-08-30, 03:0x-04:0x)
+
+Nothing to merge: `render-realism-glm` was 0 commits ahead at session start, and
+the tree was clean.
+
+### Item 5 — HALF-ANGLE HELPER BONES at the hips and knees. Commits `28ffa34`, `b51526a`
+
+The reviewer's 02:40 ruling approved these, and session 18 had already proved
+why nothing else would do: with the trunk on three vertebrae and the leg weight
+localised, the worst edge left at the crouch endpoint was the KNEE — 22.1 mm at
+rest, 1.28 mm posed, strain 17.2 — between vertices weighted upperLegR
+0.648/0.352 and 0.506/0.494. **That is the smooth blend, not a defect in it.**
+Babylon averages the two bones' MATRICES; the average of two rotations theta
+apart is that rotation scaled by cos(theta/2), so a ring across a joint closing
+98 deg lands at 0.66 of its radius. No weight edit reaches it.
+
+**Four bones, and a re-projection rather than a re-weighting.** `hlpHip{L,R}`
+and `hlpKnee{L,R}` carry the half-angle of the pair they sit between
+(`game.js: updateJointHelpers`, called at the END of `updateSpineChain` so the
+hip helpers read a `spine_01` that has already moved this frame), and
+`add_joint_helpers` re-expresses the leg skin on the finer lattice
+
+    spine_01 --- hlpHip --- upperLeg --- hlpKnee --- lowerLeg
+       0.0        0.5          1.0         1.5         2.0
+
+by hat functions on each vertex's **weighted-mean chain coordinate**
+`s = sum(w_i * coord_i) / mass`. Two adjacent lattice nodes at most, so the
+worst pair the shader averages is ~49 deg apart and cos(theta/2) is 0.91, not
+0.66. Three properties made this the algorithm rather than a pairwise
+"move twice the minimum onto the helper" (which is the SAME map when only two
+bones are involved, and does not close when three are):
+
+- **identity at every lattice node** — a purely-thigh vertex stays purely thigh;
+- **no extra influence** — it replaces two nodes with two, measured 0 vertices
+  hit the 4-influence cap;
+- **continuous** — `s` is a weighted mean of weights already continuous over the
+  mesh, and the hats are continuous, so it cannot cut a seam.
+
+Inert at rest by construction: bind == driver, so at rest every bone contributes
+`T(c).T(-c)` = identity and ANY partition of unity reproduces the bind mesh
+exactly. Runs last, after the bake and after `localise_weights` — and that order
+is a proof as well as a convenience, since the projection only puts weight where
+a leg bone already had it, inside skin the locality gate has just certified.
+
+| build gate | before the helpers | shipped |
+|---|---|---|
+| JOINTSPAN vertices over half a joint | **604/604** | **0/618** |
+| span p99 / max | 1.00 / 1.00 | **0.50 / 0.50** |
+| WEIGHTSEAM p99 / max / hot | 0.336 / 0.779 / 0 | **0.336 / 0.779 / 0** |
+| LOCALITY offenders | 0/11767 | **0/11816** |
+| chain-mass partition error | — | 1.11e-16 |
+| bind vs driver rest, 17 joints | — | 0.00e+00 |
+
+`hlpKnee{L,R}` carry 83.9/83.4 weight units, `hlpHip{L,R}` only 17.5/18.9 — the
+hip blend is narrow because `localise_weights` already took the leg off the
+trunk. 306 crotch vertices sit on both thighs; `spine_01` is the shared root of
+both chains, so its weight is split between the sides in proportion to the leg
+weight each carries and neither side is privileged.
+
+**THE SEAM METRIC NEEDED A BASIS FIX, and it is not a loosening — this is the
+one judgement call in the commit.** Weight L1 across an edge is a proxy for how
+differently two endpoints move, and it is fair only while every unit of weight
+is one bone apart from every other. Halving the lattice doubles the L1 of the
+same physical gradient: measured, the hip edge at (-0.020,-0.102,-0.300) went
+0.72 -> 1.36 and the gate went red, while those two vertices move *no
+differently* than before, because `hlpHip` is the half-angle of the pair it
+replaced. `weight_seam_report` now folds each helper back onto its two
+neighbours 50/50 before measuring. That fold is the EXACT inverse of the hat
+projection in this metric (the projection preserves the vertex's first moment
+along the chain), and a real discontinuity in the moment survives it. The
+consequence is the strongest single number in the commit: **in that basis the
+shipped skin reads p50 0.000 / p99 0.336 / max 0.779 / 0 hot edges, identical to
+the pre-helper skin.** The projection is provably continuous, measured.
+
+One other thing had to move. `_group_segment` for a helper first returned the
+THIGH axis, and the locality gate flagged four groin weights at 1.80 x reach.
+A half-joint helper's domain is the two half-segments it bridges, so its
+reference now runs from one neighbour's centre to the other's; against the
+torso-centre-to-thigh-centre axis those same vertices sit at 0.6 x, which is
+what they are — hip blend, not a bone driving skin half a body away.
+
+**NEGATIVE CONTROL `BODY_SABOTAGE_HELPERS=1`** skips the pass so the gate
+measures the skin session 19 shipped: 604 spanning vertices, worst 1.00 at
+(+0.061,-0.072,-0.839) lowerLegR 0.964 / upperLegR 0.036 — rejected, build rc=1
+(`scratch/opus/negctl_helpers.log`).
+
+The four `hlp*` driver nodes are excluded from the golden `captureNodes` for
+exactly the reason the spine drivers are, so no trace was re-captured.
+
+### The A/B: what the helpers actually bought (commit `b51526a`)
+
+Both skins measured on this tree with the same probe (`spine.spec.js` MEASURE),
+pre-helper = `28ffa34^` assets + `game.js` checked out and restored:
+
+| in-run crouch | pre-helper | shipped |
+|---|---|---|
+| worst edge, whole body | **17.223** | **11.038** |
+| where it is | **y = -0.628 — THE KNEE** | y = -0.03, the crotch bridge face |
+| >= 10 mm edges p99.9 | 6.191 | **5.614** |
+| p99.9, all edges | 5.161 | 5.047 |
+| p99, all edges | 2.361 | 2.376 |
+
+17.223 is session 18's knee number to three digits. **The knee collapse is
+gone**; the body's worst edge has moved off it onto the crotch bridge face,
+which was already the worst edge in the flight tuck and the pike and which the
+reviewer classified as item 3 (bake geometry), not skinning.
+
+Honest reading: **p99 is a wash** (2.361 -> 2.376) and the tuck and pike maxima
+do not move at all (10.509 and 13.480 both ways), because their worst edge was
+never the knee. What this removed is the knee specifically, which is what it was
+approved to remove.
+
+New gate, `spine.spec.js` › `<pose>: the knee does not collapse`: the strain
+probe buckets a KNEE BAND (rest y -0.72..-0.55; the joint is at -0.635) next to
+the existing upper-back band, and gates its worst edge at **8.0** in all four
+poses. Shipped: neutral 1.000, in-run crouch **5.614**, flight tuck **7.247**,
+pike 1.000. The pre-helper skin's worst edge lies inside that band at 17.223, so
+it fails the gate by more than a factor of two; the primary control remains the
+build's `BODY_SABOTAGE_HELPERS=1`, which makes such a skin unbuildable.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96; 8995 verts, 17 bones
+    unit    81/81      golden 30/30 (no display node changed; no re-capture)
+    drive   spine + rig + chain + ready-stance + inrun-crouch: 34/34 (7.4 m)
+            spine + crash-ragdoll: 16/16 (3.9 m)
+            **crash-ragdoll 3/3 GREEN on this tree** — session 19's settled-tail
+            red does not reproduce here.
+
+`tests/unit/no-physics-in-game.test.js` needed the three new renderer functions
+(`updateJointHelpers`, `_wrapPi`, `_localUp`) added to `ALLOWED_FUNCTIONS` with
+their reasons, same as `updateSpineChain`.
+
+`ASSET_V` 50 -> 51, `game.js?v=` 46 -> 47, preload hrefs `?v=51`.
+`blender/terrain.json` reverted after the drive run's +-1e-7 FP re-extraction,
+as in earlier sessions.
+
+### Open at the end of session 20
+
+- **THE ARMPIT is the same defect and the same fix.** Session 18 measured
+  `upperArmR 0.495 / spine_02 0.490`, 6.9 mm -> 76.3 mm. The lattice that just
+  closed the knee is four lines of table away from closing
+  `spine_03 - hlpShoulder - upperArm - hlpElbow - lowerArm`, and the machinery
+  (`JOINT_HELPERS`, `HELPER_LATTICE`, `updateJointHelpers`, the span gate, the
+  seam fold) is already generic over it. **REVIEWER: the 02:40 ruling names the
+  knees and hips; may this be extended to the shoulders and elbows?** I did not
+  extend it without the approval.
+- The bib back plate's horizontal clipping, with session 19's arbitration
+  request still open (the defect is not a mirror, so the 16:30 gate would pass a
+  plate that still reads wrong).
+- Carried: the THUMB as its own finger group; the flight-tuck re-check; the
+  smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV unwrap + arm
+  stripe last.
+- **The residual strain tail is now entirely item 3 geometry.** The worst edge
+  in all three non-neutral poses is the same crotch bridge face at
+  (y -0.03, z -0.125); the >= 10 mm band carries it, exactly as session 9
+  measured. It will not come down by any skinning change.
+
+## Session 19 (2026-08-30, 02:3x-03:4x)
+
+### The merge first (commit 964c7fc)
+
+Twelve commits from `render-realism-glm`. One conflict, the `ASSET_V` line:
+GLM's tip had bumped it to 49 as a merge marker, this lane's 48 carries the
+changelog. Resolved to 49 keeping the changelog; `index.html`'s five preload
+hrefs moved 48 -> 50 with it (a mismatch downloads every athlete file twice,
+and `rig.spec.js`'s wire-byte gate catches it). Unit 81/81, golden 30/30 on the
+merge before committing it.
+
+### The bib "30": BOTH previous readings were wrong, and it is not a mirror
+
+The reviewer's 16:30 ruling says to flip U on the back panel, on the premise
+that the back plate is a mirror of the front. GLM's review 125 says the FRONT
+is the mirrored face. `number_uv`'s docstring records two earlier attempts,
+both settled by looking at a render. **All three are eyeball readings of a
+60-px numeral on a curved, shaded, perspective-projected torso, and at least
+two of them are demonstrably wrong.**
+
+The measurement they were missing: bin each face's plate ink by that face's
+**own viewer-right axis** R = Z x N, N being the outward normal of the triangle
+the ink sits on. Binning by patch `u` would be circular (u is the mapping under
+test) and assuming a world axis re-imports the frame convention that has now
+been misread twice. `bib_orientation_report` does this inside the existing
+`bib_number_gate` sampler, on the saved albedo.
+
+The instrument is sound before it is believed: `rhat.x > 0` is **0 % of front
+samples and 100 % of back samples**, so the axis is unmixed — no triangle is
+voting the wrong way.
+
+| ink by world x (10 buckets across the plate) | | |
+|---|---|---|
+| front             | `0.00 0.10 0.16 0.43 -- -- 0.24 0.13 0.07 0.00` |
+| back              | `0.08 0.11 0.11 0.05 -- -- 0.08 0.11 0.21 0.16` |
+| front REVERSED    | `0.00 0.07 0.14 0.24 -- -- 0.43 0.16 0.10 0.00` |
+
+**The front is the face that is CORRECT.** Its profile is structured exactly as
+the glyph table draws it: one peak in the first cell (the `3`'s single right
+stem, `_GLYPH_RECTS['3']` u 0.74..0.90), a gap at the inter-cell margin
+(u 0.47..0.53), then the `0`'s pair. That kills GLM review 125.
+
+**The back matches NEITHER the front nor its mirror** — L1 1.022 vs 1.066, a
+lead of +0.021 against a 0.10 margin, i.e. a coin flip between two bad fits.
+Three independent signs that it is a degraded plate rather than a mirrored one:
+
+- it is nearly **flat** where the front is peaked — no stem structure at all;
+- it runs ink **hard onto both plate edges** (buckets 0 and 9) where the front
+  has the clean margins the glyph rects define, so the glyphs are clipped
+  horizontally;
+- under `BODY_SABOTAGE_BIBMIRROR=1`, which makes the two faces run the SAME way
+  in `lx`, the back profile **barely moves** (`0.057 0.178 0.196 0.104 -- --
+  0.020 0.126 0.160 0.158`). A genuine mirror comes back reversed. No sign of
+  `lx` fixes this plate, which is what the old docstring concluded from the
+  other direction and is now measured rather than eyeballed.
+
+Ink along patch `v` is the same on both faces (`0.00 0.00 0.38 0.11 0.04 0.15
+0.21 0.26 0.00 0.00` front vs `0.00 0.00 0.32 0.06 0.06 0.08 0.13 0.25 0.00
+0.00` back), so the ink band is landing and the defect is purely horizontal.
+The back's x span is also off-centre and short: `-0.0717..+0.0671` against the
+front's symmetric `-0.0716..+0.0718`.
+
+**REVIEWER, this needs an arbitration.** The 16:30 ruling's gate would pass a
+back plate that still reads wrong, because it gates for a mirror and the defect
+is not a mirror. So the comparison ships as a **report, not a gate** — it logs
+the numbers and a `DEFECT` line, and it becomes a gate together with the fix,
+with `BODY_SABOTAGE_BIBMIRROR=1` already in the tree as its negative control.
+I did not want to ship a red build, and I did not want to invent a gate the
+defect can slip past; loosening was never on the table since this gate has
+never passed. What remains open is the horizontal clipping's root cause — the
+back plate's `lx` span is narrower than the front's, so the suspect is the back
+panel's surface extent under `in_number_patch`, not `number_uv`.
+
+### Verification
+
+    build   rc=0, every existing gate green at 2048/96; the bib report logs
+            DEFECT as above. glb 8995 verts / 13 bones.
+    unit    81/81      golden 30/30 (no display node changed)
+    drive   rig + body + athlete + athlete-wired + bib-number + crash-ragdoll:
+            **24 passed, 1 failed** (7.1 m).
+
+The one red is `crash-ragdoll.spec.js` › "settles with skis at rest", at the
+SETTLED-TAIL assertion (`post-stop samples all exactly 0`): **351 nonzero**.
+Re-run alone it fails the same way (2 passed, 1 failed, 1.7 m), so unlike the
+01:20 flake this one is reproducible, not load-dependent.
+
+**It is not this lane's.** GLM's own iter 125 note measures the same assertion
+at **322 nonzero solo on their tip** and orders deterministic PBD settling for
+iteration 126 — the failure arrived here with this session's merge of those 12
+commits. Session 18 measured crash-ragdoll 3/3 green on the pre-merge tree, and
+nothing in commit 9b53d03 can reach the crash path: it changes `build_body.py`
+logging (never loaded by the browser), bake-noise bytes in the glb/normal map,
+and version strings. Reported as GLM's open item, not worked around here.
+
+A note for whoever runs the drive layer next: it needs
+`-c tests/drive/playwright.config.js`. Without it Playwright picks up no
+config, `baseURL` is unset, and all 25 tests fail instantly on
+"Cannot navigate to invalid URL" — which looks like a catastrophic regression
+and is a harness mistake.
+
+`ASSET_V` 49 -> 50, `game.js?v=` 45 -> 46, preload hrefs `?v=50` (the rebuild
+moves bake-noise bytes in the glb, maps.json and normal.webp; albedo and AO are
+byte-identical because no paint changed).
+
+### Open at the end of session 19
+
+- **The knee/armpit candy wrapper — helper bones at knees and hips.** Approved
+  in the 02:40 ruling, untouched this session, and still the top item: session
+  18's numbers (knee rest 22.1 mm -> posed 1.28 mm, strain 17.2, weights
+  0.648/0.352 across a joint closing 98 deg) are a linear-blend limit no weight
+  edit can reach.
+- **The bib back plate's horizontal clipping**, with the arbitration above.
+- **GLM's crash settled tail** (351 nonzero post-stop samples), tracked on
+  their board as the iteration-126 PBD determinism item.
+- Carried: the THUMB as its own finger group; the flight-tuck re-check; the
+  smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV unwrap + arm
+  stripe last.
+
+## Session 18 (2026-08-30, 01:4x-02:4x)
+
+### The merge first (commit 93389f8)
+
+Four commits from `render-realism-glm` (the lamp towers, the crash-flake docs).
+`game.js` auto-merged, no conflict. Unit 81/81, golden 30/30 on the merge before
+committing it. The reviewer's 01:50 ruling arrived in the brief mid-session and
+is committed separately (`a61ab0c`): the footage gate wins on shin lean, so the
+28.6 deg shipped in session 17 stands and no gate moves — `inrun-crouch.spec.js`
+already gates the footage band 15-35 and `inrun-contact.spec.js` the same, both
+of which the ruling's "as geometry allows, >= 5 deg" contains.
+
+### Ruling 01:50 item (a) — the buttock smear. Commit below.
+
+**It is not a seam, not a weight-sum defect, and not `smooth_blend_rings`.
+Chest and ribcage skin was weighted to the UPPER LEGS.**
+
+Measured in the browser at the deep-hip crouch endpoint (a throwaway probe, the
+same skinning path `spine.spec.js` uses — `skeleton.getTransformMatrices(mesh)`,
+four influences, after `prepare(true)`), the worst edges and the weights on
+their endpoints:
+
+| rest | posed | at (mesh local) | endpoint weights |
+|---|---|---|---|
+| 11.7 mm | **169.7 mm** | chest, x -0.115 | spine_02 0.599, spine_01 0.234, **upperLegL 0.167** |
+| 23.1 mm | **210.3 mm** | armpit, x -0.161 | spine_02 0.396, spine_01 0.356, **upperLegL 0.248** |
+| 37.5 mm | 3.4 mm | buttock | upperLegL 0.592, spine_01 0.263, spine_02 0.145 |
+| 22.4 mm | 1.6 mm | knee | lowerLegL 0.514, upperLegL 0.486 |
+
+Two hypotheses were killed by measurement before the fix, and both are worth
+recording because each would have sent the session somewhere else:
+
+- **Weight sums.** Babylon's skinning shader does not renormalise, so a vertex
+  whose four weights sum to 0.5 is dragged halfway to the origin — which would
+  look exactly like this. Measured over all three primitives: min = p01 = p50 =
+  max = **1.0000**, 0 vertices under 0.99. Dead.
+- **`smooth_blend_rings` diffusing the weights out.** The build now reports
+  LOCALITY at both stages: **559 offenders before the pass and 494 after** (old
+  metric). The pass slightly *reduces* it. The contamination is older, from the
+  ownership passes or the heat bind, and the repair is therefore a new pass
+  rather than a tuning of that one.
+
+### The metric took three attempts, and the two failures are the interesting part
+
+1. **Absolute distance to the bone's segment** — 2157/12240 "offenders" with a
+   p50 of 98 mm. Nonsense: a torso vertex is legitimately 100-150 mm from the
+   torso AXIS, because that is the body's radius. It measured girth.
+2. **Excess over the NEAREST segment** — read correctly (559 offenders, p50 0,
+   upperLegL/R and upperArmL/R at the top), but is discontinuous: the reference
+   flips as you cross the midline or a limb boundary, so cutting on it cut a
+   hinge exactly where the skin must stay smooth. Measured: 62 seam edges over
+   1.0 and max L1 **1.621** at the inner thigh, `weight_seam_gate` red. The gate
+   the previous session shipped caught the fix that this session tried to ship,
+   which is the only reason it is not in the build.
+3. **Ratio to the bone's own REACH** — reach = the p98 distance from the
+   segment among the vertices that bone drives at >= 0.5, i.e. measured from
+   the skin it already owns. A per-bone constant, so d/reach is continuous in
+   position and can be ramped. **24 offenders over 1.70x, d/reach p99 1.50.**
+
+### What shipped — `localise_weights`
+
+Runs LAST, on the low-poly, after the bake and after `smooth_blend_rings`, so
+like that pass it changes deformation only: the rest mesh is the bind pose
+whatever the weights are, and every gate upstream has already measured the
+geometry. Removal is a smoothstep ramp, 1.25x reach -> 1.70x reach, never a cut.
+Only skin joints participate — the first cut renormalised `reduce`, the Decimate
+modifier's MASK group, and cut a 1.52 hinge doing it.
+
+Order is **localise -> re-relax -> localise**. The ramp is smooth in space but
+still ends at a boundary; one 1.24 hinge survived at the front crotch midline,
+the ring relax repairs it, and the relax diffuses a little weight back out so
+the localisation runs once more (93.7 weight units the first time, 37.9 the
+second).
+
+| shipped skin | before | after |
+|---|---|---|
+| LOCALITY offenders (>= 0.05 weight, > 1.70x reach) | **24** | **0**/11767 |
+| d/reach p99 / max | 1.50 / 1.87 | **1.32 / 1.47** |
+| WEIGHTSEAM max L1 / hot edges | 0.715 / 0 | 0.779 / **0** |
+
+**Gate `weight_locality_gate`, zero tolerance, with NEGATIVE CONTROL
+`BODY_SABOTAGE_LOCALITY=1`** — skips the pass so the gate measures the skin
+sessions 9-17 shipped and must reject it.
+
+Re-measured in the browser afterwards: the chest and armpit rows above are gone
+(those vertices are spine-only now). The 210 mm spike is gone.
+
+### WHAT IS NOT FIXED, and it is now the top of the list — THE KNEE
+
+With the leg weight off the trunk, the worst edge at the crouch endpoint is the
+**knee**, and it is a different mechanism:
+
+    rest 22.1 mm -> posed 1.28 mm   (strain 17.2)
+    A: upperLegR 0.648 / lowerLegR 0.352
+    B: lowerLegR 0.506 / upperLegR 0.494
+
+That is textbook linear-blend collapse — the candy wrapper. A vertex weighted
+50/50 across a joint closing 98 deg lands on the average of two matrices, which
+is not a rotation: it sits at cos(theta/2) of its radius. No weight edit can
+remove it, because the 50/50 IS the smooth blend; the fixes are a **half-angle
+helper bone at each knee and hip** (weighted 100% at the joint ring, so no pair
+of blended matrices is ever more than ~45 deg apart) or dual-quaternion
+skinning, which Babylon's default path does not have. The same shape sits at the
+armpit (`upperArmR 0.495 / spine_02 0.490`, 6.9 mm -> 76.3 mm).
+
+**By eye** (`shots/pose_inrun_side.png`, cropped to the hip): the dark diagonal
+slashes over the seat are reduced but the smear is NOT gone, and the drag at the
+knee is unchanged. The honest read is that this commit removed one of two
+causes. The helper bones are a whole session's work — new bones in the armature,
+their driver rests through `patch_skin_binds`, driver nodes and a per-frame
+update in `game.js`, golden re-capture — and are the right next move on item 5.
+
+### Verification
+
+    build   rc=0, all gates green at 2048/96, including the two new locality
+            lines; glb 821 744 B, maps 993 514 B (albedo 295 824 + normal
+            563 808 + ao 133 962)
+    unit    81/81      golden 30/30 (no re-capture: no display node changed)
+    drive   spine + inrun-crouch + inrun-contact + chain + ready-stance:
+            **25 passed, 0 failed** (3.8 m)
+            rig + body + athlete + athlete-wired + bib-number + crash-ragdoll:
+            **25 passed, 0 failed** (8.3 m) — 50/50 over the two runs.
+            `crash-ragdoll` is 3/3 green on this tree, which independently
+            confirms the reviewer's 01:20 withdrawal of the penetration
+            blocker; nothing in this commit touches the crash path.
+    shots   pose_{inrun,tuck,pike}_{side,front}.png regenerated, figure 448 px,
+            TUCKEXTENT 0.5809 (unchanged — the pose did not move, only the skin)
+
+`ASSET_V` 47 -> 48, `game.js?v=` 43 -> 44, preload hrefs `?v=48`.
+
+### Open at the end of session 18
+
+- **The knee/armpit candy wrapper — helper bones.** Numbers above.
+- Carried from session 17: the THUMB (the reviewer's 01:50 item (b) asks for it
+  to be built as its own finger group so connectivity finds it); the flight-tuck
+  re-check; the smoothed suit shell (author #7); panels/bib/collar/cuffs; the UV
+  unwrap + arm stripe last.
+- **NEW, from GLM's review 125 (02:20), arrived in the brief mid-session:** the
+  FRONT bib "30" now reads mirrored on the merged tree. Session 5 measured front
+  clean / back mirrored, so which face is flipped has to be re-measured before
+  touching the plate UV — do that first next session, it is a one-shot bake fix
+  and the 16:30 ruling already specifies the gate.
+- A note on the machine: the load average sat at 24 on 16 cores for this whole
+  session (the GLM lane runs its own full suite in the main checkout), so
+  `./tests/run-all.sh` timed out at 900 s in its Playwright leg and left an
+  orphan server on 8399. Unit is 3.2 s and golden 15 s run separately; the drive
+  suite is what stretches. Run the layers separately when the box is loaded, and
+  check `ss -ltn | grep 8399` before starting Playwright.
+
 ## Session 17 (2026-08-30, 02:0x-03:0x)
 
 ### The merge first (commit c3f1b4a)
