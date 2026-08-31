@@ -9747,8 +9747,20 @@ void main(void) {
             // starts, _inrunArmForward owns the arm z instead.
             const preZL = character.meshes.upperLegL && character.meshes.upperLegL.position.z;
             const preZR = character.meshes.upperLegR && character.meshes.upperLegR.position.z;
-            _pinBootsToSkis(character.meshes, state.tuckAmount,
-                            state.grounded ? state.armRaise : 1);
+            if (window._flightPinOff && !state.grounded) {
+                // NEGATIVE CONTROL (NEXT #21, flight sweep): the boot–ski
+                // pin is the only thing holding the sole to the ski through
+                // the pose blends. Skipping it and lifting the shins 30 mm
+                // re-creates the author's historic flight heel lift, so the
+                // flight-sweep gate can prove it fires.
+                for (const _s of ['L', 'R']) {
+                    const _ll = character.meshes['lowerLeg' + _s];
+                    if (_ll) _ll.position.y += 0.03;
+                }
+            } else {
+                _pinBootsToSkis(character.meshes, state.tuckAmount,
+                                state.grounded ? state.armRaise : 1);
+            }
             // Sol-8 (ready-stance knee flex): the pin derives both legs' rx
             // from the ski pitch — physically right, a binding clamps boot to
             // ski — so the stance block's knee term never survives into the
