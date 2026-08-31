@@ -263,6 +263,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 174 | **172-ruling step 1 LANDED — the hand pipeline is FRAME-INDEPENDENT: `relax_hands`/`hand_spread_gate` + `hand_metrics`/`scale_hands`/`_hand_cluster`/`_finger_axes`/`_pack_fingers` re-measured along the forearm bone's own axis (wrist = `seg_ends` tail, depth = dot with `adir`) instead of world z. EQUIVALENCE CONTROL green: full build log's hand lines byte-identical to the pre-refactor baseline (spread 34.7→6.8/33.0→7.6 deg, HAND SPREAD 8.5 deg / 6.6 mm, HAND GATE 0.75); remaining log deltas are the ±1-vertex GPU-bake-noise class proven present in same-code rebuilds. No assets shipped, no ASSET_V bump. unit 81/81, golden 30/30, drive 37/38 (only the carried hands-vs-thigh red, which ruling step 2 — the ±7.5° bind abduction, now unblocked — targets next slot).** | see entry 174. |
 | — | Iteration 173 | **NEXT.md step 2 (170 list item 2) — crotch/inner-thigh shard cluster cut LANDED in `sever_thigh_bridge_faces`: 11 L↔R mixed faces (existing pass) + 40 midline straddlers + 6 ribbon fragments, gated to zero remaining below the crotch plane; ASSET_V 70 → 71. The #15 render-space daylight number is UNCHANGED (0.81 cm vs ≥ 3 cm gate, reported not gated) — the bridge is NOT (only) the deleted faces; by eye the thighs still merge. The carried hands-vs-thigh red stands. unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23, aframe green, look 6/6 (FACEDIST 0.1803).** | see entry 173. |
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
 | — | Iteration 172 | **Hands-vs-thigh build-side fix (05:10 ruling) IMPLEMENTED end-to-end (mesh+bone+bind+driver+helpers, A-frame template) but NOT LANDED: at ±7.5° the bideltoid gate passes at its exact 0.410 ceiling and the hands clear by ~+8.7 mm, but the hand pipeline (`relax_hands`/`hand_spread_gate`) assumes world-vertical fingers — the horizontal z-cut ladder deepens 0.45→0.78, reads finger gaps of 200+ mm (gate 8) and the build exits 1. REVERTED; tree byte-identical to 171's tip; unit 81/81, golden 30/30 re-verified. Open questions posted (hand-pipeline frame independence).** | attempt numbers in entry 172; unit + golden re-run after revert. See entry 172. |
@@ -1480,6 +1481,61 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 174 — 172-ruling step 1: the hand pipeline is FRAME-INDEPENDENT —
+relax_hands/hand_spread_gate + all five dependencies re-measured along the
+forearm bone's own axis; equivalence control byte-green on the untilted
+build (every hand log line identical); no assets shipped, no ASSET_V bump;
+unit 81/81, golden 30/30, drive 37/38 (only the carried hands red)
+
+**Mandate.** The 05:30 ruling on 172, step 1 — make
+`relax_hands`/`hand_spread_gate` frame-independent, WITH the equivalence
+control, before any abduction is applied. Step 0 (FACEDIST) was closed by
+the 14:55 ruling; step 1 (knee band) was re-verified green in 172.
+
+**What changed.** `blender/build_body.py` only. The hand passes were
+world-z-locked end to end (the 172 failure mechanism): the wrist was
+`cl.z - hl`, the glove membership and the FINGER_SPLIT cut ladder cut on
+`v.co.z`, finger tip/base came from a z-sort, the curl/spread fade and the
+pack shear ramped on `z`, and `scale_hands` stretched along world z. All
+of it now runs on depth along the lowerArm bone's own axis —
+`seg_ends('lowerArm'+side)` tail→head, 0 at the wrist, growing toward the
+fingertips — with the wrist and `adir` threaded through `hand_metrics` →
+`_hand_cluster` → `_finger_axes` → `relax_hands`/`_pack_fingers`
+(`m['wrist']`, `m['adir']`; `cut_z`→`cut_t`). At the shipped hanging rest
+`adir` is exactly −z, so this is a pure reframe: identical numbers by
+construction. 68 insertions, 40 deletions, one function rewritten
+whole (`_finger_axes`) after a partial-edit mishandling — recovered and
+syntax-checked before any build.
+
+**Equivalence control (the ruling's requirement).** Baseline build
+(pre-refactor code) vs reframed build, same command: every hand line
+byte-identical — scale x0.70/x0.69 ratio 0.75; spread 34.7→6.8 /
+33.0→7.6 deg, gap 14.6→7.7 / 14.7→7.7 mm; HAND GATE 0.75..0.75; HAND
+SPREAD worst 8.5 deg (gate 15) / 6.6 mm (gate 8). Every other log delta
+is the same ±1-vertex GPU-bake-noise class measured on a same-code
+rebuild (the glb is NOT byte-deterministic run to run — two reframed
+builds differ too — so log-line identity is the honest control, not
+`cmp` on the glb).
+
+**Verification.** Build exits 0, all build gates green. `test:unit`
+**81/81**; `test:golden` **30/30** (display-only refactor, traces
+untouched); drive `spine`+`chain`+`rig`+`aframe` **37 passed / 1
+failed** — the failure is the carried hands-vs-thigh red, unchanged
+class. Shots NOT regenerated: no asset or scene change shipped (builds
+went to scratch), `figure_front.png` from 173 stands. `look` FACEDIST
+standing number 0.1803 from 173.
+
+**Open (next slot, per the ruling's convergence deadline).** Step 2: the
+±7.5° build-side bind abduction (172's full A-frame-template scheme —
+`bl()`/`seg_ends()`/`seg_matrix()`/helper rest translations +
+`game.js` `_aFrameOff` rest mirror), which the now-frame-free pipeline
+no longer rejects; bideltoid must land strictly inside its ceiling per
+the ruling.
+
+**Scratch.** `/home/justin/aerial-agents/scratch/iter-174/` (baseline +
+reframed logs/hand-lines; glbs deleted).
+
 ### 173 — NEXT.md step 2: crotch/inner-thigh shard cluster cut (57 defect
 faces removed, zero-remaining gate) — the #15 render-space daylight is
 UNCHANGED (0.81 cm), so the bridge is deeper than the deleted faces;
