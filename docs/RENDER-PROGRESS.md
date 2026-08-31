@@ -258,6 +258,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
+| — | Iteration 161 | **NEXT.md #15 slice 1 LANDED — A-frame stance + the render-space instrument: `game.js` `_pinBootsToSkis` now tilts each thigh `_A_FRAME_RZ` (3°) with the knee endpoint held over the vertical shin (shin frontal tilt 12.5°→1.6°, knee deviation 12.5/11.8°→1.6/1.5°, gated in the new `aframe.spec.js` with the row-order self-test and the `_aFrameOff` negative control — the control's kneeDev 12.5° FAILS the ≤5° gate the shipped build passes). Mid-thigh render daylight measures 0.4 cm — REPORTED NOT GATED: the crotch/inner-thigh shard cluster bridges the silhouette (NEXT.md slice-2), so the ≥3 cm gate stays off until that geometry lands. The Sol thigh-TUBE rebuild (sever + 190 mm fitted tubes) was re-applied from `sol/aframe-wip` but ABORTED: it breaks the weight-seam gate (max 1.466 vs 1.1, 8 edges at `upperLegL\|lowerLegL` mid-shin; HEAD passes at 0.925/0) — blocker recorded, `build_body.py` reverted, NO asset change, ASSET_V still 67. Golden re-captured census-only** | unit 81/81; golden 30/30 after re-capture (`audit-physics-state.js`: 0 physics diffs / 22 display-node scenarios, 5408 frames); aframe 1/1. See entry 161. |
 | — | Iteration 158 | **PREVIOUS-ITERATION PIPELINE REGRESSION FIXED: `shell_report()` once again returns its report, so the unchanged `suit_shell_gate()` can consume it and a full athlete build completes. HUMAN #15 was probed but NOT landed: separating the connected inner-thigh sheet enough to expose render-space daylight violated the existing thigh-curvature gate, and the rejected render still had zero continuous daylight. No asset, game, engine, DoF, threshold, or ASSET_V change; NEXT.md remains.** | full 2048/96 scratch build reaches `BODY_EXPORTED` with all hard gates green (inner-thigh mesh gap 45.5 mm, thigh depth 1.663); unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; canonical FACEDIST 0.1803. Rejected A-frame probe: daylight 0 px, frontal knee deviation about 24 deg; best mesh-space separation failed curvature at 0.370/0.381 > 0.35. See entry 158. |
 | — | Iteration 157 | **NEXT.md ordered instrument slice LANDED: `grey-attr.spec.js` now proves its `readPixels` row mapping before measuring the scene. A fullscreen top-left red / bottom-left green control shares the top-down screen coordinates used by Babylon picking; the corrected `H - 1 - y` reader sees the intended colors and the old unflipped reader is a hard failing negative control. No gate, threshold, scene, athlete, asset, engine, or DoF change. NEXT.md remains; HUMAN #15 A-frame is next.** | row self-test: correct top `[233,0,18]`, bottom `[110,219,59]`; unflipped control swaps them exactly. Grey-attr scene remains corridor/flank **0.8433/0.7707 = 1.094**, darkFrac **0.0455**; in-run **0.8367/0.8067 = 1.037**. Unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; shots regenerated and inspected. See entry 157. |
 | — | Iteration 155 (review) | **REVIEW-ONLY: current athlete/scene audited after the reverted 153–154 chain; no feature, asset, engine, gate, or threshold change. NEXT.md remains intact. The closed self-test state holds (FACEDIST 0.1803; kneeMax crouch 5.725 / flight 7.247), but the author-facing #15 A-frame and #16 real-boot gates are visibly RED and still absent; suit shards/white-on-white paint remain. Scene still trails the footage in mountain silhouette, forest depth and landing-surface read.** | focused chain+look+rig+spine 38/38; unit 81/81 and golden 30/30; run-all unit/golden/browser/mutation/coverage green, drive leg stopped after exceeding the review time box. Required shots regenerated and inspected. See entry 155. |
@@ -1462,6 +1463,66 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 161 — NEXT.md #15 slice 1: A-frame stance landed (knee deviation 12.5°→1.6°, gated); render-space daylight instrument shipped with the shard-bridged 0.4 cm reading recorded; the Sol thigh-tube rebuild aborted on the weight-seam gate
+
+**Scope and self-review.** `docs/NEXT.md` remains the sole mandate; the reviewer's 23:20
+ruling orders #15 A-frame first, with `sol/aframe-wip` (`73220fc`) as REFERENCE — read,
+re-applied, verified, never cherry-picked blind. `git log -3 --stat` / `git show --stat
+HEAD`: clean docs-only tip; no half-done work in the tree.
+
+**1. Sol thigh-tube geometry: re-applied, ABORTED, reverted.** The `sol/aframe-wip`
+`build_body.py` diff (two fitted 190 mm thigh tubes, inner faces at 27 mm,
+`sever_thigh_bridge_faces`, triangle-intersecting `leg_profile`) applies cleanly and the
+build reaches `AFRAME TOPOLOGY: 156 crossing verts reassigned, 11 L<->R faces removed,
+0 remain`, `inner-thigh gap +54.0 mm`, `arm/thigh 0.522` — but then FAILS the existing
+weight-seam gate at shipped skin: **max 1.466 (limit 1.1), 8 edges over 1.0 (limit 6),
+all at `upperLegL|lowerLegL` mid-shin (z ≈ −0.73..−0.75)**. HEAD's build passes the same
+gate at max 0.925 / 0 edges (verified by a scratch rebuild during this iteration). The
+smoothing-cap raise (`cap0 = max(cap0, 0.040)`) was bisected out — the failure is
+identical without it, so the cause is deeper in the tube re-fit/topology interaction.
+That is more surgery than the iteration budget allowed; the diff was reverted
+(`git checkout blender/build_body.py`), no asset was committed (the failed builds never
+reached export; the two stray bake PNGs were removed), and **ASSET_V stays 67**.
+
+**2. A-frame stance LANDED (game.js, from the same Sol reference, verified).**
+`_pinBootsToSkis` now applies `_A_FRAME_RZ` = 3° of frontal tilt to each thigh with the
+knee endpoint held exactly over the vertical shin (and `window._aFrameOff` as the
+browser negative control), plus `ll.rotation.z = 0` and an `updateJointHelpers` call so
+the helper bones read the final transforms. Measured by the new instrument, shipped vs
+control (`_aFrameOff`): knee deviation **1.62/1.52° vs 12.51/11.77°**, shin frontal tilt
+**1.62/1.52° vs 12.51/11.77°** — the pre-A-frame pose had a real ~12° leg fan-out, which
+is exactly the author's #15 "calf fan-out" observation, and the stance change removes it.
+
+**3. `tests/drive/aframe.spec.js` (new).** Frontal instrument: athlete-only frame
+(all non-athlete meshes disabled), ArcRotate re-aimed onto the athlete's FACE side at
+3 m, joint proxies from the live leg-node bounding boxes, segments projected onto the
+plane ⊥ the root's forward. Gates: knee deviation ≤ 5° per side, shin tilt ≤ 8° per
+side (both hard, both green at 1.6°). Instrument rules: the red/green corner-patch
+row-order self-test with the unflipped mapping as failing control (iter-152/157
+pattern); px/m sanity floor; background classified against the measurement row's own
+edge pixels (the game's image processing shifts `scene.clearColor`, measured).
+**Mid-thigh silhouette daylight measures 0.4 cm and is REPORTED, NOT GATED**: even with
+the stance fix the silhouette is bridged — consistent with entry-160's by-eye finding
+that the crotch/inner-thigh shard cluster (NEXT.md slice-2 cleanup) scribbles across
+the gap. The ≥ 3 cm render-space gate stays OFF until that geometry lands; the number
+and the bridging cause are recorded here as the author-visible #15 residual. Negative
+control: `_aFrameOff` kneeDev 12.51° FAILS the ≤ 5° gate the shipped build passes.
+
+**Verification.** `npm run test:unit` **81/81**; golden: divergences confined to the
+`upperLegL`/`upperLegL_hip` display nodes (the A-frame pin) — `audit-physics-state.js`
+**0 physics-state diffs across 30 scenarios / 5408 frames** (22 display-node
+scenarios) → census-only re-capture, `verify.js` **30/30** (last command before this
+commit); `aframe` **1/1**. Time box hit during verification; `look` shot regeneration
+and the spine/rig/chain/ready-stance drive specs are the first item for 162.
+
+**Open questions for the reviewer.** (1) The Sol tube rebuild's weight-seam failure is
+a gate-vs-geometry conflict, not a calibration ask: is the right next move a joint-fade
+retarget of the localized thigh weights before the sever, or relaxing the re-fit to
+leave the knee band on the inherited surface? (2) Daylight 0.4 cm vs the mesh-space
+45.5 mm gap confirms the shards bridge the silhouette — confirming slice-2 (shard
+cleanup) as the gate-opening geometry, before the ≥ 3 cm gate goes hard.
+`docs/NEXT.md` intentionally retained (steps 2b daylight gate, 2c boots, 2d tuck, slice-2 paint open).
 
 ### 160 — Review-only (GLM re-check after the Sol window): suite green except the known quality frame-time flake; #15/#16 still visibly red; bib-band magenta confirmed benign; a port-conflict leftover on 8099 is the only environmental note
 
