@@ -57,7 +57,8 @@ Order:
    Full spec in the #21 entry. Do it WITH #16 (the boots): (a) toe/heel-on-binding ≤ 5 mm in every
    non-crash frame including all of flight (heel lift = gate failure; skis eject only on crash);
    (b) the flight tuck becomes knees-to-chest with a more upright back (torso within ~30° of
-   straight), skis riding up with the legs. Per-frame flight sweep gate + tuck pose gates; the
+   straight), skis riding up with the legs, elbows held in toward the body (not winged). Per-frame
+   flight sweep gate + tuck pose gates (incl. elbow-to-torso distance); the
    current lifted-heel forward tuck is the failing negative control. Pose/display only — golden
    physics unchanged.
 3. **Arm stripe — VERIFY, do not redo.** Session 32 shipped it (`9e81fcc`: repair pass enabled on the
