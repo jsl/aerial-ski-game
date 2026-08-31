@@ -10070,6 +10070,112 @@ def pack_delivery_maps(out_dir):
     raise SystemExit('[body] pack_maps.py printed no stats line')
 
 
+def add_boots(arm, joints, body):
+    """#16 (NEXT.md item 5): real ski boots — rigid, skinned to the shins.
+
+    Up to now the "boot" was the leg tube painted dark below BOOT_ALONG
+    (boot_paint_gate): the author saw a dark low shoe, not a boot. This builds
+    the boot as GEOMETRY modelled on reference/shots/author_boot_ref_2026-08-30.jpg
+    — clog with a rounded toe box, sole plate with toe/heel ledges (DIN walk
+    mode), a forward-leaning cuff with buckles and a power strap, no logos —
+    one merged mesh per side, every vertex weighted 1.0 to that side's shin so
+    the boot is a rigid body following lowerLeg{L,R} exactly (a ski boot does
+    not flex; the same argument as rigid_boots). The painted dark tube stays
+    INSIDE the shell as the liner.
+
+    Exported alongside the skis by add_equipment's selection block; game.js
+    recognises the meshes by the athleteBoot* name and gives them their own
+    glossy shell material.
+    """
+    def build(side, sgn):
+        leg = f'lowerLeg{side}'
+        an = joints[f'ankle{side}']
+        ax = an.x
+        ay = an.y
+        sole = min(v.co.z for v in body.data.vertices)          # the ski top
+        cuff_top = an.z + 0.175
+        pieces = []
+
+        def prim(kind, name, **kw):
+            bpy.ops.object.select_all(action='DESELECT')
+            if kind == 'box':
+                bpy.ops.mesh.primitive_cube_add(size=1.0)
+            else:
+                rx = kw.pop('rot_x', 0.0)
+                loc = (kw.pop('x'), kw.pop('y'), kw.pop('z'))
+                op = (bpy.ops.mesh.primitive_cone_add if kind == 'cone'
+                      else bpy.ops.mesh.primitive_cylinder_add)
+                op(vertices=16, location=loc,
+                   rotation=(rx, 0.0, 0.0), **kw)
+            o = bpy.context.active_object
+            if kind == 'box':
+                o.scale = (kw['w'], kw['d'], kw['h'])
+                o.location = (kw['x'], kw['y'], kw['z'])
+                bpy.ops.object.transform_apply(scale=True, location=True)
+            else:
+                bpy.ops.object.transform_apply(location=True, rotation=True)
+            o.select_set(True)
+            pieces.append(o)
+
+        # Sole plate + DIN ledges (toe and heel, proud of the sole)
+        prim('box', 'sole', w=0.102, d=0.300, h=0.018,
+             x=ax, y=ay + 0.020, z=sole + 0.009)
+        prim('box', 'ledge_toe', w=0.104, d=0.040, h=0.012,
+             x=ax, y=ay + 0.135, z=sole + 0.006)
+        prim('box', 'ledge_heel', w=0.104, d=0.040, h=0.012,
+             x=ax, y=ay - 0.115, z=sole + 0.006)
+        # Clog: shell box + half-round toe cap (cylinder laid along Y)
+        prim('box', 'clog', w=0.098, d=0.230, h=0.095,
+             x=ax, y=ay + 0.015, z=sole + 0.018 + 0.0475)
+        prim('cyl', 'toe', radius=0.048, depth=0.098, rot_x=math.pi / 2,
+             x=ax, y=ay + 0.130, z=sole + 0.018 + 0.0475)
+        # Lower shell rising past the ankle
+        prim('cone', 'shank', radius1=0.056, radius2=0.048, depth=0.090,
+             x=ax, y=ay - 0.005, z=sole + 0.113 + 0.045)
+        # Cuff, leaning forward 12 deg about the ankle (real boot geometry;
+        # the flight boot-ski sweep pins SHIN to SKI and is untouched — the
+        # cuff is display geometry skinned rigidly to the shin bone)
+        prim('cone', 'cuff', radius1=0.052, radius2=0.060, depth=0.130,
+             rot_x=-0.21,
+             x=ax, y=ay - 0.010, z=an.z + 0.055)
+        # Power strap across the cuff top
+        prim('box', 'strap', w=0.124, d=0.030, h=0.024,
+             x=ax, y=ay - 0.010, z=cuff_top)
+        # Buckles: 3 on the OUTER face of the cuff + 1 instep
+        for k, dz in enumerate((0.030, 0.075, 0.120)):
+            prim('box', f'buckle{k}', w=0.014, d=0.026, h=0.020,
+                 x=ax + sgn * 0.058, y=ay - 0.010, z=an.z + dz)
+        prim('box', 'buckle_instep', w=0.020, d=0.014, h=0.012,
+             x=ax, y=ay + 0.055, z=sole + 0.115)
+
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in pieces:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = pieces[0]
+        bpy.ops.object.join()
+        boot = bpy.context.active_object
+        boot.name = f'athleteBoot{side}'
+        bpy.ops.object.shade_smooth()
+        boot.vertex_groups.new(name=leg)
+        boot.vertex_groups[leg].add(list(range(len(boot.data.vertices))), 1.0, 'ADD')
+        mod = boot.modifiers.new('arm', 'ARMATURE')
+        mod.object = arm
+        mat = bpy.data.materials.get('bootShell') \
+            or bpy.data.materials.new('bootShell')
+        mat.use_nodes = True
+        bsdf = mat.node_tree.nodes.get('Principled BSDF')
+        if bsdf:
+            bsdf.inputs['Base Color'].default_value = (0.028, 0.034, 0.075, 1.0)
+            bsdf.inputs['Roughness'].default_value = 0.35
+        boot.data.materials.append(mat)
+        log(f'boot {side}: shell to z={cuff_top:.3f}, sole {sole:.3f}, '
+            f'{len(boot.data.vertices)} verts rigid to {leg}')
+        return boot
+
+    made = [build('L', -1.0), build('R', +1.0)]
+    return made
+
+
 def add_equipment():
     """Skis stay rigid, separate objects."""
     made = []
@@ -11928,6 +12034,17 @@ def main():
     bpy.data.objects.remove(high, do_unlink=True)
 
     equip = add_equipment()
+    # #16 boots (NEXT.md item 5): OPT-IN until the skin defect below is fixed.
+    # Iter 187 measured the exported boot primitives: JOINTS_0 all correct
+    # (11/12 = lowerLegL/R) but WEIGHTS_0 sums ran 0..0.75 instead of 1.0, so
+    # zero-weight vertices stay in mesh-local space and float at the skeleton
+    # root (stray navy boxes at the neck in figure_front.png). Default build
+    # therefore ships the v75 painted-leg boots; --boots on reproduces the
+    # defect for the next iteration to debug.
+    boots = add_boots(arm, joints, low) if arg('--boots', 'off') == 'on' else []
+    if boots:
+        raise SystemExit('[body] --boots on: the exported boot weights are '
+                         'broken (see the block comment above); not shippable')
 
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.
