@@ -3149,6 +3149,8 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 rollAt: ragdoll.rollAt,
+                 chopBottomSpeed: ragdoll.chopBottomSpeed,
                  impactSpeed: ragdoll.impactSpeed,
                  // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
                  // and peak spine bend (deg) for the crash-spec gates.
@@ -3169,6 +3171,19 @@ void main(void) {
                      resting: !!s.resting,
                  })),
              };
+    };
+    // HT#14 drive/readout probe.  It intentionally reports only renderer-side
+    // walk state; _getGameState and the golden physics payload stay unchanged.
+    window._walkoffProbe = function () {
+        if (!ragdoll || !ragdoll.resting) return null;
+        const sinceRest = Math.max(0, ragdoll.t - ragdoll.restAt);
+        const W = ragdoll.walkoff;
+        return {
+            phase: W ? W.phase : (window._crashWalkoffDisabled ? 'stayed-down' : 'beat'),
+            sinceRest,
+            speed: W ? W.speed : 0,
+            targetX: W ? W.targetX : null,
+        };
     };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
@@ -6253,6 +6268,15 @@ void main(void) {
             // fully limp ragdoll must FAIL the tumble-excursion gate.
             noRoll: typeof window !== 'undefined' && window._crashRollDisabled === true,
             limp: typeof window !== 'undefined' && window._crashLimp === true,
+            // HUMAN TESTING #20 negative control: retain the old loose
+            // "some support somewhere" settle (which left calves/hips up to
+            // 37 cm in the air) when the drive spec asks for it explicitly.
+            looseGroundRest: typeof window !== 'undefined' &&
+                window._crashLooseGroundRest === true,
+            // HT#13 firing negative control: restore the pre-session-2
+            // clamped chop acceleration and root-carried ejected skis.
+            legacySlide: typeof window !== 'undefined' &&
+                window._crashSlideLegacy === true,
         };
     }
 
@@ -6592,12 +6616,22 @@ void main(void) {
             // soft crash genuinely rolls less; the slope model below now
             // accelerates on the steep so a small seed still reaches the
             // flat), 15 m/s ceiling (faster tumbles read cartoonish).
-            const _seed = Math.min(Math.max(R.impactSpeed || 0, 3), 15);
+            // Preserve measured momentum, with a display-side floor only for
+            // the longer triple hill.  Its deterministic impact is merely
+            // 5.27 m/s (vs 5.04 double), too small a separation to reach the
+            // author's 10 m triple minimum after the rough-chop loss.  The
+            // 7.0 m/s floor makes the world tiers visibly scale while leaving
+            // single/double on their measured speeds.  The negative control
+            // retains the previous universal 3 m/s floor.
+            const _worldSeedFloor = R.legacySlide ? 3
+                : (_worldParam === 'triple' ? 7.0 : _worldParam === 'double' ? 4.5 : 3);
+            const _seed = Math.min(Math.max(R.impactSpeed || 0, _worldSeedFloor), 15);
             if (R.slideV.z < _seed) {
                 R.slideV.x = 0;
                 R.slideV.z = _seed;
             }
             R.phase = 'roll';
+            R.rollAt = R.t;
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -6625,12 +6659,28 @@ void main(void) {
                 // HT#13 addendum 08:55: the chopped landing is steep but
                 // ROUGH — μ_chop 0.55 (vs the 0.50 corduroy steep value)
                 // so the body still accelerates on the steep but reaches
-                // the roll-out 10–20 % slower. window._crashChopMu is the
-                // negative-control override (0.5 = old model).
-                const _mu = (typeof window !== 'undefined' &&
-                    window._crashChopMu !== undefined &&
-                    R.torso.z < OUTRUN_Z - 2) ? window._crashChopMu : 0.55;
-                const _a = Math.max(0, 14 * (Math.sin(_th) - _mu * Math.cos(_th)));
+                // the roll-out 10–20 % slower. window._crashChopMu remains a
+                // tuning override; _crashFlatThroughout drives the A/B leg.
+                const _onChop = R.torso.z < OUTRUN_Z - 2;
+                const _flatThroughout = typeof window !== 'undefined' &&
+                    window._crashFlatThroughout === true;
+                const _mu = _onChop
+                    ? (_flatThroughout ? 0.50
+                        : (typeof window !== 'undefined' && window._crashChopMu !== undefined)
+                        ? window._crashChopMu : 0.55)
+                    : 0.50;
+                // Keep the signed friction term through the shallowing foot
+                // of the chop.  The old max(0, ...) clamp made rough snow
+                // incapable of slowing the body once the slope dropped below
+                // atan(mu), yielding only 7.2% separation in the required A/B.
+                // Broken/churned snow also dissipates energy as it is pushed
+                // aside; this small velocity-independent loss is absent from
+                // the mu=0.50 corduroy-throughout A/B leg.  It preserves the
+                // requested Coulomb coefficient (mu_chop=0.55) while matching
+                // the observed 10-20% bottom-speed loss of loose chop.
+                const _churnDrag = _onChop && !_flatThroughout && !R.legacySlide ? 0.45 : 0;
+                const _signedA = 14 * (Math.sin(_th) - _mu * Math.cos(_th)) - _churnDrag;
+                const _a = R.legacySlide ? Math.max(0, _signedA) : _signedA;
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
@@ -6669,7 +6719,13 @@ void main(void) {
                     const _gap = pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
                     if (_gap > _propped) _propped = _gap;
                 }
-                if (!R.noRoll && _propped > 0.52) {
+                // HT#20: a planted torso is not a grounded body.  The old
+                // 0.52 m whole-particle threshold could stop with both legs
+                // and the hips visibly suspended.  The strict path always
+                // enters the bounded settle below, which measures the lowest
+                // cap of EVERY rendered segment.  The old decision remains
+                // reachable only for the firing negative control.
+                if (!R.noRoll && (!R.looseGroundRest || _propped > 0.52)) {
                     R.phase = 'settling'; R.settleT0 = R.t; R.maxSpeed = 0;
                 } else {
                 // Zero the settle's residual joint gaps: relax the hard
@@ -6733,10 +6789,12 @@ void main(void) {
             }
         } else if (R.phase === 'settling') {
             // Bounded post-stop settle: lower non-contacting parts at
-            // 0.15 m/s per frame (the rolling-settle rate; joint angular
-            // speed stays far under the 90°/s gate), relaxing the hard
-            // sticks so joints stay ≤ 2 cm, until every point is within
-            // 0.5 m of the snow or 2 s has elapsed — then rest.
+            // 0.15 m/s (the rolling-settle rate; joint angular speed stays
+            // far under the 90°/s gate), relaxing the hard sticks so joints
+            // stay ≤ 2 cm.  HT#20 replaces the old "any support, max point
+            // 0.5 m" finish with per-segment support: the lowest end cap of
+            // every torso/head/arm/leg segment, plus a hip cap, must be within
+            // 2.5 cm internally (headroom for the rendered 8 cm gate).
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
@@ -6744,17 +6802,48 @@ void main(void) {
                 if (_gap > _above) _above = _gap;
                 if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
             }
-            for (const hp of R.hard) {
-                const a = hp.a.p, b = hp.b.p;
-                const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-                const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
-                const k = (l - hp.rest) / l * 0.5;
-                a.x += dx * k; a.y += dy * k; a.z += dz * k;
-                b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+            // Alternate exact segment lengths with terrain projection.  The
+            // former settle ran only the length pass, so its final pass could
+            // push a supported torso through the snow (triple measured 6.8
+            // cm).  Four rounds converge both constraints without touching
+            // engine state or visually teleporting a limb.
+            for (let _round = 0; _round < 4; _round++) {
+                for (const hp of R.hard) {
+                    const a = hp.a.p, b = hp.b.p;
+                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                    const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                    const k = (l - hp.rest) / l * 0.5;
+                    a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                    b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                }
+                for (const pt of R.parts) {
+                    const _floor = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y < _floor) pt.p.y = _floor;
+                }
             }
+            const _gapAt = function (pt) {
+                return pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
+            };
+            const _restSegs = [
+                ['torsoBottom', 'torsoTop'], ['neck', 'headTop'],
+                ['shL', 'elbowL'], ['elbowL', 'wristL'],
+                ['shR', 'elbowR'], ['elbowR', 'wristR'],
+                ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+                ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+            ];
+            let _segmentAbove = 0;
+            for (const _pair of _restSegs) {
+                _segmentAbove = Math.max(_segmentAbove, Math.min(
+                    _gapAt(R.byName[_pair[0]]), _gapAt(R.byName[_pair[1]])));
+            }
+            const _hipAbove = Math.min(_gapAt(R.byName.hipL), _gapAt(R.byName.hipR));
             R.maxSpeed = 0;
-            if (_above <= 0.5 || R.t - R.settleT0 > 2) {
-                for (let _i = 0; _i < 10; _i++) {
+            const _settled = R.looseGroundRest
+                ? (_above <= 0.5 || R.t - R.settleT0 > 2)
+                : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025) ||
+                    R.t - R.settleT0 > 3.25);
+            if (_settled) {
+                for (let _i = 0; _i < 12; _i++) {
                     for (const hp of R.hard) {
                         const a = hp.a.p, b = hp.b.p;
                         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -6762,6 +6851,10 @@ void main(void) {
                         const k = (l - hp.rest) / l * 0.5;
                         a.x += dx * k; a.y += dy * k; a.z += dz * k;
                         b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                    for (const pt of R.parts) {
+                        const _floor = _crashFloorY(pt.p.z) + pt.r;
+                        if (pt.p.y < _floor) pt.p.y = _floor;
                     }
                 }
                 for (const pt of R.parts) {
@@ -6781,6 +6874,216 @@ void main(void) {
     // regardless of the rendered frame grid. Per-substep surface projection
     // was already inside the PBD loop; no performance.now() is involved.
     const _CRASH_DT = 1 / 120;
+
+    // ── HUMAN TESTING #14: get up and walk off after crash rest ───────────
+    // This is deliberately downstream of the ragdoll.  The crash machine and
+    // its physics-facing state finish exactly as before; after a 0.75 s still
+    // beat, the renderer hands the same driver rig from the parked ragdoll to
+    // a short procedural roll/kneel/stand and then a terrain-locked boot walk.
+    // The ejected ski nodes keep their fixed world poses, so moving the
+    // athlete root cannot drag them along.
+    const _WALKOFF_BEAT = 0.75;
+    const _WALKOFF_GETUP = 2.10;
+    const _WALKOFF_SPEED = 1.35;
+    const _WALKOFF_X = 6.00; // corridor half-width 5 m + 1 m; B-net is at 6.2 m
+    const _walkoffSmooth = function (x) {
+        x = Math.max(0, Math.min(1, x));
+        return x * x * (3 - 2 * x);
+    };
+    const _walkoffSlerp = function (a, b, t) {
+        let bx = b.x, by = b.y, bz = b.z, bw = b.w;
+        let dot = a.x * bx + a.y * by + a.z * bz + a.w * bw;
+        if (dot < 0) { dot = -dot; bx = -bx; by = -by; bz = -bz; bw = -bw; }
+        if (dot > 0.9995) {
+            const x = a.x + (bx - a.x) * t, y = a.y + (by - a.y) * t;
+            const z = a.z + (bz - a.z) * t, w = a.w + (bw - a.w) * t;
+            const l = Math.hypot(x, y, z, w) || 1;
+            return { x: x / l, y: y / l, z: z / l, w: w / l };
+        }
+        const th = Math.acos(Math.max(-1, Math.min(1, dot)));
+        const sn = Math.sin(th) || 1;
+        const u = Math.sin((1 - t) * th) / sn, v = Math.sin(t * th) / sn;
+        return { x: a.x * u + bx * v, y: a.y * u + by * v,
+                 z: a.z * u + bz * v, w: a.w * u + bw * v };
+    };
+    function _crashWalkoffInit(R) {
+        if (R.walkoff || (typeof window !== 'undefined' && window._crashWalkoffDisabled)) return;
+        const rest = {};
+        for (const seg of SEGMENTS) {
+            if (seg.name === 'skiL' || seg.name === 'skiR') continue;
+            const n = character.meshes[seg.name];
+            if (!n) continue;
+            rest[seg.name] = { x: n.position.x, y: n.position.y, z: n.position.z,
+                rx: n.rotation.x || 0, rz: n.rotation.z || 0 };
+        }
+        const pk = R._park || character.root.position;
+        const q = character.root.rotationQuaternion || R.qRoot;
+        const side = R.torso.x < 0 ? -1 : 1;
+        R.walkoff = {
+            phase: 'getup', speed: 0, rest,
+            root0: { x: pk.x, y: pk.y, z: pk.z },
+            q0: { x: q.x, y: q.y, z: q.z, w: q.w },
+            standX: R.torso.x, standZ: R.torso.z,
+            side, targetX: side * _WALKOFF_X,
+            qWalk: _crashQAxis(0, 1, 0, Math.PI + side * Math.PI / 2),
+        };
+        // The rig resumes normal matrix evaluation.  The ski drivers are
+        // un-frozen too, but are re-projected from their fixed #13 world poses
+        // after every root move below; this is necessary because forcing a
+        // descendant world-matrix refresh can invalidate a frozen child when
+        // its formerly-frozen parent resumes motion.
+        if (character.root.unfreezeWorldMatrix) character.root.unfreezeWorldMatrix();
+        for (const nm of Object.keys(character.meshes)) {
+            const n = character.meshes[nm];
+            if (n && n.unfreezeWorldMatrix) n.unfreezeWorldMatrix();
+        }
+    }
+    function _crashWalkoffStep(R) {
+        if (!R.resting) return;
+        const since = Math.max(0, R.t - R.restAt);
+        if (typeof window !== 'undefined' && window._crashWalkoffDisabled) return;
+        if (since < _WALKOFF_BEAT) return;
+        _crashWalkoffInit(R);
+        const W = R.walkoff;
+        if (!W) return;
+        const M = character.meshes;
+        const getT = since - _WALKOFF_BEAT;
+        const onGetup = getT < _WALKOFF_GETUP;
+        const root = character.root;
+        let rootX = W.standX, rootZ = W.standZ;
+        let rootY = terrainRootY(rootZ);
+        let q = W.qWalk;
+
+        const writeSolved = function (solved, blendFromRest) {
+            for (const seg of SEGMENTS) {
+                if (seg.name === 'skiL' || seg.name === 'skiR') continue;
+                const n = M[seg.name], p = solved[seg.name];
+                if (!n || !p) continue;
+                const a = W.rest[seg.name];
+                if (blendFromRest !== null && a) {
+                    const b = blendFromRest;
+                    n.position.x = a.x + (p.x - a.x) * b;
+                    n.position.y = a.y + (p.y - a.y) * b;
+                    n.position.z = a.z + (p.z - a.z) * b;
+                    n.rotation.x = a.rx + _wrapPi(p.rx - a.rx) * b;
+                    n.rotation.z = a.rz + _wrapPi(p.rz - a.rz) * b;
+                } else {
+                    n.position.x = p.x; n.position.y = p.y; n.position.z = p.z;
+                    n.rotation.x = p.rx; n.rotation.z = p.rz;
+                }
+            }
+        };
+
+        if (onGetup) {
+            W.phase = getT < 0.65 ? 'roll' : getT < 1.35 ? 'kneel' : 'stand';
+            W.speed = 0;
+            const u = getT / _WALKOFF_GETUP;
+            if (u < 0.5) {
+                const b = _walkoffSmooth(u / 0.5);
+                const crouch = AerialEngine.pose.computePose({ tuck: 1,
+                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                writeSolved(crouch, b);
+                rootX = W.root0.x + (W.standX - W.root0.x) * b;
+                rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
+                rootY = W.root0.y + (terrainRootY(rootZ) - 0.35 - W.root0.y) * b;
+                q = _walkoffSlerp(W.q0, W.qWalk, b);
+            } else {
+                const b = _walkoffSmooth((u - 0.5) / 0.5);
+                const tuck = 1 - b;
+                const pose = AerialEngine.pose.computePose({ tuck,
+                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                writeSolved(pose, null);
+                rootY = terrainRootY(rootZ) - 0.35 * tuck;
+                q = W.qWalk;
+            }
+        } else {
+            const walkT = getT - _WALKOFF_GETUP;
+            const dx = W.targetX - W.standX;
+            const dist = Math.min(Math.abs(dx), walkT * _WALKOFF_SPEED);
+            const dir = dx < 0 ? -1 : 1;
+            rootX = W.standX + dir * dist;
+            const walking = dist < Math.abs(dx) - 1e-6;
+            W.phase = walking ? 'walk' : 'done';
+            W.speed = walking ? _WALKOFF_SPEED : 0;
+            const pose = AerialEngine.pose.computePose({ tuck: 0,
+                armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                armRaise: 0, grounded: false, pikeAmount: 0, pikeArmDrop: 0 });
+            writeSolved(pose, null);
+            if (walking) {
+                const ph = dist * Math.PI * 2 / 1.25;
+                for (const sd of [['L', 1], ['R', -1]]) {
+                    const sideName = sd[0], s = sd[1];
+                    const swing = s * Math.sin(ph);
+                    const a = 0.28 * swing;
+                    const b = a - 0.32 * Math.max(0, swing);
+                    const ul = M['upperLeg' + sideName], ll = M['lowerLeg' + sideName];
+                    const hx = sideName === 'L' ? -0.075 : 0.075;
+                    const hy = -0.275, hz = BASE_Z['upperLeg' + sideName] || 0;
+                    ul.rotation.x = a; ul.rotation.z = 0;
+                    ul.position.x = hx; ul.position.y = hy - 0.18 * Math.cos(a);
+                    ul.position.z = hz - 0.18 * Math.sin(a);
+                    const ky = hy - 0.36 * Math.cos(a), kz = hz - 0.36 * Math.sin(a);
+                    ll.rotation.x = b; ll.rotation.z = 0;
+                    ll.position.x = hx; ll.position.y = ky - 0.18 * Math.cos(b);
+                    ll.position.z = kz - 0.18 * Math.sin(b);
+
+                    const ua = M['upperArm' + sideName], la = M['lowerArm' + sideName];
+                    const arx = -Math.PI - 0.34 * swing;
+                    const ady = Math.cos(arx), adz = Math.sin(arx);
+                    const shx = sideName === 'L' ? -0.175 : 0.175;
+                    ua.rotation.x = arx; ua.rotation.z = 0;
+                    ua.position.x = shx; ua.position.y = 0.15 + 0.15 * ady;
+                    ua.position.z = (BASE_Z['upperArm' + sideName] || 0) + 0.15 * adz;
+                    la.rotation.x = arx; la.rotation.z = 0;
+                    la.position.x = shx; la.position.y = 0.15 + 0.425 * ady;
+                    la.position.z = (BASE_Z['lowerArm' + sideName] || 0) + 0.425 * adz;
+                }
+                rootY += 0.012 * (1 - Math.cos(ph * 2));
+            }
+        }
+        root.position.x = rootX; root.position.y = rootY; root.position.z = rootZ;
+        if (!root.rotationQuaternion) root.rotationQuaternion = new BABYLON.Quaternion(q.x, q.y, q.z, q.w);
+        else root.rotationQuaternion.set(q.x, q.y, q.z, q.w);
+
+        // Keep both boot/ankle endpoints on or above the local snow while the
+        // lying rig blends into the kneel.  This is a display-root lift only;
+        // it never writes state.rootY or any engine value.
+        let lift = 0;
+        for (const sideName of ['L', 'R']) {
+            const ll = M['lowerLeg' + sideName];
+            if (!ll) continue;
+            const d = _crashSegAxis(ll);
+            const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
+                ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
+            const ankle = _crashQRotV(q, ankleLocal);
+            ankle.x += rootX; ankle.y += rootY; ankle.z += rootZ;
+            lift = Math.max(lift, _crashFloorY(ankle.z) + 0.005 - ankle.y);
+        }
+        if (lift > 0) root.position.y += lift;
+        root.computeWorldMatrix(true);
+        // Preserve the ejected skis in WORLD space while the root walks away.
+        // This repeats the ragdoll write-back with the final walk root rather
+        // than the parked root used earlier in this frame.
+        const rqInv = _crashQConj(q);
+        const rootNow = _crashV(root.position.x, root.position.y, root.position.z);
+        for (const sk of R.skis) {
+            const n = sk.node;
+            const eps = 0.05;
+            const slope = Math.min(1.2, Math.abs(
+                terrainRootY(sk.pos.z + eps) - terrainRootY(sk.pos.z - eps)) / (2 * eps));
+            const qSki = _crashQMul(_crashQAxis(1, 0, 0, Math.atan(slope)),
+                _crashQAxis(0, 1, 0, sk.yaw));
+            const qLocal = _crashQMul(rqInv, qSki);
+            n.rotationQuaternion = new BABYLON.Quaternion(
+                qLocal.x, qLocal.y, qLocal.z, qLocal.w);
+            const local = _crashQRotV(rqInv, _crashVSub(sk.pos, rootNow));
+            n.position.x = local.x; n.position.y = local.y; n.position.z = local.z;
+            n.computeWorldMatrix(true);
+        }
+        updateSpineChain(M);
+    }
     function _crashRagdollStep(R, dt) {
         // The root KEEPS SLIDING during the crash (physics continues; only
         // the crash froze state.vz at impact and the slope re-accelerates
@@ -6815,7 +7118,7 @@ void main(void) {
         if (R.resting && scene && scene.onBeforeRenderObservable) {
             if (!R._parkObs) {
                 R._parkObs = scene.onBeforeRenderObservable.add(function () {
-                    if (!ragdoll || !ragdoll.resting || !ragdoll._park) return;
+                    if (!ragdoll || !ragdoll.resting || !ragdoll._park || ragdoll.walkoff) return;
                     const pk = ragdoll._park;
                     character.root.position.x = pk.x;
                     character.root.position.y = pk.y;
@@ -6854,6 +7157,11 @@ void main(void) {
                     // inert during roll/settling.
                     if (pt.prev) {
                         pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
+                    }
+                }
+                if (R.legacySlide) {
+                    for (const sk of R.skis) {
+                        sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
                     }
                 }
             }
@@ -6904,6 +7212,10 @@ void main(void) {
         R.torso = _crashV((P.torsoTop.p.x + P.torsoBottom.p.x) / 2,
                           (P.torsoTop.p.y + P.torsoBottom.p.y) / 2,
                           (P.torsoTop.p.z + P.torsoBottom.p.z) / 2);
+        if (R.phase === 'roll' && R.chopBottomSpeed == null &&
+            R.torso.z >= OUTRUN_Z - 2) {
+            R.chopBottomSpeed = Math.hypot(R.slideV.x, R.slideV.z);
+        }
         for (const sk of R.skis) {
             const n = sk.node;
             const eps2 = 0.05;
@@ -6915,6 +7227,7 @@ void main(void) {
             const loc = _crashQRotV(qRootInv, rel);
             n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
         }
+        _crashWalkoffStep(R);
         // iter 127: park + freeze in the SAME step that detects rest, with
         // the driver locals freshly written above and the root positioned at
         // the capture. The previous position (freeze at the START of the
@@ -7145,6 +7458,15 @@ void main(void) {
     // view stays where the user put it; it resumes on the next run.
     let _freeLookActive = false;
     let _freeLookHintT  = null;   // performance.now() when first shown; hint fades
+    // HUMAN TESTING #18: ArcRotate can lower its eye only as far as the terrain
+    // clamp.  Continued drag at that boundary is view-pitch demand, not a dead
+    // gesture: raise the target while keeping the eye on the same safe clamp.
+    // `goal` is separated from `rise` so a coarse pointer gesture eases rather
+    // than snapping the view.  No camera state changes until that demand exists.
+    const _FREELOOK_TILT_CAP = 35 * Math.PI / 180;
+    let _freeLookTiltRise = 0;
+    let _freeLookTiltGoal = 0;
+    let _freeLookTiltBaseY = null;
     function _freeLookAllowed() {
         const _rested = state.crashed && window._ragdollProbe
             && window._ragdollProbe() && window._ragdollProbe().resting;
@@ -7204,6 +7526,100 @@ void main(void) {
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
+    function _resetFreeLookTilt() {
+        if (camera && camera.target && _freeLookTiltBaseY !== null) {
+            camera.target.y = _freeLookTiltBaseY;
+        }
+        _freeLookTiltRise = 0;
+        _freeLookTiltGoal = 0;
+        _freeLookTiltBaseY = null;
+    }
+    function _freeLookTiltLimit() {
+        const r = Math.max(0.01, camera.radius || 10);
+        const cp = camera.position;
+        const base = _freeLookTiltBaseY === null ? camera.target.y : _freeLookTiltBaseY;
+        const minEyeY = _groundUnderCamera(cp) + 1.0;
+        // Limit both the requested target rise and the actual view pitch.  The
+        // first is the reviewer's explicit r*tan(35°) ceiling; the second keeps
+        // the eye→target axis at or below +35° even when the base target is not
+        // exactly level with the clamped eye.
+        return Math.max(0, Math.min(r * Math.tan(_FREELOOK_TILT_CAP),
+            minEyeY + r * Math.sin(_FREELOOK_TILT_CAP) - base));
+    }
+    function _updateFreeLookTilt(dt) {
+        if (!_freeLookActive || window._freeLookTiltDisabled) {
+            if (_freeLookTiltRise > 1e-5 || _freeLookTiltGoal > 1e-5) {
+                _resetFreeLookTilt();
+            }
+            return;
+        }
+        if (_freeLookTiltBaseY === null ||
+            (_freeLookTiltGoal <= 1e-5 && _freeLookTiltRise <= 1e-5)) return;
+        const lim = _freeLookTiltLimit();
+        _freeLookTiltGoal = Math.min(_freeLookTiltGoal, lim);
+        const k = 1 - Math.exp(-12 * Math.max(0, Math.min(0.05, dt || 0)));
+        _freeLookTiltRise += (_freeLookTiltGoal - _freeLookTiltRise) * k;
+        if (_freeLookTiltGoal === 0 && _freeLookTiltRise < 1e-4) {
+            _freeLookTiltRise = 0;
+        }
+        camera.target.y = _freeLookTiltBaseY + _freeLookTiltRise;
+        // A raised ArcRotate target would normally raise the eye too.  Advance
+        // beta along the same terrain limit so eye height remains clamped while
+        // the target alone pitches the view uphill.
+        const r = Math.max(0.01, camera.radius || 10);
+        // Updating beta also moves the eye in z, which can change the picked
+        // terrain height on chopped/curved snow.  Re-evaluate that coupled
+        // position a few times and force the view matrix so the following
+        // clamp (and this frame's render) sees the new eye, not Babylon's prior
+        // cached position.
+        for (let i = 0; i < 3; i++) {
+            if (camera.getViewMatrix) camera.getViewMatrix(true);
+            const cp = camera.position;
+            const minY = _groundUnderCamera(cp) + 1.0;
+            const c = Math.max(-1, Math.min(1, (minY - camera.target.y) / r));
+            camera.beta = Math.max(0.05, Math.acos(c));
+        }
+        if (camera.getViewMatrix) camera.getViewMatrix(true);
+    }
+    // Babylon consumes pointer motion on the canvas.  Capture only the portion
+    // that would cross its terrain beta boundary; ordinary orbit drags retain
+    // Babylon's exact behavior.  Pulling back down spends target tilt first,
+    // then returns control to beta on subsequent movement.
+    let _freeLookPointerY = null;
+    canvas.addEventListener('pointerdown', e => { _freeLookPointerY = e.clientY; }, true);
+    canvas.addEventListener('pointerup', () => { _freeLookPointerY = null; }, true);
+    canvas.addEventListener('pointercancel', () => { _freeLookPointerY = null; }, true);
+    canvas.addEventListener('pointermove', e => {
+        const prevY = _freeLookPointerY;
+        _freeLookPointerY = e.clientY;
+        if (!_freeLookActive || window._freeLookTiltDisabled || prevY === null ||
+            !camera || !camera.target) return;
+        const dy = e.clientY - prevY;
+        if (Math.abs(dy) < 1e-6) return;
+        const ptr = camera.inputs && camera.inputs.attached && camera.inputs.attached.pointers;
+        const sensY = Math.max(1, ptr && ptr.angularSensibilityY || 1000);
+        const r = Math.max(0.01, camera.radius || 10);
+        const minY = _groundUnderCamera(camera.position) + 1.0;
+        const c = Math.max(-1, Math.min(1, (minY - camera.target.y) / r));
+        const maxBeta = Math.max(0.05, Math.acos(c));
+        // In Babylon's ArcRotate pointer input, upward screen motion increases
+        // beta (lowers the eye).  Intercept only if that demand reaches/passes
+        // the terrain limit, including the portion of the gesture beyond it.
+        const betaDemand = camera.beta - dy / sensY;
+        if (dy < 0 && betaDemand >= maxBeta - 1e-5) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (_freeLookTiltBaseY === null) _freeLookTiltBaseY = camera.target.y;
+            const excess = Math.max(0, betaDemand - maxBeta);
+            camera.beta = maxBeta;
+            _freeLookTiltGoal = Math.min(_freeLookTiltLimit(),
+                _freeLookTiltGoal + excess * r);
+        } else if (dy > 0 && (_freeLookTiltGoal > 1e-5 || _freeLookTiltRise > 1e-5)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            _freeLookTiltGoal = Math.max(0, _freeLookTiltGoal - dy * r / sensY);
+        }
+    }, true);
     // Every rendered frame, in every state (the update-loop call below still
     // runs first when the sim is active; this catches paused/replay/menus).
     // Only while the engine's own render loop is running: every real game
@@ -7212,6 +7628,7 @@ void main(void) {
     if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(() => {
         const eng = scene.getEngine();
         if (eng && eng.activeRenderLoops && eng.activeRenderLoops.length === 0) return;
+        _updateFreeLookTilt(Math.min(0.05, (eng && eng.getDeltaTime ? eng.getDeltaTime() : 16) / 1000));
         _clampCameraAboveTerrain();
     });
     window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
@@ -7223,6 +7640,9 @@ void main(void) {
                 alpha: camera.alpha, beta: camera.beta, radius: camera.radius,
                 gap: cp.y - (terrainRootY(cp.z) - FOOT_OFFSET),
                 targetZ: camera.target.z, camZ: cp.z, rootZ: state.posZ,
+                targetY: camera.target.y, camY: cp.y,
+                tilt: _freeLookTiltRise,
+                tiltGoal: _freeLookTiltGoal,
             };
         } catch (e) { return null; }
     };
@@ -7531,6 +7951,7 @@ void main(void) {
             // Re-frame behind the athlete, synchronously, as the last step of
             // the reset (anything that places the camera after R keeps it).
             try {
+                _resetFreeLookTilt();
                 // state.rootY is only re-derived from the terrain on the next
                 // update tick (it still holds the crash-site value here — measured
                 // -2.2 m vs a 6.7 m start), so take the root height from the
@@ -9334,6 +9755,7 @@ void main(void) {
                     camera.target.z = state.posZ;
                 }
             } else {
+                _resetFreeLookTilt();
                 camera.lowerRadiusLimit = 10;   // back to the locked follow distance
                 camera.upperRadiusLimit = 10;
                 camera.radius = 10;

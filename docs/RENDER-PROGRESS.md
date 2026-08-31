@@ -9964,3 +9964,125 @@ cover the decisions; nothing at 120 changes architecture).
 **Open questions for the reviewer:** none new — entry 112's crash-envelope
 question and entry 119's census-re-capture question remain open; the loop ends
 here at 120 as authorized.
+
+### CRASH-LANE session 1 — grounded crash rest
+
+**What changed (#20, display-only):** `game.js` no longer declares rest from a
+single planted torso / loose 0.5 m whole-body envelope. The bounded settle now
+continues until the lowest cap of every torso, head, arm and leg segment plus a
+hip cap is within 2.5 cm of its local surface; exact-length and terrain-contact
+passes alternate so lowering a limb cannot push another segment through the
+snow. `engine/`, body-model files, athlete assets, `ASSET_V`, and the parallel
+suit lane are untouched. `crash-ragdoll.spec.js` adds rendered per-segment gates
+for single/double/triple and a preserved-old-settle negative control.
+
+**Gate evidence:** the untouched runtime failed all three new world gates:
+single max clearance **0.288 m** (hip/leg absent), double **0.372 m** with
+0.011 m penetration (hip/leg absent), triple **0.136 m** with **0.068 m
+penetration** (hip absent). Fixed full serial spec: **7/7 PASS**; final
+clearance/penetration = single **0.029/0.016 m**, double **0.029/0.011 m**,
+triple **0.028/0.020 m**, with torso + hip + arm + leg contact true in every
+world. The old-settle control still failed at **0.294 m** max clearance. Legacy
+crash gates remained green: restAt **6.44 s** (3–7), support **19**, maxAbove
+0.132 m, post-stop exactly-zero span 23.56 s, worst joint angular speed 0.454
+rad/s, ski offsets 3.66/3.46 m. Unit **81/81 PASS**. Golden **30/30 PASS**
+after a **CENSUS-ONLY** recapture of 13 crash-tail scenarios;
+`audit-physics-state.js` reported **0 physics-state diffs across 30 scenarios /
+5408 frames**, 13 scenarios with display-node changes.
+
+**Open:** NEXT.md remains for ordered item #13 (crash-slide tuning remainder),
+then #14/#18/#19. The pre-existing `crash_rest.png` silhouette soft gate still
+reports span 0 because its camera does not thread rest-x; it is unrelated to
+ground contact. No physics rest-state defect was measured and no reviewer
+physics approval is needed for #20.
+
+### CRASH-LANE session 2 — crash-slide tuning remainder
+
+**What changed (#13, display-only):** the rigid crash slide now keeps the signed
+friction term through the shallowing foot of the chopped landing instead of
+clamping deceleration to zero, and models a small loose-snow churn loss while
+retaining `mu_chop = 0.55` versus the `0.50` corduroy-throughout control. The
+triple uses a 7.0 m/s display momentum floor so its deterministic 5.27 m/s
+impact produces the required longer stop. Exact roll-onset and chop-bottom
+speed probes make the gates simulation-clock based. Ejected skis remain
+independent of the root. The preserved old clamped/root-carried behavior is
+reachable only by the firing negative controls. `engine/`, body-model files,
+athlete assets, `ASSET_V`, and the parallel suit lane are untouched.
+
+**Gate evidence:** before the fix, the new chop A/B gate failed at **7.2%**
+slower (required 10–20%). The final full serial `crash-ragdoll.spec.js` run is
+**10/10 PASS**: slide onset **0.600 s**; rest past the roll-out = single
+**5.28 m**, double **7.23 m**, triple **10.22 m** (bands 3–8 / 6–12 / 10–18);
+fixed chop **8.850 m/s** versus flat-throughout **10.150 m/s**, **12.8%**
+slower. Ejected-ski offsets were at most **4.66 m** (gate <= 6 m) and the
+closest ski remained **19.27 m uphill** of the skier (double/triple gate >=
+8 m). The old clamped chop measured only **6.5%** slower, and root-carried skis
+traveled **18.67/18.78 m**, so both negative controls fired. Grounded-rest and
+legacy crash gates stayed green. Unit **81/81 PASS**. Golden recapture is
+**CENSUS-ONLY**: `audit-physics-state.js` reported **0 physics-state diffs
+across 30 scenarios / 5408 frames**, with 13 crash-tail scenarios carrying
+display-node changes; golden **30/30 PASS**.
+
+**Open:** NEXT.md remains for ordered item #14 (procedural get-up and walk-off),
+then #18/#19. The existing `crash_rest.png` rest-x framing soft gate remains
+open and unrelated. No physics rest-state defect was measured.
+
+### CRASH-LANE session 3 — get-up and walk-off
+
+**What changed (#14, display-only):** after the grounded ragdoll reaches its
+existing rest result, the renderer now holds a **0.75 s** beat, hands the same
+driver rig through a procedural roll → kneel → stand over **2.10 s**, then walks
+the athlete in boots at **1.35 m/s** to the nearer signed course edge at
+`|x| = 6.00 m` (corridor half-width + 1 m), inside the B-net at `|x| = 6.20 m`.
+The root is terrain-locked and lifted only enough to keep both boot endpoints
+above the local surface. Ejected skis are re-projected to their fixed #13 world
+poses every frame while their former parent walks away. The sequence starts
+strictly after rest and never writes engine state, score/replay UI state, or end
+timing. `engine/`, body-model files, athlete assets and `ASSET_V` are untouched.
+
+**Gate evidence:** new serial `walkoff.spec.js` is **2/2 PASS**. Single/double/
+triple finish **8.17 / 7.32 / 7.21 s** after rest (gate ≤ 12 s), all at lateral
+offset **6.00 m**, hip clearance **0.750 m**, final speed **0**, no B-net
+crossing, and minimum boot clearance **0.005 / 0.025 / 0.005 m**. Maximum ski
+drift is **0.004–0.008 mm** (gate ≤ 10 mm). The preserved stay-down negative
+control fires: through the 12.2 s wall sampling window (8.26 s simulation time)
+it remains at lateral offset **0 m** with lying hip clearance **0.117 m**, so
+the standing/walk composite gate fails. The impacted
+30 s crash-only frozen-tail canary is explicitly held at rest and remains
+**1/1 PASS**: restAt 6.48 s, 23.25 s exactly-zero span, support 19, maxAbove
+0.131 m, ski offsets 5.30/1.77 m. Unit **81/81 PASS**; golden **30/30 PASS**
+against the original traces (no re-capture; physics and recorded census remain
+byte-identical).
+
+**Open:** NEXT.md remains for ordered item #18 (landing free-look view tilt),
+then #19. The pre-existing `crash_rest.png` rest-x framing soft gate remains
+open and unrelated; no new physics question was found.
+
+### CRASH-LANE session 4 — landing free-look view tilt
+
+**What changed (#18, display-only):** once a vertical ArcRotate drag reaches the
+existing terrain beta clamp, only the excess demand is captured and eased into
+`camera.target.y`; ordinary orbit input and the clamp's terrain calculation are
+unchanged. The eye is iteratively held on the same picked-surface + 1 m limit as
+the target rises, and both target rise and view pitch are capped at about 35°.
+Dragging back down spends the rise before beta resumes. The tilt resets whenever
+free-look exits and synchronously on R. No camera value changes without an excess
+clamped drag, so ready/in-run/canonical framing paths are unchanged. `engine/`,
+body-model files, Blender/assets, and `ASSET_V` are untouched.
+
+**Gate evidence:** new serial `landing-tilt.spec.js` is **1/1 PASS** across all
+three worlds, including R reset in each. The pre-#18 negative control fired first
+in single: tilt **0**, kicker lip projected above-frame at **y = -12.30 px**.
+With the fix the lip is in-frame in single/double/triple at projected **y =
+31.82 / 31.58 / 32.55 px**, depth **0.978 / 0.984 / 0.987**, while minimum and
+final picked-terrain eye clearance are **1.000 m in every world** across **364 /
+428 / 469** sampled frames. Smoothed target rises are **6.67 / 6.85 / 6.87 m**;
+R returns rise to 0 and target-z to the reset athlete. Unit **81/81 PASS** (the
+sandbox run's child stdout pipe was empty even for a printing child; the required
+command passed outside that restriction). Golden **30/30 PASS** against original
+traces; no trace re-capture and no physics/display census change.
+
+**Open:** NEXT.md remains for the final ordered item #19, the start-pole
+floodlight exclusion and rendered pole-luminance gate. The pre-existing
+`crash_rest.png` rest-x framing soft gate remains unrelated. No physics question
+or camera-clamp change was introduced.
