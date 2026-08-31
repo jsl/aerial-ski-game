@@ -281,6 +281,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 190 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected); leg-watertight re-run solo — the #26 fired negative control REPRODUCES byte-identical (front 52 px, x 674–679, y 324–338, above hip row 340); `./tests/run-all.sh` passed unit+golden+mutation+coverage but its Playwright drive leg TIMED OUT at the 1800 s harness cap mid-suite (not a product regression; drive specs green in isolation). By-eye review: boots read as a real seated boot (188's block pile gone) but mushy white-on-white with navy smudges; pink/magenta paint smears across the lower bib front and the front hip in BOTH figure framings (item 7's band/paint debt); bib digits still rotated/mirrored (item 7); thighs/hip still knobby in side view (residual #23.3, already ruled author-judge); no NEW regressions found. No source/asset/gate change; NEXT.md untouched — 5a-NEW(i) mesh-side abdomen fix stays next slot's first item.** | unit/golden/look + leg-watertight re-run on the 189 tip; shot inspection numbers in entry 190. |
+| — | Iteration 191 | **NEXT.md 5a-NEW(i) #26 — root cause SPLIT by render probe: the FRONT hole (52 px, byte-stable across 4 runs) is SKINNING-INVERTED FACES (vanishes with `backFaceCulling=false` — degenerate/flipped triangles under pose, the session-23 belly-vertex class); the BACK hole is a REAL GEOMETRIC GAP (PERSISTS with culling off — true background visibility, so NOT winding and NOT paint; clear colour is pale sky 189/209/217 and hole pixels match it). Gate is NONDETERMINISTIC on side/back across runs (side 84→0 px, back 296-in-4-slits→324-in-1) while front is byte-stable — suspected ready-state idle sway. Mesh-side fix scoped for 192. No source/asset change, ASSET_V 76. unit 81/81, golden 30/30, look 6/6.** | probe numbers in entry 191. See entry 191. |
 | — | Iteration 189 | **NEXT.md 5a-NEW(i) #26 — FULL-BODY watertight gate LANDED and its negative control FIRES on the current build (front 52 px / side 36 px / back 334+328 px enclosed background above the hip, interior to a limb span — the abdomen/hip holes); mesh-space diagnosis: delivered mesh CLOSED (1 loop = 0.243 m daylight) and WINDING-CLEAN (0 conflicts), so the gaps are SKINNED SEPARATION at the abdomen/hip junction — mesh-side fix is next slot's first item (CARRIED RED). Also landed: `orient_consistent` winding census/repair/hard gate (0 before/after, sabotage hook) in build_body.py; no asset change, ASSET_V 76. unit 81/81, golden 30/30, legacy leg-watertight green, look 6/6.** | leg-watertight 1 green + 1 red (the fired control); probe numbers in entry 189 |
 | — | Iteration 188 | **NEXT.md item 5 COMPLETED (#16 real boots LANDED): 187's "WEIGHTS_0 sums 0..0.75" was NOT a weight defect — the boots were never in the glTF export selection (`use_selection` ships low+arm+equip only) and 187's sum readback mis-parsed VEC4 ubyte joints / float weights. `build_body.py`: boots now join `equip` (shipped), `--boots on` hard-exit gate removed, angle-limited shading (`shade_smooth_by_angle` 35°, fixes 187's "pile of lumps"), navy lightened (0.050,0.060,0.130). MEASURED on the shipped glb: athleteBootL/R 414 verts each, JOINTS_0 {11}/{12}=lowerLegL/R, WEIGHTS_0 sums exactly 1.000 on all 5 primitives. `game.js`: bootParts parented to skierRoot, skeleton-linked, alwaysSelectAsActiveMesh, excluded from the dispose sweep, revealed with the body only in alpine worlds, re-shown with the body on run reset. ASSET_V 75→76. CARRIED (pre-existing, byte-identical on clean HEAD): rig.spec hands-vs-thigh (−0.0403 m) and suit stand-off right thigh (0.1792 vs ≥0.180) reds, both pending the reviewer's open rulings. NEXT.md next: item 6 hands step 2.**
 | — | Iteration 184 | **NEXT.md item 5 (#21 half) — the PER-FRAME FLIGHT BOOT–SKI SWEEP gate LANDED: `flight-sweep.spec.js` drives a full jump (comp=easy), pulses the tuck airborne (blend-up → deep tuck → blend-down all swept) and samples `_bootSkiProbe()` every rAF frame: toe AND heel ≤ 5 mm both skis every live frame (crash excluded as the allowed violation), airborne ski-vs-shin pitch ≤ 2°. MEASURED: worst gap 0.00 mm / worst pitch 0.00° over 24 live airborne frames — the pin already seats analytically every frame; flight keeps zero cuff lean (armRaise=1 semantics untouched). `_flightPinOff` negative control (skip pin + 30 mm heel lift) FAILS the gate (fires). Tuck-vs-photo numbers: kneeToChest 0.419 m, torso −25°, knee 105°. OPEN: #16 the real boot (clog/cuff/ledges/buckles) = item 5's remainder, routed to 185. No asset change, ASSET_V 75.** | unit 81/81, golden 30/30, flight-sweep 2/2, inrun-contact+crouch+hop-turn+chain+aframe 17/17, look 6/6 shots inspected. See entry 184. |
@@ -11474,6 +11475,84 @@ fragments sit between the legs' spans.
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
 
+### 191 — NEXT.md 5a-NEW(i), #26 root cause SPLIT by render probe: front hole = skinned-inverted faces (culled backfaces), back hole = a real geometric gap (survives culling off); fix scoped for 192
+
+**Route.** Work slot on NEXT.md 5a-NEW(i) (the #26 mesh-side abdomen/hip fix,
+the carried red). The Blender mesh surgery itself did not land this slot — the
+slot went to the proof-first probe that 189's open question 1 asked for, and it
+changed the fix design. No source, asset, gate, engine, or ASSET_V change
+(probe builds went to scratch; assets byte-identical to committed v76).
+
+**The probe (scratch spec, deleted after measurement).** The `leg-watertight`
+measurement camera path, run three ways on the shipped build: (a) as shipped;
+(b) after `bone.returnToRest()` on every skeleton bone; (c) after
+`backFaceCulling=false` on all three athleteBody materials. Colour sampling
+checked what the "background" inside the holes actually is.
+
+**Findings (all measured, 1280x720 athlete-only frames).**
+1. **The `returnToRest` leg of the probe is INCONCLUSIVE**: the game's pose loop
+   re-poses the skeleton every frame, so side/back renders came back
+   byte-identical posed vs "rest". 189's "skinned separation" read therefore
+   needed a different discriminator.
+2. **FRONT (the byte-stable hole, 52 px at x 674–679, y 324–338 — reproduced
+   identical in 189, 190, and twice this slot): it is CULLED BACKFACES.** With
+   `backFaceCulling=false` the hole is exactly 0. So at that spot the posed
+   skin has degenerate/flipped triangles that Babylon backface-culls away —
+   the session-23 belly-vertex class (`upperArmR` dragging lower-belly skin,
+   the fan-of-shards essay in build_body.py). Fix class: weight/locality
+   repair at the abdomen band, or a rest-space geometry overlap; NOT a rim cap.
+3. **BACK: the hole is a REAL GEOMETRIC GAP.** With culling off the hole
+   PERSISTS (324 px at x 647–672, y 330–365, plus 27 px more appearing
+   elsewhere) — with culling off, a closed mesh cannot show background at all,
+   so genuine background visibility there means either an open boundary the
+   rest-space census missed or pose-driven separation of mesh islands at the
+   back hip. Winding is also excluded (the gap survives culling off; an
+   inside-out patch would have been healed by it). Paint is excluded by
+   colour: the clear colour is pale sky (189, 209, 217), the isBg threshold is
+   sum-diff < 40, and the suit's darkest pixel in the band is (21, 21, 23) —
+   the hole pixels match the sky, not dark paint.
+4. **The gate is NONDETERMINISTIC on side/back between runs**: side measured
+   84 px (2 holes, y 234–253) in one run and 0 px in another; back measured
+   296 px in 4 narrow vertical slits in one run and 324 px in 1 in another —
+   all above the hip row, all in the same defect class. FRONT alone was
+   byte-stable across every run (which is why 190's "byte-identical"
+   reproduction held). Suspected cause: the ready-state idle sway changing the
+   posed frame between measurements. This matters for any future
+   "reproduces byte-identical" claim about side/back and for the gate's false
+   GREEN risk (side CAN read 0). An instrument-side fix candidate: freeze the
+   athlete's pose (or pause the idle sway) inside the measurement, and/or
+   measure max-over-N-frames. Not landed this slot (spec change = gate change;
+   needs a ruling).
+
+**Fix design for 192 (scoped, evidence-based, in order).**
+1. Back gap: in the build, find the posed-pose separation at the back hip
+   (candidates: the torso-shell bottom rim vs the thigh-tube top rim, or a
+   pelvis-sheet edge) and WIDEN THE REST OVERLAP so no gameplay pose can open
+   it (bind law: the overlap is rest geometry — it must live in the BINDS).
+   Probe aid: a `scene.pickWithRay` through the hole pixel to identify exactly
+   which surface pair brackets the gap.
+2. Front hole: after the back fix, re-measure; if it persists, repair the
+   offending belly-region weights (the locality essay's own machinery), with
+   `backFaceCulling=false` as the diagnostic that the inversion class is gone.
+3. Instrument: propose freezing the pose in `leg-watertight.spec.js` for
+   determinism (ruling requested below).
+
+**Verification.** unit **81/81**; golden **30/30** (no change shipped);
+`leg-watertight` solo: legacy leg gate green, full-body gate RED with front
+52 px (byte-identical to 189/190) — the carried red stands, now with a split
+root cause; `look` **6/6**, shots regenerated. ASSET_V unchanged at 76.
+Scratch in `/home/justin/aerial-agents/scratch/iter-191/` (probe glb, island
+census, probe spec copies — reviewer sweeps).
+
+**Open questions for the reviewer.**
+1. May `leg-watertight.spec.js` freeze the athlete's idle sway (or measure
+   max-over-N frames) for determinism? Side/back currently flake between 0 and
+   ~84 px across runs, which is both a false-green risk and it makes
+   "byte-identical reproduction" claims impossible for those framings.
+2. Given the split root cause, is the 192 unit "back-gap overlap fix + front
+   weight repair" acceptable as ONE rebuild, or do you want the back gap alone
+   first with the gate still red on front?
+
 ### 190 — REVIEW (review slot): full suite re-verified on the 189 tip; the #26 fired negative control reproduces byte-identical; by-eye review of fresh shots — boots improved, pink paint smear and mirrored bib digits remain the top visible debts; no new regressions
 
 **Route.** Review-only per the 176–205 cadence (190 = review). No source,
@@ -11772,6 +11851,7 @@ shoulderL 43.1 mm and was re-solved, not gate-loosened.
   (seed the ragdoll's leg angles from a fixed crash pose independent of the
   display tuck endpoint). One slot to clear or revert per the carried-red
   policy.
+
 
 **Open / not done.** #16 boot remodel (clog/cuff/ledges/buckles per
 `author_boot_ref_2026-08-30.jpg`) is the other half of item 5 — explicitly
