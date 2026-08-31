@@ -257,6 +257,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 164 | **NEXT.md #15 thigh-tube RE-APPLIED (reference `sol/aframe-wip` 73220fc, per the 23:20 ruling) + a NEW knee-band freeze/relax that takes the weight-seam gate green for the first time on the tube (max 0.893, 0 hot edges; NEW root-cause finding: the upperLeg/lowerLeg flip already exists in the PRE-repair skin — the decimator keeps different verts under the moved mid-thigh geometry — so route (a) freeze + a band-local no-ramp relax is what repairs it). Build gates ALL green (AFRAME TOPOLOGY 11 L<->R faces cut, gap +54.0 mm, arm/thigh 0.522, curvature ≤ 0.324). NOT LANDED: three drive gates RED (hands-vs-thigh clearance −56.6 mm; suit stand-off reads the new 189 mm tube as "missing"; spine flight-tuck knee) — the tube architecture clashes with hands-at-sides without the withdrawn #15 stance bind work. Tree REVERTED to the green 20e0c48; patch + full evidence in scratch/iter-164. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | probe build 2048/96 exit 0 all build gates green; unit 81/81; golden 30/30; drive spine+rig+chain 34 passed / 3 failed (the three above). See entry 164. |
 | — | Iteration 163 | **NEXT.md #15 thigh-tube root-cause ADVANCED, not landed: the Sol diff's seam failure is NOT the clamp, NOT the locality reach, NOT the rescue branch — the shipped knee-ring weights themselves re-converge under the moved mid-thigh geometry (my build `upperLegL` 0.775 dominant at z −0.739 vs HEAD 0.08 there), and the failure is "both-ramped" in the locality repair. Tube diff REVERTED (gate red = no asset); env-gated `BODY_SEAM_DEBUG` edge-dump instrumentation LANDED on the green HEAD build. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | instrumented HEAD build 2048/96 green (exit 0, all gates); unit 81/81; golden 30/30. See entry 163. |
 | — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
 | — | Iteration 161 | **#15 A-frame slice LANDED then WITHDRAWN in the same iteration (honesty over scope): the display-side 3-degree thigh tilt measured kneeDev 1.62/1.52° vs the 12.51/11.77° control and shin tilt 1.6° vs 12.5° — the author's fan-out is real and the stance fixes it — but it BREAKS rig.spec's bind==driver-at-rest contract (upperLegL/R 0.0334 m / 3° residual; hlpHip 0.0261 m via the per-frame helper update), and a load-time `setBindMatrix` rebase corrupted every bone (90° residuals; link-time absolute matrices do not yet reflect the linked nodes). A stance change is a BIND change: the fix is a build-side bind re-export in build_body.py. The stance was reverted, `aframe.spec.js` PARKED (test.skip) with every measured number recorded in its header. The Sol thigh-tube rebuild also aborted on the weight-seam gate (max 1.466 vs 1.1, 8 edges, mid-shin `upperLegL\|lowerLegL`; HEAD passes 0.925/0). No asset change, ASSET_V 67.** | unit 81/81; golden 30/30 after a second census-only re-capture (audit 0 physics diffs); rig 13/13; look 6/6 (DRIVE_PORT=8199; :8099 leftover still held the default). See entry 161. |
@@ -1464,6 +1465,80 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 164 — NEXT.md #15: the Sol thigh-tube diff RE-APPLIED plus a knee-band
+freeze/relax that takes the weight-seam gate GREEN on the tube for the first
+time (max 0.893, 0 hot edges; root cause refined: the knee-ring weight flip
+already exists in the PRE-repair skin — the decimator keeps different verts
+under the moved mid-thigh geometry). Build gates ALL green; three DRIVE gates
+red, tree honestly REVERTED, patch + evidence preserved
+
+**Self-review.** `git log -3 --stat` clean 20e0c48 docs tip; working tree clean.
+Checks run FIRST on HEAD: unit 81/81, golden 30/30.
+
+**1. The tube diff re-applied cleanly** (`git diff HEAD...sol/aframe-wip --
+blender/build_body.py`; game.js stance probe NOT applied — 161 showed it breaks
+the bind==driver contract). Full 2048/96 probe build: `AFRAME TOPOLOGY: 156
+crossing verts reassigned, 11 L<->R faces removed, 0 remain`; inner-thigh gap
+**+23.7 → +54.0 mm** (gate ≥ 40); arm/thigh **0.522** (≤ 0.55); SHELLCURV all
+segments ≤ **0.324** (upperArmR; gate ≤ 0.35) — everything 163 could not get
+past because it stopped at the seam gate.
+
+**2. NEW root-cause finding — 163's re-convergence hypothesis is REFINED.**
+Route (a) as offered (freeze the knee band's weights before the repair chain,
+restore after) was implemented and still measured seam max **1.466**: the flip
+already exists in the snapshot taken right after `add_spine_chain`. The
+repair chain is exonerated; the actual origin is upstream — under the moved
+mid-thigh geometry the DECIMATOR keeps different surviving verts at the knee
+ring (z −0.71..−0.76; note the ring sits ~115 mm BELOW the ownership knee ring
+at z −0.635, ownership extends past the nominal segment end), and those verts
+carry a stepped upperLeg|lowerLeg field. Repair: after restoring the frozen
+band, run a band-local Jacobi relax (8 × 0.5) WITHOUT the locality ramp — the
+ramp is what turns a gradient into a cut. Result: shipped skin seam max
+**1.466 → 0.893**, hot edges **8 → 0** (gate 1.1 / 6); after-helpers 0.925 /
+0. Sabotage controls keep their raw path (freeze disabled under
+`BODY_SABOTAGE_SEAM/LOCALITY`).
+
+**3. Why NOT landed.** Drive spine+rig+chain on the built assets: **34 passed /
+3 failed** —
+- `rig.spec` hands-at-sides: L glove x 0.1562 vs leg face x 0.2128
+  (**−56.6 mm**, need ≥ +4). The 190 mm tubes push the outer thigh face out to
+  x ≈ 0.217; with legs vertical (no A-frame stance — 161's stance was withdrawn
+  because it needs a build-side bind re-export) the hanging gloves sit INSIDE
+  the thigh silhouette. The tube architecture and hands-at-sides are jointly
+  satisfiable only with the #15 stance, i.e. the bind work.
+- `rig.spec` suit stand-off: right thigh breadth 0.1891 vs the spec's
+  build-derived 0.213 expectation — the spec encodes the OLD relaxed shell;
+  the new tube is 190 mm BY DESIGN (ruling of 22:10). A threshold question for
+  the reviewer, not a defect.
+- `spine.spec` flight tuck knee (gate ≤ 8.0) — number not yet captured (the
+  combined run printed the failure name only); needs diagnosis next iteration:
+  candidate causes are the unclamped shell MOVE/inner clamp near the knee fade
+  or the freeze/relax weights changing knee articulation.
+
+**4. Disposition.** A red drive suite never ships (163's precedent): the tree
+was REVERTED to 20e0c48 — no asset, ASSET_V, game.js, engine, or threshold
+change. The full working diff (Sol tube + freeze/relax, applies cleanly) is at
+`/home/justin/aerial-agents/scratch/iter-164/` (`sol-tube.patch`,
+`build_body_tube_freeze.py`, probe build logs with every gate number). 165 can
+resume from it: get the flight-tuck number, resolve the stand-off spec
+expectation, and either pair the landing with the #15 stance bind slice or
+narrow the tubes until the gloves clear.
+
+**Verification on the SHIPPED tree.** unit 81/81; golden 30/30; tree byte-clean
+vs HEAD.
+
+**Open questions for the reviewer.**
+1. The `rig.spec` stand-off expectation (0.213) is bound to the pre-tube shell.
+   Under the 22:10 ruling the thigh tube is 190 mm — may the spec's expectation
+   be re-derived from the build's own `SHELLPROP` thigh-tube report (still
+   binding: dressed ≥ tube) instead of the hard-coded shell number?
+2. Is the preferred 165 route (a) land tubes + stance-bind TOGETHER (bigger
+   slice, fixes the glove clash at its cause), or (b) narrow
+   `THIGH_SHELL_BREADTH` until the gloves clear at rest and add the stance
+   later?
+
+`docs/NEXT.md` retained (all steps open).
 
 ### 163 — NEXT.md #15: the Sol thigh-tube seam failure root-caused to the
 weight-repair chain's re-convergence (not clamp/reach/rescue); diff reverted,
