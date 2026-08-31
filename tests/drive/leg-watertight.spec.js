@@ -23,8 +23,8 @@
 // the first failure).
 const { test, expect } = require('@playwright/test');
 
-async function measureFraming(page, label, alphaOff) {
-    return page.evaluate(async (alphaOff) => {
+async function measureFraming(page, label, alphaOff, fullBody) {
+    return page.evaluate(async ({ alphaOff, fullBody }) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const eng = scene.getEngine();
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
@@ -101,7 +101,8 @@ async function measureFraming(page, label, alphaOff) {
             if (y > 0) stack.push(i - W);
             if (y < H - 1) stack.push(i + W);
         }
-        const topRow = Math.min(H - 1, Math.max(0, hipRow));
+        const topRow = fullBody ? 0
+            : Math.min(H - 1, Math.max(0, hipRow));
         let bgLeg = 0;
         // label connected components of NON-border-connected background
         // below the hip row (y grows downward in this buffer's flipped
@@ -158,23 +159,37 @@ async function measureFraming(page, label, alphaOff) {
         const spans = {
             L: segSpan(['upperLegL', 'lowerLegL']),
             R: segSpan(['upperLegR', 'lowerLegR']),
+            armL: segSpan(['upperArmL', 'lowerArmL']),
+            armR: segSpan(['upperArmR', 'lowerArmR']),
         };
-        const M = 8;   // px: a hole must be INTERIOR to one leg's own span
-                       // by this much; components touching a span edge are
-                       // the inter-limb see-through (daylight pocket class)
+        const M = fullBody ? 4 : 8;   // px: a hole must be INTERIOR to one
+                                      // limb's own span; components touching
+                                      // a span edge are the inter-limb
+                                      // see-through (daylight pocket class)
         const inSpan = (c) =>
             (c.minX > spans.L[0] + M && c.maxX < spans.L[1] - M) ||
-            (c.minX > spans.R[0] + M && c.maxX < spans.R[1] - M);
-        const legSpan = H - topRow;
-        const crotchLimit = topRow + Math.round(0.10 * legSpan);
-        // a hole: starts below the crotch region (not the pocket reaching
-        // up to it), is at least 20 px (texel-level antialiasing fragments
-        // measure 1-8 px; the author's photographed carve-outs are visible
-        // patches), AND lies interior to a single leg's own screen span
-        const holes = comps.filter(c => c.minY > crotchLimit && c.area >= 20
-                                       && inSpan(c));
+            (c.minX > spans.R[0] + M && c.maxX < spans.R[1] - M) ||
+            (spans.armL[1] > spans.armL[0] &&
+             c.minX > spans.armL[0] + M && c.maxX < spans.armL[1] - M) ||
+            (spans.armR[1] > spans.armR[0] &&
+             c.minX > spans.armR[0] + M && c.maxX < spans.armR[1] - M);
+        const legSpan = H - hipRow;
+        const crotchLimit = hipRow + Math.round(0.10 * legSpan);
+        // Legacy (#23.1): a hole starts below the crotch region (not the
+        // pocket reaching up to it), is at least 20 px, AND lies interior
+        // to a single leg's own screen span.
+        // Full body (#26): any enclosed component >= 20 px that starts
+        // ABOVE the hip row and lies interior to a limb span. Inter-limb
+        // daylight cannot exist above the hip line (the leg pocket tops
+        // out at the crotch, below it; arm/torso slits touch a span edge),
+        // so such a component is a garment hole — the author's
+        // abdomen/hip gaps. Negative control: the current build's holes.
+        const holes = fullBody
+            ? comps.filter(c => c.area >= 20 && c.minY < hipRow && inSpan(c))
+            : comps.filter(c => c.minY > crotchLimit && c.area >= 20
+                            && inSpan(c));
         scene.render();
-        return { hipRow: topRow, crotchLimit, spans,
+        return { hipRow, crotchLimit,
             holes: holes.reduce((a, c) => a + c.area, 0),
             holeCount: holes.length,
             holesDetail: holes.map(c => ({ a: c.area, x: c.minX + '-' + c.maxX,
@@ -182,7 +197,7 @@ async function measureFraming(page, label, alphaOff) {
             comps: comps.map(c => ({ a: c.area, x: c.minX + '-' + c.maxX,
                                      y: c.minY + '-' + c.maxY })),
             bgLeg, W, H };
-    }, alphaOff);
+    }, { alphaOff, fullBody });
 }
 
 test('leg watertight: no enclosed background inside the silhouette below the hip, front/side/back (negative control: pre-#23.1 build holes)', async ({ page }) => {
@@ -202,6 +217,23 @@ test('leg watertight: no enclosed background inside the silhouette below the hip
             + `enclosed background component(s) below the hip row `
             + `${m.hipRow} (crotch limit ${m.crotchLimit}) — a see-through `
             + `carve-out; components: ${JSON.stringify(m.comps)}`)
+            .toBe(0);
+    }
+});
+
+test('full-body watertight (#26): no enclosed background above the hip inside any limb span, front/side/back (negative control: the current abdomen/hip holes)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.waitForTimeout(1200);
+    for (const [label, off] of [['front', 0], ['side', Math.PI / 2], ['back', Math.PI]]) {
+        const m = await measureFraming(page, label, off, true);
+        console.log(`WATERTIGHT-FULL ${label}`, JSON.stringify(m));
+        expect(m.holes, `${label}: ${m.holes} px in ${m.holeCount} enclosed `
+            + `background component(s) above the hip row ${m.hipRow} and `
+            + `interior to a limb span — the #26 abdomen/hip see-through; `
+            + `components: ${JSON.stringify(m.holesDetail)}`)
             .toBe(0);
     }
 });

@@ -6399,6 +6399,63 @@ def watertight_gate(mesh, tag):
             f'BODY_SABOTAGE_CAPS=1)')
     return len(loops)
 
+def _winding_conflicts(bm):
+    """Count edges whose two faces wind in the SAME direction.
+
+    On a consistently oriented surface every interior edge is traversed
+    once in each direction by its two adjacent faces. An edge traversed
+    the same way twice means a patch of faces is INSIDE-OUT: Babylon culls
+    backfaces, so the patch disappears from the far side and the
+    background shows through — the author's #26 'backface/background
+    pixels inside the silhouette' (dark see-through gaps at the
+    abdomen/hip junction, 2026-08-31). The mesh census showed the delivered
+    mesh CLOSED except the designed daylight V, so these gaps are winding
+    defects, not open rims.
+    """
+    bad = 0
+    for e in bm.edges:
+        if len(e.link_faces) != 2:
+            continue
+        l0, l1 = e.link_loops[0], e.link_loops[1]
+        # each loop owns one of the edge's verts; same vert = same direction
+        if l0.vert == l1.vert:
+            bad += 1
+    return bad
+
+
+def orient_consistent(mesh, tag):
+    """Repair inside-out face patches (#26) and HARD-GATE the result.
+
+    bmesh.ops.recalc_face_normals re-oriens every face island so its
+    normals point outward (volume heuristic per island). The delivered
+    mesh is closed except the designed daylight V, so the islands are the
+    garment pieces and the heuristic is safe; the render-space full-body
+    watertight gate (leg-watertight.spec.js) is the independent check.
+    BODY_SABOTAGE_WINDING=1 skips the repair — the gate must reject that
+    build (negative control).
+    """
+    bm = bmesh.new()
+    bm.from_mesh(mesh.data)
+    before = _winding_conflicts(bm)
+    if before and os.environ.get('BODY_SABOTAGE_WINDING') != '1':
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bm.to_mesh(mesh.data)
+        mesh.data.update()
+        bm.free()
+        bm = bmesh.new()
+        bm.from_mesh(mesh.data)
+    after = _winding_conflicts(bm)
+    bm.free()
+    log(f'WINDING [{tag}]: {before} same-direction edge(s) before, '
+        f'{after} after '
+        f'({"repair RAN" if os.environ.get("BODY_SABOTAGE_WINDING") != "1" else "repair SABOTAGED"})')
+    if after:
+        raise SystemExit(
+            f'[body] WINDING gate FAILED at {tag}: {after} edge(s) whose '
+            f'faces wind the same way — inside-out patches render as the '
+            f'see-through abdomen/hip gaps (negative control '
+            f'BODY_SABOTAGE_WINDING=1)')
+    return before, after
 
 def sever_thigh_bridge_faces(body, shell):
     """Turn the fitted thigh surfaces into two disconnected garment tubes.
@@ -11900,6 +11957,7 @@ def main():
     if SABOTAGE_SLIVER:
         sabotage_sliver(body)
     low = finish_lowpoly(body, lm)
+    orient_consistent(low, 'low-poly, pre-gates')
     # The shard gate runs on the SHIPPED mesh: this is the geometry the browser
     # skins and the author sees at rest.
     sliver_gate(low, 'after finish_lowpoly')
@@ -12167,6 +12225,7 @@ def main():
     # hidden interior geometry; the bake and the gates measure exactly what
     # they measured before, the delivered mesh is closed.
     close_boundary(low, 'pre-export')
+    orient_consistent(low, 'delivered mesh (pre-export)')
     watertight_gate(low, 'delivered mesh (pre-export)')
     bpy.ops.export_scene.gltf(
         filepath=out, export_format='GLB', use_selection=True,

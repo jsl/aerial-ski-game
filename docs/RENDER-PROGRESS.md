@@ -279,6 +279,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 189 | **NEXT.md 5a-NEW(i) #26 — FULL-BODY watertight gate LANDED and its negative control FIRES on the current build (front 52 px / side 36 px / back 334+328 px enclosed background above the hip, interior to a limb span — the abdomen/hip holes); mesh-space diagnosis: delivered mesh CLOSED (1 loop = 0.243 m daylight) and WINDING-CLEAN (0 conflicts), so the gaps are SKINNED SEPARATION at the abdomen/hip junction — mesh-side fix is next slot's first item (CARRIED RED). Also landed: `orient_consistent` winding census/repair/hard gate (0 before/after, sabotage hook) in build_body.py; no asset change, ASSET_V 76. unit 81/81, golden 30/30, legacy leg-watertight green, look 6/6.** | leg-watertight 1 green + 1 red (the fired control); probe numbers in entry 189 |
 | — | Iteration 188 | **NEXT.md item 5 COMPLETED (#16 real boots LANDED): 187's "WEIGHTS_0 sums 0..0.75" was NOT a weight defect — the boots were never in the glTF export selection (`use_selection` ships low+arm+equip only) and 187's sum readback mis-parsed VEC4 ubyte joints / float weights. `build_body.py`: boots now join `equip` (shipped), `--boots on` hard-exit gate removed, angle-limited shading (`shade_smooth_by_angle` 35°, fixes 187's "pile of lumps"), navy lightened (0.050,0.060,0.130). MEASURED on the shipped glb: athleteBootL/R 414 verts each, JOINTS_0 {11}/{12}=lowerLegL/R, WEIGHTS_0 sums exactly 1.000 on all 5 primitives. `game.js`: bootParts parented to skierRoot, skeleton-linked, alwaysSelectAsActiveMesh, excluded from the dispose sweep, revealed with the body only in alpine worlds, re-shown with the body on run reset. ASSET_V 75→76. CARRIED (pre-existing, byte-identical on clean HEAD): rig.spec hands-vs-thigh (−0.0403 m) and suit stand-off right thigh (0.1792 vs ≥0.180) reds, both pending the reviewer's open rulings. NEXT.md next: item 6 hands step 2.**
 | — | Iteration 184 | **NEXT.md item 5 (#21 half) — the PER-FRAME FLIGHT BOOT–SKI SWEEP gate LANDED: `flight-sweep.spec.js` drives a full jump (comp=easy), pulses the tuck airborne (blend-up → deep tuck → blend-down all swept) and samples `_bootSkiProbe()` every rAF frame: toe AND heel ≤ 5 mm both skis every live frame (crash excluded as the allowed violation), airborne ski-vs-shin pitch ≤ 2°. MEASURED: worst gap 0.00 mm / worst pitch 0.00° over 24 live airborne frames — the pin already seats analytically every frame; flight keeps zero cuff lean (armRaise=1 semantics untouched). `_flightPinOff` negative control (skip pin + 30 mm heel lift) FAILS the gate (fires). Tuck-vs-photo numbers: kneeToChest 0.419 m, torso −25°, knee 105°. OPEN: #16 the real boot (clog/cuff/ledges/buckles) = item 5's remainder, routed to 185. No asset change, ASSET_V 75.** | unit 81/81, golden 30/30, flight-sweep 2/2, inrun-contact+crouch+hop-turn+chain+aframe 17/17, look 6/6 shots inspected. See entry 184. |
 | — | Iteration 186 | **NEXT.md item 5 remainder (#21 TUCK REMODEL) — `POSE_TUCKED` rebuilt to the author's photo by chain-consistent forward kinematics, DISPLAY ONLY (POSE_TUCKED_INERTIA byte-frozen): kneeToChest 0.419 → 0.190 m (≤ 0.22), knee interior 30° → 130° flexion, torso −25° → −14.3°, arms wrap the knees (hand on the knee front, elbows in), head up, skis pitched with the shins and ankle on the binding anchor (0 mm analytic). unit 81/81; golden audit 0 physics diffs / 5408 frames, census-only recapture → 30/30; chain+flight-sweep 12/12; inrun/crouch/hop/aframe/spine 30/30; look 6/6, pose_tuck_side inspected (matches photo). CARRIED RED: crash-ragdoll #13 triple pastRollOut 9.945 vs band ≥ 10 (−0.055 m; all other sub-checks pass, single/double green) — ragdoll seeds from the posed frame, disposition question posted. #16 boots next.** | see entry 186. |
@@ -11470,6 +11471,66 @@ fragments sit between the legs' spans.
 **Open.** NEXT.md item 2 (crotch height) next; the naive-fill lesson is baked
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
+
+### 189 — NEXT.md 5a-NEW(i), #26 abdomen transparency: FULL-BODY watertight gate landed (fires as the mandated negative control: front 52 px) + mesh-space WINDING census/repair/gate; root cause LOCALIZED, fix next slot
+
+**Diagnosis (honest, three hypotheses tested and measured).** The author's
+abdomen/hip see-through (`author_weird_ab_2026-08-31.png`) is NOT an open rim
+and NOT a backface winding defect: a full-res scratch build's delivered mesh
+measures exactly **1 boundary loop (0.243 m — the designed daylight V)** and
+**0 same-direction winding edges**. The holes therefore appear only under
+SKINNING: the rest-pose mesh is closed and consistently oriented, while the
+POSED render shows enclosed background above the hip — skinned separation of
+the mesh islands at the abdomen/hip junction (the 177 crotch-web /
+bib-band region).
+
+**Render-space numbers (probe, 1280x720, athlete-only frames).** Enclosed
+clear-colour components >= 20 px above the hip row, interior to a limb span:
+front **52 px** (x 674-679, y 324-338), side **36 px** (x 633-640, y 353-364),
+back **334 px** (x 614-641, y 343-376) + **328 px** (x 647-672, y 330-366) —
+the back pair is L/R-symmetric about the spine, exactly the author's defect.
+Total ~750 px.
+
+**What shipped.**
+1. `tests/drive/leg-watertight.spec.js` — the watertight gate EXTENDED to the
+   FULL BODY silhouette (NEXT.md #26's wording): second test analyses the whole
+   frame; a hole is any enclosed background component >= 20 px whose top is
+   ABOVE the hip row and which lies interior (4 px margin) to a limb span
+   (legL/legR/armL/armR). Inter-limb daylight cannot exist above the hip line
+   (the leg pocket tops out at the crotch; arm/torso slits touch a span edge),
+   so the rule cannot excuse the abdomen gaps. The legacy #23.1 leg gate is
+   unchanged and stays GREEN. NEGATIVE CONTROL FIRES on the current build as
+   the mandate requires: `front: 52 px in 1 enclosed background component(s)
+   above the hip row 340` — this is a CARRIED RED under the carried-red
+   policy, cleared by the mesh-side fix next slot.
+2. `blender/build_body.py` — `_winding_conflicts` + `orient_consistent`:
+   counts edges whose two faces wind the same way, repairs inside-out patches
+   with `bmesh.ops.recalc_face_normals`, and HARD-GATES the delivered mesh at
+   0 conflicts (`BODY_SABOTAGE_WINDING=1` skips the repair — the gate must
+   reject that build). Measured on a full build: **0 before, 0 after** at both
+   call sites — the shipped mesh is already clean; the gate makes this defect
+   class impossible to ship silently. NO asset change: the glb/webp are
+   byte-identical to committed v76 (probe builds went to scratch), so
+   ASSET_V stays 76.
+
+**Verification.** unit **81/81**; golden **30/30** (no physics or asset
+change); `leg-watertight`: legacy gate **1/1 green**, full-body gate RED with
+the numbers above (the firing negative control, recorded honestly);
+`look` **6/6**, shots regenerated.
+
+**Open (next slot, in order).** (1) Close the abdomen/hip gaps mesh-side so
+the full-body gate goes green: the candidate is a skinning-separation repair —
+overlap or weld the torso-shell bottom with the hip/pelvis garment so no bind
+pose can open it (bind law: rest geometry a gate measures lives in the BINDS).
+(2) Then NEXT.md 5a-NEW(ii) tuck heel-lift coverage gap.
+
+**Open questions for the reviewer.**
+1. Is skinned separation the right read, or do you want a bind-pose render
+   probe (skeleton forced to rest) run first next slot to prove it before the
+   mesh surgery?
+2. The full-body gate's exclusion rule (nothing enclosed-and-above-hip may be
+   interior to a limb span) will flag a genuine armpit slit if one ever sits
+   fully inside an arm's screen span. Acceptable standing form?
 
 ### 188 — NEXT.md item 5 COMPLETED: #16 real boots LANDED — 187's "weight defect" was a measurement artefact (boots were never in the export selection and the sum readback mis-parsed the GLB); boots shipped in the glb, wired in game.js, ASSET_V 76
 
