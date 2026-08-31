@@ -459,7 +459,26 @@ def main():
 
     scn = bpy.context.scene
     scn.render.engine = 'CYCLES'
+    # GPU when available (author, 2026-08-30): same OPTIX -> CUDA -> CPU
+    # fallback bake_lightmap.py::configure_cycles uses; CPU remains the
+    # fallback so a box without the card still bakes identically.
     scn.cycles.device = 'CPU'
+    _prefs = bpy.context.preferences.addons['cycles'].preferences
+    for _backend in ('OPTIX', 'CUDA'):
+        try:
+            _prefs.compute_device_type = _backend
+            _prefs.get_devices()
+            _devs = [d for d in _prefs.devices if d.type == _backend]
+            if _devs:
+                for d in _prefs.devices:
+                    d.use = (d.type == _backend)
+                scn.cycles.device = 'GPU'
+                print(f'bake_trees cycles device: {_backend} ({_devs[0].name})')
+                break
+        except Exception as _e:
+            print(f'bake_trees {_backend} unavailable: {_e}')
+    else:
+        print('bake_trees cycles device: CPU')
     scn.cycles.samples = args.samples
     scn.cycles.use_denoising = False
     scn.render.film_transparent = True
