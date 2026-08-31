@@ -6077,6 +6077,7 @@ def shell_report(body, shell):
         f'{r.get("thigh_depth_rungs")})'
         if r['thigh_depth'] is not None else
         f'  thigh garment depth/breadth UNMEASURABLE (n={_ns})')
+    return r
 
 
 def suit_shell_gate(body, shell, prop):

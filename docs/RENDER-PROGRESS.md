@@ -254,6 +254,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 158 | **PREVIOUS-ITERATION PIPELINE REGRESSION FIXED: `shell_report()` once again returns its report, so the unchanged `suit_shell_gate()` can consume it and a full athlete build completes. HUMAN #15 was probed but NOT landed: separating the connected inner-thigh sheet enough to expose render-space daylight violated the existing thigh-curvature gate, and the rejected render still had zero continuous daylight. No asset, game, engine, DoF, threshold, or ASSET_V change; NEXT.md remains.** | full 2048/96 scratch build reaches `BODY_EXPORTED` with all hard gates green (inner-thigh mesh gap 45.5 mm, thigh depth 1.663); unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; canonical FACEDIST 0.1803. Rejected A-frame probe: daylight 0 px, frontal knee deviation about 24 deg; best mesh-space separation failed curvature at 0.370/0.381 > 0.35. See entry 158. |
 | — | Iteration 157 | **NEXT.md ordered instrument slice LANDED: `grey-attr.spec.js` now proves its `readPixels` row mapping before measuring the scene. A fullscreen top-left red / bottom-left green control shares the top-down screen coordinates used by Babylon picking; the corrected `H - 1 - y` reader sees the intended colors and the old unflipped reader is a hard failing negative control. No gate, threshold, scene, athlete, asset, engine, or DoF change. NEXT.md remains; HUMAN #15 A-frame is next.** | row self-test: correct top `[233,0,18]`, bottom `[110,219,59]`; unflipped control swaps them exactly. Grey-attr scene remains corridor/flank **0.8433/0.7707 = 1.094**, darkFrac **0.0455**; in-run **0.8367/0.8067 = 1.037**. Unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; shots regenerated and inspected. See entry 157. |
 | — | Iteration 155 (review) | **REVIEW-ONLY: current athlete/scene audited after the reverted 153–154 chain; no feature, asset, engine, gate, or threshold change. NEXT.md remains intact. The closed self-test state holds (FACEDIST 0.1803; kneeMax crouch 5.725 / flight 7.247), but the author-facing #15 A-frame and #16 real-boot gates are visibly RED and still absent; suit shards/white-on-white paint remain. Scene still trails the footage in mountain silhouette, forest depth and landing-surface read.** | focused chain+look+rig+spine 38/38; unit 81/81 and golden 30/30; run-all unit/golden/browser/mutation/coverage green, drive leg stopped after exceeding the review time box. Required shots regenerated and inspected. See entry 155. |
 | — | Iteration 152 | **Grey-attr instrument ROOT-CAUSED + FIXED (test-only; no scene/asset/engine change): the 150 canary was the readPixels Y-FLIP, not pick misclassification — probes (a) honest as-is corridor 0.5743/flank 0.8325 RED, (b) peaks hidden (reviewer's probe) 0.6649, dark 1790→739 with classification UNMOVED, (c) peaks made pickable NO change ⇒ classified rays correct, luminance mirrored; with the flip: corridor 0.8433 / flank 0.7707 (1.094) GREEN, inrun 0.8367/0.8067 (1.037) green, dark attribution now truthful (terrainCorridor 110, was 1792 false attributions); darkFrac gate re-bounded 0.035→0.060 on the corrected instrument (honest 0.0455 = ridgelines/birch/fence content); pickable-peaks guard kept** | unit 81/81; grey-attr 2/2; golden 30/30 (no physics/game-side change — confirmation run). See entry 152. |
@@ -1039,6 +1040,12 @@ forest.
   Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
+- **Entry 158 / HUMAN #15:** the inner thighs are one connected inherited skin sheet across the
+  ownership boundary. Moving the 194 crossing vertices far enough to expose daylight either leaves
+  the rendered gap closed or pushes the fitted thigh curvature above the unchanged 0.35 gate
+  (best rejected probe 0.370/0.381). For the next iteration, should this lane replace that garment
+  region with two explicitly separate thigh tubes, or must it preserve the inherited connected
+  topology and solve the ownership/fit another way?
 - **Entry 149 (thigh_depth instrument):** (1) the citable pooled per-rung reading is 1.663
   (n=103, both thighs, gate ≥ 0.90 green) — NOT the ~1.0 the 16:15 ruling called plausible.
   Named cause: `dominant_segments` crotch ownership clips each thigh's INNER face from its
@@ -1451,6 +1458,47 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 158 — Athlete build unblocked; A-frame topology blocker isolated
+
+**Scope and previous-iteration review.** `docs/NEXT.md` remains the sole mandate, and the accepted
+iteration 157 puts HUMAN #15 A-frame first. `git log -3 --stat` and `git show --stat HEAD` showed
+only the accepted row-order self-test plus its review note. Baseline verification passed: unit
+**81/81**, golden **30/30**, grey-attr **2/2** (scene corridor/flank **0.8433/0.7707**, darkFrac
+**0.0454**; in-run **0.8367/0.8067**, darkFrac **0.0047**) and look **6/6**. The canonical front
+shot remained the required negative control: the thighs merge visually and the calves fan outward.
+
+The first rebuild exposed a more immediate inherited regression: iteration 149 expanded
+`shell_report()` but dropped its `return r`. Every athlete build at HEAD therefore printed the
+valid report and then crashed in `suit_shell_gate()` with `TypeError: 'NoneType' object is not
+subscriptable`. The shipped v67 asset predates that source defect, so runtime rendering was intact,
+but the mandated suit pipeline could not produce another gated asset. Per the iteration rule to fix
+a half-done previous change first, this iteration restores that return as its one landed source unit.
+
+**A-frame probe and decision not to ship it.** Several scratch-only inner-thigh corrections were
+tested, always behind the existing shell gates. The inherited human topology contains a connected
+inner-thigh sheet crossing the two ownership regions (194 crossing vertices). The best mesh-space
+probe increased separation to about **55.4 mm**, but its fitted thigh curvature measured
+**0.370/0.381**, over the unchanged **0.35** ceiling even after relaxation. A less constrained
+probe still rendered **0 px** continuous daylight and about **24 deg** frontal hip-knee-ankle
+deviation. Those results are red against HUMAN #15's ≥3 cm and ≤5 deg requirements, so all probe
+geometry, generated assets and the provisional red drive spec were withdrawn. No gate or threshold
+was weakened. No asset was committed and `ASSET_V` remains 67.
+
+**Verification.** A clean full-resolution scratch build using Blender 5.2.1 at **2048 px / 96
+samples** now passes through `shell_report()` and every hard build gate to `BODY_EXPORTED`
+(8995 verts, 21 bones). Its unchanged readings include inner-thigh mesh gap **45.5 mm**, garment
+thigh depth/breadth **1.663**, arm/thigh **0.498**, and shipped calf/thigh **0.699**. Final
+`npm run test:unit` passed **81/81** and `npm run test:golden` passed **30/30**. The baseline
+`look` run passed **6/6**, regenerated the shots, and measured FACEDIST **0.1803**, front
+span/coverage **0.936/0.1982**, and side span/coverage **0.775/0.1143**.
+
+**Shot inspection and open work.** `scene.png` is unchanged from the accepted 157 render.
+`figure.png` still exposes the already-filed suit shards and low toe-shaped footwear.
+`figure_front.png` remains visibly red for HUMAN #15: no continuous daylight to the knees and a
+clear calf direction change. HUMAN #15 therefore remains first, followed by HUMAN #16; paint/shard
+cleanup and the authorized readout remain open. `docs/NEXT.md` is intentionally retained. The
+topology-choice question is recorded above for the reviewer.
+
 ### 157 — Grey-attr row-order self-test closes the instrument checklist
 
 **Scope and previous-iteration review.** `docs/NEXT.md` exists and remains the only mandate. The
