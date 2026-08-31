@@ -4323,29 +4323,37 @@ def hand_metrics(body, side):
     """
     Wrist->fingertip length and the hand/forearm ratio for one side.
 
-    The wrist is the forearm bone's tail (segment centre z - h/2, arms hang);
-    the glove cluster is the lowerArm-weighted vertices strictly below it.
+    FRAME-INDEPENDENT (ruling on 172, 05:30): the wrist is the forearm bone's
+    TAIL from seg_ends (elbow -> hand) and the depth of a vertex is its
+    distance along the bone's own axis `adir`, not world z — so a build-side
+    arm abduction (or any future rest tilt) measures through the same code.
+    At the shipped hanging rest `adir` is exactly -z and `wrist.z` the old
+    `wrist_z`, which is the equivalence control: identical numbers, same mesh.
     """
     gi = {g.name: g.index for g in body.vertex_groups}
     idx = gi.get('lowerArm' + side)
     if idx is None:
         return None
-    cl = bl('lowerArm' + side)
-    hl = SEGMENTS['lowerArm' + side]['h'] / 2
-    wrist_z = cl.z - hl
-    tip_z, n = None, 0
+    head, tail = seg_ends('lowerArm' + side)
+    wrist = tail
+    adir = (tail - head).normalized()
+    tip_t, n = None, 0
     for v in body.data.vertices:
         w = next((g.weight for g in v.groups if g.group == idx), 0.0)
-        if w <= 0.30 or v.co.z >= wrist_z - 0.004:
+        if w <= 0.30:
+            continue
+        t = (v.co - wrist).dot(adir)
+        if t <= 0.004:
             continue
         n += 1
-        tip_z = v.co.z if tip_z is None else min(tip_z, v.co.z)
-    if tip_z is None or n < 25:
+        tip_t = t if tip_t is None else max(tip_t, t)
+    if tip_t is None or n < 25:
         return None
-    hand = wrist_z - tip_z
+    hand = tip_t
     forearm = SEGMENTS['lowerArm' + side]['h']
     return {'hand': hand, 'forearm': forearm, 'ratio': hand / forearm,
-            'wrist_z': wrist_z, 'tip_z': tip_z, 'n': n}
+            'wrist': wrist, 'adir': adir,
+            'wrist_z': wrist.z, 'tip_z': wrist.z - hand, 'n': n}
 
 
 def scale_hands(body):
@@ -4368,20 +4376,25 @@ def scale_hands(body):
             log(f'  hands{side}: no glove band measurable — skipped')
             continue
         s = min(1.0, HAND_RATIO_TARGET * m['forearm'] / max(1e-6, m['hand']))
-        fade_hi = m['wrist_z'] + 0.045
+        adir, wrist = m['adir'], m['wrist']
+        fade_hi = 0.045          # along `adir`, beyond the wrist plane
         gi = {g.name: g.index for g in body.vertex_groups}
         idx = gi['lowerArm' + side]
         moved = 0
         for v in body.data.vertices:
             w = next((g.weight for g in v.groups if g.group == idx), 0.0)
-            if w <= 0.30 or v.co.z >= m['wrist_z'] + 0.001:
+            if w <= 0.30:
+                continue
+            p = v.co - wrist
+            along = p.dot(adir)
+            if along < -0.001:
                 continue
             f = s
-            if v.co.z > m['wrist_z']:
-                u = max(0.0, min(1.0, (v.co.z - m['wrist_z']) /
-                                 max(1e-6, fade_hi - m['wrist_z'])))
+            if along < 0.0:
+                u = max(0.0, min(1.0, -along / fade_hi))
                 f = s + (1.0 - s) * (u * u * (3 - 2 * u))
-            v.co.z = m['wrist_z'] + (v.co.z - m['wrist_z']) * f
+            trans = p - adir * along
+            v.co = wrist + adir * (along * f) + trans
             moved += 1
         after = hand_metrics(body, side)
         log(f'  hands{side}: hand {m["hand"] * 1000:.0f} mm vs forearm '
@@ -4454,7 +4467,7 @@ def _hand_cluster(body, side):
     if idx is None:
         return None
     ids = [v.index for v in body.data.vertices
-           if v.co.z < m['wrist_z'] - 0.004
+           if (v.co - m['wrist']).dot(m['adir']) > 0.004
            and next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.30]
     m['ids'] = ids
     return m
@@ -4491,6 +4504,11 @@ def _finger_axes(body, side, split=None):
     """
     Split the glove below the crotch and measure one axis per finger.
 
+    FRAME-INDEPENDENT (ruling on 172, 05:30): the cut ladder runs on depth
+    along the forearm bone's own axis (`m['adir']`, 0 at the wrist, growing
+    toward the fingertips), not world z — identical at the hanging rest, and
+    correct through any build-side arm tilt.
+
     The crotch depth is not assumed: the fingers are separate connected
     components only BELOW it, so the cut depth that yields the most components
     is the one that has cleared it. A 0.50 cut found two components on this
@@ -4498,7 +4516,7 @@ def _finger_axes(body, side, split=None):
     together); the ladder finds the depth that parts all five. Ties go to the
     shallowest, which gives each finger the longest lever.
 
-    Returns (fingers, hax, cut_z, m) where each finger is
+    Returns (fingers, hax, cut_t, m) where each finger is
     {'ids', 'base', 'axis', 'n', 'len'} and `hax` is the vert-weighted mean
     direction of the whole set — the direction a relaxed hand points.
     """
@@ -4506,17 +4524,22 @@ def _finger_axes(body, side, split=None):
     if m is None or len(m['ids']) < 30:
         return None
     co = body.data.vertices
+    adir, wrist = m['adir'], m['wrist']
+
+    def depth(p):
+        return (p - wrist).dot(adir)
+
     best = None
     for s in ((split,) if split is not None else FINGER_SPLIT):
-        cut_z = m['wrist_z'] - s * m['hand']
-        below = [i for i in m['ids'] if co[i].co.z < cut_z]
+        cut_t = s * m['hand']
+        below = [i for i in m['ids'] if depth(co[i].co) > cut_t]
         if len(below) < 20:
             continue
         fingers = []
         for comp in _components(body, below):
             if len(comp) < 8:
                 continue
-            pts = sorted((co[i].co.copy() for i in comp), key=lambda p: p.z)
+            pts = sorted((co[i].co.copy() for i in comp), key=lambda p: -depth(p))
             k = max(3, len(pts) // 6)
             tip = sum(pts[:k], Vector()) / k
             base = sum(pts[-k:], Vector()) / k
@@ -4528,10 +4551,10 @@ def _finger_axes(body, side, split=None):
         if len(fingers) < 2:
             continue
         if best is None or len(fingers) > len(best[0]):
-            best = (fingers, cut_z, s)
+            best = (fingers, cut_t, s)
     if best is None:
         return None
-    fingers, cut_z, s = best
+    fingers, cut_t, s = best
 
     # THE THUMB IS SHORT. It parts from the hand higher than any finger, but it
     # also ENDS higher, so at the cut depth that finally separates the four
@@ -4543,11 +4566,12 @@ def _finger_axes(body, side, split=None):
     deep = set()
     for f in fingers:
         deep |= set(f['ids'])
-    shal_z = m['wrist_z'] - FINGER_SPLIT[0] * m['hand']
-    for comp in _components(body, [i for i in m['ids'] if co[i].co.z < shal_z]):
+    shal_t = FINGER_SPLIT[0] * m['hand']
+    for comp in _components(body, [i for i in m['ids']
+                                   if depth(co[i].co) > shal_t]):
         if len(comp) < 8 or (deep & set(comp)):
             continue
-        pts = sorted((co[i].co.copy() for i in comp), key=lambda p: p.z)
+        pts = sorted((co[i].co.copy() for i in comp), key=lambda p: -depth(p))
         k = max(3, len(pts) // 6)
         ax = (sum(pts[:k], Vector()) / k) - (sum(pts[-k:], Vector()) / k)
         if ax.length < 1e-5:
@@ -4555,7 +4579,7 @@ def _finger_axes(body, side, split=None):
         fingers.append({'ids': comp, 'base': sum(pts[-k:], Vector()) / k,
                         'axis': ax.normalized(), 'n': len(comp),
                         'len': ax.length, 'short': True})
-        cut_z = max(cut_z, shal_z)
+        cut_t = max(cut_t, shal_t)
 
     # The hand's direction is the FINGERS' direction: a thumb swung 45 deg out
     # would otherwise drag the target it is being aligned to halfway out with it.
@@ -4564,7 +4588,7 @@ def _finger_axes(body, side, split=None):
         hax += f['axis'] * (f['n'] * (0.1 if f.get('short') else 1.0))
     if hax.length < 1e-6:
         return None
-    return fingers, hax.normalized(), cut_z, m
+    return fingers, hax.normalized(), cut_t, m
 
 
 def _spread_deg(fingers):
@@ -4601,7 +4625,7 @@ def _finger_gap(body, fingers, hax):
                 for i in range(len(spans) - 1)), default=0.0)
 
 
-def _pack_fingers(body, fingers, hax, wax, cut_z, m):
+def _pack_fingers(body, fingers, hax, wax, cut_t, m):
     """
     Shear the fingers together along `wax`. Returns (before, after), the worst
     gap between consecutive fingers in metres.
@@ -4617,6 +4641,7 @@ def _pack_fingers(body, fingers, hax, wax, cut_z, m):
     it is closing them.
     """
     co = body.data.vertices
+    adir, wrist = m['adir'], m['wrist']
     spans = []
     for f in fingers:
         w = sorted(co[i].co.dot(wax) for i in f['ids'])
@@ -4624,14 +4649,15 @@ def _pack_fingers(body, fingers, hax, wax, cut_z, m):
         lo, hi = w[k], w[-1 - k]
         spans.append({'f': f, 'lo': lo, 'hi': hi, 'c': 0.5 * (lo + hi),
                       'w': hi - lo,
-                      'tip_z': min(co[i].co.z for i in f['ids'])})
+                      'tip_t': max((co[i].co - wrist).dot(adir)
+                                   for i in f['ids'])})
     spans.sort(key=lambda s: s['c'])
     before = max((spans[i + 1]['lo'] - spans[i]['hi']
                   for i in range(len(spans) - 1)), default=0.0)
 
-    shear_z = m['wrist_z'] - 0.35 * m['hand']
-    tip_z = min(s['tip_z'] for s in spans)
-    lever = max(1e-4, shear_z - tip_z)
+    shear_t = 0.35 * m['hand']
+    tip_t = max(s['tip_t'] for s in spans)
+    lever = max(1e-4, tip_t - shear_t)
     cap = lever * math.tan(math.radians(FINGER_TILT_MAX))
     total = sum(s['w'] for s in spans) + FINGER_GAP * (len(spans) - 1)
     mean = sum(s['c'] for s in spans) / len(spans)
@@ -4666,9 +4692,10 @@ def _pack_fingers(body, fingers, hax, wax, cut_z, m):
 
     for i in m['ids']:
         v = co[i]
-        if v.co.z >= shear_z:
+        t = (v.co - wrist).dot(adir)
+        if t <= shear_t:
             continue
-        u = max(0.0, min(1.0, (shear_z - v.co.z) / lever))
+        u = max(0.0, min(1.0, (t - shear_t) / lever))
         d = shift(v.co.dot(wax))
         if d:
             v.co = v.co + wax * (d * u)
@@ -4689,7 +4716,7 @@ def relax_hands(body):
         if got is None:
             log(f'  hands{side}: no finger components found — skipped')
             continue
-        fingers, hax, cut_z, m = got
+        fingers, hax, cut_t, m = got
         before = _spread_deg(fingers)
 
         # Hand frame: the fingers run along `hax`, the knuckles spread along
@@ -4726,7 +4753,8 @@ def relax_hands(body):
             axis = f['axis'].cross(hax)
             for i in f['ids']:
                 v = body.data.vertices[i]
-                u = min(1.0, (cut_z - v.co.z) / fade)
+                u = min(1.0, ((v.co - m['wrist']).dot(m['adir'])
+                              - cut_t) / fade)
                 u = u * u * (3 - 2 * u)
                 p = v.co - f['base']
                 if drop > 1e-6 and axis.length > 1e-6:
@@ -4743,13 +4771,13 @@ def relax_hands(body):
         # at its own tip, so nothing tears where it leaves the palm — until
         # consecutive fingers are FINGER_GAP apart. The packed block keeps the
         # fingers' own mean position, so the wrist does not move.
-        gap = _pack_fingers(body, fingers, hax, wax, cut_z, m)
+        gap = _pack_fingers(body, fingers, hax, wax, cut_t, m)
 
         after = _finger_axes(body, side)
         aft = _spread_deg(after[0]) if after else float('nan')
         log(f'  hands{side}: {len(fingers)} digits '
             f'({sum(1 for f in fingers if f.get("short"))} short), cut '
-            f'{(m["wrist_z"] - cut_z) / m["hand"]:.2f} of the hand, spread '
+            f'{cut_t / m["hand"]:.2f} of the hand, spread '
             f'{before:.1f} -> {aft:.1f} deg (residual {FINGER_RESIDUAL:.1f}), '
             f'gap {gap[0] * 1000:.1f} -> {gap[1] * 1000:.1f} mm, curl '
             f'{math.degrees(curl):+.1f} deg about the width axis (palm offset '
