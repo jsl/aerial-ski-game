@@ -1647,6 +1647,14 @@ rebuild (38 s), bump ASSET_V.
 **Verification on the SHIPPED tree.** `git status` clean; HEAD unchanged from
 165's tip. The pre-revert numbers above are the recorded evidence.
 
+**Commit-note.** The iteration commit `630f433`'s message was mangled by a shell
+heredoc quoting failure: the subject line was lost and a stray `EOF` line landed
+after the trailer. Amending is forbidden, so the record lives here: the full
+description is this entry's title and body (165→166 summary above); the trailer
+`Co-Authored-By: GLM-5.3-Flash (glm-5.3-flash) <noreply@z.ai>` IS present in the
+commit. The diff is exactly `docs/RENDER-PROGRESS.md` +83 lines (status board row
++ entry 166).
+
 ### 164 — NEXT.md #15: the Sol thigh-tube diff RE-APPLIED plus a knee-band
 freeze/relax that takes the weight-seam gate GREEN on the tube for the first
 time (max 0.893, 0 hot edges; root cause refined: the knee-ring weight flip
