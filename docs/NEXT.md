@@ -26,7 +26,15 @@ all apply.
    (elbows in), toe AND heel affixed to the skis in EVERY non-crash frame (per-frame flight sweep
    gate; heel lift = failure; skis eject only on crash). Pose/display only; golden physics
    unchanged (census-only recapture with audit if display traces move).
-5b. **#24 — GROUNDED SLIDE + WEIGHTY GET-UP (author, 12:05).** Full spec in the #24 entry: the
+5a-NEW (DO THESE FIRST, author ~15:00 — full specs in the #25/#26/#21-v3 entry):
+   (i) **#26 abdomen transparency** — close the abdomen/hip holes; watertight gate extended to the
+       FULL body silhouette; current holes = failing control.
+   (ii) **#21 v3 tuck** — FIND THE HEEL-LIFT COVERAGE GAP (the game's real tuck paths lift heels
+       while the gated path reads 0.00 mm; sweep every trick family + input mode, fix, extend the
+       gate); pose to "sitting": torso within ~10° of upright, hands GRASPING kneecaps ≤ 5 cm.
+   (iii) **#25 knees** — the tube overlay extended ACROSS the knee band (no crumple), and the
+       on-slope stance: uphill knee bent ~15–20°, ankles edging into the hill.
+5b. **#24 — GROUNDED SLIDE + WEIGHTY GET-UP (author, 12:05; REAFFIRMED ~15:00 — leads right after 5a-NEW).** Full spec in the #24 entry: the
    slide conforms to terrain every frame (same clearance bounds as #20; only the tumble may leave
    the ground), and the get-up is contact-driven (knees/hands then feet planted, root rises only
    over planted contacts, ≤ ~1.2 m/s, no foot drift) — no levitation, no float. Gates per world
