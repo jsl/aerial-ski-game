@@ -11479,6 +11479,61 @@ fragments sit between the legs' spans.
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
 
+### 194 — 17:30 ruling slot: border-ring weld executed per the probe data — the 193 strip's miss ROOT-CAUSED (axis mislabel: the rim sits at Blender |x| 0.129–0.143, outside the strip's 0.10 band) — but BOTH weld mechanisms FALSIFIED by the seam gate (literal weld 1.684/37 hot; global z-floor 1.851/77 hot) — REVERTED to the 193 tip; carried red unchanged
+
+**What was done (no source landed; this entry is the deliverable).** Per the
+17:30 ruling, the probe-targeted border-ring weld was implemented in
+`build_body.py` (scratch `~/aerial-agents/scratch/iter-194/`, now cleaned)
+and falsified twice, so per the carried-red policy the tree was restored to
+the 193 tip rather than shipping a gate-failing build.
+
+1. **ROOT CAUSE of why the 193 strip never reached the rim verts.** The
+   probe's rim coordinates are GLB space; under `export_yup`, GLB z maps to
+   Blender LATERAL x. The rim verts actually sit at Blender |x| =
+   0.129–0.143 — inside the very band the 193 strip excluded ("arms live at
+   |x| 0.13–0.17"). Entry 193's "midline front, rest |x| ≤ 0.076" read the
+   wrong axis. A GLB WEIGHTS_0 dump confirmed the shipped build still
+   carries hlpElbowR 0.57–0.72 on the rim verts.
+2. **FALSIFIED 1 — the literal component weld** (weld each connected
+   rim component to one normalised non-arm weight vector, exactly per
+   `weld_abdomen_hip_seam`): 63 corrupted verts found in the probe box
+   (|x| 0.08–0.18, y −0.12..0.02, z −0.24..−0.135), 0 ring edges joined
+   (every rim neighbour is a PARTIAL arm blend, not torso-dominant), so the
+   weld degenerated to a per-vert strip and the seam gate FAILED: max
+   1.684, 37 edges over 1.0 (limit 1.1/6).
+3. **FALSIFIED 2 — measured z-floor strip** (no arm-chain weight below the
+   "deepest legitimate arm vert" z = −0.124, 10 mm ramp): the census behind
+   that floor was |x| < 0.12-biased — genuine arm skin DOES extend below
+   −0.135 at lateral offsets (hands/arms hang at |x| ≈ 0.13–0.17). Seam
+   gate FAILED: max 1.851, 77 hot edges at the cut.
+4. **Tree restored to the 193 tip** (`git checkout -- blender/build_body.py
+   assets/`); the reviewer's untracked `assets/*_*.png` scratch bake left
+   alone.
+
+**Verification (on the reverted, shipped state).** unit **81/81**; golden
+**30/30**; `leg-watertight` run: leg gate green, full-body gate RED with the
+hole **byte-identical 52 px, x 674–679, y 324–338** — the carried red stands
+unchanged, now with two falsified mechanisms on record.
+
+**Open / next concrete step.** The rim is a BELLY-FLANK patch at the SAME
+height band as genuine arm/hand skin, distinguishable (so far) only by
+dominance CLASS: the rim carries the HELPERS (hlpElbowR 0.52–0.72; helper
+reach 78 mm — how the elbow helper reach gate passes 0 offenders while the
+belly tears needs one more look: d/reach max 1.51 vs limit 1.70 means the
+rim sits ≤ 1.7 × 78 mm of the elbow joint in build space). Candidate fix for
+the reviewer to rule on: strip ONLY the helper chain (hlpShoulder/hlpElbow)
+below the floor, keeping upperArm (real arm bone) untouched, so the real-arm
+boundary stays continuous; or shrink helper reach 1.70 → 1.55 in the
+locality gate if the rim truly sits outside the elbow's legit sphere.
+
+**Open questions for the reviewer.**
+1. Both ruling-directed mechanisms are falsified (numbers above). Authorise
+   the helper-only variant (strip hlpShoulder/hlpElbow below z −0.135 inside
+   the probe box, ramp 10 mm, upperArm untouched), or order a different move?
+2. Keep the carried red on the strength of this entry's falsifications, or
+   revert per policy (nothing landed, so there is nothing to revert — the
+   red predates this slot)?
+
 ### 193 — 16:55 ruling slot: the ONE pixel-to-triangle probe run — front hole is a TRUE GEOMETRIC GAP under pose (no-hit with culling OFF, double-sided); 191's culled-backface hypothesis FALSIFIED; arm-chain belly strip extended (hlpElbow/hlpShoulder, y-gate dropped) — hole STILL byte-identical 52 px; triple floor rolled back 7.5 → 7.0
 
 **What changed.**
