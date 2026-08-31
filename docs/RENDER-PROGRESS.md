@@ -284,6 +284,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
 | — | Iteration 190 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected); leg-watertight re-run solo — the #26 fired negative control REPRODUCES byte-identical (front 52 px, x 674–679, y 324–338, above hip row 340); `./tests/run-all.sh` passed unit+golden+mutation+coverage but its Playwright drive leg TIMED OUT at the 1800 s harness cap mid-suite (not a product regression; drive specs green in isolation). By-eye review: boots read as a real seated boot (188's block pile gone) but mushy white-on-white with navy smudges; pink/magenta paint smears across the lower bib front and the front hip in BOTH figure framings (item 7's band/paint debt); bib digits still rotated/mirrored (item 7); thighs/hip still knobby in side view (residual #23.3, already ruled author-judge); no NEW regressions found. No source/asset/gate change; NEXT.md untouched — 5a-NEW(i) mesh-side abdomen fix stays next slot's first item.** | unit/golden/look + leg-watertight re-run on the 189 tip; shot inspection numbers in entry 190. |
 | — | Iteration 193 | **16:55-ruling slot — the ONE probe run: front hole shows BACKGROUND even with culling OFF (52/52 px) and CPU-skinned double-sided rays through all 90 hole pixels get 0 hits → TRUE GEOMETRIC GAP under pose; entry 191's culled-backface hypothesis FALSIFIED. Arm-CHAIN belly strip landed (hlpElbow/hlpShoulder added, 192's y>0.03 gate that skipped the offending verts dropped; 180 verts ramped); hole STILL byte-identical 52 px. Triple floor ROLLED BACK 7.5→7.0 (16:55 ruling); crash-ragdoll 10/10 re-verified at 7.0. ASSET_V 78. unit 81/81, golden 30/30, look 6/6. CARRIED RED: full-body watertight front 52 px. Open Qs: border-ring weld as the next single move? keep the gated strip?** | entry 193; probe log in scratch/iter-193. |
 | — | Iteration 191 | **NEXT.md 5a-NEW(i) #26 — root cause SPLIT by render probe: the FRONT hole (52 px, byte-stable across 4 runs) is SKINNING-INVERTED FACES (vanishes with `backFaceCulling=false` — degenerate/flipped triangles under pose, the session-23 belly-vertex class); the BACK hole is a REAL GEOMETRIC GAP (PERSISTS with culling off — true background visibility, so NOT winding and NOT paint; clear colour is pale sky 189/209/217 and hole pixels match it). Gate is NONDETERMINISTIC on side/back across runs (side 84→0 px, back 296-in-4-slits→324-in-1) while front is byte-stable — suspected ready-state idle sway. Mesh-side fix scoped for 192. No source/asset change, ASSET_V 76. unit 81/81, golden 30/30, look 6/6.** | probe numbers in entry 191. See entry 191. |
@@ -11479,6 +11480,33 @@ fragments sit between the legs' spans.
 **Open.** NEXT.md item 2 (crotch height) next; the naive-fill lesson is baked
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
+
+
+### 195 — REVIEW-ONLY slot: full suite run + shot inspection — run-all RED on the walkoff #14 negative control (gate PASSES on the stay-down path it must fail on: 107 passed, 1 failed, 2 skipped, 45.1 m drive leg); unit 81/81, golden 30/30, look 6/6; shots inspected + measured
+
+**Scope.** No features, no source/asset changes (only the known `blender/terrain.json` float jitter appeared and was reverted). This entry is the deliverable.
+
+**Verification.**
+- unit 81/81; golden 30/30 (run before the suite, no source edits after).
+- `./tests/run-all.sh`: unit PASS, golden PASS, browser/mutation/coverage PASS (coverage "All scenarios differentiate", incl. the documented aerial-twist-left and pool-dive-basic duplicate pairs), drive leg **FAIL — 107 passed / 1 failed / 2 skipped / 45.1 m**. The single red is `walkoff.spec.js:174 › crash #14 negative control: the previous stay-down ending fails` — the assertion `expect(walkoffGatePasses(stayDown)).toBe(false)` failed, i.e. the gate now PASSES on the stay-down ending it exists to reject. Disposition unknown-not-fixed (review slot): either the gate genuinely stopped discriminating after some crash/tuck change since the last green full run (the last completed run-all drive leg was iteration 190's timeout), or it is the same environmental class as 180's port-collision red (there proven green in isolation). NOT run solo — the suite's 45-minute drive leg consumed the slot's budget. **This is the carried red for the next work slot: run walkoff solo first; if it reproduces, the stay-down branch of `measureWalkoff` is no longer producing a stay-down ending — fix the mechanism, do NOT touch the gate.**
+- look 6/6; shots regenerated and inspected.
+
+**By-eye review (with numbers).**
+- `scene.png` (mean luma 0.721): corridor reads bright against flanks (grey-ramp holds); in-run, knoll kicker with B-nets and the athlete at the table all read correctly. Open debts unchanged: cone peaks still read pale vs the ridges (peaks ≈ sky contrast remains weak — top-of-frame band), the near ridge crest line still shows the dark shade flank, and the green wedge debt (reviewer-owned) persists behind the mid ridge.
+- `figure.png` (0.702): suit reads as a smooth garment; boots seated; **the magenta/pink paint smear at the bib lower edge and front hip is clearly visible** (NEXT item 7's texture debt), bib digit "3" mirrored from behind (item 7). The front abdominal region shows no transparent hole from this framing — consistent with the 52 px hole being framing/pose-specific and still tracked red.
+- `figure_front.png` (0.756): bib "30" legible, correct orientation from the front; the pink bib-band overhang onto the suit below the plate is the single loudest defect in the framing (bounded-band fix, NEXT item 7); knee/leg silhouette smooth, A-frame daylight present; boot clogs sit on the skis with no floating blocks (188 regression stays fixed).
+- `pose_tuck_side.png` (0.598): matches the author's photo read from 186/194 — knees to chest, arms wrapped, head up. Crash-ragdoll #13 triple −5.5 cm disposition still open (194's open question).
+
+**Gaps against the plan / re-prioritised list for next slots.**
+1. **Walkoff negative-control red (NEW, top)** — solo-reproduce, root-cause the stay-down branch, fix mechanism-side; per carried-red policy it clears next slot or reverts.
+2. Next.md 5a-NEW(i) #26 abdomen front hole (52 px, parked as tracked cosmetic per the 17:50 ruling) — helper-only weld variant awaiting the reviewer's answer to 194 Q1.
+3. NEXT.md item 5b (#24 grounded slide + weighty get-up) — reaffirmed by the author, unchanged.
+4. Item 7 paint slice: the pink bib-band overhang and mirrored back digits are the loudest remaining athlete-framing defects (both visible in this slot's shots).
+5. 5b → 6 (hands ±7.5° abduction) → 8 (coach) per the mandate order.
+
+**Open questions for the reviewer.**
+1. The walkoff red: is a solo re-run + mechanism fix the right disposition for the next work slot, or do you already know this red's cause from your own run-all runs?
+2. 194's two open questions (helper-only weld authorization; carried-red keep/revert) still await rulings and now queue behind item 1 above.
 
 ### 194 — 17:30 ruling slot: border-ring weld executed per the probe data — the 193 strip's miss ROOT-CAUSED (axis mislabel: the rim sits at Blender |x| 0.129–0.143, outside the strip's 0.10 band) — but BOTH weld mechanisms FALSIFIED by the seam gate (literal weld 1.684/37 hot; global z-floor 1.851/77 hot) — REVERTED to the 193 tip; carried red unchanged
 
