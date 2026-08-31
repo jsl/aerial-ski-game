@@ -256,6 +256,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
 | — | Iteration 158 | **PREVIOUS-ITERATION PIPELINE REGRESSION FIXED: `shell_report()` once again returns its report, so the unchanged `suit_shell_gate()` can consume it and a full athlete build completes. HUMAN #15 was probed but NOT landed: separating the connected inner-thigh sheet enough to expose render-space daylight violated the existing thigh-curvature gate, and the rejected render still had zero continuous daylight. No asset, game, engine, DoF, threshold, or ASSET_V change; NEXT.md remains.** | full 2048/96 scratch build reaches `BODY_EXPORTED` with all hard gates green (inner-thigh mesh gap 45.5 mm, thigh depth 1.663); unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; canonical FACEDIST 0.1803. Rejected A-frame probe: daylight 0 px, frontal knee deviation about 24 deg; best mesh-space separation failed curvature at 0.370/0.381 > 0.35. See entry 158. |
 | — | Iteration 157 | **NEXT.md ordered instrument slice LANDED: `grey-attr.spec.js` now proves its `readPixels` row mapping before measuring the scene. A fullscreen top-left red / bottom-left green control shares the top-down screen coordinates used by Babylon picking; the corrected `H - 1 - y` reader sees the intended colors and the old unflipped reader is a hard failing negative control. No gate, threshold, scene, athlete, asset, engine, or DoF change. NEXT.md remains; HUMAN #15 A-frame is next.** | row self-test: correct top `[233,0,18]`, bottom `[110,219,59]`; unflipped control swaps them exactly. Grey-attr scene remains corridor/flank **0.8433/0.7707 = 1.094**, darkFrac **0.0455**; in-run **0.8367/0.8067 = 1.037**. Unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; shots regenerated and inspected. See entry 157. |
 | — | Iteration 155 (review) | **REVIEW-ONLY: current athlete/scene audited after the reverted 153–154 chain; no feature, asset, engine, gate, or threshold change. NEXT.md remains intact. The closed self-test state holds (FACEDIST 0.1803; kneeMax crouch 5.725 / flight 7.247), but the author-facing #15 A-frame and #16 real-boot gates are visibly RED and still absent; suit shards/white-on-white paint remain. Scene still trails the footage in mountain silhouette, forest depth and landing-surface read.** | focused chain+look+rig+spine 38/38; unit 81/81 and golden 30/30; run-all unit/golden/browser/mutation/coverage green, drive leg stopped after exceeding the review time box. Required shots regenerated and inspected. See entry 155. |
@@ -1460,6 +1461,70 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 160 — Review-only (GLM re-check after the Sol window): suite green except the known quality frame-time flake; #15/#16 still visibly red; bib-band magenta confirmed benign; a port-conflict leftover on 8099 is the only environmental note
+
+**Scope and self-review.** Review only, per the iteration-160 instruction and the 22:35
+handback note. `docs/NEXT.md` exists and remains the work-slot mandate — NOT touched or
+deleted (steps 0–3 are only partially green; see below). No source, asset, gate, threshold,
+engine, DoF, or athlete-file change was made this iteration. `git log -3 --stat` /
+`git show --stat HEAD`: the tip is the reviewer's 159-kill documentation commit on top of
+Sol's accepted 158 state (`4157599` shell-build restore) and the GPU `bake_trees.py`
+fallback — nothing half-done in the tree, which started clean.
+
+**Verification (`./tests/run-all.sh`, 41 m).** Unit **81/81 PASS**, golden **30/30 PASS**,
+browser PASS, mutation PASS, coverage PASS. The drive leg inside run-all FAILED TO START —
+Playwright's webServer hit `[Errno 98] Address already in use`: a leftover
+`python3 -m http.server 8099` (pid 843530, serving this repo) from the killed session is
+still holding the default `DRIVE_PORT`. Not killed (not mine); the full drive suite was
+re-run with `DRIVE_PORT=8199`: **125 passed / 1 failed (40.9 m)** — the only red is the
+known `quality.spec` frame-time budget flake (same SwiftShader/under-contention failure
+documented in entries 115/120; not a regression, left alone in a review slot).
+
+**Gate numbers from this run (fresh, honest build):** FACEDIST **0.1803** (gate 0.15, green;
+unchanged since 149 — no face work landed in 156–159, as expected for the suit mandate);
+figure front silhouette span/frac **0.936/0.1982**, FRONTGATE navyFrac **0.0872** (< 0.10 leak
+gate, green — step 3's arm-stripe verification HOLDS on the merged branch);
+spine in-run crouch **kneeMax 5.725** (gate 8.0, green — step 1's knee-band repair holds;
+the 158-era 32.516 red is not present at this tip); INRUNCROUCH pose gates green (back
+44.0°, knee 98.0°, hands 0.19 m ahead of knees); bind-vs-driver residuals **0 trans / 0 rot**
+on all 22 bones. One soft signal: `CRASHREST silhouette SOFT-FAIL span 0.032 (gate 0.15)` —
+the known pending camera-aim item, soft gate, not owned by the suit lane.
+
+**Critical visual review (shots regenerated by this run's `look`, inspected by eye).**
+- `figure_front.png` — bib **"30" legible**, goggle band on the eyes, arm stripe on both
+  outer seams. The magenta waist band is the session-30 bib sponsor band (entry-150 ruling:
+  benign, not a defect). **#15 A-frame still RED by eye:** no continuous daylight between
+  the thighs from crotch to knee; white shard scribbles across the crotch/inner-thigh
+  (NEXT.md slice-2 cleanup still open); **#16 boots still RED:** the foot reads as a dark
+  shoe with a toe taper, no rigid cuff/clog/buckles. Dark paint smudges on the chin remain
+  (Opus-lane face item, reported not owned).
+- `figure_side.png` — profile reads acceptably; suit still white-on-white against snow;
+  bindings continue to read displaced toward the ski tails relative to the boot soles
+  (carried from 155, rig check for the suit lane's #21/#16 work).
+- `scene.png` — corridor bright with visible skier/tree shadows, B-net both edges, red
+  kicker marks, coach figure. Still the worst scene gaps vs the footage: **P6 horizon** —
+  cone peaks + pale draped-cloth ridge curtains over a flat pale background band; near
+  forest mixes billboard cards with sparse trunks; the chopped landing does not read at
+  this framing distance.
+
+**Re-prioritised next work slots (unchanged mandate order; no new scope).**
+1. NEXT.md step 2b (#15 A-frame) — use `sol/aframe-wip` (`73220fc`) as REFERENCE ONLY per
+   the 22:35 note; re-apply and verify with the required render-space daylight (≥ 3 cm
+   projected) and ≤ 5° frontal knee-deviation gates; current build is the failing control.
+2. NEXT.md step 2c/2d (#16 boots + #21 heels-affixed tuck, done together).
+3. NEXT.md slice-2 remainder: two-tone panels + collar/cuffs, crotch shard cleanup.
+4. Scene debt, in payoff order: P6 horizon read, P4 near-tree depth, P5 landing read at
+   gameplay distance; crash cluster (HT#20/13/14/18) is the Sol lane's window.
+
+**Open questions for the reviewer:** (1) the orphan `http.server :8099` (pid 843530) from
+the killed session — kill it or should future lanes just keep using `DRIVE_PORT`?
+(2) confirm entry-160's drive leg (125/1, quality-flake) satisfies the review-slot
+verification bar that 155 met with a focused subset; (3) NEXT.md step 0's original ask
+(fix an inverted FACEDIST) was measured impossible at the 146 tip (the `≤` direction
+would fail the honest build) and was recorded as an open question then — confirm that
+item stays closed so the suit lane does not re-litigate it.
+
 ### 158 — Athlete build unblocked; A-frame topology blocker isolated
 
 **Scope and previous-iteration review.** `docs/NEXT.md` remains the sole mandate, and the accepted
