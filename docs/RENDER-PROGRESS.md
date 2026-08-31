@@ -259,6 +259,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; the relaunched full run-all LANDED ALL GREEN (drive 136 passed / 3 skipped — the parked aframe.spec; 41.8 m). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: drive FAIL-to-start (stale :8099 server, killed); leg 2 on the freed port: ALL GREEN, drive 136/3. Shots regenerated + inspected. See entry 165. |
+| — | Iteration 166 | **NEXT.md #15 combined slice ADVANCED, not landed (164's disposition repeated, now with the missing data): 164's scratch patch RE-APPLIED to the merged tip + the knee-band freeze/relax PORTED onto it (164's preserved full script was stale vs HEAD — the port is the new artefact); build ALL build-gates green in 38 s; drive 34/3 with the SAME three reds; the 164's-unknown flight-tuck number CAPTURED: 11.709 vs gate 8.0; NEW experiment — widening the freeze band upward (+0.02 → +0.06) makes flexion WORSE (flight tuck 28.554, crouch 7.447) ⇒ the upper band's upperLeg-dominant weights are the strain source, the +0.02 band is the right one. Tree honestly REVERTED (red drive suite never ships); patch + ported script + both build logs + numbers preserved in scratch/iter-166. NEXT.md retained.** | build2 exit 0 (AFRAME TOPOLOGY 156 verts/11 faces/0 remain, gap +54.0 mm, arm/thigh 0.522, SHELLCURV ≤ 0.324, seam relax 8×0.5 over 413 verts); unit 81/81, golden 30/30 on the new assets; spine+rig+chain 34 passed / 3 failed (hands −56.6 mm class, stand-off 0.1891 vs 0.201, flight-tuck knee 11.709); tree byte-clean vs HEAD after revert. See entry 166. |
 | — | Iteration 164 | **NEXT.md #15 thigh-tube RE-APPLIED (reference `sol/aframe-wip` 73220fc, per the 23:20 ruling) + a NEW knee-band freeze/relax that takes the weight-seam gate green for the first time on the tube (max 0.893, 0 hot edges; NEW root-cause finding: the upperLeg/lowerLeg flip already exists in the PRE-repair skin — the decimator keeps different verts under the moved mid-thigh geometry — so route (a) freeze + a band-local no-ramp relax is what repairs it). Build gates ALL green (AFRAME TOPOLOGY 11 L<->R faces cut, gap +54.0 mm, arm/thigh 0.522, curvature ≤ 0.324). NOT LANDED: three drive gates RED (hands-vs-thigh clearance −56.6 mm; suit stand-off reads the new 189 mm tube as "missing"; spine flight-tuck knee) — the tube architecture clashes with hands-at-sides without the withdrawn #15 stance bind work. Tree REVERTED to the green 20e0c48; patch + full evidence in scratch/iter-164. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | probe build 2048/96 exit 0 all build gates green; unit 81/81; golden 30/30; drive spine+rig+chain 34 passed / 3 failed (the three above). See entry 164. |
 | — | Iteration 163 | **NEXT.md #15 thigh-tube root-cause ADVANCED, not landed: the Sol diff's seam failure is NOT the clamp, NOT the locality reach, NOT the rescue branch — the shipped knee-ring weights themselves re-converge under the moved mid-thigh geometry (my build `upperLegL` 0.775 dominant at z −0.739 vs HEAD 0.08 there), and the failure is "both-ramped" in the locality repair. Tube diff REVERTED (gate red = no asset); env-gated `BODY_SEAM_DEBUG` edge-dump instrumentation LANDED on the green HEAD build. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | instrumented HEAD build 2048/96 green (exit 0, all gates); unit 81/81; golden 30/30. See entry 163. |
 | — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
@@ -1563,6 +1564,88 @@ to the footage is concentrated in stance (A-frame), boots, and paint — in that
 unit 81/81; golden 30/30 (verify.js quoted from the run-all leg); look 6/6 and grey-attr
 2/2 re-run solo on a free port; shots regenerated and inspected (scene, figure,
 figure_front, figure_side, face, pose_*).
+
+### 166 — NEXT.md #15 combined slice ADVANCED, not landed: 164's patch re-applied
+to the merged tip and the knee freeze/relax PORTED onto it; the three 164 drive
+reds reproduced; the flight-tuck datum 164 could not capture is now measured
+(11.709 vs 8.0); a widened-band experiment RED and reverted; tree honestly
+reverted, everything preserved in scratch/iter-166
+
+**Scope.** The 01:35 combined-slice ruling's slot. No engine, DoF, gate-threshold,
+or NEXT.md change. The athlete-file ban is lifted under NEXT.md for exactly this
+work; the work touched only `blender/build_body.py` and `assets/` (rebuilt), then
+was reverted.
+
+**What landed in scratch (the reusable artefact).** 164's preserved
+`build_body_tube_freeze.py` is STALE — it is a pre-163 branch of the script and
+does not match HEAD (no CREASE_CAPS, different pipeline order), so "resume from
+it" needed a real port, not a copy. 166's port, preserved verbatim as
+`scratch/iter-166/build_body_ported.py`:
+1. `git apply` of `scratch/iter-164/sol-tube.patch` (191 insertions: the Sol
+   separate-thigh-tube fit/topology) — applies cleanly to HEAD.
+2. The knee-band freeze/relax block from the scratch script (snapshot after
+   `add_spine_chain`, restore + band-local Jacobi relax before the seam gate,
+   sabotage controls keep the raw path) inserted at HEAD's own call sites —
+   `knee_band_snapshot` after the `after add_spine_chain` reports, restore+relax
+   between `_rescue_boundary_report` and `weight_seam_gate(low, 'shipped skin')`.
+
+**Verification of the port (build 1, then build 2 with the same +0.02 band —
+identical gates).** Full 2048/96 Blender build: **exit 0, all build gates green,
+38 s** — AFRAME FIT 190 mm tubes (axis x ±0.122, inner face 27 mm), AFRAME
+TOPOLOGY 156 crossing verts reassigned / 11 L<->R faces removed / 0 remain,
+SHELLPROP gap **+23.7 → +54.0 mm** (gate ≥ 40), arm/thigh **0.522** (≤ 0.55),
+shoulder/hip 0.896, SHELLCURV all gated segments ≤ **0.324** (upperArmR), knee
+freeze snapshot **351 verts** (build 2 variant: 413), seam relax 8×0.5, bind
+patch verified 0.00e+00. On the built assets: **unit 81/81, golden 30/30** (no
+re-capture — display-only change, physics untouched).
+
+**Drive verification (spine+rig+chain, DRIVE_PORT=8155): 34 passed / 3 failed —
+the same three reds 164 recorded**, now with the missing numbers:
+- `spine.spec` flight tuck: knee-band edge strain **11.709** vs `KNEE_MAX 8.0`
+  (neutral 1.0, in-run crouch 7.447 < 8 — the freeze HOLDS where 164 landed it;
+  pike 1.0). This is the datum 164 could not capture.
+- `rig.spec` hands-vs-thigh and stand-off: failed in the same classes as 164
+  (glove inside the 190 mm tube's outer face; thigh breadth 0.1891 vs the
+  spec's 0.201 floor bound to the OLD 213 mm dressed shell — the ruling's
+  open-question-3 re-derivation still pending).
+
+**Experiment: widening the freeze band upward is actively harmful.** Hypothesis:
+the flight tuck bends past the crouch, so inherit more of the ring's upper side.
+`KNEE_FREEZE_ABOVE 0.02 → 0.06` (build 2, 413-vert band): crouch **7.028 p999 /
+7.447 max** (similar), flight tuck **28.554 max** — 2.4× WORSE than the +0.02
+band's 11.709. Conclusion: the strain under flexion comes from the UPPER band's
+upperLeg-dominant weights, and the +0.02 band (which leaves the upper side to
+the repair chain) is the right configuration. The 167 lever is therefore not
+band width but the upper-side partition itself (e.g. re-blending the +0..+0.06
+slab toward lowerLeg AFTER the freeze, or gating the helpers' slab), not more
+inheritance. Preserved as `build_body_ported_widened.py` (negative result).
+
+**Disposition.** A red drive suite never ships (163/164 precedent): `assets/`,
+`blender/build_body.py` and `game.js` reverted; the tree is byte-clean vs HEAD
+(`git status` empty, ASSET_V stays 67). 167 can restore the port in one step:
+copy `scratch/iter-166/build_body_ported.py` over `blender/build_body.py`,
+rebuild (38 s), bump ASSET_V.
+
+**Open questions for the reviewer.**
+1. **Does the A-frame stance actually clear the hands gate?** The 01:35 ruling
+   names the missing stance as the cause of all three 164 reds, but the numbers
+   query it for the hands gate specifically: the glove hangs at x ≈ 0.156 while
+   the tube's outer face at hand height is ≈ 0.217 (tube axis x 0.122 + 95 mm
+   radius) — the thigh AXIS is only ~34 mm inboard of the glove. A 2–3° frontal
+   tilt moves the upper-thigh face by ~10 mm, nowhere near the needed 57 mm. Is
+   the expected mechanism that the hand-height band lands on a thinner part of
+   the tilted tube, or does red #1 need the thigh tube's fit axis pulled
+   inboard at the top (which the 22:10 separate-tube ruling may already allow)?
+   167 should not spend its slot on the bind re-export if the answer is the
+   fit axis.
+2. 165's open questions 1 (run-all owning the :8099 port) and 2 (the dark-green
+   ridge-over-peaks read) remain unanswered and unchanged.
+3. Open-question-3 from 164/165 (stand-off expectation re-derived from the
+   build's own SHELLPROP report) — still pending your confirmation; the new
+   tube measures 0.1891 against the stale 0.201 floor on every build.
+
+**Verification on the SHIPPED tree.** `git status` clean; HEAD unchanged from
+165's tip. The pre-revert numbers above are the recorded evidence.
 
 ### 164 — NEXT.md #15: the Sol thigh-tube diff RE-APPLIED plus a knee-band
 freeze/relax that takes the weight-seam gate GREEN on the tube for the first
