@@ -12178,3 +12178,60 @@ deleted (items 5b, 6, 7, 8 remain).
   184 + the standing 17:05 POSE_TUCKED approval + NEXT.md item 5's display-only
   mandate. If the reviewer wants it governed differently, say so and I will
   revert to the previous table (trivially recoverable).
+### 197 — #21 v3 tuck, part 1: heel-lift COVERAGE SWEEP landed and green — 0.00 mm heel lift on every real play path swept (6 configs), negative control fires at 252 mm; no fix needed on HEAD, coverage gap CLOSED by the new gate
+
+**What the mandate asked (NEXT.md 5a-NEW(ii) + the 19:05 ruling):** the author
+sees heels lift in real play while the flight-sweep gate reads 0.00 mm; find
+the coverage gap by sweeping the ACTUAL tuck paths and make the extended sweep
+the gate.
+
+**New gate: `tests/drive/tuck-coverage.spec.js`** — six configs, each a real
+driven run sampling `_bootSkiProbe()` every rendered frame from the in-run
+descent through the ride-out, same 5 mm toe/heel contract as flight-sweep:
+
+| config | frames (live) | worst heel lift | worst airborne |
+|---|---|---|---|
+| realistic mode, keyboard tuck pulse | 44 (34) | 0.00 mm | 0.00 mm |
+| off-axis KeyA held through the tuck | 46 (36) | 0.00 mm | 0.00 mm |
+| pike ShiftLeft held to touchdown | 50 (36) | 0.00 mm | 0.00 mm |
+| gamepad RT 55% analog tuck (stubbed getGamepads) | 53 (53) | 0.00 mm | 0.00 mm |
+| double world, keyboard tuck pulse | 46 (36) | 0.00 mm | 0.00 mm |
+| **negative control: `_flightPinOff`** | 46 (36) | **252 mm** (z=26.4, tuck 0.5) | fires |
+
+**Root-cause note on why the author's lift is not reproducing:** the boot–ski
+pin at `game.js:9790` places the shins on the ski line unconditionally every
+frame (its `w = tuck·(1−armRaise)` weight only scales the cuff lean), so even
+the paths the old gate never walked — pike (pin weight 0), off-axis
+(`applyPose` gets `max(tuck, offAxisVisualTuck)` while the pin reads
+`tuckAmount` only), analog partial tuck — all measure seated on HEAD. The
+historic defect appears only when the pin is skipped entirely, exactly what
+the negative control injects (252 mm mid-blend airborne). The suspected
+blind-spot mechanisms (off-axis visual tuck, pike-zeroed pin weight) are now
+permanently covered rather than assumed safe.
+
+**Coverage limits (stated, not hidden):** the gamepad config stubs
+`navigator.getGamepads` and drives the game's real polling/bridge path
+(RT→tuckTarget, X→ArrowUp); it cannot exercise a physical pad's stick
+arm-lateral path. Pool-dive/trampoline modes are out of the sweep's z-window.
+If the author's heel-lift repro involves a specific trick combo not in these
+six configs, name it and it joins the gate.
+
+**Verification.** tuck-coverage 6/6 (worst 0.00 mm, negctl 252 mm);
+flight-sweep 4/4 and inrun-contact 4/4 unchanged; unit 81/81; golden 30/30
+(no physics/asset change — ASSET_V stays 78, display-only); look 6/6 with
+fresh shots. No production code changed; this iteration lands the extended
+gate only.
+
+**Next.** #21 v3 part 2 per the ruling: the SITTING pose (torso within ~10°
+of upright, deep hip flexion, hands grasping kneecaps ≤ 5 cm) with the
+flight-sweep + tuck-coverage gates green through it; then 5b #24 grounded
+slide/get-up.
+
+**Open questions for the reviewer.**
+1. No heel lift reproduces on any swept path — is the author's repro a trick
+   combo/world outside the six configs (e.g. triple world, twist keys
+   ArrowLeft/Right, arm-drop coupling)? A named repro joins the gate before
+   the sitting pose lands on top of it.
+2. 196's open questions (weight-seam gate ordering vs projected-relax strip;
+   helper-only weld authorization; #13 triple carried-red) remain queued
+   behind the mandate.
