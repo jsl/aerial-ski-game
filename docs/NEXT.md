@@ -53,6 +53,13 @@ Order:
    box with NO toe contours, sole ledges at toe/heel, 2–3 buckles + strap, no logos), cuff at mid-shin
    with the suit shin tube ending inside it. Binding-contact and boot-on-ski gates stay green; the
    current toed shoe is the failing negative control.
+2d. **HUMAN TESTING #21 (author, 22:00) — heels NEVER leave the skis; the tuck is rebuilt around that.**
+   Full spec in the #21 entry. Do it WITH #16 (the boots): (a) toe/heel-on-binding ≤ 5 mm in every
+   non-crash frame including all of flight (heel lift = gate failure; skis eject only on crash);
+   (b) the flight tuck becomes knees-to-chest with a more upright back (torso within ~30° of
+   straight), skis riding up with the legs. Per-frame flight sweep gate + tuck pose gates; the
+   current lifted-heel forward tuck is the failing negative control. Pose/display only — golden
+   physics unchanged.
 3. **Arm stripe — VERIFY, do not redo.** Session 32 shipped it (`9e81fcc`: repair pass enabled on the
    zero-overlap unwrap; torso-back blueFrac 0.135 → 0.073, gate < 0.10). Confirm on the merged branch:
    leak gate green, stripe visible on BOTH arms as a band on the outer seam in the figure shots, default
