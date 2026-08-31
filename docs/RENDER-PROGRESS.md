@@ -9750,3 +9750,34 @@ then #14/#18/#19. The pre-existing `crash_rest.png` silhouette soft gate still
 reports span 0 because its camera does not thread rest-x; it is unrelated to
 ground contact. No physics rest-state defect was measured and no reviewer
 physics approval is needed for #20.
+
+### CRASH-LANE session 2 — crash-slide tuning remainder
+
+**What changed (#13, display-only):** the rigid crash slide now keeps the signed
+friction term through the shallowing foot of the chopped landing instead of
+clamping deceleration to zero, and models a small loose-snow churn loss while
+retaining `mu_chop = 0.55` versus the `0.50` corduroy-throughout control. The
+triple uses a 7.0 m/s display momentum floor so its deterministic 5.27 m/s
+impact produces the required longer stop. Exact roll-onset and chop-bottom
+speed probes make the gates simulation-clock based. Ejected skis remain
+independent of the root. The preserved old clamped/root-carried behavior is
+reachable only by the firing negative controls. `engine/`, body-model files,
+athlete assets, `ASSET_V`, and the parallel suit lane are untouched.
+
+**Gate evidence:** before the fix, the new chop A/B gate failed at **7.2%**
+slower (required 10–20%). The final full serial `crash-ragdoll.spec.js` run is
+**10/10 PASS**: slide onset **0.600 s**; rest past the roll-out = single
+**5.28 m**, double **7.23 m**, triple **10.22 m** (bands 3–8 / 6–12 / 10–18);
+fixed chop **8.850 m/s** versus flat-throughout **10.150 m/s**, **12.8%**
+slower. Ejected-ski offsets were at most **4.66 m** (gate <= 6 m) and the
+closest ski remained **19.27 m uphill** of the skier (double/triple gate >=
+8 m). The old clamped chop measured only **6.5%** slower, and root-carried skis
+traveled **18.67/18.78 m**, so both negative controls fired. Grounded-rest and
+legacy crash gates stayed green. Unit **81/81 PASS**. Golden recapture is
+**CENSUS-ONLY**: `audit-physics-state.js` reported **0 physics-state diffs
+across 30 scenarios / 5408 frames**, with 13 crash-tail scenarios carrying
+display-node changes; golden **30/30 PASS**.
+
+**Open:** NEXT.md remains for ordered item #14 (procedural get-up and walk-off),
+then #18/#19. The existing `crash_rest.png` rest-x framing soft gate remains
+open and unrelated. No physics rest-state defect was measured.

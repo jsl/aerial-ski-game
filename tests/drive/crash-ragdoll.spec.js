@@ -161,6 +161,138 @@ async function measureGroundedCrashRest(page, world, looseRestControl) {
     }, { SEG_H });
 }
 
+// HUMAN TESTING #13: one deterministic forced crash, with only the crash-side
+// tuning override varied.  The sampler records the first rigid-slide sample at
+// the bottom of the chopped landing so the shipped mu=0.55 path can be A/B'd
+// against the previous mu=0.50-throughout model without wall-clock inference.
+async function measureCrashTuning(page, world, options = {}) {
+    await page.goto('/index.html?world=' + world);
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.evaluate((opts) => {
+        if (opts.chopMu !== undefined) window._crashChopMu = opts.chopMu;
+        if (opts.flatThroughout) window._crashFlatThroughout = true;
+        if (opts.legacy) window._crashSlideLegacy = true;
+    }, options);
+    await page.waitForTimeout(400);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._crashTune = {
+            armed: false, down: false, tuck: false, crashed: false, done: false,
+            bottomSpeed: null, slideOnset: null,
+        };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            const C = window._crashTune;
+            if (!C || C.done) return;
+            const g = window._getGameState();
+            const p = window._ragdollProbe ? window._ragdollProbe() : null;
+            if (g.crashed) {
+                C.crashed = true;
+                if (C.down) { C.down = false; send('keyup', 'ArrowDown'); }
+                if (C.tuck) { C.tuck = false; send('keyup', 'Space'); }
+                if (p && p.phase === 'roll' && C.slideOnset === null) C.slideOnset = p.rollAt;
+                if (p && p.chopBottomSpeed != null) C.bottomSpeed = p.chopBottomSpeed;
+                if (p && p.resting) C.done = true;
+                if (!C.done) requestAnimationFrame(tick);
+                return;
+            }
+            if (!g.grounded && g.posZ >= g.KICKER_END_Z && !C.armed) {
+                C.armed = true;
+                window._debugTriggerCrash();
+            }
+            if (g.grounded && !C.down && g.flipPower < 0.999) {
+                C.down = true; send('keydown', 'ArrowDown');
+            } else if (C.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                C.down = false; send('keyup', 'ArrowDown');
+            }
+            if (!g.grounded && !C.tuck) {
+                C.tuck = true; send('keydown', 'Space');
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window._crashTune && window._crashTune.crashed,
+        null, { timeout: 90_000 });
+    await page.waitForFunction(() => window._crashTune && window._crashTune.done,
+        null, { timeout: 90_000 });
+    return page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        scene.render();
+        const probe = window._ragdollProbe();
+        const torso = scene.getMeshByName('torso').getAbsolutePosition();
+        const skis = probe.skis.map((s, i) => {
+            const pos = scene.getMeshByName(i === 0 ? 'skiL' : 'skiR').getAbsolutePosition();
+            return {
+                offset: Math.hypot(s.dx, s.dz), resting: s.resting,
+                z: pos.z, uphill: torso.z - pos.z,
+            };
+        });
+        return {
+            world: new URLSearchParams(location.search).get('world'),
+            impactSpeed: probe.impactSpeed, restAt: probe.restAt,
+            restZ: torso.z, pastRollOut: torso.z - window._crashRollOutZ,
+            bottomSpeed: window._crashTune.bottomSpeed,
+            slideOnset: window._crashTune.slideOnset,
+            skis,
+        };
+    });
+}
+
+const HT13_BANDS = {
+    single: [3, 8], double: [6, 12], triple: [10, 18],
+};
+
+function crashSlideGatePasses(m) {
+    const band = HT13_BANDS[m.world];
+    return m.slideOnset <= 0.61 && m.pastRollOut >= band[0] &&
+        m.pastRollOut <= band[1] && m.skis.every((s) => s.resting && s.offset <= 6) &&
+        (m.world === 'single' || m.skis.every((s) => s.uphill >= 8));
+}
+
+test('crash #13: world-scaled slide distances and ejected-ski brakes', async ({ page }) => {
+    test.setTimeout(600_000);
+    for (const world of ['single', 'double', 'triple']) {
+        const m = await measureCrashTuning(page, world);
+        console.log(`CRASHTUNE world=${world} impact=${m.impactSpeed.toFixed(2)} ` +
+            `onset=${m.slideOnset.toFixed(3)} bottom=${m.bottomSpeed.toFixed(2)} ` +
+            `past=${m.pastRollOut.toFixed(2)} skis=${JSON.stringify(m.skis)}`);
+        expect(crashSlideGatePasses(m), `${world}: ${JSON.stringify(m)}`).toBe(true);
+    }
+});
+
+test('crash #13: chopped landing is 10-20% slower than mu=0.50 throughout', async ({ page }) => {
+    test.setTimeout(600_000);
+    const chopped = await measureCrashTuning(page, 'double');
+    const flatThroughout = await measureCrashTuning(page, 'double', { flatThroughout: true });
+    const slower = 1 - chopped.bottomSpeed / flatThroughout.bottomSpeed;
+    console.log(`CRASHCHOP chopped=${chopped.bottomSpeed.toFixed(3)} ` +
+        `flatThroughout=${flatThroughout.bottomSpeed.toFixed(3)} slower=${(slower * 100).toFixed(1)}%`);
+    expect(slower, 'mu=0.55 chop is 10-20% slower at chop bottom').toBeGreaterThanOrEqual(0.10);
+    expect(slower, 'mu=0.55 chop is 10-20% slower at chop bottom').toBeLessThanOrEqual(0.20);
+
+    const oldChopped = await measureCrashTuning(page, 'double', { legacy: true });
+    const oldFlat = await measureCrashTuning(page, 'double', { legacy: true, flatThroughout: true });
+    const oldSlower = 1 - oldChopped.bottomSpeed / oldFlat.bottomSpeed;
+    console.log(`CRASHCHOP NEGCONTROL chopped=${oldChopped.bottomSpeed.toFixed(3)} ` +
+        `flatThroughout=${oldFlat.bottomSpeed.toFixed(3)} slower=${(oldSlower * 100).toFixed(1)}%`);
+    expect(oldSlower >= 0.10 && oldSlower <= 0.20,
+        'negative control: old clamped-friction model must FAIL the 10-20% gate').toBe(false);
+});
+
+test('crash #13 negative control: root-carried ejected skis fail the brake gate', async ({ page }) => {
+    test.setTimeout(240_000);
+    const m = await measureCrashTuning(page, 'double', { legacy: true });
+    console.log(`CRASHTUNE NEGCONTROL past=${m.pastRollOut.toFixed(2)}m skis=${JSON.stringify(m.skis)}`);
+    expect(crashSlideGatePasses(m),
+        'negative control: previous root-carried skis must FAIL offset/uphill gate').toBe(false);
+});
+
 for (const world of ['single', 'double', 'triple']) {
     test(`crash #20: ${world} grounded rest contacts every body segment`, async ({ page }) => {
         test.setTimeout(240_000);

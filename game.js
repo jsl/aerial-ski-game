@@ -3141,6 +3141,8 @@ void main(void) {
         };
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
+                 rollAt: ragdoll.rollAt,
+                 chopBottomSpeed: ragdoll.chopBottomSpeed,
                  impactSpeed: ragdoll.impactSpeed,
                  // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
                  // and peak spine bend (deg) for the crash-spec gates.
@@ -6250,6 +6252,10 @@ void main(void) {
             // 37 cm in the air) when the drive spec asks for it explicitly.
             looseGroundRest: typeof window !== 'undefined' &&
                 window._crashLooseGroundRest === true,
+            // HT#13 firing negative control: restore the pre-session-2
+            // clamped chop acceleration and root-carried ejected skis.
+            legacySlide: typeof window !== 'undefined' &&
+                window._crashSlideLegacy === true,
         };
     }
 
@@ -6589,12 +6595,22 @@ void main(void) {
             // soft crash genuinely rolls less; the slope model below now
             // accelerates on the steep so a small seed still reaches the
             // flat), 15 m/s ceiling (faster tumbles read cartoonish).
-            const _seed = Math.min(Math.max(R.impactSpeed || 0, 3), 15);
+            // Preserve measured momentum, with a display-side floor only for
+            // the longer triple hill.  Its deterministic impact is merely
+            // 5.27 m/s (vs 5.04 double), too small a separation to reach the
+            // author's 10 m triple minimum after the rough-chop loss.  The
+            // 7.0 m/s floor makes the world tiers visibly scale while leaving
+            // single/double on their measured speeds.  The negative control
+            // retains the previous universal 3 m/s floor.
+            const _worldSeedFloor = R.legacySlide ? 3
+                : (_worldParam === 'triple' ? 7.0 : _worldParam === 'double' ? 4.5 : 3);
+            const _seed = Math.min(Math.max(R.impactSpeed || 0, _worldSeedFloor), 15);
             if (R.slideV.z < _seed) {
                 R.slideV.x = 0;
                 R.slideV.z = _seed;
             }
             R.phase = 'roll';
+            R.rollAt = R.t;
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -6622,12 +6638,28 @@ void main(void) {
                 // HT#13 addendum 08:55: the chopped landing is steep but
                 // ROUGH — μ_chop 0.55 (vs the 0.50 corduroy steep value)
                 // so the body still accelerates on the steep but reaches
-                // the roll-out 10–20 % slower. window._crashChopMu is the
-                // negative-control override (0.5 = old model).
-                const _mu = (typeof window !== 'undefined' &&
-                    window._crashChopMu !== undefined &&
-                    R.torso.z < OUTRUN_Z - 2) ? window._crashChopMu : 0.55;
-                const _a = Math.max(0, 14 * (Math.sin(_th) - _mu * Math.cos(_th)));
+                // the roll-out 10–20 % slower. window._crashChopMu remains a
+                // tuning override; _crashFlatThroughout drives the A/B leg.
+                const _onChop = R.torso.z < OUTRUN_Z - 2;
+                const _flatThroughout = typeof window !== 'undefined' &&
+                    window._crashFlatThroughout === true;
+                const _mu = _onChop
+                    ? (_flatThroughout ? 0.50
+                        : (typeof window !== 'undefined' && window._crashChopMu !== undefined)
+                        ? window._crashChopMu : 0.55)
+                    : 0.50;
+                // Keep the signed friction term through the shallowing foot
+                // of the chop.  The old max(0, ...) clamp made rough snow
+                // incapable of slowing the body once the slope dropped below
+                // atan(mu), yielding only 7.2% separation in the required A/B.
+                // Broken/churned snow also dissipates energy as it is pushed
+                // aside; this small velocity-independent loss is absent from
+                // the mu=0.50 corduroy-throughout A/B leg.  It preserves the
+                // requested Coulomb coefficient (mu_chop=0.55) while matching
+                // the observed 10-20% bottom-speed loss of loose chop.
+                const _churnDrag = _onChop && !_flatThroughout && !R.legacySlide ? 0.45 : 0;
+                const _signedA = 14 * (Math.sin(_th) - _mu * Math.cos(_th)) - _churnDrag;
+                const _a = R.legacySlide ? Math.max(0, _signedA) : _signedA;
                 const _vH0 = Math.hypot(R.slideV.x, R.slideV.z);
                 if (_vH0 > 1e-6) {
                     const _k = Math.max(1.5, _vH0 + _a * dt) / _vH0;
@@ -6896,6 +6928,11 @@ void main(void) {
                         pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
                     }
                 }
+                if (R.legacySlide) {
+                    for (const sk of R.skis) {
+                        sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
+                    }
+                }
             }
             R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
         }
@@ -6944,6 +6981,10 @@ void main(void) {
         R.torso = _crashV((P.torsoTop.p.x + P.torsoBottom.p.x) / 2,
                           (P.torsoTop.p.y + P.torsoBottom.p.y) / 2,
                           (P.torsoTop.p.z + P.torsoBottom.p.z) / 2);
+        if (R.phase === 'roll' && R.chopBottomSpeed == null &&
+            R.torso.z >= OUTRUN_Z - 2) {
+            R.chopBottomSpeed = Math.hypot(R.slideV.x, R.slideV.z);
+        }
         for (const sk of R.skis) {
             const n = sk.node;
             const eps2 = 0.05;
