@@ -2897,6 +2897,11 @@ void main(void) {
                     // They use the build's own glossy navy PBR material, keep
                     // the body's reveal gating, and stay hidden outside the
                     // alpine worlds (same rule as the skis).
+                    // REVIEWER KILL-SWITCH (2026-08-31 15:20, ruling on 188): the
+                    // shipped boot primitives render as misplaced blocks (old shoe
+                    // still visible, stray quads at the shoulders). Hidden until the
+                    // placement fix + render-space boot gate land; flip to true then.
+                    const BOOTS_ENABLED = false;
                     const bootParts = res.meshes.filter(m =>
                         m.name && /^athleteBoot[LR]$/.test(m.name) &&
                         m.getTotalVertices && m.getTotalVertices() > 0);
@@ -2904,6 +2909,10 @@ void main(void) {
                         b.parent = character.root;
                         b.skeleton = skel;
                         b.alwaysSelectAsActiveMesh = true;
+                    }
+                    if (!BOOTS_ENABLED) {
+                        for (const b of bootParts) b.setEnabled(false);
+                        bootParts.length = 0;   // out of every reveal/visibility list
                     }
 
                     // The body exports with two material slots — suit and helmet —
