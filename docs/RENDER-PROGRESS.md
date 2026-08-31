@@ -270,6 +270,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 182 | **NEXT.md #23.3 COMPLETED: the pending pre-#23.3 negative control FALSIFIED the inflection gate (e0c0658 measures side thigh 1 / shin 0 — identical to v74); new BELLY-DEPTH metric added (max deviation of the side width profile from its taper chord: thigh 2.6 px pre vs 0.5 px v74), HARD gate ≤ 2.0 px landed — v74 passes, e0c0658 fails, injected belly fails (7.7). Targeted smoothing pass NOT applied on evidence: v74's side tube already measures 0.5 px belly / 1 inflection — nothing measurable to remove; residual by-eye read must be breadth (open question: breadth gate or close #23.3). No source/asset change, ASSET_V 74.** | unit 81/81, golden 30/30; tube-smooth green on v74 and RED on the e0c0658 scratch worktree (both directions verified); look 6/6 regenerated. See entry 182. |
 | — | Iteration 181 | **NEXT.md item 3 cont. (#23.3) — the 09:20 ruling's SILHOUETTE INSTRUMENT LANDED: `tests/drive/tube-smooth.spec.js`. Anchor rows derive from the LEG BONES' FINAL matrices (hlpHip = hip, hlpKnee = knee, lowerLeg origin = ankle), projected only AFTER the first render under the measurement camera (stale-transform projection was 178's torso-window failure, re-proven: pre-render projection compresses hip→ankle to 27 px vs the true ~135). Two more instrument lessons proven: Vector3.Project's y is TOP-DOWN (the H−1−y flip belongs to readPixels only), and bone anchors must be sanity-checked as ROW-SPAN containment, not a point window (the ankle origin sits ≤ 21 px fore-aft off the skinned boot from the bind rotation — band-relaxed form for lowerLeg only). Sanity: all six anchors inside in front/side/back. GATE: side-framing fore-aft width profile, 2× smooth + 1.5 px deadband, ≤ 2 inflections/segment — v74 measures thigh 1 / shin 0 (front: 2/1); injected-belly self-test fires (3/3/2). NO asset/gate-threshold change; the targeted anterior-thigh/glute/calf smoothing pass is deferred (v74 already passes the render gate); pre-#23.3-asset negative control pending. unit 81/81, golden 30/30.** | tube-smooth 1/1; unit + golden on the final tree. See entry 181. |
 | — | Iteration 180 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30 (re-verified last), browser+mutation+coverage PASS, walkoff 2/2 solo; the run-all drive leg's single walkoff negative-control red was a self-inflicted port-8099 collision (look run racing the suite) — green in isolation. Shots inspected + measured: snow 0.849 / corridor 0.83 bright (grey-ramp holds); cone peaks read 0.67 vs sky 0.652 (≈ glass-pyramid class, top scene gap); green wedge (0.35) still reviewer-owned; #23 legs watertight by eye but thigh flare/calf belly persist (09:20 ruling); mirrored bib digits + pink smear = NEXT item 7. No source/asset/gate change; NEXT.md item 5 next.** | run-all + look + walkoff solo re-run; scene luminance numbers in entry 180. See entry 180. |
 | — | Iteration 179 | **NEXT.md item 4 — HT#22 FANG PEAK LANDED (display-side only): root-caused by hide-mesh probe — the "hooked claw summit" is NOT a cone peak; it is the OPEN lateral end edge of a ridge heightfield sheet (`ridge_ahead`, same class for all 8 ridge sheets) seen nearly edge-on past the other ridges: the sheet drops full-crest → ground in ONE 6 m column step at its run ends, and that free ~40 m wall projects as a dark hooked sliver over the pale cones. FIX: `_ridgeMesh` crests fade to ground over `RIDGE_END_TAPER_FRAC` = 14% of the run at both ends (smoothstep); negative-control hook `?fangkeepends=1` rebuilds the unfaded ends. NEW GATE `tests/drive/peak-overhang.spec.js` (mesh-space, live Babylon vertex data): every ridge sheet's crest may step ≤ 12 m per 6 m column — the unfaded fang end steps ~24 m and FAILS, tapered ends ≤ ~6 m PASS; negative control verified firing. A render-space sky-below-mountain pixel detector was prototyped and SHELVED (open item — layered ridges have genuine sky gaps; horizon haze within a few RGB points of snow). Fang verified gone by eye in scene.png. unit 81/81, golden 30/30, ridges3d 5/5, peak-overhang 2/2, look 6/6.** | see entry 179. |
@@ -10992,6 +10993,49 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 182 — NEXT.md #23.3 completion: the pending pre-#23.3 asset negative control EXECUTED and it FALSIFIED the inflection gate — belly-depth metric added (the instrument now discriminates), hard gate landed; targeted smoothing pass stays deferred, now with numbers
+
+**Verification.** unit 81/81; golden 30/30 (no source or asset change — ASSET_V stays 74);
+`tube-smooth` green on v74; the same spec run against a scratch worktree at e0c0658
+(pre-#23.3 assets) FAILS the new gate, as required. look regenerated, 6/6.
+
+**What changed (`tests/drive/tube-smooth.spec.js` only).**
+
+1. **Negative control 2 (pending since 181) executed honestly: the pre-#23.3 build
+   (e0c0658) measures side inflections thigh 1 / shin 0 — the SAME counts as v74.** The
+   width-profile inflection gate does NOT discriminate the muscle-belly defect; the spec's
+   recorded claim ("e0c0658 measures thigh > 2") is falsified. This answers 181's open
+   question 1 by measurement: the author's by-eye read is real but lives in belly DEPTH,
+   not extra inflections.
+2. **New instrument metric: BELLY DEPTH** — max deviation of the smoothed side-framing
+   width profile from the straight taper chord joining its end values, px. Measured side:
+   thigh 2.6 px (e0c0658) vs 0.5 px (v74); shin 2.5 vs 2.3; injected-belly control 9.7 vs
+   7.7.
+3. **New hard gate: side-framing thigh belly ≤ 2.0 px** (v74 passes at 0.5; e0c0658 fails
+   at 2.6 — negative control 2 now genuinely fires; injected belly fails at 7.7 — control
+   1 unchanged). Shin belly REPORTED, not gated: 2.3 vs 2.5 px is not an honest separation.
+   Front/back belly numbers are reported but structurally measure the two-leg stance, not
+   the tube (back thigh 18.3 px on v74) — the fore-aft tube profile only exists in the side
+   framing.
+
+**The ruling's targeted smoothing pass (anterior thigh / glute / calf) is NOT applied —
+now on evidence, not on deferment.** v74's side thigh tube already measures 0.5 px of
+belly and ≤ 2 inflections: there is nothing measurable left to remove where the 09:20
+ruling's instrument looks, and a further shrink-only pass would spend risk on the
+watertight / daylight / girth / SHELLCURV gates for zero gate movement. The residual
+author read (entry 180 by-eye "thigh flare / calf belly persist") must come from breadth
+or the front/back framings, which this instrument deliberately does not gate.
+
+**Open questions for the reviewer.**
+
+1. The side-silhouette instrument is now saturated (0.5 px belly, 1 inflection). If the
+   author's by-eye defect is to be gated, it needs a BREADTH gate (side thigh width vs
+   shin width ratio at matched rows) or a front-framing per-leg contour metric — say the
+   word and 183 builds it; otherwise #23.3 is complete and NEXT.md item 5 (tuck+boots)
+   starts next slot.
+2. Shin belly 2.3 px: within the same gate family, or deliberately left untapered (the
+   shin's 2.5 px pre-fix value suggests the calf belly was never the side-profile problem)?
+
 ### 181 — NEXT.md #23.3 cont.: the ruling's silhouette instrument landed — bone-anchored, render-space, with firing self-test; v74 passes the ≤ 2 inflection gate
 
 **Verification.** unit 81/81; golden 30/30 (no source or asset change — ASSET_V stays 74);

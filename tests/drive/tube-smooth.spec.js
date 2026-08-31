@@ -12,12 +12,20 @@
 // bellies are extra bulges. Profile is smoothed (3×[1 2 1]) and the
 // derivative is sign-counted through a 1.5 px deadband.
 //
-// Negative controls (both must fire):
+// BELLY DEPTH (182): the width profile is additionally measured against
+// the straight taper chord joining its end values. Measured 182: the
+// e0c0658 pre-#23.3 build inflects 1/0 — the SAME counts as the fixed
+// build — so inflection count alone does not discriminate; belly depth
+// does (thigh 2.6 px pre vs 0.5 px v74). Gate: side-framing thigh belly
+// <= 2.0 px. Shin belly is REPORTED, not gated: 2.3 px (v74) vs 2.5 px
+// (pre) is not an honest separation.
+//
+// Negative controls (all must fire):
 //   1. Instrument self-test: the measured profile is re-counted with a
 //      synthetic Gaussian belly injected — the counter must report > 2
 //      inflections for the sabotaged profile and the gate must fail it.
-//   2. Pre-#23.3 assets (recorded in the 181 entry): the e0c0658 build
-//      measures thigh > 2 inflections with this exact spec.
+//   2. Pre-#23.3 assets, EXECUTED 182 on a scratch worktree at e0c0658:
+//      side bellyThigh 2.6 px > 2.0 gate — fails, as required.
 const { test, expect } = require('@playwright/test');
 
 async function measureFraming(page, label, alphaOff) {
@@ -161,6 +169,23 @@ async function measureFraming(page, label, alphaOff) {
             return n;
         };
         const M = 4; // rows of margin around each joint anchor
+        // BELLY DEPTH: max deviation of the smoothed width profile from the
+        // straight taper chord joining its end values, in px. A tube tapers
+        // nearly linearly; a muscle belly bulges ABOVE the chord even when
+        // it adds no inflection (measured 182: the e0c0658 pre-#23.3 build
+        // inflects 1/0 exactly like the fixed build — inflection count
+        // alone does not discriminate, depth does).
+        const belly = (prof) => {
+            const s = smooth(smooth(prof));
+            const n = s.length;
+            if (n < 3) return 0;
+            let m = 0;
+            for (let i = 0; i < n; i++) {
+                const chord = s[0] + (s[n - 1] - s[0]) * (i / (n - 1));
+                m = Math.max(m, s[i] - chord);
+            }
+            return +m.toFixed(1);
+        };
         const thigh = widthProfile(hipRow + M, kneeRow - M);
         const shin = widthProfile(kneeRow + M, ankleRow - M);
         const nThigh = inflections(thigh);
@@ -173,6 +198,8 @@ async function measureFraming(page, label, alphaOff) {
             sabotaged[i] += amp * Math.exp(-((i - ci) ** 2) / 18);
         }
         const nSabotage = inflections(sabotaged);
+        const bellyThigh = belly(thigh), bellyShin = belly(shin);
+        const bellySabotage = belly(sabotaged);
 
         scene.render();
         cam.setTarget(camSaved.t); cam.radius = camSaved.r;
@@ -180,7 +207,8 @@ async function measureFraming(page, label, alphaOff) {
         for (const m of hidden) m.setEnabled(true);
         return { hipRow, kneeRow, ankleRow, anchorChecks,
             thighRows: thigh.length, shinRows: shin.length,
-            nThigh, nShin, nSabotage, W, H };
+            nThigh, nShin, nSabotage,
+            bellyThigh, bellyShin, bellySabotage, W, H };
     }, alphaOff);
 }
 
@@ -216,6 +244,12 @@ test('tube smooth: leg bone anchors inside the silhouette (front/side/back); sid
                 + `inflections (target <= 2) — calf belly still reads `
                 + `in render space (rows ${m.kneeRow}..${m.ankleRow})`)
                 .toBeLessThanOrEqual(2);
+            expect(m.bellyThigh, `side thigh belly depth ${m.bellyThigh} px `
+                + `(gate <= 2.0; pre-#23.3 e0c0658 measured 2.6) — the thigh `
+                + `bulges above its taper line`)
+                .toBeLessThanOrEqual(2.0);
+            console.log(`TUBESMTH shin belly (reported, ungated): `
+                + `${m.bellyShin} px`);
         }
     }
 });
