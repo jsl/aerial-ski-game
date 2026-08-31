@@ -147,26 +147,39 @@ const POSE_INRUN_TUCK = {
 //
 // NOTE: computeI does NOT read this table — see POSE_TUCKED_INERTIA below.
 const POSE_TUCKED = {
-    torso:     { x:  0.000, y:  0.000, rx: -0.436, rz:  0.00, dz:  0.000 },  // trunk 25 deg forward
-    head:      { x:  0.000, y:  0.338, rx: -0.785, rz:  0.00, dz: -0.205 },  // chin toward chest
-    // Arms: SAME segment centres as before, bone axis un-inverted (Opus, author
-    // 23:40). The rebuild put the shoulder at the arm's +Y end, which rolls the
-    // bone 180 deg out of its bind axis: the drawn hand then lands at the far
-    // end from the one the table aims (session 3 by eye: "the arms are absorbed
-    // into the mass under the chest"). dir = (-sin rz, cos rz cos rx,
-    // cos rz sin rx), so dir -> -dir is exactly rx -> rx -+ pi, rz -> -rz; the
-    // drawn primitives are unchanged (a capsule is symmetric about its centre)
-    // and only the skinned axis moves. Shoulder is the -Y end again.
-    upperArmL: { x: -0.130, y:  0.120, rx: -2.6446, rz: -0.20, dz: -0.186 },  // reaching down-forward
-    upperArmR: { x:  0.130, y:  0.120, rx: -2.6446, rz:  0.20, dz: -0.186 },
-    lowerArmL: { x: -0.070, y: -0.121, rx:  2.7156, rz: -0.20, dz: -0.206 },  // hands on the shins
-    lowerArmR: { x:  0.070, y: -0.121, rx:  2.7156, rz:  0.20, dz: -0.206 },
-    upperLegL: { x: -0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },  // knees up and FORWARD
-    upperLegR: { x:  0.075, y: -0.203, rx:  1.833, rz:  0.00, dz: -0.058 },
-    lowerLegL: { x: -0.075, y: -0.283, rx: -0.785, rz:  0.00, dz: -0.104 },  // heels folded under
-    lowerLegR: { x:  0.075, y: -0.283, rx: -0.785, rz:  0.00, dz: -0.104 },
-    skiL:      { x: -0.075, y: -0.421, rx: -0.785, rz:  0.00, dz:  0.034 },
-    skiR:      { x:  0.075, y: -0.421, rx: -0.785, rz:  0.00, dz:  0.034 },
+    // REBUILT to the author's tuck photo (NEXT.md item 5 / #21 amended,
+    // reference/shots/author_tuck_ref_2026-08-31.jpg; ruling on 184, 2026-08-31
+    // 12:00) by forward kinematics, same construction as the session-8 rebuild:
+    // chain-closed by construction, max joint gap 0.0 mm on these rounded
+    // literals (solver in the iteration-186 scratch dir; gaps verified in
+    // chain.spec.js's flight-tuck endpoint gate).
+    // Targets from the ruling, all measured on the shipped table:
+    //   kneeToChest 0.419 -> 0.190 m (limit <= 0.22) - knees pulled to the chest
+    //   knee flexion 30 -> 130 deg (target >= ~130; interior 50 deg)
+    //   torso rx -0.436 (-25 deg) -> -0.25 (-14.3 deg) - back compact, more upright
+    //   arms wrap the knees: shoulder -> elbow down-forward, elbow interior ~110 deg,
+    //     hand gripping the front of the knee (0.02 m above, 0.05 m ahead), elbows in
+    //     (rz +-0.20 as before)
+    //   head up (gaze above the back line, as in the photo), chin NOT on the chest
+    //   shins folded heel-up-back (knee->ankle 50 deg off the thigh), skis pitched
+    //     with the shin (airborne cuff lean = 0) and the ankle exactly on the
+    // DISPLAY ONLY: computeI reads POSE_TUCKED_INERTIA below (byte-frozen), so
+    // the physics is unchanged by construction.
+    torso:     { x:  0.000, y:  0.000, rx: -0.25,   rz:  0.00, dz:  0.000 },
+    head:      { x:  0.000, y:  0.379, rx: -0.35,   rz:  0.00, dz: -0.109 },
+    // Arms: shoulder at the -Y end (bind axis, session-3 fix) exactly on the
+    // torso's +Y end; both segments' sagittal lengths are divided by cos(rz)
+    // in the solver so the 3D chain closes exactly with the +-0.20 wrap.
+    upperArmL: { x: -0.130, y:  0.184, rx: -2.1386, rz: -0.20, dz: -0.197 },
+    upperArmR: { x:  0.130, y:  0.184, rx: -2.1386, rz:  0.20, dz: -0.197 },
+    lowerArmL: { x: -0.070, y:  0.102, rx:  1.5688, rz: -0.20, dz: -0.199 },
+    lowerArmR: { x:  0.070, y:  0.102, rx:  1.5688, rz:  0.20, dz: -0.199 },
+    upperLegL: { x: -0.075, y: -0.092, rx:  2.8916, rz:  0.00, dz:  0.024 },
+    upperLegR: { x:  0.075, y: -0.092, rx:  2.8916, rz:  0.00, dz:  0.024 },
+    lowerLegL: { x: -0.075, y:  0.004, rx: -1.1227, rz:  0.00, dz:  0.141 },
+    lowerLegR: { x:  0.075, y:  0.004, rx: -1.1227, rz:  0.00, dz:  0.141 },
+    skiL:      { x: -0.075, y: -0.080, rx: -1.1227, rz:  0.00, dz:  0.309 },
+    skiR:      { x:  0.075, y: -0.080, rx: -1.1227, rz:  0.00, dz:  0.325 },
 };
 
 // The tuck's MASS DISTRIBUTION, frozen at the pre-rebuild numbers.

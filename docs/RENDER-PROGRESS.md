@@ -276,6 +276,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 184 | **NEXT.md item 5 (#21 half) — the PER-FRAME FLIGHT BOOT–SKI SWEEP gate LANDED: `flight-sweep.spec.js` drives a full jump (comp=easy), pulses the tuck airborne (blend-up → deep tuck → blend-down all swept) and samples `_bootSkiProbe()` every rAF frame: toe AND heel ≤ 5 mm both skis every live frame (crash excluded as the allowed violation), airborne ski-vs-shin pitch ≤ 2°. MEASURED: worst gap 0.00 mm / worst pitch 0.00° over 24 live airborne frames — the pin already seats analytically every frame; flight keeps zero cuff lean (armRaise=1 semantics untouched). `_flightPinOff` negative control (skip pin + 30 mm heel lift) FAILS the gate (fires). Tuck-vs-photo numbers: kneeToChest 0.419 m, torso −25°, knee 105°. OPEN: #16 the real boot (clog/cuff/ledges/buckles) = item 5's remainder, routed to 185. No asset change, ASSET_V 75.** | unit 81/81, golden 30/30, flight-sweep 2/2, inrun-contact+crouch+hop-turn+chain+aframe 17/17, look 6/6 shots inspected. See entry 184. |
+| — | Iteration 186 | **NEXT.md item 5 remainder (#21 TUCK REMODEL) — `POSE_TUCKED` rebuilt to the author's photo by chain-consistent forward kinematics, DISPLAY ONLY (POSE_TUCKED_INERTIA byte-frozen): kneeToChest 0.419 → 0.190 m (≤ 0.22), knee interior 30° → 130° flexion, torso −25° → −14.3°, arms wrap the knees (hand on the knee front, elbows in), head up, skis pitched with the shins and ankle on the binding anchor (0 mm analytic). unit 81/81; golden audit 0 physics diffs / 5408 frames, census-only recapture → 30/30; chain+flight-sweep 12/12; inrun/crouch/hop/aframe/spine 30/30; look 6/6, pose_tuck_side inspected (matches photo). CARRIED RED: crash-ragdoll #13 triple pastRollOut 9.945 vs band ≥ 10 (−0.055 m; all other sub-checks pass, single/double green) — ragdoll seeds from the posed frame, disposition question posted. #16 boots next.** | see entry 186. |
 | — | Iteration 183 | **NEXT.md #23.3 FINAL UNIT — the 10:55 ruling's DE-SHADING slice LANDED: `flatten_leg_shading` in build_body.py removes the MID-FREQUENCY (muscle-scale) band from the leg garment's AO+normal maps (edge-preserving band-stop inside the upperLeg/lowerLeg UV mask, 550k texels; low-freq shading + weave kept — suit NM variance floor 6.3 holds at 6.95; panel seams kept via gradient mask). Texture mid-band: normal 13.30→5.21, ao 15.71→8.14 /255. Build-side HARD gate added; negative control BODY_FLATTEN_OFF=1 build FAILS it (fires). NEW `leg-shading.spec.js` gates the flatten stats in athlete_maps.json (≤7.0/≤10.0 and <70% of before); render-space band-pass instrument REPORTED HONESTLY NON-DISCRIMINATIVE (thigh bp3_7 13.65 pre vs 13.26 post — lighting/SSAO/panel edges swamp the texture signal; open question 1). Shots inspected: legs read near-flat fabric, no carve-outs, bib 30 legible. ASSET_V 74→75.** | unit 81/81, golden 30/30, tube-smooth 1/1, leg-shading 1/1, look 6/6. See entry 183. |
 | — | Iteration 182 | **NEXT.md #23.3 COMPLETED: the pending pre-#23.3 negative control FALSIFIED the inflection gate (e0c0658 measures side thigh 1 / shin 0 — identical to v74); new BELLY-DEPTH metric added (max deviation of the side width profile from its taper chord: thigh 2.6 px pre vs 0.5 px v74), HARD gate ≤ 2.0 px landed — v74 passes, e0c0658 fails, injected belly fails (7.7). Targeted smoothing pass NOT applied on evidence: v74's side tube already measures 0.5 px belly / 1 inflection — nothing measurable to remove; residual by-eye read must be breadth (open question: breadth gate or close #23.3). No source/asset change, ASSET_V 74.** | unit 81/81, golden 30/30; tube-smooth green on v74 and RED on the e0c0658 scratch worktree (both directions verified); look 6/6 regenerated. See entry 182. |
 | — | Iteration 181 | **NEXT.md item 3 cont. (#23.3) — the 09:20 ruling's SILHOUETTE INSTRUMENT LANDED: `tests/drive/tube-smooth.spec.js`. Anchor rows derive from the LEG BONES' FINAL matrices (hlpHip = hip, hlpKnee = knee, lowerLeg origin = ankle), projected only AFTER the first render under the measurement camera (stale-transform projection was 178's torso-window failure, re-proven: pre-render projection compresses hip→ankle to 27 px vs the true ~135). Two more instrument lessons proven: Vector3.Project's y is TOP-DOWN (the H−1−y flip belongs to readPixels only), and bone anchors must be sanity-checked as ROW-SPAN containment, not a point window (the ankle origin sits ≤ 21 px fore-aft off the skinned boot from the bind rotation — band-relaxed form for lowerLeg only). Sanity: all six anchors inside in front/side/back. GATE: side-framing fore-aft width profile, 2× smooth + 1.5 px deadband, ≤ 2 inflections/segment — v74 measures thigh 1 / shin 0 (front: 2/1); injected-belly self-test fires (3/3/2). NO asset/gate-threshold change; the targeted anterior-thigh/glute/calf smoothing pass is deferred (v74 already passes the render gate); pre-#23.3-asset negative control pending. unit 81/81, golden 30/30.** | tube-smooth 1/1; unit + golden on the final tree. See entry 181. |
@@ -11464,3 +11465,76 @@ fragments sit between the legs' spans.
 **Open.** NEXT.md item 2 (crotch height) next; the naive-fill lesson is baked
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
+
+### 186 — NEXT.md item 5 remainder, #21 tuck remodel: POSE_TUCKED rebuilt to the
+author's photo (`reference/shots/author_tuck_ref_2026-08-31.jpg`) per the ruling on
+184 — chain-consistent forward kinematics, DISPLAY ONLY
+
+**What changed.** `POSE_TUCKED` in `engine/core/body-model.js` (the flight-tuck
+display table) rebuilt from the author's photo targets set by the 12:00 ruling on
+184 (which scopes item 5's remainder as "the boot remodel AND the tuck pose
+remodel") and the standing "APPROVED (Fable, 17:05): close the POSE_TUCKED hip
+gap — keep the footage tuck shape" line; NEXT.md item 5 orders it
+("Pose/display only; golden physics unchanged"). All 12 rows re-derived by
+forward kinematics (solver preserved at
+`/home/justin/aerial-agents/scratch/iter-186/solve_tuck.js`), so every joint
+closes analytically (0.0 mm by construction on the rounded literals):
+
+- torso rx −0.436 (−25.0°) → **−0.25 (−14.3°)** — back compact, more upright than −25°
+- kneeToChest **0.419 → 0.190 m** (ruling limit ≤ 0.22) — the knee sits ON the
+  torso axis 0.19 m below the chest, forced by |hip→knee| = 0.36
+- knee flexion **30° → 130° interior** (target ≥ ~130° flexion sense of the
+  ruling; interior 50°), shins folded heel-up-back exactly as in the photo
+- arms wrap the knees: shoulder exactly on the torso's +Y end (the probe's
+  anchor), upper arm down-forward, elbow interior ≈ 110°, hand gripping the
+  front of the knee (0.02 m above / 0.05 m ahead of the knee point), elbows in
+  (rz ±0.20 kept); arm sagittal lengths divided by cos(rz) so the 3D chain closes
+- head up (rx −0.35), gaze above the back line, chin NOT on the chest — the photo
+- skis pitched with the shins (airborne cuff lean = 0), ankle exactly on the
+  binding anchor → the flight boot-ski sweep stays analytic
+
+`POSE_TUCKED_INERTIA` untouched (computeI reads only that) → physics unchanged
+by construction. Instrument fix found en route: the crash-tear probe anchors the
+arm's −Y end at the torso TOP, not 4 cm below it — first arm solve measured
+shoulderL 43.1 mm and was re-solved, not gate-loosened.
+
+**Verification.**
+- unit **81/81**; golden: first run 21/30 — `audit-physics-state.js`:
+  **0 physics-state diffs / 5408 frames, 30/30 scenarios**, display-node diffs
+  in 9 scenarios (the new drawn tuck) → sanctioned census-only re-capture;
+  after capture golden **30/30** (9 trace files updated, display nodes only).
+- chain + flight-sweep **12/12** — the hard flight-tuck endpoint tear gate
+  (hip ≤ 20 mm, all joints ≤ 30 mm) green on the new table; per-frame boot–ski
+  sweep green (worst gap/pitch 0.00° class, live frames sampled through the
+  pulse).
+- inrun-contact / inrun-crouch / hop-turn / aframe / spine **30/30**.
+- look **6/6**; shots regenerated; `pose_tuck_side.png` inspected: knees to
+  chest, arms wrapped around the knee mass, head up, skis swept forward —
+  reads like the photo.
+- **CARRIED RED (1): `crash-ragdoll.spec.js` #13, triple world only** —
+  pastRollOut 9.945 m vs band [10, 18] (miss 0.055 m); slideOnset 0.600 ≤ 0.61,
+  both skis resting with offsets 4.85/2.83 ≤ 6 and uphill 40/42 ≥ 8 — every
+  other sub-check passes; single/double worlds green. Root cause: the crash
+  ragdoll seeds its joint angles from the raw posed frame, so the photo-matched
+  (more compact) tuck changes the slide outcome; the triple stop lands 5.5 cm
+  short of the HT13 band's lower edge. NOT gate-recalibrated (the 10:55 ruling's
+  own rule). Clearing options for the reviewer: (a) approve re-deriving the
+  triple band for the new display tuck, or (b) direct a seed-side decoupling
+  (seed the ragdoll's leg angles from a fixed crash pose independent of the
+  display tuck endpoint). One slot to clear or revert per the carried-red
+  policy.
+
+**Open / not done.** #16 boot remodel (clog/cuff/ledges/buckles per
+`author_boot_ref_2026-08-30.jpg`) is the other half of item 5 — explicitly
+allowed to land in either iteration by the ruling; next slot. NEXT.md NOT
+deleted (items 5b, 6, 7, 8 remain).
+
+**Open questions for the reviewer:**
+- The crash #13 disposition above — (a) band re-derivation vs (b) seed
+  decoupling; my read is (b) is the principled fix (the crash sim should not be
+  sensitive to a display tuck), but it changes crash visuals and deserves a
+  ruling.
+- Authorization note: this engine numeric change shipped under the ruling on
+  184 + the standing 17:05 POSE_TUCKED approval + NEXT.md item 5's display-only
+  mandate. If the reviewer wants it governed differently, say so and I will
+  revert to the previous table (trivially recoverable).
