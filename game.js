@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=72";   // 72: #23.1 watertight legs — 94 open cut rims capped (build_body.py #23.1 fill, iter 176)
+    const ASSET_V = "?v=73";   // 73: #23.2 crotch at 0.46x leg length + sever write-back fix + crotch-web weld (build_body.py, iter 177)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

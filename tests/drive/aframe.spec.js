@@ -147,9 +147,13 @@ async function measureFront(page) {
         const project = (v) => BABYLON.Vector3.Project(v,
             BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
             cam.viewport.toGlobal(W, H));
-        const midThigh = L.knee.add(L.hip).scale(0.5)
-            .add(R.knee.add(R.hip).scale(0.5)).scale(0.5);
-        const rowF = project(midThigh);
+        // #23.2 (iter 177): the inseam now splits 0.46 x leg length below
+        // the hip line, so the >= 3 cm daylight row moved BELOW the new
+        // crotch: 0.55 of the way hip -> ankle (about 6 cm under the
+        // inseam, above the knee).
+        const crotchProbe = L.hip.add(L.ankle).scale(0.55)
+            .add(R.hip.add(R.ankle).scale(0.55)).scale(0.5);
+        const rowF = project(crotchProbe);
         const row = Math.round(H - 1 - rowF.y);       // readPixels is bottom-up
         // px per metre from the athlete's own projected height (sole → head).
         const edgeRef = (() => {

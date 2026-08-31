@@ -6280,8 +6280,12 @@ def suit_shell(body, joints):
 
 
 SEVER_BASE_BOUNDARY = 0     # boundary edges the build had BEFORE the sever cuts
-RIM_LOOP_MAX = 0.12        # m: a closed rim loop may span at most this much
-
+RIM_LOOP_MAX = 0.16        # m: a closed rim loop may span at most this much
+                           # (0.16 covers the #23.2 inseam loops 0.147/0.157;
+                           # the 0.243 daylight V stays open)
+CROTCH_FRAC, CROTCH_FRAC_MIN, CROTCH_FRAC_MAX = 0.46, 0.44, 0.48
+if os.environ.get('BODY_CROTCH_FRAC'):
+    CROTCH_FRAC = float(os.environ['BODY_CROTCH_FRAC'])  # negative-control hook
 
 def _boundary_loops(bm):
     """Group boundary edges (one face) into connected rim loops."""
@@ -6407,6 +6411,23 @@ def sever_thigh_bridge_faces(body, shell):
     bm = bmesh.new()
     bm.from_mesh(body.data)
     bm.verts.ensure_lookup_table()
+    # NEXT.md #23.2 (iter 177): the crotch plane is the anatomical inseam,
+    # 0.44-0.48 x leg length below the hip line — NOT the top of the
+    # upperLeg segment, which made the inseam split at the hip (the author's
+    # HT#23 defect 2). Every below-plane cut and gate in this pass is
+    # scoped to it; the crotch web between hip line and inseam is garment,
+    # not a midline defect, and is retained.
+    hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    ankle_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
+    leg_len = hip_z - ankle_z
+    if not CROTCH_FRAC_MIN <= CROTCH_FRAC <= CROTCH_FRAC_MAX:
+        raise SystemExit(f'[body] CROTCH gate FAILED: crotch fraction '
+                         f'{CROTCH_FRAC} outside '
+                         f'[{CROTCH_FRAC_MIN}, {CROTCH_FRAC_MAX}]')
+    crotch_z = hip_z - CROTCH_FRAC * leg_len
+    log(f'CROTCH HEIGHT: inseam at {CROTCH_FRAC:.2f} x leg length '
+        f'({leg_len * 1000:.0f} mm) = {CROTCH_FRAC * leg_len * 1000:.0f} mm '
+        f'below the hip line, z={crotch_z:+.3f}')
     mixed = [f for f in bm.faces
              if {'upperLegL', 'upperLegR'}.issubset(
                  {dom[v.index] for v in f.verts})]
@@ -6429,23 +6450,21 @@ def sever_thigh_bridge_faces(body, shell):
     if remain:
         raise SystemExit(f'[body] A-frame topology gate FAILED: {remain} '
                          'cross-thigh faces remain')
-
     # NEXT.md slice-2 "crotch/inner-thigh shard cluster cleanup" (entry 170
     # list item 2): the mixed L<->R faces are gone, but the crotch wrap also
     # leaves ONE-SIDED leg faces whose triangle stretches ACROSS the midline —
-    # measured on the shipped v70 glb: 231 athleteBody triangles with their
     # centroid within 45 mm of x=0 between crotch and mid-thigh, longest edge
     # 218 mm, verts at |x| = 0.0001. In a frontal view those faces bridge the
     # silhouette and hold the #15 render-space daylight gate at 0.4 cm. The
     # 158 ruling defines the region as two separate tubes, so a face
-    # straddling x=0 below the crotch is a defect by definition — leg-owned
+    # straddling x=0 below the inseam is a defect by definition — leg-owned
     # OR torso-owned (the pelvis sheet descends between the thighs and is
-    # what actually fills the projected daylight). The crotch plane is the
-    # top of the upperLeg segment: the pelvis body above it is untouched.
+    # what actually fills the projected daylight). The cut plane is the
+    # anatomical inseam (#23.2): the pelvis body above it is untouched.
     bm = bmesh.new()
     bm.from_mesh(body.data)
     bm.verts.ensure_lookup_table()
-    crotch_z = (bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2)
+    crotch_z = hip_z - CROTCH_FRAC * leg_len
 
     def leg_crosser(p):
         zs = [v.co.z for v in p.verts]
@@ -6462,6 +6481,21 @@ def sever_thigh_bridge_faces(body, shell):
     # mid-thigh row: verts at x = -0.0109/+0.0077/+0.0001 with duplicated
     # positions, at every fore-aft station, and nothing else within 25 mm).
     # These fragments are the silhouette bridge the daylight gate sees.
+
+    # #23.2: the retained crotch web carries torn junk measured on v70 —
+    # duplicated positions, verts at |x| = 0.0001, slivers up to 218 mm.
+    # Weld and dissolve it BEFORE the cuts, or the decimator ships it as
+    # silvery shards (SLIVER gate).
+    band = [v for v in bm.verts
+            if abs(v.co.x) < 0.06 and crotch_z - 0.02 <= v.co.z <= hip_z]
+    bmesh.ops.remove_doubles(bm, verts=band, dist=0.0015)
+    band_e = [e for e in bm.edges
+              if all(v in band for v in e.verts)]
+    bmesh.ops.dissolve_degenerate(bm, dist=0.0015, edges=band_e)
+    bm.verts.ensure_lookup_table()
+    log(f'CROTCH CLEANUP: welded/dissolved over {len(band)} mid-band verts '
+        f'(kept below the hip line to stay out of the arm UV zone)')
+    straddle = [f for f in bm.faces if leg_crosser(f)]
     ribbon = [f for f in bm.faces
               if sum(v.co.z for v in f.verts) / len(f.verts) < crotch_z
               and max(abs(v.co.x) for v in f.verts) < 0.025]
@@ -6493,6 +6527,24 @@ def sever_thigh_bridge_faces(body, shell):
             f'(negative control for the watertight gate)')
     else:
         _fill_small_rims(bm, 'sever')
+    # #23.2: the plane move leaves the crotch BOTTOM open — boundary loops
+    # sitting at/above the inseam plane (spans ~0.15 m, over the
+    # RIM_LOOP_MAX small-rim cap). Those are crotch holes, not the designed
+    # daylight V, which lives below the plane. Close every remaining loop
+    # whose verts all lie at/above the inseam plane.
+    for loop in _boundary_loops(bm):
+        if max(v.co.z for e in loop for v in e.verts) <= crotch_z + 0.01 \
+                and _loop_span(loop) <= 0.20:
+            bmesh.ops.contextual_create(bm, geom=loop)
+            log(f'AFRAME TOPOLOGY: inseam-level loop of span '
+                f'{_loop_span(loop):.3f} closed (crotch bottom)')
+    # Latent-bug fix (iter 177): this second bmesh was never written back —
+    # the straddle/ribbon cuts and every fill above were discarded, and the
+    # 176 build only passed because close_boundary re-capped rims on the
+    # low-poly mesh at export.
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
 
 
 

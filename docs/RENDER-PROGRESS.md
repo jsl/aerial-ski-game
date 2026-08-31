@@ -269,6 +269,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 176 | **NEXT.md item 1 — HT#23.1 leg transparency carve-outs LANDED: the 94 open rim edges left by the thigh-tube sever + crotch shard cuts are LOOP-AWARE capped in `sever_thigh_bridge_faces` (`_fill_small_rims`, ≤ 0.12 m loops only; the designed between-tube daylight loop, 0.243 m, is deliberately left open) + `close_boundary` on the delivered mesh; new `watertight_gate` (mesh space) + `tests/drive/leg-watertight.spec.js` (render space: enclosed-background components from front/side/back, holes = mid-limb interior-to-one-leg-span components ≥ 20 px, the between-legs daylight pocket excluded by construction). ASSET_V 71 → 72. NEGATIVE CONTROLS: pre-#23.1 committed assets FAIL the render gate (side framing 128 px interior hole at x 644-656/y 434-455); `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log: 94 rims left open). unit 81/81, golden 30/30, aframe+body 5/5, look 6/6, leg-watertight 1/1; shots regenerated + inspected — no visible carve-outs front/side.** | see entry 176. |
+| — | Iteration 177 | **NEXT.md item 2 — HT#23.2 CROTCH HEIGHT LANDED: the sever cut plane moves from the hip line (top of upperLeg) to the anatomical inseam, `hip − CROTCH_FRAC × leg_length` (0.46, gated [0.44, 0.48], `BODY_CROTCH_FRAC` env hook; leg 720 mm → inseam 331 mm below the hip, z=−0.606); the crotch web above the plane is retained; junk web welded/dissolved in a midline band kept BELOW the hip line (arm UV-zone-safe); RIM_LOOP_MAX 0.12 → 0.16 m so the inseam loops (0.147/0.157) close while the 0.243 daylight V stays open. LATENT BUG FIXED: the second bmesh in `sever_thigh_bridge_faces` was NEVER WRITTEN BACK — 176's cuts/fills in that block were discarded and only `close_boundary` masked it. aframe daylight row moved below the new crotch (0.55 × hip→ankle): 5.65 cm (gate ≥ 3; was 0.81 cm). ASSET_V 72 → 73. unit 81/81, golden 30/30, aframe+leg-watertight 2/2 (holes 0 front/side/back), look 6/6; negative control BODY_CROTCH_FRAC=0.52 fails the build.** | see entry 177. |
 | — | Iteration 174 | **172-ruling step 1 LANDED — the hand pipeline is FRAME-INDEPENDENT: `relax_hands`/`hand_spread_gate` + `hand_metrics`/`scale_hands`/`_hand_cluster`/`_finger_axes`/`_pack_fingers` re-measured along the forearm bone's own axis (wrist = `seg_ends` tail, depth = dot with `adir`) instead of world z. EQUIVALENCE CONTROL green: full build log's hand lines byte-identical to the pre-refactor baseline (spread 34.7→6.8/33.0→7.6 deg, HAND SPREAD 8.5 deg / 6.6 mm, HAND GATE 0.75); remaining log deltas are the ±1-vertex GPU-bake-noise class proven present in same-code rebuilds. No assets shipped, no ASSET_V bump. unit 81/81, golden 30/30, drive 37/38 (only the carried hands-vs-thigh red, which ruling step 2 — the ±7.5° bind abduction, now unblocked — targets next slot).** | see entry 174. |
 | — | Iteration 173 | **NEXT.md step 2 (170 list item 2) — crotch/inner-thigh shard cluster cut LANDED in `sever_thigh_bridge_faces`: 11 L↔R mixed faces (existing pass) + 40 midline straddlers + 6 ribbon fragments, gated to zero remaining below the crotch plane; ASSET_V 70 → 71. The #15 render-space daylight number is UNCHANGED (0.81 cm vs ≥ 3 cm gate, reported not gated) — the bridge is NOT (only) the deleted faces; by eye the thighs still merge. The carried hands-vs-thigh red stands. unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23, aframe green, look 6/6 (FACEDIST 0.1803).** | see entry 173. |
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
@@ -10986,6 +10987,56 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+
+### 177 — NEXT.md item 2: HT#23.2 crotch height — inseam at 0.46 × leg length + sever write-back latent-bug fix
+
+**Verification.** unit 81/81; golden 30/30 (no physics change, display-only asset rebuild);
+`aframe` + `leg-watertight` 2/2 (watertight holes 0 in front/side/back; side was 129 px with
+the 0.12 m fill cap); `look` 6/6, shots regenerated and inspected — `figure_front` shows the
+legs joined down to a low inseam with the bib "30" intact, `figure_side` shows no carve-outs.
+
+**What changed.**
+
+1. `blender/build_body.py` `sever_thigh_bridge_faces`: the crotch plane is now the anatomical
+   inseam — `hip_z − CROTCH_FRAC × leg_len`, `CROTCH_FRAC = 0.46` gated to [0.44, 0.48]
+   (hard build failure outside the band; negative control: `BODY_CROTCH_FRAC=0.52` fails with
+   "CROTCH gate FAILED"). leg_len = 720 mm → inseam 331 mm below the hip line, z=−0.606
+   (was: the top of the upperLeg segment, i.e. the split AT the hip the author photographed).
+   Every below-plane cut and gate (mixed L↔R census note, midline straddlers 28, ribbon 4,
+   midline gate) is scoped to the same plane; the crotch web above it is retained as garment.
+2. Latent bug fixed: the second `bmesh` in `sever_thigh_bridge_faces` (straddle/ribbon cut +
+   all fills) was never written back — `bm.to_mesh` was missing, so EVERY cut and fill in that
+   block since its introduction was silently discarded. Iteration 176 passed only because
+   `close_boundary` re-capped rims on the decimated low-poly mesh at export. Now written back.
+3. `RIM_LOOP_MAX` 0.12 → 0.16 m: with the plane moved down, the inseam-level loops
+   (0.147/0.157 m) rendered as a 129 px side-framing see-through hole (leg-watertight FAIL);
+   at 0.16 they close and the designed between-tube daylight loop (0.243 m) stays open.
+   The shipped mesh's watertight census: 1 boundary loop, 0.243 m (the daylight V).
+4. Crotch-web junk cleanup: `remove_doubles` (1.5 mm) + band-scoped `dissolve_degenerate`
+   over the retained web's midline band (|x| < 0.06, z in [crotch−0.02, hip]) — the web
+   carried duplicate-position verts and 218 mm slivers that the decimator shipped as shards.
+   The band is capped at the hip line: a first attempt reaching into the torso band tripped
+   the UV ZONE gate (894 arm/trunk texel overlaps).
+5. `tests/drive/aframe.spec.js`: the ≥ 3 cm projected daylight row moves from mid-thigh to
+   0.55 × hip→ankle (≈ 6 cm below the new inseam) — mid-thigh is now legitimately joined.
+   Measured: gapCm 5.65 (gate ≥ 3; the pre-#23.2 build measured 0.81 cm at mid-thigh).
+6. Assets rebuilt (~20 s build), ASSET_V 72 → 73.
+
+**Open / not done.** NEXT.md items 3–8 (#23.3 de-muscularize, #22 fang peak, #21+#16
+tuck+boots, hands step 2, paint slice, #17 coach) remain in order. Sliver after finish_lowpoly
+is 53/9480 = 0.559% (gate ≤ 0.60%) — close to the ceiling; if a later pass pushes it over, the
+next candidate is dissolving the remaining hip-region shards at (+0.134, −0.031, −0.046).
+The magenta marker texels at the bib bottom (visible in figure_front) are the paint-slice
+defect (NEXT.md item 7), untouched here.
+
+**Open questions for the reviewer.**
+1. The inseam join reads as a smooth garment mass from hip to the split at 0.46 × leg length.
+   The author's reference legs (`author_legs1/2/3`) show a slightly more defined seam line;
+   is a painted seam (albedo line) wanted in item 7's paint slice, or is the geometric join
+   enough?
+2. `RIM_LOOP_MAX` is now both the fill cap and the watertight-gate hole definition (0.16 m).
+   The 0.243 m daylight V is the only remaining boundary loop. Confirm 0.16 m as standing law
+   or name the intended split (fill cap vs gate limit).
 
 ### 176 — NEXT.md item 1: HT#23.1 leg transparency carve-outs capped + watertight
 gates in mesh space and render space; ASSET_V 72
