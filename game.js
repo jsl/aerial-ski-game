@@ -1161,6 +1161,28 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         mesh.rotation.z = p.rz;
     }
 
+    // ── A-frame stance (iter 168's baked bind rest, iter 169) ──────────────
+    // The suit-shell binds and mesh rest carry the 3-degree frontal thigh
+    // tilt with the hip walked in to the natural-width station (build-side,
+    // AFRAME_RZ). The pose tables are straight-legged, so every driver path
+    // — this function AND _pinBootsToSkis on the frame loop — must write the
+    // same stance, or the skin is flexed 3 degrees off its rest in whatever
+    // path skips the pin (spine/chain probes read knee-band strain 8.5 vs a
+    // 2.65 straight-rest datum). Mirrors _pinBootsToSkis exactly and honours
+    // the same _aFrameOff negative control.
+    if (typeof window === 'undefined' || !window._aFrameOff) {
+        for (const side of ['L', 'R']) {
+            const ulMesh = meshes['upperLeg' + side];
+            const skMesh = meshes['ski' + side];
+            if (!ulMesh || !skMesh) continue;
+            const rzU = side === 'L' ? -_A_FRAME_RZ : _A_FRAME_RZ;
+            ulMesh.rotation.z = rzU;
+            ulMesh.position.x = skMesh.position.x
+                + _BOOT_SKI.hl * -Math.sin(rzU);
+        }
+    }
+
+
     // ── P13 kinematic chain reconciliation (always on, blend-scaled) ───────
     // Blending each segment's position independently breaks joint continuity
     // at intermediate blend values (mid-tuck tear, stretched neck). The
@@ -2410,8 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=69";   // 69: A-frame stance bind re-export — athlete assets re-baked (NEXT.md #15 slice)
-    // Blender bakes the two terms this renderer cannot compute, and BOTH are
+    const ASSET_V = "?v=70";   // 70: knee slab re-blend widened 60->90 mm (iter 169 crouch-knee fix)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

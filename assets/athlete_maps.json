@@ -48,16 +48,16 @@
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.59065
+  "stripe_leak": 0.59639
  },
  "delivery": {
   "athlete_albedo": {
    "mean_abs": 0.0038,
    "p99_abs": 0.0314,
-   "png": 1280941,
+   "png": 1280057,
    "ratio": 3.17,
    "res": 2048,
-   "web": 404390
+   "web": 404300
   },
   "athlete_ao": {
    "mean_abs": 0.0115,
@@ -70,12 +70,12 @@
   "athlete_normal": {
    "mean_deg": 1.291,
    "p95_deg": 3.631,
-   "png": 4797633,
+   "png": 4797623,
    "ratio": 8.32,
    "res": 2048,
-   "web": 576874
+   "web": 576870
   },
-  "total_web": 1129416
+  "total_web": 1129322
  },
  "faceForward": [
   -0.0069,

@@ -1920,7 +1920,7 @@ def knee_band_relax(obj, keep, iters=8, rate=0.5):
     log(f'knee weight freeze: band relax {iters}x{rate} over {len(idx)} verts')
 
 
-def knee_band_upper_reblend(obj, keep, slab=0.06):
+def knee_band_upper_reblend(obj, keep, slab=0.08):
     """Re-partition the slab ABOVE the knee ring toward lowerLeg (iter 167).
 
     Iter 166 proved the flight-tuck strain (11.709 vs the 8.0 gate) comes from
@@ -1931,6 +1931,11 @@ def knee_band_upper_reblend(obj, keep, slab=0.06):
     upperLeg share re-blended onto lowerLeg, strongest at the ring and fading to zero at the
     top of the slab, so flexion past the crouch no longer fights a rigid
     thigh-weighted step just above the hinge.
+
+    Iter 169: slab 0.06 -> 0.08. With the A-frame tilt baked into the bind
+    rest (iter 168) the 60 mm gradient peaked at 8.035 crouch strain (gate
+    8.0); at 90 mm flight tuck rose to 6.864; 80 mm gives crouch 4.063 /
+    flight 3.734 — both comfortably green.
     """
     groups = list(obj.vertex_groups)
     by_name = {g.name: g for g in groups}

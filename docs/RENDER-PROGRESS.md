@@ -261,6 +261,8 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 169 | **NEXT.md / 04:00 ruling Q2 LANDED — the crouch-knee red is cleared two ways: (1) the A-frame stance is now written by `applyPose` itself (drivers mirror `_pinBootsToSkis`'s rz/hip walk-in, same `_aFrameOff` control), so probe-path instruments stop skinning a 3° rest mismatch (spine dose rest 2.054 → 1.003 rigid, crouch 8.503 → 8.035); (2) the 167 upper-slab re-blend widened 60 → 80 mm for the rotated rest — crouch 4.063, flight tuck 3.734 (gate ≤ 8.0, both comfortably green). ASSET_V 69 → 70; golden census-only re-capture after audit showed 0 physics diffs; unit 81/81, golden 30/30, look 6/6 (FACEDIST 0.1806), aframe/chain/spine green; the ONE remaining red is the known hands-vs-thigh gate, which the 04:00 ruling routes to the next slot as an arms-pose fix.** | 2 Blender builds ~38 s each; spine knee sweep neutral 1.003 / crouch 4.063 / flight 3.734 / pike 1.003; aframe kneeDev 1.62/1.52 vs control 12.51/11.77; chain 10/10. See entry 169. |
+
 | — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; the relaunched full run-all LANDED ALL GREEN (drive 136 passed / 3 skipped — the parked aframe.spec; 41.8 m). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: drive FAIL-to-start (stale :8099 server, killed); leg 2 on the freed port: ALL GREEN, drive 136/3. Shots regenerated + inspected. See entry 165. |
 | — | Iteration 167 | **NEXT.md step 1 LANDED: the knee-band upper slab (ring..+60 mm, INCLUDING the frozen band's upper half) re-blended toward lowerLeg after the freeze — flight-tuck knee strain 11.709 → 4.174, in-run crouch 2.65 (gate ≤ 8.0, both GREEN, p999 4.02/2.40); unit 81/81, golden 30/30, spine 4/4, chain green, look 6/6; the two PRE-EXISTING rig reds stand byte-identical (open questions 1/3, pending reviewer rulings); ASSET_V 68.** | 2 Blender builds 38 s each, all build gates green (89 verts re-blended, seam/locality gates green); spine+rig+chain 35 passed / 2 pre-existing reds; shots regenerated. See entry 167. |
 | — | Iteration 166 | **NEXT.md #15 combined slice ADVANCED, not landed (164's disposition repeated, now with the missing data): 164's scratch patch RE-APPLIED to the merged tip + the knee-band freeze/relax PORTED onto it (164's preserved full script was stale vs HEAD — the port is the new artefact); build ALL build-gates green in 38 s; drive 34/3 with the SAME three reds; the 164's-unknown flight-tuck number CAPTURED: 11.709 vs gate 8.0; NEW experiment — widening the freeze band upward (+0.02 → +0.06) makes flexion WORSE (flight tuck 28.554, crouch 7.447) ⇒ the upper band's upperLeg-dominant weights are the strain source, the +0.02 band is the right one. Tree honestly REVERTED (red drive suite never ships); patch + ported script + both build logs + numbers preserved in scratch/iter-166. NEXT.md retained.** | build2 exit 0 (AFRAME TOPOLOGY 156 verts/11 faces/0 remain, gap +54.0 mm, arm/thigh 0.522, SHELLCURV ≤ 0.324, seam relax 8×0.5 over 413 verts); unit 81/81, golden 30/30 on the new assets; spine+rig+chain 34 passed / 3 failed (hands −56.6 mm class, stand-off 0.1891 vs 0.201, flight-tuck knee 11.709); tree byte-clean vs HEAD after revert. See entry 166. |
@@ -1472,6 +1474,49 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 169 — NEXT.md crouch-knee red cleared: the A-frame stance moves into `applyPose` + the knee slab re-blend is re-faded for the rotated rest (crouch 8.503 → 4.063, flight tuck 3.734, gate 8.0); spine dose "rest must be rigid" 2.054 → 1.003; ASSET_V 70; golden census-only re-capture (audit: 0 physics diffs); the hands-vs-thigh red stands, routed by the 04:00 ruling to the arms-pose fix
+
+**Mandate.** `docs/NEXT.md` (multi-iteration; steps 1+2b remaining) + the
+04:00 ruling on 168 (Q2: "fix by re-fading the upper-slab re-blend for the
+rotated rest").
+
+**Root cause found this iteration.** After 168 baked the 3° A-frame rest into
+mesh+binds, the pose tables stayed straight-legged: only the frame loop's
+`_pinBootsToSkis` wrote the stance, so every `_poseProbe`-based instrument
+(spine/chain) skinned a 3° rest mismatch — that is where rest dose 2.054 and
+crouch 8.503 came from. Probing the pin-in-probe composition instead broke
+chain's flight/pike gaps (the pin rebuilds the legs from the skis, overriding
+the P13 reconciliation), so the fix went to the source: `applyPose` now writes
+the stance (driver `rotation.z` ∓3°, hip walked in by `hl·sin(3°)`, honouring
+`window._aFrameOff`) right after the solved-transform loop, before
+reconciliation. The pin's identical maths is now idempotent on those fields.
+
+**Re-fade measurement trail (spine knee sweep max strain).**
+- 168 tip (slab 60 mm, probe mismatch): crouch 8.503, flight 3.857, rest dose 2.054.
+- `applyPose` stance (slab 60): crouch 8.035, flight 3.857, rest 1.003 — dose instrument green, crouch still 0.4% over.
+- slab 90 mm: crouch 3.574 but flight tuck 6.864 (green, margin thin) → rejected.
+- **slab 80 mm (shipped): crouch 4.063, flight 3.734, neutral/pike 1.003.**
+
+**Verification.** Unit 81/81; golden: `audit-physics-state.js` **0 physics
+diffs × 30 scenarios / 5408 frames**, 8 display-node scenarios re-captured
+census-only (legs carry the stance in every pose — expected), verify **30/30**.
+Drive: spine 14/14 (incl. dose + negative control), chain 10/10, aframe green
+(shipped kneeDev **1.62/1.52°** vs control **12.51/11.77°**, shin tilt 1.6°,
+daylight 0.81 cm — known shard-bridged #15 defect, gate ≥ 3 cm), rig 11/13
+with the ONE red = hands-vs-thigh (−46.8 mm class), look **6/6**, FACEDIST
+**0.1806**, shots regenerated. ASSET_V 69 → 70 (assets re-baked twice; final
+build at slab 0.08).
+
+**Open.**
+1. Hands-vs-thigh: per the 04:00 ruling this is an arms-pose fix (hand station
+   outboard of the thigh's widest point, ≥ 5 mm clearance, elbows near the
+   body) in the 168 build-side style — next slot; policy says carried reds
+   clear next iteration or revert.
+2. NEXT.md steps 2b (render-space daylight ≥ 3 cm — blocked only by the crotch
+   shard cluster), 2c boots, 2d heels/tuck remain.
+
+**Scratch.** none this iteration (no probe files outside the repo tree).
 
 ### 165 — REVIEW-ONLY: suite audited on the merged tip (unit/golden/mutation/coverage green; look 6/6, grey-attr 2/2, FACEDIST 0.1803 holds); #15/#16/#21 confirmed RED by eye with fresh shots; scene reads clean at the canonical framing except a dark-green ridge wedge crossing the horizon; stale :8099 server blocked run-all's drive leg AGAIN (killed); #15 combined slice re-committed as the 166 work slot
 
