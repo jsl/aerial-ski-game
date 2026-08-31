@@ -6280,10 +6280,62 @@ def sever_thigh_bridge_faces(body, shell):
     if remain:
         raise SystemExit(f'[body] A-frame topology gate FAILED: {remain} '
                          'cross-thigh faces remain')
-    log(f'AFRAME TOPOLOGY: {len(shell.get("thigh_bridge", ()))} crossing '
-        f'verts reassigned to their own fitted tubes; {len(mixed)} L<->R '
-        f'faces removed; {remain} remain')
-    return len(mixed)
+
+    # NEXT.md slice-2 "crotch/inner-thigh shard cluster cleanup" (entry 170
+    # list item 2): the mixed L<->R faces are gone, but the crotch wrap also
+    # leaves ONE-SIDED leg faces whose triangle stretches ACROSS the midline —
+    # measured on the shipped v70 glb: 231 athleteBody triangles with their
+    # centroid within 45 mm of x=0 between crotch and mid-thigh, longest edge
+    # 218 mm, verts at |x| = 0.0001. In a frontal view those faces bridge the
+    # silhouette and hold the #15 render-space daylight gate at 0.4 cm. The
+    # 158 ruling defines the region as two separate tubes, so a face
+    # straddling x=0 below the crotch is a defect by definition — leg-owned
+    # OR torso-owned (the pelvis sheet descends between the thighs and is
+    # what actually fills the projected daylight). The crotch plane is the
+    # top of the upperLeg segment: the pelvis body above it is untouched.
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bm.verts.ensure_lookup_table()
+    crotch_z = (bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2)
+
+    def leg_crosser(p):
+        zs = [v.co.z for v in p.verts]
+        if sum(zs) / len(zs) >= crotch_z:
+            return False
+        xs = [v.co.x for v in p.verts]
+        return min(xs) < 0.0 < max(xs)
+
+    straddle = [f for f in bm.faces if leg_crosser(f)]
+
+    # Second cut: the ribbon itself. The crotch sheet does not only
+    # STRADDLE the midline — a thin strip of it survives as faces lying
+    # wholly within a few mm of x=0 (measured on the v70 glb at the
+    # mid-thigh row: verts at x = -0.0109/+0.0077/+0.0001 with duplicated
+    # positions, at every fore-aft station, and nothing else within 25 mm).
+    # These fragments are the silhouette bridge the daylight gate sees.
+    ribbon = [f for f in bm.faces
+              if sum(v.co.z for v in f.verts) / len(f.verts) < crotch_z
+              and max(abs(v.co.x) for v in f.verts) < 0.025]
+    log(f'AFRAME TOPOLOGY: {len(straddle)} midline straddlers and '
+        f'{len(ribbon)} ribbon fragments removed (crotch shard cluster)')
+    cut = {f.index: f for f in straddle + ribbon}
+    bmesh.ops.delete(bm, geom=list(cut.values()), context='FACES_ONLY')
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
+
+    remain2 = 0
+    for p in body.data.polygons:
+        xs = [body.data.vertices[i].co.x for i in p.vertices]
+        zs = [body.data.vertices[i].co.z for i in p.vertices]
+        if sum(zs) / len(zs) >= crotch_z:
+            continue
+        if min(xs) < 0.0 < max(xs) or max(abs(x) for x in xs) < 0.025:
+            remain2 += 1
+    if remain2:
+        raise SystemExit(f'[body] A-frame topology gate FAILED: {remain2} '
+                         'faces still cross or hug the midline below the '
+                         'crotch')
 
 
 

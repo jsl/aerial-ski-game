@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=70";   // 70: knee slab re-blend widened 60->90 mm (iter 169 crouch-knee fix)
+    const ASSET_V = "?v=71";   // 71: crotch shard-cluster cut — 43 one-sided leg faces crossing the midline removed (iter 173)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

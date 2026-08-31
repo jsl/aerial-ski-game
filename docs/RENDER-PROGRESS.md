@@ -263,6 +263,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 173 | **NEXT.md step 2 (170 list item 2) — crotch/inner-thigh shard cluster cut LANDED in `sever_thigh_bridge_faces`: 11 L↔R mixed faces (existing pass) + 40 midline straddlers + 6 ribbon fragments, gated to zero remaining below the crotch plane; ASSET_V 70 → 71. The #15 render-space daylight number is UNCHANGED (0.81 cm vs ≥ 3 cm gate, reported not gated) — the bridge is NOT (only) the deleted faces; by eye the thighs still merge. The carried hands-vs-thigh red stands. unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23, aframe green, look 6/6 (FACEDIST 0.1803).** | see entry 173. |
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
 | — | Iteration 172 | **Hands-vs-thigh build-side fix (05:10 ruling) IMPLEMENTED end-to-end (mesh+bone+bind+driver+helpers, A-frame template) but NOT LANDED: at ±7.5° the bideltoid gate passes at its exact 0.410 ceiling and the hands clear by ~+8.7 mm, but the hand pipeline (`relax_hands`/`hand_spread_gate`) assumes world-vertical fingers — the horizontal z-cut ladder deepens 0.45→0.78, reads finger gaps of 200+ mm (gate 8) and the build exits 1. REVERTED; tree byte-identical to 171's tip; unit 81/81, golden 30/30 re-verified. Open questions posted (hand-pipeline frame independence).** | attempt numbers in entry 172; unit + golden re-run after revert. See entry 172. |
 | — | Iteration 171 | **Hands-vs-thigh slot: the 04:00 ruling's "arms-pose fix" was attempted and MEASURED IMPOSSIBLE — rig.spec's hand/thigh measurement reads raw BIND-pose vertices transformed by the mesh world matrix only (no bone matrices), so no driver-side pose write can move the hand centroid by a single vertex; a `_restArmsOutboard` ±8.5° abduction helper (game.js, _inrunArmForward style) changed hx/tf by exactly 0.0000 while breaking the green `bind==driver` gate (lowerArmL residual 0.0482 m). REVERTED — unit 81/81, golden 30/30 re-verified on the reverted tip; tree is byte-identical to 170. The real fix is BUILD-side (see entry + open question 1).** | unit + golden re-run after revert; the attempt's numbers in entry 171. See entry 171. |
@@ -1479,6 +1480,61 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 173 — NEXT.md step 2: crotch/inner-thigh shard cluster cut (57 defect
+faces removed, zero-remaining gate) — the #15 render-space daylight is
+UNCHANGED (0.81 cm), so the bridge is deeper than the deleted faces;
+ASSET_V 71; unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23 (carried
+hands red), aframe green, look 6/6
+
+**Mandate.** `docs/NEXT.md` step 2 / the 170 re-prioritised list item 2 (the
+hands fix stays blocked on 172's open questions). ASSET_V 70 → 71; athlete
+assets rebaked (all five files).
+
+**What changed.** `blender/build_body.py` `sever_thigh_bridge_faces` gains two
+cuts after the existing mixed L↔R pass, both below the crotch plane
+(`bl('upperLegL').z + SEGMENTS['upperLegL']['h']/2`), both gated to zero
+remaining: (1) 40 midline STRADDLERS — faces whose x-range spans 0 (leg-owned
+ones were reachable before, torso-owned included now); (2) 6 RIBBON
+fragments — faces lying wholly within |x| < 25 mm of the midline. Measured
+motivation (probe on the shipped v70 glb, Blender-imported): 231 athleteBody
+triangles with centroid |x| < 45 mm between crotch and mid-thigh, longest
+edge 218 mm, verts at |x| = 0.0001–0.011 with duplicated positions — the
+shard cluster NEXT.md names.
+
+**Honest result: the daylight gate did NOT move.** `aframe.spec` on the new
+build: gapPx 2, gapCm **0.81** (was 0.81), kneeDev 1.62/1.52° unchanged
+(stance untouched). Post-cut probe: the near-midline verts at the mid-thigh
+row SURVIVE the cut — each is attached to one-sided faces stretching to its
+own tube, i.e. the remaining bridge is the tube inner surfaces/pose
+converging in projection at the sampled row, not straddling faces. By eye in
+`figure_front.png` the thighs still read as one merged mass below the bib.
+So 170's "the shard cleanup is the blocker" hypothesis is FALSIFIED for the
+deleted face classes; the next lever is the thigh tube's inner-surface radius
+at mid-thigh (or the sampling row), which needs its own measured slice.
+
+**Verification.** Build exits 0, all build gates green (SLIVER gate included;
+curvature/bideltoid/thigh gates unchanged). `npm run test:unit` **81/81**;
+`npm run test:golden` **30/30** (no trace re-capture — display-only asset
+change, audit untouched); `spine` **14/14** (kneeMax 1.003 class); `chain` +
+`rig` **22 passed / 1 failed** — the failure is the carried hands-vs-thigh
+red, byte-identical class; `aframe` **1/1** (numbers above); `look` **6/6**,
+shots regenerated on ASSET_V 71: FIGSIL span 0.935 frac 0.1983, FACEDIST
+**0.1803** (≥ 0.15), POSESHOT standOffs 0.998/0.998/1.806/0.6 as gated.
+
+**Open questions for the reviewer.**
+1. The 2b ≥ 3 cm daylight gate: with the shard faces cut and the number
+   unmoved, the remaining bridge is tube inner-surface convergence at the
+   sampled row (verts at |x| ≈ 0.011 attached one-sided to the tubes).
+   Authorized to open the thigh tubes' inner surfaces at mid-thigh (a
+   build-side inner-face clamp, e.g. |x| ≥ 0.03 below the crotch, curvature
+   and gap gates unchanged), or to re-anchor the instrument's sampling row
+   first?
+2. The two ribbon-face classes now gated to zero — confirm the 25 mm ribbon
+   width and the crotch-plane definition are acceptable as standing law.
+
+**Scratch.** `/home/justin/aerial-agents/scratch/iter-173/` (probe scripts +
+4 build logs; probes are reproducible one-shots, safe to sweep).
+
 
 ### 172 — Hands-vs-thigh build-side fix: the full A-frame-template implementation (mesh + bones + binds + drivers + helpers) works geometrically but the HAND PIPELINE is world-z-locked and rejects any tilted hand — attempt measured at ±8.5° and ±7.5°, REVERTED; unit 81/81 + golden 30/30 re-verified on the reverted (171-identical) tip
 
