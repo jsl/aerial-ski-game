@@ -9878,9 +9878,61 @@ def target_image(low, img):
         node.image = img
         node.select = True
         tree.nodes.active = node
+# ── RULING on 181 (Fable, 2026-08-31 10:55, HT#23.3) ────────────────────────
+# v74's leg TUBE measures measurably straight (side thigh belly 0.5 px, 182),
+# yet the author's by-eye "muscular" read persists. The ruling: the residual
+# read is SHADING — the leg garment's AO/normal maps inherit body-derived
+# muscle modelling (cm-scale quad/calf shading baked off the high-poly), which
+# reads as anatomy through an already-straight tube. Fix here, in the LEG
+# GARMENT region only: remove the MID-FREQUENCY band (muscle scale) from the
+# normal map's tangent deviation and the AO. The LOW-frequency broad shading
+# and the HIGH-frequency fabric relief are kept (the suit NM variance floor
+# 6.3 must stay green), and panel seams stay crisp via an edge-preserving mask.
+LEG_GARMENT_SEGMENTS = ('upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR')
+FLATTEN_MID_SIGMA = 18.0    # texels: band centred below ~3 sigma is removed
+FLATTEN_HIGH_SIGMA = 1.5    # texels: keep everything above ~4 texels (weave)
+FLATTEN_EDGE = {'normal': 0.04, 'ao': 0.06}   # per-texel gradient = a seam
+BODY_FLATTEN_OFF = os.environ.get('BODY_FLATTEN_OFF') == '1'
+
+
+def flatten_leg_shading(low, img, kind, log):
+    """Mid-band (muscle-scale) suppression inside the leg-garment UV mask."""
+    if BODY_FLATTEN_OFF or kind not in FLATTEN_EDGE:
+        return None
+    own = dominant_segments(low)
+    tris = _poly_uv_tris(low, lambda v: own[v] in LEG_GARMENT_SEGMENTS)
+    w, h = img.size
+    mask = _dilate(_rasterize_uv(tris, w, h), 4)
+    n = int(mask.sum())
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    a = buf.reshape(h, w, 4)[..., :3].astype(np.float64)
+    out = a.copy()
+    thr = FLATTEN_EDGE[kind]
+    for c in range(3):
+        ch = a[..., c]
+        lowf = _blur(ch, FLATTEN_MID_SIGMA)
+        highf = ch - _blur(ch, FLATTEN_HIGH_SIGMA)
+        filt = lowf + highf
+        g = np.zeros_like(ch)
+        g[:, :-1] = np.abs(np.diff(ch, axis=1))
+        g[:-1, :] = np.maximum(g[:-1, :], np.abs(np.diff(ch, axis=0)))
+        edge = np.minimum(1.0, _blur((g > thr).astype(np.float64), 1.5))
+        out[..., c] = filt * (1.0 - edge) + ch * edge
+    sel = mask[..., None]
+    before = float(np.abs(a - _blur(a, FLATTEN_MID_SIGMA))[mask].mean())
+    a = np.where(sel, out, a)
+    after = float(np.abs(a - _blur(a, FLATTEN_MID_SIGMA))[mask].mean())
+    flat = np.concatenate([a, np.ones((h, w, 1))], axis=2).astype(np.float32)
+    img.pixels.foreach_set(flat.reshape(-1))
+    log(f'LEG-SHADING FLATTEN ({kind}): mid-band energy in leg mask '
+        f'{before * 255:.2f} -> {after * 255:.2f}/255 over {n} texels')
+    return {'before': round(before * 255, 2), 'after': round(after * 255, 2),
+            'texels': n}
 
 
 def bake_maps(low, high, out_dir):
+
     """
     Transfer the high-poly's detail onto the low-poly's UVs.
 
@@ -9898,7 +9950,7 @@ def bake_maps(low, high, out_dir):
     # NOT be black where nothing is baked.
     bake.use_clear = False
 
-    def run(kind, name, srgb, fill, setup=None):
+    def run(kind, name, srgb, fill, setup=None, post=None):
         # FILL THE BACKGROUND FIRST, and not with black.
         #
         # Unwrapping a decimated human produces a lot of small islands, and only
@@ -9925,6 +9977,8 @@ def bake_maps(low, high, out_dir):
             setup(bake)
         log(f'baking {name} {RES}x{RES} at {SAMPLES} samples...')
         bpy.ops.object.bake(type=kind)
+        if post:
+            post(img, name)
         return bakeutil.save_bake(img, os.path.join(out_dir, f'{name}.png'),
                                   srgb=srgb, log=log)
 
@@ -9932,8 +9986,14 @@ def bake_maps(low, high, out_dir):
     bpy.context.scene.render.bake.normal_space = 'TANGENT'
     # A tangent-space normal pointing straight out is (0.5, 0.5, 1.0); occlusion
     # with nothing occluding is 1.0; unpainted suit is the suit's own colour.
+    def post_flatten(kind):
+        def _post(img, name):
+            stats[name.split('_')[1] + '_flatten'] = flatten_leg_shading(
+                low, img, kind, log)
+        return _post
     stats['normal'] = run('NORMAL', 'athlete_normal', srgb=False,
-                          fill=(0.5, 0.5, 1.0, 1.0))
+                          fill=(0.5, 0.5, 1.0, 1.0),
+                          post=post_flatten('normal'))
     # AO IS LIMITED TO A SHORT DISTANCE, on purpose.
     #
     # An unlimited AO bake sees the whole body, and the body is baked in
@@ -9951,8 +10011,23 @@ def bake_maps(low, high, out_dir):
     if bpy.context.scene.world is None:
         bpy.context.scene.world = bpy.data.worlds.new('bakeWorld')
     bpy.context.scene.world.light_settings.distance = 0.04
-    stats['ao'] = run('AO', 'athlete_ao', srgb=False, fill=(1.0, 1.0, 1.0, 1.0))
+    stats['ao'] = run('AO', 'athlete_ao', srgb=False, fill=(1.0, 1.0, 1.0, 1.0),
+                      post=post_flatten('ao'))
 
+    # RULING on 181: the flatten is not optional. A build that leaves the
+    # muscle-frequency band in the leg-garment maps (BODY_FLATTEN_OFF=1, or a
+    # mask/ownership regression that empties the mask) FAILS the build.
+    for _k in ('normal_flatten', 'ao_flatten'):
+        _f = stats.get(_k)
+        if not _f or not _f.get('texels'):
+            raise SystemExit(
+                f'[body] LEG-SHADING FLATTEN gate FAILED: {_k} never ran '
+                f'(flatten skipped or leg mask empty)')
+        if _f['after'] > _f['before'] * 0.7:
+            raise SystemExit(
+                f'[body] LEG-SHADING FLATTEN gate FAILED: {_k} mid-band '
+                f'{_f["before"]} -> {_f["after"]}/255 — the pass did not bite '
+                f'(required <= 70% of before)')
     def albedo_only(b):
         b.use_pass_direct = False
         b.use_pass_indirect = False
