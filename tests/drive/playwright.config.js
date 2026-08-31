@@ -30,7 +30,7 @@ module.exports = defineConfig({
     webServer: {
         command: `python3 -m http.server ${PORT} --bind 127.0.0.1 --directory ${ROOT}`,
         url: `http://127.0.0.1:${PORT}/index.html`,
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 30_000,
     },
 
