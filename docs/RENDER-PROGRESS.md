@@ -263,6 +263,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 175 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST **0.1803** and FRONTGATE navyFrac **0.0535** (stripe leak gate green, step 3 verification holds); aframe+spine+chain **25/25**; rig **12/13** — the only red remains the carried hands-vs-thigh gate, re-measured **L −46.8 mm** (hand 0.1561 vs leg face 0.2029) / **R −34.5 mm** (0.1551 vs 0.1896), exactly 168's numbers, unblocked by 174 and awaiting ruling step 2. No source/asset/gate change; NEXT.md intact.** | unit/golden; look shots regenerated + inspected; aframe/spine/chain/rig re-run. See entry 175. |
 | — | Iteration 174 | **172-ruling step 1 LANDED — the hand pipeline is FRAME-INDEPENDENT: `relax_hands`/`hand_spread_gate` + `hand_metrics`/`scale_hands`/`_hand_cluster`/`_finger_axes`/`_pack_fingers` re-measured along the forearm bone's own axis (wrist = `seg_ends` tail, depth = dot with `adir`) instead of world z. EQUIVALENCE CONTROL green: full build log's hand lines byte-identical to the pre-refactor baseline (spread 34.7→6.8/33.0→7.6 deg, HAND SPREAD 8.5 deg / 6.6 mm, HAND GATE 0.75); remaining log deltas are the ±1-vertex GPU-bake-noise class proven present in same-code rebuilds. No assets shipped, no ASSET_V bump. unit 81/81, golden 30/30, drive 37/38 (only the carried hands-vs-thigh red, which ruling step 2 — the ±7.5° bind abduction, now unblocked — targets next slot).** | see entry 174. |
 | — | Iteration 173 | **NEXT.md step 2 (170 list item 2) — crotch/inner-thigh shard cluster cut LANDED in `sever_thigh_bridge_faces`: 11 L↔R mixed faces (existing pass) + 40 midline straddlers + 6 ribbon fragments, gated to zero remaining below the crotch plane; ASSET_V 70 → 71. The #15 render-space daylight number is UNCHANGED (0.81 cm vs ≥ 3 cm gate, reported not gated) — the bridge is NOT (only) the deleted faces; by eye the thighs still merge. The carried hands-vs-thigh red stands. unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23, aframe green, look 6/6 (FACEDIST 0.1803).** | see entry 173. |
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
@@ -10880,6 +10881,7 @@ athlete assets rebaked.
   (was failing on hlpHipL 0.0261 m, then upperLegL 0.0334 m — both bind-side,
   fixed build-side, no game-side bind patching).
 
+
 **Verification.** unit 81/81; golden: audit-physics-state **0 physics diffs**
 (22 display-node scenarios re-captured census-only), verify **30/30** (final
 run). rig 11/13, aframe+spine+chain+look 29/31. FACEDIST 0.1806 (≥ 0.15).
@@ -10909,3 +10911,72 @@ floor).**
 
 **Scratch.** `/home/justin/aerial-agents/scratch/iter-168/` (build logs ×4,
 probe patch; sabotage probe aborts by design — its log is the control).
+
+### 175 — REVIEW-ONLY: all landed gates hold; the hands red re-measured unchanged; the A-frame daylight now reads by eye; #16 boots and the horizon debt are the worst remaining gaps
+
+**Scope and self-review.** Review-only slot. `docs/NEXT.md` exists and stays the
+mandate; steps 0 (FACEDIST) and 1 (knee band) are closed per the 146/14:55
+dispositions, and this slot touched no source, asset, gate, engine or DoF file.
+`git log -3 --stat` / `git show --stat HEAD` show the tip is 174's
+documentation-only commit on top of 172-ruling step 1 (`build_body.py` only);
+nothing half-landed; starting tree clean.
+
+**Verification.** `npm run test:unit` **81/81**, `npm run test:golden` **30/30**
+(original traces). `look` on `DRIVE_PORT=8312`: **6/6**, shots regenerated —
+FACEDIST **0.1803** (gate 0.15, honest build), FRONTGATE navyFrac **0.0535**
+(leak gate < 0.10 — step 3's arm-stripe verification HOLDS on the merged
+branch), side silhouette span/frac **0.774/0.1132**, FACEGATE cov **0.9941**,
+in-run front POSESHOT standOff 0.998 / span 0.954. Focused `aframe + spine +
+chain` on 8313: **25/25** (spine in-run crouch and flight tuck both comfortably
+under the 8.0 knee cap per 169's fixes). `rig`: **12/13** — the single red is
+the carried hands-vs-thigh gate, re-measured **L hand 0.1561 vs leg face
+0.2029 (−46.8 mm)**, **R 0.1551 vs 0.1896 (−34.5 mm)** — byte-for-byte 168's
+numbers, unchanged by 173/174 as expected (174 shipped the instrument fix, not
+the pose). The 05:30 ruling's step 2 (±7.5° build-side abduction) is the
+landed fix and is now two slots overdue under the carried-red policy.
+
+**Critical visual review (fresh shots, inspected by eye).**
+
+Improvement to record: `figure_front.png` now shows **visible daylight
+between the thighs from the crotch to about knee level** and no calf fan-out —
+the 168 stance + 173 shard cut are reading through. The A-frame stance (item
+#15's shape component) reads correctly by eye even though the render-space
+≥ 3 cm gate has never been formally measured green (173 reported the mesh
+number unchanged at 0.81 cm; the eye disagrees with that number — measure it,
+don't trust either, next suit slot).
+
+What still reads wrong:
+1. **#16 boots (NEXT.md 2c) — RED, untouched.** The foot is a dark low shoe
+   with a visible toe taper; no rigid cuff, no tongue, no buckles. On the
+   side shot the shin suit tube reads continuing past the shoe top.
+2. **Scene: the dark-green draped ridge wedge over the peaks (top-left of
+   `scene.png`) is still present** — flagged in 165 and in 170's review, never
+   owned or fixed. It reads as a floating green cloth over the horizon and is
+   the single worst scene defect; the P6 cone-peaks + pale-curtain horizon
+   behind it is unchanged.
+3. **Bib digits mirrored on the back** (`figure.png` shows a reversed "3").
+   Front "30" is legible. Possibly a UV/paint x-flip on the back face; small,
+   but it sits in the slice-2 paint batch.
+4. **Magenta waist band wraps the full circumference** (150's ruling called it
+   benign; re-flagging because it also has a torn lower edge on the front).
+5. Hands are invisible from the front because they sit inside the thighs'
+   silhouette — the same failing geometry as the hands gate; step 2's
+   abduction should fix both at once.
+
+**Re-prioritised list for the next slots.** (1) 05:30 ruling **step 2**: the
+±7.5° build-side bind abduction with the now frame-independent hand pipeline,
+bideltoid margin watched (172 measured it AT the 0.410 ceiling); lands the
+hands gate green and un-hides the hands. (2) **#16 boots + #21 heels-affixed
+tuck** (combined per 2d). (3) Suit slice-2 remainder: two-tone panels +
+collar/cuffs, mirrored bib digit, the formal render-space daylight gate
+measurement, any residual midline shards. (4) Scene debt, worst first: the
+green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
+
+**Open questions for the reviewer.**
+1. The green ridge wedge: defect to remove, or an intentional mid-ground
+   landmark that just reads wrong from the scene camera? It has survived three
+   review mentions without an owner.
+2. Confirm step 2 (hands abduction) leads the next work slot ahead of #16.
+3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
+   ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
+   `figure_front`) so #15 closes on a number instead of an impression?
