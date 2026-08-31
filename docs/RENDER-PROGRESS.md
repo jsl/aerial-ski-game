@@ -262,6 +262,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
+| — | Iteration 171 | **Hands-vs-thigh slot: the 04:00 ruling's "arms-pose fix" was attempted and MEASURED IMPOSSIBLE — rig.spec's hand/thigh measurement reads raw BIND-pose vertices transformed by the mesh world matrix only (no bone matrices), so no driver-side pose write can move the hand centroid by a single vertex; a `_restArmsOutboard` ±8.5° abduction helper (game.js, _inrunArmForward style) changed hx/tf by exactly 0.0000 while breaking the green `bind==driver` gate (lowerArmL residual 0.0482 m). REVERTED — unit 81/81, golden 30/30 re-verified on the reverted tip; tree is byte-identical to 170. The real fix is BUILD-side (see entry + open question 1).** | unit + golden re-run after revert; the attempt's numbers in entry 171. See entry 171. |
 | — | Iteration 169 | **NEXT.md / 04:00 ruling Q2 LANDED — the crouch-knee red is cleared two ways: (1) the A-frame stance is now written by `applyPose` itself (drivers mirror `_pinBootsToSkis`'s rz/hip walk-in, same `_aFrameOff` control), so probe-path instruments stop skinning a 3° rest mismatch (spine dose rest 2.054 → 1.003 rigid, crouch 8.503 → 8.035); (2) the 167 upper-slab re-blend widened 60 → 80 mm for the rotated rest — crouch 4.063, flight tuck 3.734 (gate ≤ 8.0, both comfortably green). ASSET_V 69 → 70; golden census-only re-capture after audit showed 0 physics diffs; unit 81/81, golden 30/30, look 6/6 (FACEDIST 0.1806), aframe/chain/spine green; the ONE remaining red is the known hands-vs-thigh gate, which the 04:00 ruling routes to the next slot as an arms-pose fix.** | 2 Blender builds ~38 s each; spine knee sweep neutral 1.003 / crouch 4.063 / flight 3.734 / pike 1.003; aframe kneeDev 1.62/1.52 vs control 12.51/11.77; chain 10/10. See entry 169. |
 
 | — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; the relaunched full run-all LANDED ALL GREEN (drive 136 passed / 3 skipped — the parked aframe.spec; 41.8 m). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: drive FAIL-to-start (stale :8099 server, killed); leg 2 on the freed port: ALL GREEN, drive 136/3. Shots regenerated + inspected. See entry 165. |
@@ -1475,6 +1476,73 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 171 — Hands-vs-thigh: the mandated "arms-pose fix" is measurably impossible — the gate reads BIND-pose vertices, so the fix is BUILD-side; attempt implemented, measured (Δ = 0.0000 mm), and reverted; unit 81/81 + golden 30/30 re-verified on the reverted (170-identical) tip
+
+**Mandate.** The 04:00 ruling on 168 routed the hands-vs-thigh red to this slot
+as an arms-pose fix; 170's re-prioritised list made it item 1 and recorded the
+carried-red policy breach. Baseline re-measured this session: hx − tf =
+**−0.0468 m** (L, gate ≥ 0.004), hands 0.1561/0.1551, leg face at hand height
+0.2029/0.1896.
+
+**What was tried.** A renderer-side `_restArmsOutboard(meshes, tuck, armRaise)`
+in game.js (same style/weight-complement as `_inrunArmForward`, registered in
+the no-physics-in-game allowlist), adding ±8.5° of frontal rz to both arm
+chains at rest — wrist Δx ≈ 63 mm outboard, shoulder pivot and elbow/hand z
+unmoved. Wired at all three non-crash pin sites (frame loop, pose-freeze
+shots, probe helper).
+
+**Measured refutation (the iteration's real result).**
+1. With the helper at full strength, rig.spec's hands test measured
+   **identical** numbers to the reverted tip: hands 0.1561/0.1551, leg face
+   0.2029/0.1896 — Δ(hx − tf) = **0.0000**. Root cause is in the spec's
+   measurement itself: it buckets `getVerticesData(PositionKind)` — the raw
+   BIND-POSE positions — and transforms them by `world × toLocal` only, never
+   by the bone matrices. The gate is a statement about the shipped glb's rest
+   geometry. **No pose/driver write can ever move it.**
+2. The same run broke the previously green `bind==driver` gate: lowerArmL
+   bind-to-driver residual **0.0482 m** (gate < 0.001) — expected, since a
+   rest-pose driver offset off the bind rest is exactly the class the
+   A-frame work had to eliminate (aframe.spec's own comment records the same
+   3°/0.0334 m mechanism for legs).
+3. Golden fell 30/30 → 8/30 (display-node census divergence from the rz
+   writes) — restored by the revert.
+
+**Disposition.** The helper and its allowlist entry are REVERTED; the carried
+red returns to its −46.8 mm baseline and stays honestly red. Per the
+carried-red policy's "clears next iteration or revert": reverted.
+
+**Where the fix actually lives (the next slot's work, ready to execute).**
+168's own precedent is the template: the A-frame thigh tilt was solved by
+baking the stance into the MESH REST + bind (`build_body.py` re-export) with
+`applyPose`/`_pinBootsToSkis` writing the matching driver transforms so
+bind==driver stays identity. The same is needed for the arms:
+(a) in `blender/build_body.py`, abduct the arm chain — mesh vertices AND the
+metarig joint chain (shoulder→elbow→wrist) — about the shoulder pivots by
+±≈8.5° in the frontal plane (targets: hand band ≥ 5 mm clear of the leg face
+at its height in bind space; shoulder width gate ≤ 1.35 × hip unchanged);
+(b) keep the driver side at the same rest offset (the reverted
+`_restArmsOutboard` is exactly that write, re-usable as-is once the bind
+carries it); (c) rebuild, bump ASSET_V, re-run spine/chain/aframe/rig +
+golden (census re-capture if display nodes move) + look.
+
+**Open questions for the reviewer.**
+1. The 04:00 ruling names an "arms-pose fix"; this session measured that a
+   pose fix cannot move the gate (bind-space measurement, refutation above).
+   Please confirm the BUILD-side arm abduction (a) above as the ruling's
+   correct implementation — it touches `blender/build_body.py` + `assets/`
+   under the NEXT.md suit-shell mandate, with the driver write in (b).
+2. The gate's leg-face term takes max|x| over thigh+shin verts within ±0.06 of
+   the hand's height, so the A-frame's outward-bowed KNEE (0.2029) is compared
+   against a hand hanging at hip height. After (a) lands, is that the intended
+   comparator, or should the band tighten to the leg face at the hand's own
+   height on the SAME side of the knee? (Asked, not changed — no gate was
+   touched this iteration.)
+
+**Verification.** `npm run test:unit` 81/81 PASS; `npm run test:golden` 30/30
+PASS — both re-run on the reverted tip, which is byte-identical to 170
+(`git status` clean apart from this file). Scratch: probe spec removed;
+`/home/justin/aerial-agents/scratch/iter-171/` holds only the probe source.
+
 
 ### 170 — REVIEW-ONLY: the 169 tip holds under a fresh full re-measure (unit 81/81, golden 30/30, look 6/6 FACEDIST 0.1806, spine/chain/aframe green, rig 37/38 with the carried hands-vs-thigh red); shots regenerated + inspected — #15 daylight, #16 boots, suit paint and the ridge wedge all confirmed still RED; re-prioritised list posted
 
