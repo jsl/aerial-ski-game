@@ -10988,6 +10988,49 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
 
+### 178 — NEXT.md item 3: HT#23.3 de-muscularize — smoothing/relief raised (ASSET_V 74); render-space tube gate BLOCKED on instrument calibration
+
+**Verification.** unit 81/81; golden 30/30 (no physics change, display-only asset rebuild);
+`aframe` 1/1 (daylight 6.06 cm ≥ 3, kneeDev 1.62/1.52°); `leg-watertight` 1/1 (holes 0
+front/side/back); `look` 6/6, shots regenerated (not visually inspectable this session —
+numbers above).
+
+**What changed.**
+
+1. `blender/build_body.py`: RELAX_STRENGTH 0.70 → 0.85, SHELL_SMOOTH_ITERS 20 → 32,
+   SHELL_SMOOTH_LAMBDA 0.55 → 0.60. Mesh-space results: relief RMS upperLeg 5.8 → 1.6 mm
+   (−72%), torso 6.4 → 3.1 mm (−51%); all SHELLCURV ratios improved (worst: upperArmR
+   0.344, gate ≤ 0.35 — now the tightest number in the build; watched). Inflections after:
+   all gated segments 0. Assets rebuilt, ASSET_V 73 → 74.
+2. Render-space inflection gate NOT landed. A `tests/drive/tube-smooth.spec.js` prototype
+   (side framing, athlete-only frame, per-row fore-aft silhouette width, 3× [1 2 1],
+   deadband 1.5 px, ≤ 2 sign changes per segment) measured the PRE-fix build at thigh 6
+   (negative control fires) and the POST-fix build at thigh 3 — but frame-dump diagnosis
+   proved the driver-box row anchors project inconsistently with the readPixels buffer
+   (the measurement windows were sampling the TORSO/bib, not the legs; the true silhouette
+   spans image rows ~175–455 while anchors read 190–368). A gate on those numbers would
+   gate the wrong pixels; per the honest-instrument rules it is withdrawn rather than
+   calibrated-to-pass. The diagnostic frame-dump technique (save the measurement canvas to
+   PNG from inside the evaluate) works and is the recommended first step for the retry.
+
+**Open / not done.**
+
+1. #23.3 remains OPEN: the build-side raise is real (relief RMS numbers above) but the
+   render-space gate that NEXT.md item 3 requires is not satisfied. Next slot: re-derive
+   the anchors (upperLeg driver box projects sanely; lowerLeg does not — suspect scale or
+   parenting), or measure the width profile from silhouette landmarks only.
+2. NEXT.md items 4–8 (#22 fang peak, #21+#16 tuck+boots, hands step 2, paint slice,
+   #17 coach) untouched, in order.
+
+**Open questions for the reviewer.**
+1. The prototype measured the PRE-fix render silhouette at thigh 6 inflections and POST-fix
+   at 3 — but both numbers sampled torso-contaminated windows, so they say nothing about
+   the legs. Is there a framing/state where the legs are unambiguous (e.g. straighter
+   stance, or a dedicated look camera) you want the gate to use?
+2. upperArmR SHELLCURV ratio is now 0.344 against the 0.35 gate. If a later pass pushes it
+   over, the choices are raising SHELL_SMOOTH further or re-scoping the arm cloud (the
+   chest-wall sheet, OPUS-NOTES). Preference?
+
 ### 177 — NEXT.md item 2: HT#23.2 crotch height — inseam at 0.46 × leg length + sever write-back latent-bug fix
 
 **Verification.** unit 81/81; golden 30/30 (no physics change, display-only asset rebuild);

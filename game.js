@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=73";   // 73: #23.2 crotch at 0.46x leg length + sever write-back fix + crotch-web weld (build_body.py, iter 177)
+    const ASSET_V = "?v=74";   // 74: #23.3 de-muscularize — RELAX_STRENGTH 0.85, shell smoothing 32x/0.60 (build_body.py, iter 178)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

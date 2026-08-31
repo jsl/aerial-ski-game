@@ -5140,7 +5140,7 @@ def loosen_suit(body, joints):
 # Same weight field as loosen_suit: head, glove, boot and the deltoid cap have
 # weight zero by construction, so the bideltoid band, the hands and every
 # contact gate cannot read this pass. z is never touched.
-RELAX_STRENGTH = 0.70        # fraction of the relief field removed
+RELAX_STRENGTH = 0.85        # fraction of the relief field removed (HT#23.3: was 0.70 — the author still read muscle through the shell)
 RELAX_Z_SIGMA = 0.035        # relief reference: z-Gaussian width (m) — muscle
                              # bands span 4-12 cm, so the window must be wider
                              # than a band or the reference follows the bulge
@@ -5561,8 +5561,8 @@ SHELL_MAX_MOVE = 0.025         # m: inward travel cap (sliver control)
 # `shell_report`/`suit_shell_gate`, where the post-shell depth is measured.
 SHELL_MAX_MOVE_SEG = {'upperLeg': 0.016}
 SHELL_MAX_OUT = 0.000          # m: the shell is SHRINK-ONLY (see suit_shell)
-SHELL_SMOOTH_ITERS = 20        # Jacobi passes of the radius-field Laplacian
-SHELL_SMOOTH_LAMBDA = 0.55
+SHELL_SMOOTH_ITERS = 32        # Jacobi passes of the radius-field Laplacian (HT#23.3: was 20)
+SHELL_SMOOTH_LAMBDA = 0.60   # HT#23.3: was 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
 # HUMAN TESTING #15: the rest mesh needs enough real clearance that the gentle
 # 3-degree A-frame pose still shows at least 3 cm of daylight at mid-thigh.
