@@ -9812,3 +9812,32 @@ byte-identical).
 **Open:** NEXT.md remains for ordered item #18 (landing free-look view tilt),
 then #19. The pre-existing `crash_rest.png` rest-x framing soft gate remains
 open and unrelated; no new physics question was found.
+
+### CRASH-LANE session 4 — landing free-look view tilt
+
+**What changed (#18, display-only):** once a vertical ArcRotate drag reaches the
+existing terrain beta clamp, only the excess demand is captured and eased into
+`camera.target.y`; ordinary orbit input and the clamp's terrain calculation are
+unchanged. The eye is iteratively held on the same picked-surface + 1 m limit as
+the target rises, and both target rise and view pitch are capped at about 35°.
+Dragging back down spends the rise before beta resumes. The tilt resets whenever
+free-look exits and synchronously on R. No camera value changes without an excess
+clamped drag, so ready/in-run/canonical framing paths are unchanged. `engine/`,
+body-model files, Blender/assets, and `ASSET_V` are untouched.
+
+**Gate evidence:** new serial `landing-tilt.spec.js` is **1/1 PASS** across all
+three worlds, including R reset in each. The pre-#18 negative control fired first
+in single: tilt **0**, kicker lip projected above-frame at **y = -12.30 px**.
+With the fix the lip is in-frame in single/double/triple at projected **y =
+31.82 / 31.58 / 32.55 px**, depth **0.978 / 0.984 / 0.987**, while minimum and
+final picked-terrain eye clearance are **1.000 m in every world** across **364 /
+428 / 469** sampled frames. Smoothed target rises are **6.67 / 6.85 / 6.87 m**;
+R returns rise to 0 and target-z to the reset athlete. Unit **81/81 PASS** (the
+sandbox run's child stdout pipe was empty even for a printing child; the required
+command passed outside that restriction). Golden **30/30 PASS** against original
+traces; no trace re-capture and no physics/display census change.
+
+**Open:** NEXT.md remains for the final ordered item #19, the start-pole
+floodlight exclusion and rendered pole-luminance gate. The pre-existing
+`crash_rest.png` rest-x framing soft gate remains unrelated. No physics question
+or camera-clamp change was introduced.

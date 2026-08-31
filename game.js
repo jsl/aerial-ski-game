@@ -7450,6 +7450,15 @@ void main(void) {
     // view stays where the user put it; it resumes on the next run.
     let _freeLookActive = false;
     let _freeLookHintT  = null;   // performance.now() when first shown; hint fades
+    // HUMAN TESTING #18: ArcRotate can lower its eye only as far as the terrain
+    // clamp.  Continued drag at that boundary is view-pitch demand, not a dead
+    // gesture: raise the target while keeping the eye on the same safe clamp.
+    // `goal` is separated from `rise` so a coarse pointer gesture eases rather
+    // than snapping the view.  No camera state changes until that demand exists.
+    const _FREELOOK_TILT_CAP = 35 * Math.PI / 180;
+    let _freeLookTiltRise = 0;
+    let _freeLookTiltGoal = 0;
+    let _freeLookTiltBaseY = null;
     function _freeLookAllowed() {
         const _rested = state.crashed && window._ragdollProbe
             && window._ragdollProbe() && window._ragdollProbe().resting;
@@ -7509,6 +7518,100 @@ void main(void) {
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
+    function _resetFreeLookTilt() {
+        if (camera && camera.target && _freeLookTiltBaseY !== null) {
+            camera.target.y = _freeLookTiltBaseY;
+        }
+        _freeLookTiltRise = 0;
+        _freeLookTiltGoal = 0;
+        _freeLookTiltBaseY = null;
+    }
+    function _freeLookTiltLimit() {
+        const r = Math.max(0.01, camera.radius || 10);
+        const cp = camera.position;
+        const base = _freeLookTiltBaseY === null ? camera.target.y : _freeLookTiltBaseY;
+        const minEyeY = _groundUnderCamera(cp) + 1.0;
+        // Limit both the requested target rise and the actual view pitch.  The
+        // first is the reviewer's explicit r*tan(35°) ceiling; the second keeps
+        // the eye→target axis at or below +35° even when the base target is not
+        // exactly level with the clamped eye.
+        return Math.max(0, Math.min(r * Math.tan(_FREELOOK_TILT_CAP),
+            minEyeY + r * Math.sin(_FREELOOK_TILT_CAP) - base));
+    }
+    function _updateFreeLookTilt(dt) {
+        if (!_freeLookActive || window._freeLookTiltDisabled) {
+            if (_freeLookTiltRise > 1e-5 || _freeLookTiltGoal > 1e-5) {
+                _resetFreeLookTilt();
+            }
+            return;
+        }
+        if (_freeLookTiltBaseY === null ||
+            (_freeLookTiltGoal <= 1e-5 && _freeLookTiltRise <= 1e-5)) return;
+        const lim = _freeLookTiltLimit();
+        _freeLookTiltGoal = Math.min(_freeLookTiltGoal, lim);
+        const k = 1 - Math.exp(-12 * Math.max(0, Math.min(0.05, dt || 0)));
+        _freeLookTiltRise += (_freeLookTiltGoal - _freeLookTiltRise) * k;
+        if (_freeLookTiltGoal === 0 && _freeLookTiltRise < 1e-4) {
+            _freeLookTiltRise = 0;
+        }
+        camera.target.y = _freeLookTiltBaseY + _freeLookTiltRise;
+        // A raised ArcRotate target would normally raise the eye too.  Advance
+        // beta along the same terrain limit so eye height remains clamped while
+        // the target alone pitches the view uphill.
+        const r = Math.max(0.01, camera.radius || 10);
+        // Updating beta also moves the eye in z, which can change the picked
+        // terrain height on chopped/curved snow.  Re-evaluate that coupled
+        // position a few times and force the view matrix so the following
+        // clamp (and this frame's render) sees the new eye, not Babylon's prior
+        // cached position.
+        for (let i = 0; i < 3; i++) {
+            if (camera.getViewMatrix) camera.getViewMatrix(true);
+            const cp = camera.position;
+            const minY = _groundUnderCamera(cp) + 1.0;
+            const c = Math.max(-1, Math.min(1, (minY - camera.target.y) / r));
+            camera.beta = Math.max(0.05, Math.acos(c));
+        }
+        if (camera.getViewMatrix) camera.getViewMatrix(true);
+    }
+    // Babylon consumes pointer motion on the canvas.  Capture only the portion
+    // that would cross its terrain beta boundary; ordinary orbit drags retain
+    // Babylon's exact behavior.  Pulling back down spends target tilt first,
+    // then returns control to beta on subsequent movement.
+    let _freeLookPointerY = null;
+    canvas.addEventListener('pointerdown', e => { _freeLookPointerY = e.clientY; }, true);
+    canvas.addEventListener('pointerup', () => { _freeLookPointerY = null; }, true);
+    canvas.addEventListener('pointercancel', () => { _freeLookPointerY = null; }, true);
+    canvas.addEventListener('pointermove', e => {
+        const prevY = _freeLookPointerY;
+        _freeLookPointerY = e.clientY;
+        if (!_freeLookActive || window._freeLookTiltDisabled || prevY === null ||
+            !camera || !camera.target) return;
+        const dy = e.clientY - prevY;
+        if (Math.abs(dy) < 1e-6) return;
+        const ptr = camera.inputs && camera.inputs.attached && camera.inputs.attached.pointers;
+        const sensY = Math.max(1, ptr && ptr.angularSensibilityY || 1000);
+        const r = Math.max(0.01, camera.radius || 10);
+        const minY = _groundUnderCamera(camera.position) + 1.0;
+        const c = Math.max(-1, Math.min(1, (minY - camera.target.y) / r));
+        const maxBeta = Math.max(0.05, Math.acos(c));
+        // In Babylon's ArcRotate pointer input, upward screen motion increases
+        // beta (lowers the eye).  Intercept only if that demand reaches/passes
+        // the terrain limit, including the portion of the gesture beyond it.
+        const betaDemand = camera.beta - dy / sensY;
+        if (dy < 0 && betaDemand >= maxBeta - 1e-5) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (_freeLookTiltBaseY === null) _freeLookTiltBaseY = camera.target.y;
+            const excess = Math.max(0, betaDemand - maxBeta);
+            camera.beta = maxBeta;
+            _freeLookTiltGoal = Math.min(_freeLookTiltLimit(),
+                _freeLookTiltGoal + excess * r);
+        } else if (dy > 0 && (_freeLookTiltGoal > 1e-5 || _freeLookTiltRise > 1e-5)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            _freeLookTiltGoal = Math.max(0, _freeLookTiltGoal - dy * r / sensY);
+        }
+    }, true);
     // Every rendered frame, in every state (the update-loop call below still
     // runs first when the sim is active; this catches paused/replay/menus).
     // Only while the engine's own render loop is running: every real game
@@ -7517,6 +7620,7 @@ void main(void) {
     if (scene.onBeforeRenderObservable) scene.onBeforeRenderObservable.add(() => {
         const eng = scene.getEngine();
         if (eng && eng.activeRenderLoops && eng.activeRenderLoops.length === 0) return;
+        _updateFreeLookTilt(Math.min(0.05, (eng && eng.getDeltaTime ? eng.getDeltaTime() : 16) / 1000));
         _clampCameraAboveTerrain();
     });
     window._camGroundUnder = function () { const cp = camera.position; return { camY: cp.y, ground: _groundUnderCamera(cp) }; };
@@ -7528,6 +7632,9 @@ void main(void) {
                 alpha: camera.alpha, beta: camera.beta, radius: camera.radius,
                 gap: cp.y - (terrainRootY(cp.z) - FOOT_OFFSET),
                 targetZ: camera.target.z, camZ: cp.z, rootZ: state.posZ,
+                targetY: camera.target.y, camY: cp.y,
+                tilt: _freeLookTiltRise,
+                tiltGoal: _freeLookTiltGoal,
             };
         } catch (e) { return null; }
     };
@@ -7836,6 +7943,7 @@ void main(void) {
             // Re-frame behind the athlete, synchronously, as the last step of
             // the reset (anything that places the camera after R keeps it).
             try {
+                _resetFreeLookTilt();
                 // state.rootY is only re-derived from the terrain on the next
                 // update tick (it still holds the crash-site value here — measured
                 // -2.2 m vs a 6.7 m start), so take the root height from the
@@ -9639,6 +9747,7 @@ void main(void) {
                     camera.target.z = state.posZ;
                 }
             } else {
+                _resetFreeLookTilt();
                 camera.lowerRadiusLimit = 10;   // back to the locked follow distance
                 camera.upperRadiusLimit = 10;
                 camera.radius = 10;
