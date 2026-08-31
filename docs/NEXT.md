@@ -1,65 +1,42 @@
-# NEXT — single mandated task (reviewer, posted with the Opus merge; author priority 2026-08-30 13:15)
+# NEXT — single mandated task (reviewer, parallel Sol crash lane, branch sol/crash-cluster; author order 21:50: "launch a parallel sol xhigh sub-agent now to do the crash and walk off")
 
-**THE SUIT RESHAPE. This is a multi-iteration task: it stays your only task until every gate below is
-green; delete this file only in the commit that completes the whole set.** The athlete-file ban is lifted
-for exactly this work (this file is the NEXT.md the standing rule's amendment refers to). The Opus lane has
-ended and its branch is merged into this one.
-
-**State you inherit — read before editing anything.** The shell EXISTS: Opus session 28 built it
-(`bb125ee` "the suit is a fitted shell, not a filtered skin", items 1+4) — limbs read as cloth cylinders,
-shin straight into the boot cuff, no quad line. Session 31 took the arm/trunk UV overlap to zero; session
-32 shipped the arm stripe (`9e81fcc`). CONTINUE this work; do not rebuild from scratch. Session logs are in
-`docs/OPUS-NOTES.md` (session 28's entry lists exactly what the shell does not yet cover).
+**THE CRASH CLUSTER. Multi-iteration task: it stays your only task until every gate below is green;
+delete this file only in the commit that completes the whole set.** Full specs live in the
+Reviewer-feedback entries named below — read them before coding. The suit mandate's remaining paint
+items are re-queued AFTER this cluster; do not work on them here. Display-only throughout: no
+`engine/` edits — if measurement proves the physics rest state itself is airborne, record the numbers
+under Open questions and stop that item.
 
 Order:
 
-0. **Fix `look.spec`'s FACEDIST gate first — it is inverted and has been red for three sessions.** The
-   honest build measures 0.1411 and FAILS while the sabotage control `BODY_SABOTAGE_FACE=1` measures
-   0.1719 and PASSES; the abort also stops `figure_side.png` from being written. Fix the comparison
-   direction, make the gate non-fatal to the rest of `look.spec` (figure shots must always render), and
-   prove it: sabotage control actually FAILING, honest build passing. No face/figure number recorded while
-   the gate was inverted may be cited.
-1. **Fix the shell's knee-band collapse — a RED gate on the branch you start from.**
-   `spine.spec` "in-run crouch: the knee does not collapse": kneeMax **32.516** vs `KNEE_MAX = 8.0`
-   (flight tuck 7.247 — barely under). Reviewer bisect (13:55, single-spec runs on the Opus worktree):
-   session-27-end `cc05ab2` measures 5.615 PASS; session-28-end `ad7304f` measures 32.516 FAIL — **the
-   shell commit `bb125ee` introduced it** (edge census also changed 3028 → 2992 there). The shell's knee
-   band strains ~4× the cap in the deepest crouch (98° knee). Fix the shell's knee-band geometry/skinning
-   (a fold-tolerant ring layout or knee-weight re-blend on the shell); the gate goes green at 8.0 —
-   do NOT recalibrate the gate to the defect. Keep flight tuck comfortably under too.
-2. **Finish the shell to the #12 gates** (full text in `docs/OPUS-BODY-BRIEF.md`):
-   - The segments session 28 recorded but could NOT yet gate — upper arms (curvature 1.037/0.715), thighs
-     (0.529/0.455), torso (0.644) — must come under the ≤ 0.35 curvature-variance gate. Two named causes:
-     the upper-arm tube is fitted through a sheet of chest-wall vertices left by the arm rebind (exclude
-     non-limb geometry from the fit), and the thigh's iron is capped by the skin-derived `thigh_depth`
-     gate. **Reviewer ruling on session 28's open question: re-derive `thigh_depth` on the GARMENT shell,
-     not the skin — the shell is what shows; that frees the ~10 mm of relief the thigh iron needs.**
-   - Then the remaining #12/#7 visual items on the shell: two-tone panels + collar + cuffs (the suit is
-     still white-on-white; the red collar line at the throat is item 9), and the crotch/inner-thigh shard
-     cluster cleanup. Frame gates hold throughout: shoulder ≤ 1.35 × hip, upper-arm tube ≤ 0.55 × thigh
-     tube, ≥ 4 cm inner-thigh gap, bideltoid per the brief.
-   - Articulation and invariants must not regress: `rig.spec`, `chain.spec`, `spine.spec`, the
-     boot-binding gates and the golden suite stay green in every non-crash state.
-2b. **HUMAN TESTING #15 (author, 17:00) — A-frame legs.** Full spec in the #15 Reviewer-feedback entry:
-   frontal-plane hip→knee→ankle near-collinear (knee deviation ≤ 5°), thighs angling out from the crotch
-   with visible daylight between them all the way to the knees, no calf fan-out at the knee (shin frontal
-   tilt smooth, ≤ ~8°), ankles staying at ski spacing with the binding gates green. NEW GATE REQUIRED in
-   render space (silhouette daylight in `figure_front.png`, ≥ 3 cm projected at mid-thigh) — the existing
-   45.5 mm mesh-space gap gate passed while the author sees touching thighs, so it does not count as
-   evidence here; the current build is the failing negative control.
-2c. **HUMAN TESTING #16 (author, 17:50) — REAL SKI BOOTS.** Full spec in the #16 Reviewer-feedback
-   entry; reference image `reference/shots/author_boot_ref_2026-08-30.jpg`. The current foot reads as a
-   shoe with visible toes — replace with a two-part rigid boot (clog + cuff, ribbed tongue, smooth toe
-   box with NO toe contours, sole ledges at toe/heel, 2–3 buckles + strap, no logos), cuff at mid-shin
-   with the suit shin tube ending inside it. Binding-contact and boot-on-ski gates stay green; the
-   current toed shoe is the failing negative control.
-3. **Arm stripe — VERIFY, do not redo.** Session 32 shipped it (`9e81fcc`: repair pass enabled on the
-   zero-overlap unwrap; torso-back blueFrac 0.135 → 0.073, gate < 0.10). Confirm on the merged branch:
-   leak gate green, stripe visible on BOTH arms as a band on the outer seam in the figure shots, default
-   flag state correct. (Session 28's "ragged inner-leg patch" note predates this fix — re-look, don't
-   trust either note.) If verification fails, the fallback is the 12:55 ruling: paint by the SHIPPED
-   weights.
+1. **#20 — the body lies COMPLETELY on the ground at crash rest** (author 21:45). At the end of every
+   crash the whole body conforms to the local surface: no floating limbs, hips, or head. Gate in
+   `crash-ragdoll.spec`, per world, at rest: downward-facing body points have max clearance ≤ 8 cm
+   AND max penetration ≤ 5 cm across ALL segments; contact set includes torso + hip + ≥ 1 arm + ≥ 1
+   leg. Negative control: the current build's floating segments FAIL.
+2. **#13 — crash-slide tuning remainder** (author order, full spec in the #13 entry): slide onset
+   ≤ 0.6 s after impact; μ_chop ≈ 0.45–0.55 (slower through the chop, 10–20 % slower at the chop
+   bottom than μ_flat-throughout); world-scaled rest distances past the flat transition (single
+   3–8 m, double 6–12 m, triple 10–18 m; never mid-slope, never off the out-run); ejected skis
+   brake — 1–2 tumbles then rest ≤ 6 m from eject, ≥ 8 m uphill of the skier on double/triple.
+   Gates with the current model as the failing negative control. Golden re-capture census-only with
+   the audit if traces move.
+3. **#14 — get-up and walk-off** (author; full spec in the #14 entry): ~0.5–1.0 s beat at rest, then
+   a keyframed/procedural get-up (roll → kneel → stand, ~1.5–2.5 s, NOT a ragdoll re-entry), then a
+   terrain-locked walk (~1.2–1.5 m/s, boots, no snow penetration) to just inside the near course
+   boundary, clear of the corridor, never through a B-net; skis stay where they rested; end-of-run
+   UI timing unchanged. Gate per world: within ~12 s of rest — standing pose, lateral offset ≥
+   corridor half-width + 1 m, final speed 0, zero penetration, no net crossing; negative control:
+   the current stay-down build fails. Verify this spec SERIALLY, not under parallel suite load.
+4. **#18 — landing free-look view tilt** (full spec in the #18 entry): drag demand past the
+   terrain-clamped beta becomes a smooth `camera.target.y` rise (view pitches up toward the jump,
+   cap ~+35°), reversible, reset on R/free-look exit; the terrain clamp itself is UNCHANGED. Gate:
+   scripted drag from crash rest brings the kicker lip's world point in-frame in every world with
+   the clamp holding; tilt resets on R; negative control asserted FIRST (current build cannot).
+   Canonical framings byte-similar.
+5. **#19 — start flood lights its own pole** (one-liner, diagnosis in the #19 entry):
+   `spotS.excludedMeshes.push(nightPoleStart)`; gate: night ready framing, each pole's mean
+   luminance within 1.5× the median pole's; negative control: today's glowing start pole fails.
 
-Each landed step: rebuild via Blender, bump `ASSET_V`, regenerate `figure_side.png` / `figure_front.png` +
-a top view, record the gate numbers in your progress entry. Verify order per the standing rules
-(`audit-physics-state.js` → `capture.js` → `verify.js` LAST if traces are touched).
+Each landed step: run the full verification chain per the standing rules (`verify.js` LAST when
+traces move), regenerate the relevant shots, record the gate numbers in your progress entry.
