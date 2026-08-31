@@ -9781,3 +9781,34 @@ display-node changes; golden **30/30 PASS**.
 **Open:** NEXT.md remains for ordered item #14 (procedural get-up and walk-off),
 then #18/#19. The existing `crash_rest.png` rest-x framing soft gate remains
 open and unrelated. No physics rest-state defect was measured.
+
+### CRASH-LANE session 3 — get-up and walk-off
+
+**What changed (#14, display-only):** after the grounded ragdoll reaches its
+existing rest result, the renderer now holds a **0.75 s** beat, hands the same
+driver rig through a procedural roll → kneel → stand over **2.10 s**, then walks
+the athlete in boots at **1.35 m/s** to the nearer signed course edge at
+`|x| = 6.00 m` (corridor half-width + 1 m), inside the B-net at `|x| = 6.20 m`.
+The root is terrain-locked and lifted only enough to keep both boot endpoints
+above the local surface. Ejected skis are re-projected to their fixed #13 world
+poses every frame while their former parent walks away. The sequence starts
+strictly after rest and never writes engine state, score/replay UI state, or end
+timing. `engine/`, body-model files, athlete assets and `ASSET_V` are untouched.
+
+**Gate evidence:** new serial `walkoff.spec.js` is **2/2 PASS**. Single/double/
+triple finish **8.17 / 7.32 / 7.21 s** after rest (gate ≤ 12 s), all at lateral
+offset **6.00 m**, hip clearance **0.750 m**, final speed **0**, no B-net
+crossing, and minimum boot clearance **0.005 / 0.025 / 0.005 m**. Maximum ski
+drift is **0.004–0.008 mm** (gate ≤ 10 mm). The preserved stay-down negative
+control fires: through the 12.2 s wall sampling window (8.26 s simulation time)
+it remains at lateral offset **0 m** with lying hip clearance **0.117 m**, so
+the standing/walk composite gate fails. The impacted
+30 s crash-only frozen-tail canary is explicitly held at rest and remains
+**1/1 PASS**: restAt 6.48 s, 23.25 s exactly-zero span, support 19, maxAbove
+0.131 m, ski offsets 5.30/1.77 m. Unit **81/81 PASS**; golden **30/30 PASS**
+against the original traces (no re-capture; physics and recorded census remain
+byte-identical).
+
+**Open:** NEXT.md remains for ordered item #18 (landing free-look view tilt),
+then #19. The pre-existing `crash_rest.png` rest-x framing soft gate remains
+open and unrelated; no new physics question was found.

@@ -3164,6 +3164,19 @@ void main(void) {
                  })),
              };
     };
+    // HT#14 drive/readout probe.  It intentionally reports only renderer-side
+    // walk state; _getGameState and the golden physics payload stay unchanged.
+    window._walkoffProbe = function () {
+        if (!ragdoll || !ragdoll.resting) return null;
+        const sinceRest = Math.max(0, ragdoll.t - ragdoll.restAt);
+        const W = ragdoll.walkoff;
+        return {
+            phase: W ? W.phase : (window._crashWalkoffDisabled ? 'stayed-down' : 'beat'),
+            sinceRest,
+            speed: W ? W.speed : 0,
+            targetX: W ? W.targetX : null,
+        };
+    };
 
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
     if (_trampolineMode || _poolDiveMode) {
@@ -6853,6 +6866,216 @@ void main(void) {
     // regardless of the rendered frame grid. Per-substep surface projection
     // was already inside the PBD loop; no performance.now() is involved.
     const _CRASH_DT = 1 / 120;
+
+    // ── HUMAN TESTING #14: get up and walk off after crash rest ───────────
+    // This is deliberately downstream of the ragdoll.  The crash machine and
+    // its physics-facing state finish exactly as before; after a 0.75 s still
+    // beat, the renderer hands the same driver rig from the parked ragdoll to
+    // a short procedural roll/kneel/stand and then a terrain-locked boot walk.
+    // The ejected ski nodes keep their fixed world poses, so moving the
+    // athlete root cannot drag them along.
+    const _WALKOFF_BEAT = 0.75;
+    const _WALKOFF_GETUP = 2.10;
+    const _WALKOFF_SPEED = 1.35;
+    const _WALKOFF_X = 6.00; // corridor half-width 5 m + 1 m; B-net is at 6.2 m
+    const _walkoffSmooth = function (x) {
+        x = Math.max(0, Math.min(1, x));
+        return x * x * (3 - 2 * x);
+    };
+    const _walkoffSlerp = function (a, b, t) {
+        let bx = b.x, by = b.y, bz = b.z, bw = b.w;
+        let dot = a.x * bx + a.y * by + a.z * bz + a.w * bw;
+        if (dot < 0) { dot = -dot; bx = -bx; by = -by; bz = -bz; bw = -bw; }
+        if (dot > 0.9995) {
+            const x = a.x + (bx - a.x) * t, y = a.y + (by - a.y) * t;
+            const z = a.z + (bz - a.z) * t, w = a.w + (bw - a.w) * t;
+            const l = Math.hypot(x, y, z, w) || 1;
+            return { x: x / l, y: y / l, z: z / l, w: w / l };
+        }
+        const th = Math.acos(Math.max(-1, Math.min(1, dot)));
+        const sn = Math.sin(th) || 1;
+        const u = Math.sin((1 - t) * th) / sn, v = Math.sin(t * th) / sn;
+        return { x: a.x * u + bx * v, y: a.y * u + by * v,
+                 z: a.z * u + bz * v, w: a.w * u + bw * v };
+    };
+    function _crashWalkoffInit(R) {
+        if (R.walkoff || (typeof window !== 'undefined' && window._crashWalkoffDisabled)) return;
+        const rest = {};
+        for (const seg of SEGMENTS) {
+            if (seg.name === 'skiL' || seg.name === 'skiR') continue;
+            const n = character.meshes[seg.name];
+            if (!n) continue;
+            rest[seg.name] = { x: n.position.x, y: n.position.y, z: n.position.z,
+                rx: n.rotation.x || 0, rz: n.rotation.z || 0 };
+        }
+        const pk = R._park || character.root.position;
+        const q = character.root.rotationQuaternion || R.qRoot;
+        const side = R.torso.x < 0 ? -1 : 1;
+        R.walkoff = {
+            phase: 'getup', speed: 0, rest,
+            root0: { x: pk.x, y: pk.y, z: pk.z },
+            q0: { x: q.x, y: q.y, z: q.z, w: q.w },
+            standX: R.torso.x, standZ: R.torso.z,
+            side, targetX: side * _WALKOFF_X,
+            qWalk: _crashQAxis(0, 1, 0, Math.PI + side * Math.PI / 2),
+        };
+        // The rig resumes normal matrix evaluation.  The ski drivers are
+        // un-frozen too, but are re-projected from their fixed #13 world poses
+        // after every root move below; this is necessary because forcing a
+        // descendant world-matrix refresh can invalidate a frozen child when
+        // its formerly-frozen parent resumes motion.
+        if (character.root.unfreezeWorldMatrix) character.root.unfreezeWorldMatrix();
+        for (const nm of Object.keys(character.meshes)) {
+            const n = character.meshes[nm];
+            if (n && n.unfreezeWorldMatrix) n.unfreezeWorldMatrix();
+        }
+    }
+    function _crashWalkoffStep(R) {
+        if (!R.resting) return;
+        const since = Math.max(0, R.t - R.restAt);
+        if (typeof window !== 'undefined' && window._crashWalkoffDisabled) return;
+        if (since < _WALKOFF_BEAT) return;
+        _crashWalkoffInit(R);
+        const W = R.walkoff;
+        if (!W) return;
+        const M = character.meshes;
+        const getT = since - _WALKOFF_BEAT;
+        const onGetup = getT < _WALKOFF_GETUP;
+        const root = character.root;
+        let rootX = W.standX, rootZ = W.standZ;
+        let rootY = terrainRootY(rootZ);
+        let q = W.qWalk;
+
+        const writeSolved = function (solved, blendFromRest) {
+            for (const seg of SEGMENTS) {
+                if (seg.name === 'skiL' || seg.name === 'skiR') continue;
+                const n = M[seg.name], p = solved[seg.name];
+                if (!n || !p) continue;
+                const a = W.rest[seg.name];
+                if (blendFromRest !== null && a) {
+                    const b = blendFromRest;
+                    n.position.x = a.x + (p.x - a.x) * b;
+                    n.position.y = a.y + (p.y - a.y) * b;
+                    n.position.z = a.z + (p.z - a.z) * b;
+                    n.rotation.x = a.rx + _wrapPi(p.rx - a.rx) * b;
+                    n.rotation.z = a.rz + _wrapPi(p.rz - a.rz) * b;
+                } else {
+                    n.position.x = p.x; n.position.y = p.y; n.position.z = p.z;
+                    n.rotation.x = p.rx; n.rotation.z = p.rz;
+                }
+            }
+        };
+
+        if (onGetup) {
+            W.phase = getT < 0.65 ? 'roll' : getT < 1.35 ? 'kneel' : 'stand';
+            W.speed = 0;
+            const u = getT / _WALKOFF_GETUP;
+            if (u < 0.5) {
+                const b = _walkoffSmooth(u / 0.5);
+                const crouch = AerialEngine.pose.computePose({ tuck: 1,
+                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                writeSolved(crouch, b);
+                rootX = W.root0.x + (W.standX - W.root0.x) * b;
+                rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
+                rootY = W.root0.y + (terrainRootY(rootZ) - 0.35 - W.root0.y) * b;
+                q = _walkoffSlerp(W.q0, W.qWalk, b);
+            } else {
+                const b = _walkoffSmooth((u - 0.5) / 0.5);
+                const tuck = 1 - b;
+                const pose = AerialEngine.pose.computePose({ tuck,
+                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                writeSolved(pose, null);
+                rootY = terrainRootY(rootZ) - 0.35 * tuck;
+                q = W.qWalk;
+            }
+        } else {
+            const walkT = getT - _WALKOFF_GETUP;
+            const dx = W.targetX - W.standX;
+            const dist = Math.min(Math.abs(dx), walkT * _WALKOFF_SPEED);
+            const dir = dx < 0 ? -1 : 1;
+            rootX = W.standX + dir * dist;
+            const walking = dist < Math.abs(dx) - 1e-6;
+            W.phase = walking ? 'walk' : 'done';
+            W.speed = walking ? _WALKOFF_SPEED : 0;
+            const pose = AerialEngine.pose.computePose({ tuck: 0,
+                armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                armRaise: 0, grounded: false, pikeAmount: 0, pikeArmDrop: 0 });
+            writeSolved(pose, null);
+            if (walking) {
+                const ph = dist * Math.PI * 2 / 1.25;
+                for (const sd of [['L', 1], ['R', -1]]) {
+                    const sideName = sd[0], s = sd[1];
+                    const swing = s * Math.sin(ph);
+                    const a = 0.28 * swing;
+                    const b = a - 0.32 * Math.max(0, swing);
+                    const ul = M['upperLeg' + sideName], ll = M['lowerLeg' + sideName];
+                    const hx = sideName === 'L' ? -0.075 : 0.075;
+                    const hy = -0.275, hz = BASE_Z['upperLeg' + sideName] || 0;
+                    ul.rotation.x = a; ul.rotation.z = 0;
+                    ul.position.x = hx; ul.position.y = hy - 0.18 * Math.cos(a);
+                    ul.position.z = hz - 0.18 * Math.sin(a);
+                    const ky = hy - 0.36 * Math.cos(a), kz = hz - 0.36 * Math.sin(a);
+                    ll.rotation.x = b; ll.rotation.z = 0;
+                    ll.position.x = hx; ll.position.y = ky - 0.18 * Math.cos(b);
+                    ll.position.z = kz - 0.18 * Math.sin(b);
+
+                    const ua = M['upperArm' + sideName], la = M['lowerArm' + sideName];
+                    const arx = -Math.PI - 0.34 * swing;
+                    const ady = Math.cos(arx), adz = Math.sin(arx);
+                    const shx = sideName === 'L' ? -0.175 : 0.175;
+                    ua.rotation.x = arx; ua.rotation.z = 0;
+                    ua.position.x = shx; ua.position.y = 0.15 + 0.15 * ady;
+                    ua.position.z = (BASE_Z['upperArm' + sideName] || 0) + 0.15 * adz;
+                    la.rotation.x = arx; la.rotation.z = 0;
+                    la.position.x = shx; la.position.y = 0.15 + 0.425 * ady;
+                    la.position.z = (BASE_Z['lowerArm' + sideName] || 0) + 0.425 * adz;
+                }
+                rootY += 0.012 * (1 - Math.cos(ph * 2));
+            }
+        }
+        root.position.x = rootX; root.position.y = rootY; root.position.z = rootZ;
+        if (!root.rotationQuaternion) root.rotationQuaternion = new BABYLON.Quaternion(q.x, q.y, q.z, q.w);
+        else root.rotationQuaternion.set(q.x, q.y, q.z, q.w);
+
+        // Keep both boot/ankle endpoints on or above the local snow while the
+        // lying rig blends into the kneel.  This is a display-root lift only;
+        // it never writes state.rootY or any engine value.
+        let lift = 0;
+        for (const sideName of ['L', 'R']) {
+            const ll = M['lowerLeg' + sideName];
+            if (!ll) continue;
+            const d = _crashSegAxis(ll);
+            const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
+                ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
+            const ankle = _crashQRotV(q, ankleLocal);
+            ankle.x += rootX; ankle.y += rootY; ankle.z += rootZ;
+            lift = Math.max(lift, _crashFloorY(ankle.z) + 0.005 - ankle.y);
+        }
+        if (lift > 0) root.position.y += lift;
+        root.computeWorldMatrix(true);
+        // Preserve the ejected skis in WORLD space while the root walks away.
+        // This repeats the ragdoll write-back with the final walk root rather
+        // than the parked root used earlier in this frame.
+        const rqInv = _crashQConj(q);
+        const rootNow = _crashV(root.position.x, root.position.y, root.position.z);
+        for (const sk of R.skis) {
+            const n = sk.node;
+            const eps = 0.05;
+            const slope = Math.min(1.2, Math.abs(
+                terrainRootY(sk.pos.z + eps) - terrainRootY(sk.pos.z - eps)) / (2 * eps));
+            const qSki = _crashQMul(_crashQAxis(1, 0, 0, Math.atan(slope)),
+                _crashQAxis(0, 1, 0, sk.yaw));
+            const qLocal = _crashQMul(rqInv, qSki);
+            n.rotationQuaternion = new BABYLON.Quaternion(
+                qLocal.x, qLocal.y, qLocal.z, qLocal.w);
+            const local = _crashQRotV(rqInv, _crashVSub(sk.pos, rootNow));
+            n.position.x = local.x; n.position.y = local.y; n.position.z = local.z;
+            n.computeWorldMatrix(true);
+        }
+        updateSpineChain(M);
+    }
     function _crashRagdollStep(R, dt) {
         // The root KEEPS SLIDING during the crash (physics continues; only
         // the crash froze state.vz at impact and the slope re-accelerates
@@ -6887,7 +7110,7 @@ void main(void) {
         if (R.resting && scene && scene.onBeforeRenderObservable) {
             if (!R._parkObs) {
                 R._parkObs = scene.onBeforeRenderObservable.add(function () {
-                    if (!ragdoll || !ragdoll.resting || !ragdoll._park) return;
+                    if (!ragdoll || !ragdoll.resting || !ragdoll._park || ragdoll.walkoff) return;
                     const pk = ragdoll._park;
                     character.root.position.x = pk.x;
                     character.root.position.y = pk.y;
@@ -6996,6 +7219,7 @@ void main(void) {
             const loc = _crashQRotV(qRootInv, rel);
             n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
         }
+        _crashWalkoffStep(R);
         // iter 127: park + freeze in the SAME step that detects rest, with
         // the driver locals freshly written above and the root positioned at
         // the capture. The previous position (freeze at the START of the

@@ -334,6 +334,13 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
     await page.waitForTimeout(800);
 
+    // HT#14 gives the default ending a deliberate get-up and walk.  This
+    // legacy P11 test owns the crash-only 30 s frozen-tail canary and its
+    // crash_rest.png framing, so hold the new downstream sequence at rest
+    // here; walkoff.spec.js exercises the shipped default in all three worlds
+    // and separately proves this stay-down control fails its #14 gate.
+    await page.evaluate(() => { window._crashWalkoffDisabled = true; });
+
     // ── Deterministic crash trigger (reviewer entry-109 ruling) ─────────────
     // window._debugTriggerCrash() forces the NEXT touchdown to take the
     // crash branch from game state, so the crash no longer depends on
