@@ -1042,6 +1042,18 @@ def weight_seam_report(obj, tag, verbose=True):
         log(f'WEIGHTSEAM {tag}: p50 {r["p50"]:.3f} p90 {r["p90"]:.3f} '
             f'p99 {r["p99"]:.3f} max {r["max"]:.3f}; '
             f'{hot}/{n} edges over {WEIGHT_SEAM_HOT}; worst ' + ' '.join(worst))
+    if verbose and os.environ.get('BODY_SEAM_DEBUG') == '1':
+        # Iter-163 instrument for the Sol thigh-tube weight-seam failure:
+        # dumps the full weight vectors of the 8 widest edges so a failing
+        # build's hinge can be compared against a passing control build
+        # vert-for-vert. Off by default; HEAD passes with it disabled.
+        vs_ = obj.data.vertices
+        for d, i, j in per_edge[-8:][::-1]:
+            wa = {names.get(k, k): round(v, 3) for k, v in W[i].items()}
+            wb = {names.get(k, k): round(v, 3) for k, v in W[j].items()}
+            log(f'  SEAMEDGE {d:.2f} v{i}@({vs_[i].co.x:+.3f},{vs_[i].co.y:+.3f},'
+                f'{vs_[i].co.z:+.3f}){wa} <-> v{j}@({vs_[j].co.x:+.3f},'
+                f'{vs_[j].co.y:+.3f},{vs_[j].co.z:+.3f}){wb}')
     return r
 
 

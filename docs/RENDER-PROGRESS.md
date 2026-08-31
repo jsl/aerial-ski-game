@@ -257,6 +257,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 163 | **NEXT.md #15 thigh-tube root-cause ADVANCED, not landed: the Sol diff's seam failure is NOT the clamp, NOT the locality reach, NOT the rescue branch — the shipped knee-ring weights themselves re-converge under the moved mid-thigh geometry (my build `upperLegL` 0.775 dominant at z −0.739 vs HEAD 0.08 there), and the failure is "both-ramped" in the locality repair. Tube diff REVERTED (gate red = no asset); env-gated `BODY_SEAM_DEBUG` edge-dump instrumentation LANDED on the green HEAD build. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | instrumented HEAD build 2048/96 green (exit 0, all gates); unit 81/81; golden 30/30. See entry 163. |
 | — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
 | — | Iteration 161 | **#15 A-frame slice LANDED then WITHDRAWN in the same iteration (honesty over scope): the display-side 3-degree thigh tilt measured kneeDev 1.62/1.52° vs the 12.51/11.77° control and shin tilt 1.6° vs 12.5° — the author's fan-out is real and the stance fixes it — but it BREAKS rig.spec's bind==driver-at-rest contract (upperLegL/R 0.0334 m / 3° residual; hlpHip 0.0261 m via the per-frame helper update), and a load-time `setBindMatrix` rebase corrupted every bone (90° residuals; link-time absolute matrices do not yet reflect the linked nodes). A stance change is a BIND change: the fix is a build-side bind re-export in build_body.py. The stance was reverted, `aframe.spec.js` PARKED (test.skip) with every measured number recorded in its header. The Sol thigh-tube rebuild also aborted on the weight-seam gate (max 1.466 vs 1.1, 8 edges, mid-shin `upperLegL\|lowerLegL`; HEAD passes 0.925/0). No asset change, ASSET_V 67.** | unit 81/81; golden 30/30 after a second census-only re-capture (audit 0 physics diffs); rig 13/13; look 6/6 (DRIVE_PORT=8199; :8099 leftover still held the default). See entry 161. |
 | — | Iteration 158 | **PREVIOUS-ITERATION PIPELINE REGRESSION FIXED: `shell_report()` once again returns its report, so the unchanged `suit_shell_gate()` can consume it and a full athlete build completes. HUMAN #15 was probed but NOT landed: separating the connected inner-thigh sheet enough to expose render-space daylight violated the existing thigh-curvature gate, and the rejected render still had zero continuous daylight. No asset, game, engine, DoF, threshold, or ASSET_V change; NEXT.md remains.** | full 2048/96 scratch build reaches `BODY_EXPORTED` with all hard gates green (inner-thigh mesh gap 45.5 mm, thigh depth 1.663); unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; canonical FACEDIST 0.1803. Rejected A-frame probe: daylight 0 px, frontal knee deviation about 24 deg; best mesh-space separation failed curvature at 0.370/0.381 > 0.35. See entry 158. |
@@ -1463,6 +1464,68 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 163 — NEXT.md #15: the Sol thigh-tube seam failure root-caused to the
+weight-repair chain's re-convergence (not clamp/reach/rescue); diff reverted,
+`BODY_SEAM_DEBUG` instrumentation landed on the green HEAD build
+
+**Scope and self-review.** `docs/NEXT.md` remains the mandate; #15 first per the
+23:20 ruling, with `sol/aframe-wip` as reference. `git log -3 --stat` at start:
+clean 6c9512f docs tip. MID-SESSION the tip moved under me: the reviewer merged
+`sol/crash-cluster` (`78b2683`, 00:40) while this iteration was running — noted,
+adapted (all controls below re-run on the new tip). `docs/NEXT.md` was touched by
+that merge (conflict resolved there); its content still matches the mandate.
+
+**1. Reproduced 161's failure on the new tip.** Sol `build_body.py` diff applied
+cleanly; full 2048/96 build reaches `AFRAME TOPOLOGY: 156 crossing verts
+reassigned, 11 L<->R faces removed, 0 remain`, inner-thigh gap +54.0 mm,
+arm/thigh 0.522, then FAILS the weight-seam gate at shipped skin: max **1.439**,
+8 edges over 1.0, all `upperLegL|lowerLegL` at z −0.71..−0.76 (knee ring).
+
+**2. Three hypotheses tested and ELIMINATED (each with a build or a dump):**
+- *Unweighted 27 mm inner-plane clamp at the knee*: fixed by lerping the clamp
+  with the same knee fade `_shell_leg_move_w` uses — max moved only
+  1.466 → 1.439. Not the cause (fix not kept; see 4).
+- *Locality reach shift*: `_locality_frame`'s p98 reach for the legs is
+  essentially unchanged by the tube (upperLegL 149 mm vs HEAD 154 — mine is
+  SMALLER, so the "bigger reach admits more upperLeg weight" theory is dead).
+- *Rescue branch*: `RESCUEBOUNDARY` reports **0 verts rescued** in both builds.
+
+**3. What IS different (the evidence for 164).** With `BODY_SEAM_DEBUG=1` dumps
+and a coordinate-matched HEAD control: at z −0.71..−0.76, |x| < 0.2 the HEAD
+build ships `lowerLegL` 0.73–0.75 dominant with `upperLegL` 0.05–0.09; the Sol
+build ships the same ring **`upperLegL` 0.63–0.79 dominant** (e.g. v7379
+upperLegL 0.775 at z −0.739) with an abrupt step to lowerLeg-dominant one edge
+away. `RESCUEBOUNDARY` classifies all 8 hot edges **both-ramped** — the hinge
+survives the projected relax because the ramp FIELD itself has a steep
+spatial transition there under the moved mid-thigh geometry. Corroborating:
+localise takes 69.5 weight units in the Sol build vs 51.8 on HEAD (same vert
+count rewritten), i.e. the locality repair cuts materially more skin in that
+region. The hot verts sit at |along| ≈ 1.8 in the thigh segment frame — far
+outside every tube op — so the geometry AT the knee is untouched; it is the
+repair chain's re-convergence that differs. Next lever for 164: read
+`smooth_blend_rings(locality=…)`/`_locality_factors` convergence at that ring
+under both geometries, or per the reviewer's earlier ruling let the knee band
+keep inherited weights explicitly.
+
+**4. What is in the commit.** ONLY the env-gated `BODY_SEAM_DEBUG=1` dump in
+`weight_seam_report` (8 widest edges with full weight vectors + coordinates;
+off by default; HEAD passes a full 2048/96 build with the code in place). The
+Sol tube diff, the clamp lerp and the probe edits were REVERTED — a red gate
+never ships, and no asset was produced (all builds went to the scratch dir;
+`assets/` and ASSET_V untouched).
+
+**Verification.** Instrumented HEAD build (2048/96, scratch out): exit 0, all
+build gates green. `npm run test:unit` **81/81**; `npm run test:golden`
+**30/30**. Scratch files live in `/home/justin/aerial-agents/scratch/iter-163/`.
+
+**Open questions for the reviewer.** (1) Given the both-ramped finding, is the
+preferred 164 route (a) making the knee band's shipped weights explicitly
+inherited (freeze upperLeg/lowerLeg weights in the fade zone before the repair
+chain), or (b) digging into the projected-relax convergence directly? (2) The
+mid-session crash-cluster merge (`78b2683`) touched `docs/NEXT.md` — please
+confirm the suit mandate text is unchanged in intent.
+`docs/NEXT.md` retained (all steps open).
 
 ### 162 — inherited uncommitted WITHDRAWAL of 161's A-frame stance verified + committed (bind==driver contract); 161 leftovers closed (look 6/6, specs green, aframe parked); HT#19 pole fix shipped, specced gate non-discriminating and withheld (numbers)
 
