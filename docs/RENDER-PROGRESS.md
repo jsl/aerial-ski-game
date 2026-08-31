@@ -269,6 +269,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 181 | **NEXT.md item 3 cont. (#23.3) — the 09:20 ruling's SILHOUETTE INSTRUMENT LANDED: `tests/drive/tube-smooth.spec.js`. Anchor rows derive from the LEG BONES' FINAL matrices (hlpHip = hip, hlpKnee = knee, lowerLeg origin = ankle), projected only AFTER the first render under the measurement camera (stale-transform projection was 178's torso-window failure, re-proven: pre-render projection compresses hip→ankle to 27 px vs the true ~135). Two more instrument lessons proven: Vector3.Project's y is TOP-DOWN (the H−1−y flip belongs to readPixels only), and bone anchors must be sanity-checked as ROW-SPAN containment, not a point window (the ankle origin sits ≤ 21 px fore-aft off the skinned boot from the bind rotation — band-relaxed form for lowerLeg only). Sanity: all six anchors inside in front/side/back. GATE: side-framing fore-aft width profile, 2× smooth + 1.5 px deadband, ≤ 2 inflections/segment — v74 measures thigh 1 / shin 0 (front: 2/1); injected-belly self-test fires (3/3/2). NO asset/gate-threshold change; the targeted anterior-thigh/glute/calf smoothing pass is deferred (v74 already passes the render gate); pre-#23.3-asset negative control pending. unit 81/81, golden 30/30.** | tube-smooth 1/1; unit + golden on the final tree. See entry 181. |
 | — | Iteration 180 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30 (re-verified last), browser+mutation+coverage PASS, walkoff 2/2 solo; the run-all drive leg's single walkoff negative-control red was a self-inflicted port-8099 collision (look run racing the suite) — green in isolation. Shots inspected + measured: snow 0.849 / corridor 0.83 bright (grey-ramp holds); cone peaks read 0.67 vs sky 0.652 (≈ glass-pyramid class, top scene gap); green wedge (0.35) still reviewer-owned; #23 legs watertight by eye but thigh flare/calf belly persist (09:20 ruling); mirrored bib digits + pink smear = NEXT item 7. No source/asset/gate change; NEXT.md item 5 next.** | run-all + look + walkoff solo re-run; scene luminance numbers in entry 180. See entry 180. |
 | — | Iteration 179 | **NEXT.md item 4 — HT#22 FANG PEAK LANDED (display-side only): root-caused by hide-mesh probe — the "hooked claw summit" is NOT a cone peak; it is the OPEN lateral end edge of a ridge heightfield sheet (`ridge_ahead`, same class for all 8 ridge sheets) seen nearly edge-on past the other ridges: the sheet drops full-crest → ground in ONE 6 m column step at its run ends, and that free ~40 m wall projects as a dark hooked sliver over the pale cones. FIX: `_ridgeMesh` crests fade to ground over `RIDGE_END_TAPER_FRAC` = 14% of the run at both ends (smoothstep); negative-control hook `?fangkeepends=1` rebuilds the unfaded ends. NEW GATE `tests/drive/peak-overhang.spec.js` (mesh-space, live Babylon vertex data): every ridge sheet's crest may step ≤ 12 m per 6 m column — the unfaded fang end steps ~24 m and FAILS, tapered ends ≤ ~6 m PASS; negative control verified firing. A render-space sky-below-mountain pixel detector was prototyped and SHELVED (open item — layered ridges have genuine sky gaps; horizon haze within a few RGB points of snow). Fang verified gone by eye in scene.png. unit 81/81, golden 30/30, ridges3d 5/5, peak-overhang 2/2, look 6/6.** | see entry 179. |
 | — | Iteration 176 | **NEXT.md item 1 — HT#23.1 leg transparency carve-outs LANDED: the 94 open rim edges left by the thigh-tube sever + crotch shard cuts are LOOP-AWARE capped in `sever_thigh_bridge_faces` (`_fill_small_rims`, ≤ 0.12 m loops only; the designed between-tube daylight loop, 0.243 m, is deliberately left open) + `close_boundary` on the delivered mesh; new `watertight_gate` (mesh space) + `tests/drive/leg-watertight.spec.js` (render space: enclosed-background components from front/side/back, holes = mid-limb interior-to-one-leg-span components ≥ 20 px, the between-legs daylight pocket excluded by construction). ASSET_V 71 → 72. NEGATIVE CONTROLS: pre-#23.1 committed assets FAIL the render gate (side framing 128 px interior hole at x 644-656/y 434-455); `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log: 94 rims left open). unit 81/81, golden 30/30, aframe+body 5/5, look 6/6, leg-watertight 1/1; shots regenerated + inspected — no visible carve-outs front/side.** | see entry 176. |
@@ -10990,6 +10991,55 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 181 — NEXT.md #23.3 cont.: the ruling's silhouette instrument landed — bone-anchored, render-space, with firing self-test; v74 passes the ≤ 2 inflection gate
+
+**Verification.** unit 81/81; golden 30/30 (no source or asset change — ASSET_V stays 74);
+`tube-smooth` 1/1: anchors inside the silhouette in front/side/back; side-framing inflections
+thigh 1 / shin 0 (front 2/1 — also green); instrument self-test (injected Gaussian belly)
+fires in every framing (3/3/2 > 2).
+
+**What changed.**
+
+1. `tests/drive/tube-smooth.spec.js` (new) implements the 09:20 ruling: anchor rows from the
+   LEG BONES' projected screen positions (FINAL matrices of `hlpHip*` = hip, `hlpKnee*` =
+   knee, `lowerLeg*` origin = ankle), never fixed frame rows or driver boxes.
+2. 178's torso-window failure re-proven and fixed at the root: projecting the anchors BEFORE
+   any render under the measurement camera reads stale node/scene transforms and compressed
+   hip→ankle to 27 px (vs ~135 real). The spec renders twice, THEN projects, THEN readPixels.
+3. Row convention lesson: `Vector3.Project` returns TOP-DOWN y — the row is `q.y` itself;
+   the `H−1−y` flip belongs to the readPixels buffer indexing only. Applying both flips
+   (178's prototype class) inverts the anatomy on screen.
+4. Sanity control (ruling's equivalence instrument): every anchor must land INSIDE the
+   silhouette in all three framings. Strict row-span form for hip/knee; the ankle origins sit
+   up to 21 px fore-aft off the skinned boot (bind rotation), so `lowerLeg*` relaxes to a
+   ±8-row band with 10 px tolerance — the 178 failure mode (anchors hundreds of px away on
+   the torso) still fails decisively.
+5. Gate: side framing, per-row fore-aft silhouette width within pelvis→knee and knee→ankle
+   bone windows (4 px margins), profile smoothed twice, derivative sign changes through a
+   1.5 px deadband, ≤ 2 per segment.
+
+**Honest result on the shipped v74 build:** the render-space gate PASSES without a further
+build-side pass (thigh 1 / shin 0). The ruling's targeted anterior-thigh/glute/calf smoothing
+pass would change no gate outcome, so it was NOT blind-applied this slot; the by-eye
+thigh-flare/calf-belly read (entry 180) vs the passing instrument is an open question.
+
+**Open / not done.**
+
+1. Negative control 2 (the spec re-run against the pre-#23.3 assets, e0c0658) not yet run —
+   pending next slot; control 1 (in-spec injected belly) fires.
+2. The targeted smoothing pass and any by-eye/instrument discrepancy resolution.
+3. NEXT.md items 5–8 in order (5 tuck+boots, 6 hands step 2, 7 paint slice,
+   8 coach); item 4, the fang peak, landed in 179.
+1. v74 passes ≤ 2 inflections on the bone-anchored instrument, yet the author's by-eye
+   thigh-flare/calf-belly read persists (entry 180). Is the profile instrument's deadband
+   (1.5 px) too forgiving, or is the remaining read about silhouette SHAPE (breadth ratio,
+   not inflections)? A breadth-profile gate can be added if wanted.
+2. The ankle anchor relaxation (±8 rows, 10 px) is measured but is a weakened control —
+   acceptable standing form, or should the ankle anchors bind to the boot's skinned
+   landmarks instead?
+3. NEXT.md remaining items in order: 5 tuck+boots, 6 hands step 2, 7 paint slice,
+   8 coach (item 4, the fang peak, landed in 179).
+
 ### 180 — REVIEW-ONLY: suite green (one self-inflicted port-collision red, green solo); #23 legs read improved but still not finished; peaks read at ≈ sky luminance; green wedge + mirrored bib remain the worst gaps
 
 **Scope.** Review-only slot. No source, asset, gate, engine, DoF, or NEXT.md
