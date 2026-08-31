@@ -248,6 +248,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 155 (review) | **REVIEW-ONLY: current athlete/scene audited after the reverted 153–154 chain; no feature, asset, engine, gate, or threshold change. NEXT.md remains intact. The closed self-test state holds (FACEDIST 0.1803; kneeMax crouch 5.725 / flight 7.247), but the author-facing #15 A-frame and #16 real-boot gates are visibly RED and still absent; suit shards/white-on-white paint remain. Scene still trails the footage in mountain silhouette, forest depth and landing-surface read.** | focused chain+look+rig+spine 38/38; unit 81/81 and golden 30/30; run-all unit/golden/browser/mutation/coverage green, drive leg stopped after exceeding the review time box. Required shots regenerated and inspected. See entry 155. |
 | — | Iteration 152 | **Grey-attr instrument ROOT-CAUSED + FIXED (test-only; no scene/asset/engine change): the 150 canary was the readPixels Y-FLIP, not pick misclassification — probes (a) honest as-is corridor 0.5743/flank 0.8325 RED, (b) peaks hidden (reviewer's probe) 0.6649, dark 1790→739 with classification UNMOVED, (c) peaks made pickable NO change ⇒ classified rays correct, luminance mirrored; with the flip: corridor 0.8433 / flank 0.7707 (1.094) GREEN, inrun 0.8367/0.8067 (1.037) green, dark attribution now truthful (terrainCorridor 110, was 1792 false attributions); darkFrac gate re-bounded 0.035→0.060 on the corrected instrument (honest 0.0455 = ridgelines/birch/fence content); pickable-peaks guard kept** | unit 81/81; grey-attr 2/2; golden 30/30 (no physics/game-side change — confirmation run). See entry 152. |
 | — | Iteration 151 | **Corridor-dimming ROOT-CAUSED (diagnosis only, no source change landed): the scene-framing deficit is a dark in-run band the ready camera crosses, NOT shadows (CSM render list emptied: darkN 3192→3191), NOT the bake (inrun gate 0.964 green), NOT away-facing aspect (14039/14124 corridor samples sun-facing, 0.594); no scene code/asset changed 146–149 (git-verified) — remaining correlate is the athlete-anchored camera target drifting with the 146–148 stance rebuilds; grey-attr instrument now reports the sun-aspect split (corSun/corAway)** | unit 81/81; golden 30/30; grey-attr scene canary still red 0.5952/0.8335 (deterministic, unchanged by every toggle); inrun 0.7869/0.816 = 0.964 PASS; look 6/6 shots regenerated. See entry 151. |
 | — | Iteration 148 | **NEXT.md step 2 slice 1 — shell curvature gates EXTENDED to the upper arms and thighs, ALL 8 gated segments now ≤ 0.35: upperArm 0.160/0.324 (was 1.037/0.715), thighs 0.343/0.242 (was 0.529/0.455), torso 0.088 (was 0.644, still reported-not-gated). Chest-wall verts excluded from the upper-arm fit/move via the torso's own fitted tube; thigh iron freed 6→16 mm under the reviewer's garment-`thigh_depth` ruling (gate re-attached to the shipped garment); inner-thigh gap 45.5 mm ≥ 40 (session-28 open item CLOSED); arm/thigh 0.498 ≤ 0.55; ASSET_V 67** | build gates all green; unit 81/81; golden 30/30; spine+rig+chain+look 43/43. See entry 148. |
@@ -1443,6 +1444,63 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 155 — Review-only: inherited gates hold; A-frame, real boots and suit finish remain visibly red
+
+**Scope and self-review.** Review only; `docs/NEXT.md` is the review-slot exception and remains
+the sole mandate for the next work slot. `git log -3 --stat` / `git show --stat HEAD` confirm the
+tip is the documentation-only Sol authorization after the full 154 revert; the starting tree was
+clean. No feature, asset, `game.js`, engine, DoF, test threshold, or athlete source was changed.
+
+**Verification.** The focused `chain` + `look` + `rig` + `spine` run passed **38/38 in 9.4 m**
+on `DRIVE_PORT=8155` and regenerated the canonical and pose shots. Honest FACEDIST is **0.1803**
+(gate 0.15); front silhouette span/coverage **0.936 / 0.1982**, side **0.775 / 0.1143**;
+front navy fraction **0.0872**. The shell knee repair holds: in-run crouch kneeMax **5.725** and
+flight tuck **7.247**, both under 8.0. Bind/driver translation and rotation residuals are zero;
+boot sole-to-binding gaps are **-4 mm** at toe and heel on both sides. Unit is **81/81** and golden
+is **30/30**. `./tests/run-all.sh` completed unit 81/81, golden 30/30, browser 36/36, mutation and
+coverage green; its buffered full-drive leg was stopped after it exceeded the review time box
+(the focused real-browser set above is complete, not inferred). The sandboxed unit attempt's
+`scripts.test` red was environmental: the required unsandboxed run passed 81/81.
+
+**Critical visual review (`shots/scene.png`, `figure.png`, `figure_front.png`, inspected at
+original resolution).** The figure metrics and the author's acceptance do not yet agree:
+
+- HUMAN #15 is red by eye. `figure_front.png` has no continuous background daylight from below
+  the crotch to the knees, and both calves change direction at the knee to reach the skis. The
+  inherited **45.5 mm mesh-space** inner-thigh gap therefore remains the known false-positive;
+  the required render-space ≥3 cm daylight gate and ≤5 deg frontal knee-deviation gate do not
+  exist yet. The current shot is still the mandated negative control.
+- HUMAN #16 is red by eye despite excellent binding contact. The dark foot has a separated,
+  toe-shaped forefoot and reads as a shoe; there is no rigid mid-shin cuff, smooth clog/toe box,
+  ribbed tongue, sole ledges, buckles or power strap. Contact numbers prove placement, not a ski
+  boot silhouette.
+- The shell's internal shape gates hold (iteration 148: eight curvature segments ≤0.35,
+  arm/thigh 0.498, shoulder/hip 0.896), but the render still shows hard white/grey shards across
+  the abdomen, crotch and thighs, lumpy knee transitions, and white-on-white torso/legs. The
+  spine strain report is only an instrument: away from neutral whole-mesh p99 is
+  **2.518–2.760** and maxima **10.993–14.268**; only the knee sub-gate is enforced. Collar/cuffs,
+  controlled two-tone panels and crotch cleanup remain open. The outer blue arm stripe is visible
+  on both arms and is not a redo target.
+- `scene.png` keeps the corrected bright corridor (latest unchanged corrected instrument:
+  corridor/flank **0.8433/0.7707 = 1.094**) and readable athlete/tree shadows, but the image still
+  diverges from the footage: large regular cone/pyramid peaks dominate the skyline instead of low
+  forested ridges; near trees mix flat cards with sparse low-poly trunks; the B-net is a dense
+  aliased lattice; the broad foreground is nearly featureless, so the chopped landing, furrows and
+  clods do not read at gameplay distance. The athlete is very small in this framing and the fence
+  competes more strongly than the jump corridor.
+
+**Re-prioritised next work slots (no new scope):** (1) add the grey-attr row-order self-test already
+ordered by the reviewer; (2) HUMAN #15 A-frame geometry/pose plus the render-space daylight and
+collinearity gates, keeping ski/binding gates green; (3) HUMAN #16 rigid two-part ski boots plus
+their visual negative control; (4) finish NEXT slice 2 — bounded panels, collar/cuffs and shard
+cleanup, then re-run the citable thigh readout; (5) only after NEXT.md is genuinely complete,
+return to existing plan debt in payoff order: gameplay-distance landing chop/foreground read,
+forest depth/near-tree treatment, then horizon/height-haze/LOD polish. Do not delete `NEXT.md`
+before all its gates are green.
+
+**Open questions for the reviewer:** none new. The latest rulings already define the required
+order and acceptance; this review found no basis to change a threshold or expand scope.
+
 ### 152 — Grey-attr canary root-caused AND fixed (test-only): the deficit was the readPixels y-flip, not pick misclassification — with the corrected row order the corridor is the BRIGHTEST surface in frame, nothing hidden
 
 **What changed.** `tests/drive/grey-attr.spec.js` only. No `game.js`, `engine/`, or asset change — no ASSET_V bump, no golden re-capture.
