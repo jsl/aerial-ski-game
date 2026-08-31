@@ -147,39 +147,32 @@ const POSE_INRUN_TUCK = {
 //
 // NOTE: computeI does NOT read this table — see POSE_TUCKED_INERTIA below.
 const POSE_TUCKED = {
-    // REBUILT to the author's tuck photo (NEXT.md item 5 / #21 amended,
-    // reference/shots/author_tuck_ref_2026-08-31.jpg; ruling on 184, 2026-08-31
-    // 12:00) by forward kinematics, same construction as the session-8 rebuild:
-    // chain-closed by construction, max joint gap 0.0 mm on these rounded
-    // literals (solver in the iteration-186 scratch dir; gaps verified in
-    // chain.spec.js's flight-tuck endpoint gate).
-    // Targets from the ruling, all measured on the shipped table:
-    //   kneeToChest 0.419 -> 0.190 m (limit <= 0.22) - knees pulled to the chest
-    //   knee flexion 30 -> 130 deg (target >= ~130; interior 50 deg)
-    //   torso rx -0.436 (-25 deg) -> -0.25 (-14.3 deg) - back compact, more upright
-    //   arms wrap the knees: shoulder -> elbow down-forward, elbow interior ~110 deg,
-    //     hand gripping the front of the knee (0.02 m above, 0.05 m ahead), elbows in
-    //     (rz +-0.20 as before)
-    //   head up (gaze above the back line, as in the photo), chin NOT on the chest
-    //   shins folded heel-up-back (knee->ankle 50 deg off the thigh), skis pitched
-    //     with the shin (airborne cuff lean = 0) and the ankle exactly on the
-    // DISPLAY ONLY: computeI reads POSE_TUCKED_INERTIA below (byte-frozen), so
-    // the physics is unchanged by construction.
-    torso:     { x:  0.000, y:  0.000, rx: -0.25,   rz:  0.00, dz:  0.000 },
-    head:      { x:  0.000, y:  0.379, rx: -0.35,   rz:  0.00, dz: -0.109 },
-    // Arms: shoulder at the -Y end (bind axis, session-3 fix) exactly on the
-    // torso's +Y end; both segments' sagittal lengths are divided by cos(rz)
-    // in the solver so the 3D chain closes exactly with the +-0.20 wrap.
-    upperArmL: { x: -0.130, y:  0.184, rx: -2.1386, rz: -0.20, dz: -0.197 },
-    upperArmR: { x:  0.130, y:  0.184, rx: -2.1386, rz:  0.20, dz: -0.197 },
-    lowerArmL: { x: -0.070, y:  0.102, rx:  1.5688, rz: -0.20, dz: -0.199 },
-    lowerArmR: { x:  0.070, y:  0.102, rx:  1.5688, rz:  0.20, dz: -0.199 },
-    upperLegL: { x: -0.075, y: -0.092, rx:  2.8916, rz:  0.00, dz:  0.024 },
-    upperLegR: { x:  0.075, y: -0.092, rx:  2.8916, rz:  0.00, dz:  0.024 },
-    lowerLegL: { x: -0.075, y:  0.004, rx: -1.1227, rz:  0.00, dz:  0.141 },
-    lowerLegR: { x:  0.075, y:  0.004, rx: -1.1227, rz:  0.00, dz:  0.141 },
-    skiL:      { x: -0.075, y: -0.080, rx: -1.1227, rz:  0.00, dz:  0.309 },
-    skiR:      { x:  0.075, y: -0.080, rx: -1.1227, rz:  0.00, dz:  0.325 },
+    // SITTING tuck (#21 v3 part 2 — ruling on 197, Fable 19:30,
+    // `APPROVED: POSE_TUCKED display-table adjustment per this ruling`):
+    // torso within ~10 deg of upright (rx -0.175 = 10.03 deg), deep hip
+    // flexion unchanged (thigh rx 2.8916), HANDS GRASPING the kneecaps —
+    // wrist 2.5 cm ahead of the knee point, hand-to-kneecap 24.9 mm
+    // (ruling limit <= 50 mm, contact not proximity) — elbows in (rz 0.12).
+    // Built by forward kinematics (scratch/iter-198 solver), same
+    // construction as the session-8 rebuild: chain-closed by construction,
+    // max joint gap 0.05 mm on these rounded literals, verified on the live
+    // character in tests/drive/tuck-sitting.spec.js (with the previous table
+    // as the failing control for the grasp). Old-table targets kept:
+    //   kneeToChest 0.193 m (limit <= 0.22), knee flexion ~130 deg,
+    //   head up (gaze above the back line), shins folded heel-up-back with
+    //   the skis pitched on the shin (airborne cuff lean = 0).
+    torso:     { x:  0.000, y:  0.000, rx: -0.175,   rz:  0.00, dz:  0.0000 },
+    head:      { x:  0.000, y:  0.3902, rx: -0.30,   rz:  0.00, dz: -0.0848 },
+    upperArmL: { x: -0.130, y:  0.1994, rx: -2.070612, rz: -0.12, dz: -0.1786 },
+    upperArmR: { x:  0.130, y:  0.1994, rx: -2.070612, rz:  0.12, dz: -0.1786 },
+    lowerArmL: { x: -0.070, y:  0.1030, rx:  1.773820, rz: -0.12, dz: -0.1877 },
+    lowerArmR: { x:  0.070, y:  0.1030, rx:  1.773820, rz:  0.12, dz: -0.1877 },
+    upperLegL: { x: -0.075, y: -0.0964, rx:  2.8916, rz:  0.00, dz:  0.0033 },
+    upperLegR: { x:  0.075, y: -0.0964, rx:  2.8916, rz:  0.00, dz:  0.0033 },
+    lowerLegL: { x: -0.075, y:  0.0000, rx: -1.1227, rz:  0.00, dz:  0.121 },
+    lowerLegR: { x:  0.075, y:  0.0000, rx: -1.1227, rz:  0.00, dz:  0.121 },
+    skiL:      { x: -0.075, y: -0.0845, rx: -1.1227, rz:  0.00, dz:  0.2968 },
+    skiR:      { x:  0.075, y: -0.0845, rx: -1.1227, rz:  0.00, dz:  0.2968 },
 };
 
 // The tuck's MASS DISTRIBUTION, frozen at the pre-rebuild numbers.

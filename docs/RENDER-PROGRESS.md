@@ -288,6 +288,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 198 | **NEXT.md 5a-NEW(ii) #21 v3 PART 2 — the SITTING tuck LANDED under `APPROVED: POSE_TUCKED display-table adjustment` (ruling on 197): torso −25°→−14.3°→**10.03° from upright**, hip flexion/knee fold kept (kneeToChest 0.193 ≤ 0.22), arms 2-link-IK'd to the KNEECAP — hand-to-knee **24.9 mm** (was 59 mm proximity; limit ≤ 50 mm, contact), elbows in (rz 0.12), elbow interior ~40°; chain-closed by FK, max gap 0.05 mm; POSE_TUCKED_INERTIA byte-frozen. New gate `tuck-sitting.spec.js` (torso ≤ 10.5°, grasp ≤ 5 cm, ≥ 1 cm floor, chain ≤ 3 cm) with the OLD grasp as the FAILING negative control. Audit 0 physics-state diffs ×30/5408 frames, census-only recapture → golden 30/30; unit 81/81; chain+flight-sweep+tuck-coverage+inrun-contact 24/24; look 6/6 + pose-shots inspected (reads as sitting, gloves on the kneecaps). ASSET_V 78.** | entry 198. |
 | — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
 | — | Iteration 196 | **18:40-ruling slot — (0) walkoff #14 negative-control red CLEARED BY SOLO REPRODUCTION: the control fires on HEAD (double world: `phase:"stayed-down"`, hipClearance 0.119 < 0.60, lateral 0, sinceRest 12.8, gate fails; both disable sites re-audited, `R.walkoff` has one writer) — 195's red was a run-all environment artefact, not a mechanism regression; the disable-flag state is now emitted in the control's JSON for future diagnosability. (1) Corrected-band strip (|x| ≤ 0.15) ATTEMPTED and FALSIFIED in four configurations (0.15/r0.04 → seam max 1.611/37 hot; 0.12-full/r0.20 → 1.625/40; +boundary-ring gradient → 1.545/34; +reduce-group fix +midchain dominance → 1.680/93) — the strip's hard predicates inherently cut hinges the pre-repair-chain gate rejects; REVERTED to the 193 tip, hole PARKED per the 17:50 park rule (tracked cosmetic, gate stays red-and-known). No asset change, ASSET_V 78. unit 81/81, golden 30/30, walkoff 2/2 (control fires with `disabled:true,flagAtSample:true`), look 6/6, shots regenerated. #21 v3 tuck from 197 per the ruling.** | entry 196. |
 | — | Iteration 190 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected); leg-watertight re-run solo — the #26 fired negative control REPRODUCES byte-identical (front 52 px, x 674–679, y 324–338, above hip row 340); `./tests/run-all.sh` passed unit+golden+mutation+coverage but its Playwright drive leg TIMED OUT at the 1800 s harness cap mid-suite (not a product regression; drive specs green in isolation). By-eye review: boots read as a real seated boot (188's block pile gone) but mushy white-on-white with navy smudges; pink/magenta paint smears across the lower bib front and the front hip in BOTH figure framings (item 7's band/paint debt); bib digits still rotated/mirrored (item 7); thighs/hip still knobby in side view (residual #23.3, already ruled author-judge); no NEW regressions found. No source/asset/gate change; NEXT.md untouched — 5a-NEW(i) mesh-side abdomen fix stays next slot's first item.** | unit/golden/look + leg-watertight re-run on the 189 tip; shot inspection numbers in entry 190. |
@@ -12236,3 +12237,48 @@ slide/get-up.
 2. 196's open questions (weight-seam gate ordering vs projected-relax strip;
    helper-only weld authorization; #13 triple carried-red) remain queued
    behind the mandate.
+
+### 198 — #21 v3 tuck, part 2: the SITTING pose landed — torso 10.03° from upright, hands GRASPING the kneecaps at 24.9 mm (limit ≤ 50 mm), chain closed at ≤ 0.05 mm; physics byte-frozen, audit 0 state diffs, census-only recapture
+
+**What changed.** `engine/core/body-model.js` `POSE_TUCKED` (display table)
+rebuilt to the ruling on 197 under
+`APPROVED: POSE_TUCKED display-table adjustment per this ruling.`:
+torso rx −0.25 → **−0.175 (10.03° from vertical, "sitting")**; hip flexion
+and knee fold kept (thigh rx 2.8916, shin −1.1227, kneeToChest 0.193 m ≤ 0.22,
+knee flexion ~130°); **arms re-solved by 2-link IK to the kneecap** — wrist
+2.5 cm ahead of the knee point, hand-to-kneecap **24.9 mm** (was 59 mm
+proximity; ruling limit ≤ 50 mm, contact), elbow interior ~40°, elbows in
+(rz 0.20 → 0.12); head up (rx −0.30) unchanged. Built by forward kinematics
+off the torso (same construction as 186): max analytic joint gap **0.05 mm**
+on the rounded literals; `POSE_TUCKED_INERTIA` byte-untouched (computeI
+unchanged by construction, pinned by `tuck-inertia-frozen.test.js`).
+
+**New gate: `tests/drive/tuck-sitting.spec.js`** — measures the ruling's
+numbers on the LIVE character at the flight tuck endpoint: torso ≤ 10.5°
+from upright; hand-to-kneecap ≤ 5 cm both sides (with a ≥ 1 cm floor so a
+hover can't pass); chain ≤ 3 cm tear limit at the endpoint. **Negative
+control:** the previous table's grasp geometry (59 mm) FAILS the 5 cm gate.
+
+**Verification.** tuck-sitting 3/3 (torso 10.03°, grasp 24.9 mm both sides,
+negctl fires); golden audit `audit-physics-state.js`: **0 physics-state
+differences in 30 scenarios / 5408 frames**, display-node diffs in the 9
+tucked scenarios → sanctioned **census-only recapture** → golden 30/30;
+unit 81/81; chain + flight-sweep + tuck-coverage + inrun-contact 24/24
+(tuck-coverage still 0.00 mm heel lift, negctl 252 mm); look 6/6 with fresh
+shots; pose-shots regenerated — `pose_tuck_side/front.png` inspected: reads
+as sitting, knees to chest, gloves ON the kneecaps. ASSET_V stays 78 (no
+asset change).
+
+**Next.** NEXT.md 5b: #24 grounded slide + weighty get-up; then item 6
+(hands step 2) per its note about landing it with 5 if the tuck arms moved
+the ready-stance arm rig (they did not — table-only change, ready stance
+untouched).
+
+**Open questions for the reviewer.**
+1. Entry 197's Q1 stands (author repro not reproducing; sweep stays the
+   gate). 196's queued questions remain parked behind the mandate.
+2. The sitting tuck's tighter elbow fold (interior ~40°) rests the forearms
+   against the shins at the endpoint; no tear gate trips and the pose shots
+   read correctly, but if the author wants the hands re-gripped to the shin
+   (the footage grab point) instead of the kneecap, say so and the IK target
+   moves.
