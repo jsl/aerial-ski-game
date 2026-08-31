@@ -11476,6 +11476,77 @@ fragments sit between the legs' spans.
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
 
+### 192 — #26 abdomen/hip: junction weight-WELD landed (build gate 0 residual), pose-freeze gate landed, #13 triple floor nudged — but the FULL-BODY gate is STILL RED on the front hole (byte-identical 52 px)
+
+**What changed.**
+1. **Back gap (16:20 ruling item 3):** `weld_abdomen_hip_seam(low, arm)` in
+   `build_body.py` — every mesh edge whose endpoints' dominant runtime groups
+   straddle torso↔upperLeg is union-found into components (34 seam edges);
+   each component takes ONE normalised mean weight vector (sub-0.10 keys
+   dropped; the binary-strip variant hinge-cut the boundary, measured seam
+   max 1.676/69 hot, discarded). All members share identical weights → the
+   junction is C0 under pose by construction. Build HARD gate: 0 residual
+   discontinuities on the original seam (limit 0); the existing seam/locality
+   gates re-run green after it. Bind law respected: pure weight-space, rest
+   geometry untouched.
+2. **Front hole (16:20 ruling item 2):** `strip_arm_from_belly(low, joints)`
+   — reclaim_chest_wall's z band + surface test applied WITHOUT the dominance
+   requirement, laterally ramped (full strip |x| ≤ 0.06, no-op at 0.10):
+   32 front-midline verts lost their minority upperArm weight. **This did NOT
+   close the hole** — see the red below.
+3. **Pose-freeze in `leg-watertight.spec.js`** (16:20 ruling item 1,
+   APPROVED): every athlete mesh+bone transform is snapshotted and restored
+   in a LAST-registered before-render callback, so the raster always sees the
+   same posed frame — the side/back 84↔0 px flake and the false-green risk
+   are gone. Frozen front is byte-stable as before.
+4. **#13 triple nudge** (13:45 + 16:20 rulings, "non-negotiable this slot"):
+   `_worldSeedFloor` triple 7.0 → 7.5, single/double untouched. Baseline
+   finding: crash-ragdoll was already **10/10 green** at the pre-edit tip —
+   the 22:23 commit `3c2f4eb` (floor 7.0) landed AFTER 186 measured its 9.945
+   red, so the carried red had already cleared before this slot. The 7.5
+   nudge ships anyway per the ruling; triple pastRollOut to be re-measured
+   next slot (predicted ≈ 10.4 m, inside [10, 18]).
+5. `ASSET_V` 76 → 77; `assets/athlete_body.glb` + maps regenerated
+   (8998 verts, 21 bones, equipment 2).
+
+**Verification.**
+- unit **81/81**; golden **30/30** (no audit diffs — weights are display-only
+  skinning; no recapture needed).
+- Build gates all green: WINDING, watertight, ABDOMEN/HIP WELD 0 residual,
+  seam + locality after weld and after strip, bind==driver (worst element
+  diff 0.00e+00).
+- `leg-watertight` legacy leg gate: **green** front/side/back, holes 0.
+- **CARRIED RED (1): full-body watertight (#26), FRONT framing — 52 px,
+  x 674-679, y 324-338, hipRow 340: BYTE-IDENTICAL to 189/190/191.** The
+  ramped belly strip did not reach the offending vertices: 32 verts stripped
+  changed nothing in the hole region, so the front hole's weights are NOT
+  minority upperArm on the front midline belly surface — the entry-191
+  "session-23 belly-vertex class" hypothesis is falsified at that location.
+  Side/back framings are now measured frozen (deterministic); the spec stops
+  at the first framing failure so their numbers are not yet recorded.
+- chain/flight-sweep/look/crash-ragdoll on the welded skin: running at
+  entry-writing time; results land as a docs-only follow-up commit if they
+  complete after this one. Backend pre-nudge baseline: crash-ragdoll 10/10.
+
+**Open / not done.**
+1. Front hole root cause: next probe should dump the per-vertex weights AT
+   the hole's projected position (both surface sides under pose) — the strip
+   targeted the wrong vertex set. The weld (item 1) stands.
+2. Re-measure crash-ragdoll triple at floor 7.5 (band [10, 18] expected to
+   hold; single/double untouched).
+3. Record frozen side/back full-body numbers (front fix must not regress
+   them; they are now deterministic).
+
+**Open questions for the reviewer.**
+1. The 16:20 ruling ordered gate-green this slot; the front half is still
+   red with the byte-identical component. Per the carried-red policy: keep
+   the red with the probe plan above, or revert the strip (the weld alone
+   also leaves the gate red)? My read: keep — the strip is gated,
+   build-green, and the falsified hypothesis is real progress toward the
+   true cause.
+2. crash-ragdoll was already 10/10 before the nudge (see change 4). Keep
+   7.5 (ruling text) or roll back to 7.0 (the measured-green state)?
+
 ### 191 — NEXT.md 5a-NEW(i), #26 root cause SPLIT by render probe: front hole = skinned-inverted faces (culled backfaces), back hole = a real geometric gap (survives culling off); fix scoped for 192
 
 **Route.** Work slot on NEXT.md 5a-NEW(i) (the #26 mesh-side abdomen/hip fix,
