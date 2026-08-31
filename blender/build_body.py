@@ -2355,7 +2355,13 @@ def strip_arm_from_belly(body, joints):
         log('belly arm-strip SABOTAGED: pass SKIPPED')
         return
     gi = {g.name: g.index for g in body.vertex_groups}
-    arms = [gi[nm] for nm in ('upperArmL', 'upperArmR') if nm in gi]
+    # iter 193 probe (16:55 ruling): the hole-rim belly verts carry their
+    # arm weight mostly on the HELPER chain (hlpElbowR 0.52-0.72, upperArmR,
+    # hlpShoulderL) — stripping only upperArm* renormalised hlpElbowR to
+    # dominance, leaving the hole byte-identical. Strip the whole chain.
+    arms = [gi[nm] for nm in ('upperArmL', 'upperArmR',
+                              'hlpShoulderL', 'hlpShoulderR',
+                              'hlpElbowL', 'hlpElbowR') if nm in gi]
     it = gi.get('torso')
     if it is None or not arms:
         raise SystemExit('[body] belly strip: torso/upperArm groups missing')
@@ -2373,12 +2379,13 @@ def strip_arm_from_belly(body, joints):
             continue
         if v.co.z > sh.z - 0.025 or v.co.z < tc.z - half:
             continue
-        # FRONT MIDLINE BELLY only: the measured hole sits just above the
-        # hip at the front of the abdomen (front figure, x 674-679/1280).
-        # The hanging arms live at |x| ~ 0.13-0.17 — a wider net stripped
-        # 704 verts and hinge-cut the arm side wall (measured: seam gate
-        # max 1.676, 69 hot edges).
-        if abs(v.co.x) >= 0.10 or v.co.y <= 0.03:
+        # MIDLINE BELLY band: the probe-named hole-rim verts sit at
+        # v.co.y -0.22..+0.03 (the 192 front-only y > 0.03 gate SKIPPED the
+        # offending verts — why the hole stayed byte-identical). Drop the
+        # y gate; the torso z band, the |x| ramp and the surface test keep
+        # the arms' own skin out (arms live at |x| ~ 0.13-0.17; the 192
+        # binary wide net that hinge-cut 704 verts used no surface test).
+        if abs(v.co.x) >= 0.10:
             continue
         z = max(tc.z - half, min(tc.z + half, v.co.z))
         near = Vector((tc.x, tc.y, z))

@@ -283,6 +283,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 190 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected); leg-watertight re-run solo — the #26 fired negative control REPRODUCES byte-identical (front 52 px, x 674–679, y 324–338, above hip row 340); `./tests/run-all.sh` passed unit+golden+mutation+coverage but its Playwright drive leg TIMED OUT at the 1800 s harness cap mid-suite (not a product regression; drive specs green in isolation). By-eye review: boots read as a real seated boot (188's block pile gone) but mushy white-on-white with navy smudges; pink/magenta paint smears across the lower bib front and the front hip in BOTH figure framings (item 7's band/paint debt); bib digits still rotated/mirrored (item 7); thighs/hip still knobby in side view (residual #23.3, already ruled author-judge); no NEW regressions found. No source/asset/gate change; NEXT.md untouched — 5a-NEW(i) mesh-side abdomen fix stays next slot's first item.** | unit/golden/look + leg-watertight re-run on the 189 tip; shot inspection numbers in entry 190. |
+| — | Iteration 193 | **16:55-ruling slot — the ONE probe run: front hole shows BACKGROUND even with culling OFF (52/52 px) and CPU-skinned double-sided rays through all 90 hole pixels get 0 hits → TRUE GEOMETRIC GAP under pose; entry 191's culled-backface hypothesis FALSIFIED. Arm-CHAIN belly strip landed (hlpElbow/hlpShoulder added, 192's y>0.03 gate that skipped the offending verts dropped; 180 verts ramped); hole STILL byte-identical 52 px. Triple floor ROLLED BACK 7.5→7.0 (16:55 ruling); crash-ragdoll 10/10 re-verified at 7.0. ASSET_V 78. unit 81/81, golden 30/30, look 6/6. CARRIED RED: full-body watertight front 52 px. Open Qs: border-ring weld as the next single move? keep the gated strip?** | entry 193; probe log in scratch/iter-193. |
 | — | Iteration 191 | **NEXT.md 5a-NEW(i) #26 — root cause SPLIT by render probe: the FRONT hole (52 px, byte-stable across 4 runs) is SKINNING-INVERTED FACES (vanishes with `backFaceCulling=false` — degenerate/flipped triangles under pose, the session-23 belly-vertex class); the BACK hole is a REAL GEOMETRIC GAP (PERSISTS with culling off — true background visibility, so NOT winding and NOT paint; clear colour is pale sky 189/209/217 and hole pixels match it). Gate is NONDETERMINISTIC on side/back across runs (side 84→0 px, back 296-in-4-slits→324-in-1) while front is byte-stable — suspected ready-state idle sway. Mesh-side fix scoped for 192. No source/asset change, ASSET_V 76. unit 81/81, golden 30/30, look 6/6.** | probe numbers in entry 191. See entry 191. |
 | — | Iteration 189 | **NEXT.md 5a-NEW(i) #26 — FULL-BODY watertight gate LANDED and its negative control FIRES on the current build (front 52 px / side 36 px / back 334+328 px enclosed background above the hip, interior to a limb span — the abdomen/hip holes); mesh-space diagnosis: delivered mesh CLOSED (1 loop = 0.243 m daylight) and WINDING-CLEAN (0 conflicts), so the gaps are SKINNED SEPARATION at the abdomen/hip junction — mesh-side fix is next slot's first item (CARRIED RED). Also landed: `orient_consistent` winding census/repair/hard gate (0 before/after, sabotage hook) in build_body.py; no asset change, ASSET_V 76. unit 81/81, golden 30/30, legacy leg-watertight green, look 6/6.** | leg-watertight 1 green + 1 red (the fired control); probe numbers in entry 189 |
 | — | Iteration 188 | **NEXT.md item 5 COMPLETED (#16 real boots LANDED): 187's "WEIGHTS_0 sums 0..0.75" was NOT a weight defect — the boots were never in the glTF export selection (`use_selection` ships low+arm+equip only) and 187's sum readback mis-parsed VEC4 ubyte joints / float weights. `build_body.py`: boots now join `equip` (shipped), `--boots on` hard-exit gate removed, angle-limited shading (`shade_smooth_by_angle` 35°, fixes 187's "pile of lumps"), navy lightened (0.050,0.060,0.130). MEASURED on the shipped glb: athleteBootL/R 414 verts each, JOINTS_0 {11}/{12}=lowerLegL/R, WEIGHTS_0 sums exactly 1.000 on all 5 primitives. `game.js`: bootParts parented to skierRoot, skeleton-linked, alwaysSelectAsActiveMesh, excluded from the dispose sweep, revealed with the body only in alpine worlds, re-shown with the body on run reset. ASSET_V 75→76. CARRIED (pre-existing, byte-identical on clean HEAD): rig.spec hands-vs-thigh (−0.0403 m) and suit stand-off right thigh (0.1792 vs ≥0.180) reds, both pending the reviewer's open rulings. NEXT.md next: item 6 hands step 2.**
@@ -11476,6 +11477,77 @@ fragments sit between the legs' spans.
 **Open.** NEXT.md item 2 (crotch height) next; the naive-fill lesson is baked
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
+
+### 193 — 16:55 ruling slot: the ONE pixel-to-triangle probe run — front hole is a TRUE GEOMETRIC GAP under pose (no-hit with culling OFF, double-sided); 191's culled-backface hypothesis FALSIFIED; arm-chain belly strip extended (hlpElbow/hlpShoulder, y-gate dropped) — hole STILL byte-identical 52 px; triple floor rolled back 7.5 → 7.0
+
+**What changed.**
+1. **THE probe (16:55 ruling, exactly one):** new scratch instrument
+   `tests/drive/_probe193.spec.js` (deleted before commit; log in
+   `~/aerial-agents/scratch/iter-193/`): replicates the front full-body
+   framing (pose-frozen, hipRow 340 confirmed), re-renders with
+   `backFaceCulling = false` on all athleteBody meshes, re-reads the hole
+   region — **stillBg = 52/52 pixels: background even with culling OFF** —
+   then CPU-skins all three athleteBody primitives (per-vertex
+   Σw·boneFinal, calibrated against the rendered silhouette: world-applied
+   variant matches) and casts double-sided Möller–Trumbore rays through all
+   90 hole pixels: **0 hits**. Dilated 76×81-px sweep: 2761 rim hits whose
+   nearest verts (7416/7417/7046/7504, midline front, rest |x| ≤ 0.076)
+   carry **hlpElbowR 0.52–0.72, upperArmR up to 0.375, hlpShoulderL up to
+   0.20** on belly verts, with rest-position duplicates sharing identical
+   weights (so the 192 weld class is not the mover). VERDICT: the hole is
+   a real see-through GAP under pose — NOT culled backfaces (entry 191's
+   split-hypothesis front half is falsified; the 16:20 ruling's premise
+   with it).
+2. **Arm-CHAIN belly strip** (`strip_arm_from_belly`, build_body.py): the
+   192 pass stripped only `upperArm{L,R}` and its renormalisation RAISED
+   hlpElbowR to dominance (0.518+0.108 → renormalised ≈ 0.83) — one reason
+   the hole never moved. Now strips the whole arm helper chain
+   (`hlpShoulderL/R`, `hlpElbowL/R` included) and drops the 192
+   `y > 0.03` gate that SKIPPED the offending verts (probe-measured rim
+   verts sit at v.co.y −0.22..+0.03); |x| < 0.10, torso z band, surface
+   test and lateral ramp unchanged. Build: 180 verts ramped (192: 32).
+3. **#13 triple floor ROLLED BACK 7.5 → 7.0** (16:55 ruling; comment
+   rewritten to record the rollback and its reason). crash-ragdoll
+   re-run: **10/10 green** at 7.0 — the measured-green state is restored.
+4. `ASSET_V` 77 → 78 (athlete_body.glb + maps regenerated, 8998 verts).
+
+**Verification.**
+- unit **81/81**; golden **30/30** (weights are display-only skinning; no
+  physics change, no recapture); `look` **6/6**, shots regenerated;
+  figure.png inspected — no new artifacts from the strip.
+- Build gates green: ABDOMEN/HIP WELD 0 residual, seam 0/18517 edges over
+  1.0 after the weld, LOCALITY 0 far weights, WINDING 0, watertight
+  1 loop 0.243 m (designed daylight).
+- crash-ragdoll **10/10** (floor 7.0).
+- **CARRIED RED (1): full-body watertight FRONT — 52 px, x 674–679,
+  y 324–338, BYTE-IDENTICAL across 189–193.** The chain strip did not
+  close it either — consistent with the probe verdict: the gap is not
+  (only) a weight tear in the verts the strip reaches. The L-side rim
+  verts (2423–2425, rest |x| 0.165–0.172, arm minority ~0.3) sit OUTSIDE
+  the strip's |x| < 0.10 band by design (the arms' own skin lives there).
+
+**Open / next probe-adjacent step (for the reviewer to rule on).**
+1. With "skinned-inverted faces" dead, the remaining consistent cause is
+   **front-surface triangles absent or displaced under pose at that spot**:
+   next step would extend the weld/C0 principle to the hole's actual
+   border ring (find the delivered mesh's triangles whose CPU-skinned
+   projection borders the hole, weld each border ring to ONE weight
+   vector per ring), or re-examine whether a FACES_ONLY shard cut deleted
+   faces whose rim was capped in REST space but rides away under pose
+   (a capped rim between verts with divergent weights reopens as a gap).
+2. L-side verts 2423–2425 (|x| ≈ 0.17, upperArmL+hlpShoulderL ≈ 0.3 on
+   torso-band verts): are these legitimate arm skin or the same
+   corruption just outside every net so far?
+
+**Open questions for the reviewer.**
+1. The 16:20 ruling's "fix the skinning-inverted faces" premise is
+   falsified by the sanctioned probe; the carried red stands with the
+   analysis above. Keep the red on that basis, or order the border-ring
+   weld (item 1) as the next slot's single move?
+2. The strip extension (180 verts, hlpElbow/hlpShoulder, y-gate dropped)
+   ships gated and green on every seam/locality/weld gate but did not
+   move the hole — keep (it removed real corruption the probe named) or
+   revert with the floor rollback as the slot's only landing?
 
 ### 192 — #26 abdomen/hip: junction weight-WELD landed (build gate 0 residual), pose-freeze gate landed, #13 triple floor nudged — but the FULL-BODY gate is STILL RED on the front hole (byte-identical 52 px)
 

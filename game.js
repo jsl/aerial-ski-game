@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=77";   // 77: #26 abdomen/hip seam weight-weld (weld_abdomen_hip_seam in build_body.py), iter 192
+    const ASSET_V = "?v=78";   // 78: belly arm-CHAIN strip incl. hlpElbow/hlpShoulder (iter 193 probe fix)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -6700,17 +6700,14 @@ void main(void) {
             // accelerates on the steep so a small seed still reaches the
             // flat), 15 m/s ceiling (faster tumbles read cartoonish).
             // Preserve measured momentum, with a display-side floor only for
-            // the longer triple hill.  Its deterministic impact is merely
-            // 5.27 m/s (vs 5.04 double), too small a separation to reach the
-            // author's 10 m triple minimum after the rough-chop loss.  The
-            // 7.5 m/s floor makes the world tiers visibly scale while leaving
-            // single/double on their measured speeds. 7.0 measured the triple
-            // crash-slide 5.5 cm SHORT of the HT13 band's 10 m floor (entry
-            // 186); the 13:45/16:20 rulings order the nudge to 7.5 — display
-            // knob only, band untouched. The negative control retains the
-            // previous universal 3 m/s floor.
+            // the longer triple hill. The 7.5 nudge (13:45/16:20 rulings)
+            // ROLLED BACK to 7.0 per the 16:55 ruling on 192: crash-ragdoll
+            // was already 10/10 at 7.0 (commit 3c2f4eb landed after entry
+            // 186 measured its red), so the nudge's premise no longer held.
+            // Display knob only, band untouched. The negative control
+            // retains the previous universal 3 m/s floor.
             const _worldSeedFloor = R.legacySlide ? 3
-                : (_worldParam === 'triple' ? 7.5 : _worldParam === 'double' ? 4.5 : 3);
+                : (_worldParam === 'triple' ? 7.0 : _worldParam === 'double' ? 4.5 : 3);
             const _seed = Math.min(Math.max(R.impactSpeed || 0, _worldSeedFloor), 15);
             if (R.slideV.z < _seed) {
                 R.slideV.x = 0;

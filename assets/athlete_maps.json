@@ -67,7 +67,7 @@
    "png": 1246344,
    "ratio": 3.15,
    "res": 2048,
-   "web": 396030
+   "web": 396004
   },
   "athlete_ao": {
    "mean_abs": 0.0115,
@@ -80,12 +80,12 @@
   "athlete_normal": {
    "mean_deg": 1.353,
    "p95_deg": 4.009,
-   "png": 4637610,
+   "png": 4637597,
    "ratio": 8.19,
    "res": 2048,
-   "web": 566038
+   "web": 566040
   },
-  "total_web": 1101166
+  "total_web": 1101142
  },
  "faceForward": [
   -0.0066,
