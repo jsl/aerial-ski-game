@@ -287,6 +287,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
+| — | Iteration 196 | **18:40-ruling slot — (0) walkoff #14 negative-control red CLEARED BY SOLO REPRODUCTION: the control fires on HEAD (double world: `phase:"stayed-down"`, hipClearance 0.119 < 0.60, lateral 0, sinceRest 12.8, gate fails; both disable sites re-audited, `R.walkoff` has one writer) — 195's red was a run-all environment artefact, not a mechanism regression; the disable-flag state is now emitted in the control's JSON for future diagnosability. (1) Corrected-band strip (|x| ≤ 0.15) ATTEMPTED and FALSIFIED in four configurations (0.15/r0.04 → seam max 1.611/37 hot; 0.12-full/r0.20 → 1.625/40; +boundary-ring gradient → 1.545/34; +reduce-group fix +midchain dominance → 1.680/93) — the strip's hard predicates inherently cut hinges the pre-repair-chain gate rejects; REVERTED to the 193 tip, hole PARKED per the 17:50 park rule (tracked cosmetic, gate stays red-and-known). No asset change, ASSET_V 78. unit 81/81, golden 30/30, walkoff 2/2 (control fires with `disabled:true,flagAtSample:true`), look 6/6, shots regenerated. #21 v3 tuck from 197 per the ruling.** | entry 196. |
 | — | Iteration 190 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected); leg-watertight re-run solo — the #26 fired negative control REPRODUCES byte-identical (front 52 px, x 674–679, y 324–338, above hip row 340); `./tests/run-all.sh` passed unit+golden+mutation+coverage but its Playwright drive leg TIMED OUT at the 1800 s harness cap mid-suite (not a product regression; drive specs green in isolation). By-eye review: boots read as a real seated boot (188's block pile gone) but mushy white-on-white with navy smudges; pink/magenta paint smears across the lower bib front and the front hip in BOTH figure framings (item 7's band/paint debt); bib digits still rotated/mirrored (item 7); thighs/hip still knobby in side view (residual #23.3, already ruled author-judge); no NEW regressions found. No source/asset/gate change; NEXT.md untouched — 5a-NEW(i) mesh-side abdomen fix stays next slot's first item.** | unit/golden/look + leg-watertight re-run on the 189 tip; shot inspection numbers in entry 190. |
 | — | Iteration 193 | **16:55-ruling slot — the ONE probe run: front hole shows BACKGROUND even with culling OFF (52/52 px) and CPU-skinned double-sided rays through all 90 hole pixels get 0 hits → TRUE GEOMETRIC GAP under pose; entry 191's culled-backface hypothesis FALSIFIED. Arm-CHAIN belly strip landed (hlpElbow/hlpShoulder added, 192's y>0.03 gate that skipped the offending verts dropped; 180 verts ramped); hole STILL byte-identical 52 px. Triple floor ROLLED BACK 7.5→7.0 (16:55 ruling); crash-ragdoll 10/10 re-verified at 7.0. ASSET_V 78. unit 81/81, golden 30/30, look 6/6. CARRIED RED: full-body watertight front 52 px. Open Qs: border-ring weld as the next single move? keep the gated strip?** | entry 193; probe log in scratch/iter-193. |
 | — | Iteration 191 | **NEXT.md 5a-NEW(i) #26 — root cause SPLIT by render probe: the FRONT hole (52 px, byte-stable across 4 runs) is SKINNING-INVERTED FACES (vanishes with `backFaceCulling=false` — degenerate/flipped triangles under pose, the session-23 belly-vertex class); the BACK hole is a REAL GEOMETRIC GAP (PERSISTS with culling off — true background visibility, so NOT winding and NOT paint; clear colour is pale sky 189/209/217 and hole pixels match it). Gate is NONDETERMINISTIC on side/back across runs (side 84→0 px, back 296-in-4-slits→324-in-1) while front is byte-stable — suspected ready-state idle sway. Mesh-side fix scoped for 192. No source/asset change, ASSET_V 76. unit 81/81, golden 30/30, look 6/6.** | probe numbers in entry 191. See entry 191. |
@@ -11483,6 +11484,76 @@ fragments sit between the legs' spans.
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
 
+
+### 196 — 18:40-ruling slot: walkoff #14 negative-control red CLEARED by solo reproduction (control fires, `phase:"stayed-down"` — 195's red was an environment artefact) + disable-flag telemetry added; corrected-band strip ATTEMPTED and FALSIFIED in four configurations, REVERTED; 52-px hole PARKED per the 17:50 park rule
+
+**Order executed (per the 18:40 ruling on 195).**
+
+**(0) Walkoff #14 negative-control red.** Solo reproduction on HEAD
+(`npx playwright test ... walkoff`): **2/2 passed, control fires.**
+Emitted numbers: `{"world":"double","phase":"stayed-down","sinceRest":12.82,
+"lateral":0,"hipClearance":0.1194,"finalSpeed":0,"minBootClearance":0.1834,
+"netCrossed":false,"skiDrift":0,"samples":127}` — the gate correctly REJECTS
+the stay-down ending. Mechanism audit: both disable sites
+(`_crashWalkoffInit` game.js:6993, `_crashWalkoffStep` game.js:7028) check
+`window._crashWalkoffDisabled` before anything runs, `R.walkoff` has exactly
+one writer, and the spec sets the flag (awaited) before any run input. There
+is no code path on HEAD where the walkoff can start under the flag. Verdict:
+195's red was a full-suite environment artefact (the same class as 180's
+port-8099 collision), NOT the triple-floor rollback or the tuck-era changes.
+Landed: the control's emitted JSON now includes `disabled` and
+`flagAtSample` (tests/drive/walkoff.spec.js) so a future flake of this class
+is diagnosable from the log alone. Gate contract unchanged.
+
+**(1) Corrected-band strip (17:50 ruling, |x| ≤ 0.15).** Attempted; the
+`weight-seam gate` (which runs after the strip but BEFORE the downstream
+`smooth_blend_rings` repair chain) falsified every configuration:
+
+| config | seam max | hot edges (limit 6) |
+|---|---|---|
+| 193 tip (0.06 full / r 0.10) — baseline | ≤ 1.1 | 0 |
+| 0.15 full / r 0.19 (rim-covered) | 1.611 | 37 |
+| 0.12 full / r 0.20 (wide ramp) | 1.625 | 40 |
+| + boundary-ring gradient pass | 1.545 | 34 |
+| + `reduce`-group renorm fix + midchain dominance | 1.680 | 93 |
+
+En-route findings recorded for the eventual fix: (a) the renormalisation
+must NOT rescale the decimation helper group `reduce` — scaling it shifts
+every stripped vert's weights and the seam metric reads the shift as a
+hinge; (b) outside the old 0.10 band the widened region catches head/neck
+skin carrying minority arm weight (head|spine_02 hot pairs at |x| ~ 0.12);
+(c) the residual hot pairs sit ACROSS the surface-test boundary
+(`reduce|upperArmL`, `spine_02|upperArmL` at |x| 0.09–0.14), so a one-ring
+gradient pass is not enough — the strip needs the repair chain's
+projected-relax treatment applied inline, which is a bigger change than the
+one-slot budget allows after (0).
+
+**Disposition: REVERTED to the 193 tip** (`git checkout --
+blender/build_body.py assets/`; stray bake PNGs swept). Per the 17:50/18:40
+park rule the 52-px front hole is **PARKED as a tracked cosmetic** —
+full-body watertight gate stays red-and-known; the helper-weld fallback was
+NOT attempted (budget spent on the four strip configurations above).
+
+**Verification (final tree).** unit 81/81; golden 30/30 (no physics or asset
+change, ASSET_V stays 78); walkoff 2/2 re-run with the new telemetry
+(`disabled:true, flagAtSample:true, phase:"stayed-down"`, gate fails);
+look 6/6, shots regenerated (scene/figure/figure_front timestamps fresh).
+
+**Open questions for the reviewer.**
+1. The strip's falsifications show the mechanism cannot pass the
+   pre-repair-chain seam gate with any band that covers the rim. Options for
+   a future slot: (a) move the weight-seam gate AFTER the
+   `smooth_blend_rings` chain for this pass (gate semantics change — needs
+   your approval), or (b) run the strip on `low` inline with a projected
+   relax-then-ramp loop (the smooth_blend_rings mechanism, ~1 slot). Or keep
+   the hole parked permanently as cosmetic — by-eye it is a 6×15 px patch in
+   two framings only.
+2. 194's open questions (helper-only weld authorization; crash-ragdoll #13
+   triple carried-red keep/revert) remain unanswered and now queue behind the
+   mandate (5b → 6 → 7 → 8).
+
+**Next.** #21 v3 TUCK from 197 per the 18:40 ruling (heel-lift coverage-gap
+sweep + "sitting" pose), then 5b #24 grounded slide/get-up.
 
 ### 195 — REVIEW-ONLY slot: full suite run + shot inspection — run-all RED on the walkoff #14 negative control (gate PASSES on the stay-down path it must fail on: 107 passed, 1 failed, 2 skipped, 45.1 m drive leg); unit 81/81, golden 30/30, look 6/6; shots inspected + measured
 

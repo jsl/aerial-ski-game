@@ -129,8 +129,13 @@ async function measureWalkoff(page, world, disabled) {
             return Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
         });
         const probe = window._walkoffProbe ? window._walkoffProbe() : null;
+        // iter 196: the disable-flag state is recorded so a future flake in
+        // the negative control (walkoff running despite the flag) is
+        // diagnosable from the emitted JSON alone.
+        const disabled = !!window._crashWalkoffDisabled;
         return {
-            world: new URLSearchParams(location.search).get('world'),
+            disabled,
+            flagAtSample: !!window._crashWalkoffDisabled,
             phase: probe ? probe.phase : 'stayed-down',
             sinceRest: probe ? probe.sinceRest : (performance.now() - W.start) / 1000,
             lateral: Math.abs(root.x),
