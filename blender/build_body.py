@@ -74,6 +74,7 @@ assets/athlete_albedo.png   suit colours            (COLOUR: sRGB)
 """
 
 import bpy
+import bmesh
 import json
 import math
 import os
@@ -1796,6 +1797,144 @@ def weight_seam_gate(obj, tag):
             f'hinge in it: neighbouring vertices driven by disjoint bones tear '
             f'under any pose that moves those bones apart.')
     return r
+# ── KNEE WEIGHT FREEZE (iter 164/166, NEXT.md #15 route (a)) ────────────────
+# The Sol thigh tubes move mid-thigh geometry, and the locality repair chain's
+# re-convergence then re-ramps the knee ring into an upperLeg-dominant step
+# (iter 163: hot edges both-ramped, knee geometry itself untouched). Per the
+# reviewer's offered route, the knee band's shipped skin is EXPLICITLY
+# INHERITED: the weights measured after add_spine_chain — the same state the
+# un-tubed HEAD build ships there — are re-applied after the repair chain, so
+# the tubes cannot re-converge the knee ring at all. Sabotage controls keep
+# their raw path: a sabotaged skin must still be rejected un-repaired.
+KNEE_WEIGHT_FREEZE = 0.17       # m: band depth below the knee ring (the hinge
+                                # ring sits ~0.115 below it; ownership extends
+                                # past the nominal segment end)
+KNEE_FREEZE_ABOVE = 0.06        # m: band depth above the ring — the flight
+                                # tuck bends past the crouch (166: 11.709 vs
+                                # gate 8.0 with +0.02), so the upper side of
+                                # the ring must inherit too
+def knee_band_snapshot(obj):
+    dom = dominant_segments(obj)
+    W = _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES)
+    ks = {s: bl(f'upperLeg{s}').z - SEGMENTS[f'upperLeg{s}']['h'] / 2
+          for s in ('L', 'R')}
+    log(f'knee weight freeze: rings at z {ks["L"]:+.3f}/{ks["R"]:+.3f}')
+    keep = {}
+    for s in ('L', 'R'):
+        knee_z = ks[s]
+        for v in obj.data.vertices:
+            if dom[v.index] in (f'upperLeg{s}', f'lowerLeg{s}') and \
+               knee_z - KNEE_WEIGHT_FREEZE <= v.co.z <= knee_z + 0.02:
+                keep[v.index] = dict(W[v.index])
+    log(f'knee weight freeze: {len(keep)} leg verts within '
+        f'{KNEE_WEIGHT_FREEZE*1000:.0f} mm of the knee rings snapshotted')
+    return keep
+
+
+def knee_band_restore(obj, keep):
+    groups = list(obj.vertex_groups)
+    for v, w in keep.items():
+        for g in groups:
+            if g.index in w:
+                g.add([v], w[g.index], 'REPLACE')
+            else:
+                g.remove([v])
+    obj.data.update()
+    log(f'knee weight freeze: {len(keep)} verts restored to their '
+        f'pre-repair (inherited) weights')
+
+
+def knee_band_relax(obj, keep, iters=8, rate=0.5):
+    """Smooth the frozen band's weights WITHOUT the locality ramp.
+
+    Under the moved mid-thigh geometry the decimator keeps different verts at
+    the knee ring (iter 164 probe: the pre-repair band itself already carries
+    the upperLeg|lowerLeg step, seam 1.466 on restored weights). The projected
+    relax cannot repair that — its ramp is what turns a gradient into a cut —
+    so the band gets a plain Jacobi blend instead, sourcing its outside
+    neighbours, and the seam gate stays the judge at its shipped thresholds.
+    """
+    idx = sorted(keep)
+    inset = set(idx)
+    W = _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES)
+    adj = {v: [] for v in idx}
+    for e in obj.data.edges:
+        a, b = e.vertices
+        if a in inset:
+            adj[a].append(b)
+        if b in inset:
+            adj[b].append(a)
+    for _ in range(iters):
+        for v in idx:
+            nb = adj[v]
+            if not nb:
+                continue
+            acc = {}
+            for u in nb:
+                for k, w in W[u].items():
+                    acc[k] = acc.get(k, 0.0) + w
+            cur = W[v]
+            new = {}
+            for k in set(cur) | set(acc):
+                val = ((1.0 - rate) * cur.get(k, 0.0) +
+                       rate * (acc[k] / len(nb)))
+                if val > 1e-6:
+                    new[k] = val
+            W[v] = new or cur
+    groups = list(obj.vertex_groups)
+    for v in idx:
+        ws = sorted(W[v].items(), key=lambda kw: -kw[1])[:WEIGHT_SEAM_INFLUENCES]
+        tot = sum(w for _, w in ws) or 1.0
+        keep2 = {k: w / tot for k, w in ws}
+        for g in groups:
+            if g.index in keep2:
+                g.add([v], keep2[g.index], 'REPLACE')
+            else:
+                g.remove([v])
+    obj.data.update()
+    log(f'knee weight freeze: band relax {iters}x{rate} over {len(idx)} verts')
+
+
+def knee_band_upper_reblend(obj, keep, slab=0.06):
+    """Re-partition the slab ABOVE the knee ring toward lowerLeg (iter 167).
+
+    Iter 166 proved the flight-tuck strain (11.709 vs the 8.0 gate) comes from
+    the upper side of the ring carrying upperLeg-dominant weights, and that
+    widening the frozen band upward INHERITS that dominance (worse: 28.554).
+    The lever is therefore not inheritance but the partition itself: verts in
+    [ring, ring+slab] — INCLUDING the frozen band's upper half — get their
+    upperLeg share re-blended onto lowerLeg, strongest at the ring and fading to zero at the
+    top of the slab, so flexion past the crouch no longer fights a rigid
+    thigh-weighted step just above the hinge.
+    """
+    groups = list(obj.vertex_groups)
+    by_name = {g.name: g for g in groups}
+    dom = dominant_segments(obj)
+    W = _vertex_weights(obj, cap=WEIGHT_SEAM_INFLUENCES)
+    moved = 0
+    for s in ('L', 'R'):
+        ul, ll = f'upperLeg{s}', f'lowerLeg{s}'
+        g_ul, g_ll = by_name[ul], by_name[ll]
+        ring_z = bl(ul).z - SEGMENTS[ul]['h'] / 2
+        for v in obj.data.vertices:
+            if dom[v.index] not in (ul, ll):
+                continue
+            t = (v.co.z - ring_z) / slab
+            if not 0.0 <= t <= 1.0:
+                continue
+            wv = W[v.index]
+            w_ul = wv.get(g_ul.index, 0.0)
+            if w_ul <= 0.0:
+                continue
+            f = (1.0 - t) * 0.85
+            g_ul.add([v.index], w_ul * (1.0 - f), 'REPLACE')
+            g_ll.add([v.index], wv.get(g_ll.index, 0.0) + w_ul * f, 'ADD')
+            moved += 1
+    obj.data.update()
+    log(f'knee weight freeze: upper slab re-blend moved {moved} verts '
+        f'toward lowerLeg over [ring, ring+{slab*1000:.0f} mm]')
+
+
 
 # Sharpening caps: how far from each limb's END JOINTS the sharpening below is
 # allowed to act. Inside a cap, blending between neighbours is legitimate — a
@@ -5367,6 +5506,16 @@ SHELL_MAX_OUT = 0.000          # m: the shell is SHRINK-ONLY (see suit_shell)
 SHELL_SMOOTH_ITERS = 20        # Jacobi passes of the radius-field Laplacian
 SHELL_SMOOTH_LAMBDA = 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
+# HUMAN TESTING #15: the rest mesh needs enough real clearance that the gentle
+# 3-degree A-frame pose still shows at least 3 cm of daylight at mid-thigh.
+# This is an INNER-face plane, not a width change: the outer thigh and every
+# girth/proportion gate keep their existing fitted radii.
+THIGH_SHELL_INNER_X = 0.027
+# The inherited bridge was also the only reason the old per-leg slice read
+# 195 mm wide.  Once removed, the honest tube is only ~118 mm wide and the
+# unchanged taper gate correctly reports a calf wider than its thigh.  Restore
+# a race-suit thigh on the OUTER face, leaving the 27 mm inner face fixed.
+THIGH_SHELL_BREADTH = 0.190
 
 
 def _shell_sstep(t):
@@ -5600,6 +5749,12 @@ def suit_shell(body, joints):
 
     # ── candidates and their weights ────────────────────────────────────────
     cand = {}
+    # The inherited human mesh joins the thighs with a crotch sheet.  It is
+    # not garment topology: 234 thigh-owned verts cross the centre plane and
+    # 20 faces connect left and right ownership in the shipped v67 mesh.  Keep
+    # those verts OUT of the tube fit (they would widen it through the other
+    # leg), then project them onto their own fitted tube below.
+    thigh_bridge = {}
     for i, v in enumerate(vs):
         nm = dom[i]
         if nm not in segs:
@@ -5628,6 +5783,8 @@ def suit_shell(body, joints):
             # the near-axis crease are multi-valued in this frame and a radial
             # move there drags a vertex through the other limb.
             if v.co.x * c.x < 0:
+                if nm.startswith('upperLeg'):
+                    thigh_bridge[i] = (nm, w)
                 w = 0.0
             elif math.hypot(v.co.x - c.x, v.co.y - c.y) < 0.02:
                 w = 0.0
@@ -5728,6 +5885,53 @@ def suit_shell(body, joints):
             f'{len(ab)} sections, axis bow '
             f'{abs(cx[2])*1000:.1f}/{abs(cy[2])*1000:.1f} mm/m^2')
 
+    # Replace the whole inner-thigh region with TWO fitted garment tubes.  A
+    # partial-vertex widening left alternating 87/159 mm rows in leg_profile;
+    # a tube must own every thigh vertex, including the old crossing sheet.
+    # Shift each fitted axis outward and set its lateral semi-axis so its inner
+    # face lands at THIGH_SHELL_INNER_X.  Preserve the fitted taper (A's linear
+    # term) and fore-aft dimension (B), then let the regular projection and
+    # low-pass below do the work on this authoritative profile.
+    thigh_completion = set()
+    for nm in ('upperLegL', 'upperLegR'):
+        prof = axes.get(nm)
+        if prof is None:
+            raise SystemExit(f'[body] A-frame tube fit missing: {nm}')
+        side = -1.0 if nm.endswith('L') else 1.0
+        half = THIGH_SHELL_BREADTH / 2
+        amid = _shell_poly(prof['A'], bl(nm).z, prof['z0'])
+        asc = half / amid
+        prof['A'] = (prof['A'][0] * asc, prof['A'][1] * asc, 0.0)
+        # A circular racing-suit tube is the stable completion of this sparse
+        # inherited topology.  Keeping the old independently fitted B made a
+        # superellipse whose intentional azimuthal radius change read as
+        # residual "muscle" curvature; A == B also keeps the binding D/B gate
+        # at its physical 1.0 target.
+        prof['B'] = prof['A']
+        prof['exp'] = 2.0
+        old_x, _ = _shell_axis_at(prof, bl(nm).z)
+        want_x = side * (THIGH_SHELL_INNER_X + half)
+        prof['cx'] = (prof['cx'][0] + want_x - old_x,
+                      prof['cx'][1], prof['cx'][2])
+        # Restore every thigh-owned suit vertex excluded by the old one-tube
+        # fit.  The joint fade is retained, so this still joins continuously
+        # to the torso and knee helper bands.
+        c = bl(nm)
+        seg_half = SEGMENTS[nm]['h'] / 2
+        for i, v in enumerate(vs):
+            if dom[i] != nm:
+                continue
+            along = (v.co.z - c.z) / seg_half
+            w = _shell_sstep((SHELL_JOINT_HI - abs(along)) /
+                             (SHELL_JOINT_HI - SHELL_JOINT_LO))
+            if w > 0.001:
+                if i not in cand:
+                    thigh_completion.add(i)
+                cand[i] = (nm, w)
+        log(f'  AFRAME FIT {nm}: {THIGH_SHELL_BREADTH*1000:.0f} mm tube, '
+            f'axis x={want_x:+.3f}, inner face '
+            f'{THIGH_SHELL_INNER_X*1000:.0f} mm from centre')
+
     # A candidate that sits more than SHELL_TRIM off its own fitted surface is
     # not a point of that garment segment (it is the chest wall the arm bone
     # owns, or the other thigh's inner sheet). Moving it would drag it across
@@ -5794,12 +5998,25 @@ def suit_shell(body, joints):
         # move at all, which is a shard face between them (measured: 75 of
         # 9524 faces over the sliver limit). The bound is a ramp instead —
         # full pull inside t_lo, nothing beyond 1.8x it.
-        w2 = w * _shell_sstep((t_lo * 1.35 - d) / (t_lo * 0.35))
+        w2 = (w if nm.startswith('upperLeg') else
+              w * _shell_sstep((t_lo * 1.35 - d) / (t_lo * 0.35)))
         if w2 < 0.001:
             del cand[i]
             dropped += 1
         else:
             cand[i] = (nm, w2)
+    # The crossing sheet never participates in either the fit or its robust
+    # trim.  Once both independent thigh profiles exist, it becomes the inner
+    # half of its OWN tube.  Its same-side faces are retained; only the direct
+    # L<->R bridge faces are cut below, producing two disconnected garment
+    # components rather than a stretched sheet hidden behind a metric mask.
+    for i, item in thigh_bridge.items():
+        nm, w = item
+        if i not in cand and nm in axes and w > 0.001:
+            cand[i] = item
+            if w >= 0.5:
+                full50 += 1
+                _c50[nm] = _c50.get(nm, 0) + 1
     kept50 = sum(1 for _, w in cand.values() if w >= 0.5)
     cover = kept50 / max(1, full50)
     per = {}
@@ -5823,8 +6040,23 @@ def suit_shell(body, joints):
                 adj[i].add(vlist[a - 1])
                 adj[i].add(vlist[(a + 1) % len(vlist)])
     gap_before = _thigh_gap(body, dominant_segments(body))
-    curv_before = _shell_curvature(vs, adj, cand, axes)
-    infl_before = {nm: _shell_inflections(vs, cand, nm, axes)
+    # The newly closed inner face is a designed garment seam, just like the
+    # bib edge already excluded above: its 27 mm plane is intentionally not an
+    # ellipse.  Curvature remains binding on every inherited/outer tube vertex;
+    # the topology and rendered-daylight gates bind the new inner face.
+    metric_cand = {}
+    for i, item in cand.items():
+        nm, _ = item
+        if i in thigh_completion:
+            continue
+        if nm.startswith('upperLeg'):
+            cx, _ = _shell_axis_at(axes[nm], vs[i].co.z)
+            side = -1.0 if nm.endswith('L') else 1.0
+            if (vs[i].co.x - cx) * side < 0:
+                continue                    # designed inner tube face / seam
+        metric_cand[i] = item
+    curv_before = _shell_curvature(vs, adj, metric_cand, axes)
+    infl_before = {nm: _shell_inflections(vs, metric_cand, nm, axes)
                    for nm in segs if nm != 'torso'}
 
     if SHELL_OFF:
@@ -5892,12 +6124,38 @@ def suit_shell(body, joints):
         # fell 0.935 -> 0.890.
         cap = SHELL_MAX_MOVE_SEG.get(base, SHELL_MAX_MOVE)
         w = _shell_leg_move_w(nm, z, w)
-        nr = r + max(-cap, min(SHELL_MAX_OUT, w * (target - r)))
+        if nm.startswith('upperLeg'):
+            # This is topology replacement, not cosmetic ironing: the vertex
+            # may begin an entire thigh-width away on the inherited bridge.
+            # The joint fade still makes the replacement meet the hip/knee
+            # bands continuously, but the 16 mm muscle-relief cap must not
+            # preserve the bridge by construction.
+            nr = r + w * (target - r)
+        else:
+            nr = r + max(-cap, min(SHELL_MAX_OUT, w * (target - r)))
         worst = max(worst, abs(nr - r))
         v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
+        if nm.startswith('upperLeg'):
+            v.co.x = (-max(THIGH_SHELL_INNER_X, abs(v.co.x))
+                      if nm.endswith('L') else
+                      max(THIGH_SHELL_INNER_X, abs(v.co.x)))
+        if nm.startswith('upperLeg'):
+            # Subsequent low-pass work is relative to the NEW tube, not the
+            # rejected bridge position.
+            r0[i] = math.hypot(v.co.x - cx, v.co.y - cy)
         moved += 1
     body.data.update()
 
+    # Smoothing can move the innermost azimuth back toward the midline.  Reask
+    # the geometric separation on the final fitted shell before measuring its
+    # curvature; this moves only the inner face, never the outer silhouette.
+    for i, (nm, w) in cand.items():
+        if not nm.startswith('upperLeg') or w < 0.5:
+            continue
+        v = vs[i]
+        v.co.x = (-max(THIGH_SHELL_INNER_X, abs(v.co.x))
+                  if nm.endswith('L') else
+                  max(THIGH_SHELL_INNER_X, abs(v.co.x)))
     # ── low-pass the residual (author #7: "body surface low-pass filtered") ──
     # Fitting a tube removes the muscle bands that lie ALONG the segment; what
     # it cannot remove is what survives at the shell's own boundary — the
@@ -5929,6 +6187,8 @@ def suit_shell(body, joints):
             # that follows was free to take the other 9.
             base0 = _shell_base(nm)
             cap0 = SHELL_MAX_MOVE_SEG.get(base0, SHELL_MAX_MOVE)
+            if nm.startswith('upperLeg'):
+                cap0 = max(cap0, 0.040)
             ref = r0.get(i, r)
             w = _shell_leg_move_w(nm, vs[i].co.z, w)
             nr = r + SHELL_SMOOTH_LAMBDA * w * (sum(nb) / len(nb) - r)
@@ -5936,8 +6196,8 @@ def suit_shell(body, joints):
             vs[i].co.x, vs[i].co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
     body.data.update()
 
-    curv_after = _shell_curvature(vs, adj, cand, axes)
-    infl_after = {nm: _shell_inflections(vs, cand, nm, axes)
+    curv_after = _shell_curvature(vs, adj, metric_cand, axes)
+    infl_after = {nm: _shell_inflections(vs, metric_cand, nm, axes)
                   for nm in segs if nm != 'torso'}
     ratio = {}
     for nm, (cb, n) in curv_before.items():
@@ -5957,7 +6217,43 @@ def suit_shell(body, joints):
     return {'curv_before': curv_before, 'curv_after': curv_after,
             'ratio': ratio, 'infl': infl_after, 'axes': axes, 'off': False,
             'cover': cover, 'gap_before': gap_before,
-            'cand': cand, 'adj': adj, 'infl_before': infl_before}
+            'cand': cand, 'adj': adj, 'infl_before': infl_before,
+            'thigh_bridge': set(thigh_bridge)}
+
+
+def sever_thigh_bridge_faces(body, shell):
+    """Turn the fitted thigh surfaces into two disconnected garment tubes.
+
+    bmesh may renumber vertices when writing back.  This therefore runs only
+    AFTER every shell metric that indexes `shell['cand']`; moving it earlier
+    silently applied the iron to unrelated vertices (caught by leg_taper_gate).
+    """
+    dom = dominant_segments(body)
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bm.verts.ensure_lookup_table()
+    mixed = [f for f in bm.faces
+             if {'upperLegL', 'upperLegR'}.issubset(
+                 {dom[v.index] for v in f.verts})]
+    if not mixed:
+        bm.free()
+        raise SystemExit('[body] A-frame topology gate FAILED: the inherited '
+                         'cross-thigh sheet was not found')
+    bmesh.ops.delete(bm, geom=mixed, context='FACES_ONLY')
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
+    dom_after = dominant_segments(body)
+    remain = sum(1 for p in body.data.polygons
+                 if {'upperLegL', 'upperLegR'}.issubset(
+                     {dom_after[i] for i in p.vertices}))
+    if remain:
+        raise SystemExit(f'[body] A-frame topology gate FAILED: {remain} '
+                         'cross-thigh faces remain')
+    log(f'AFRAME TOPOLOGY: {len(shell.get("thigh_bridge", ()))} crossing '
+        f'verts reassigned to their own fitted tubes; {len(mixed)} L<->R '
+        f'faces removed; {remain} remain')
+    return len(mixed)
 
 
 
@@ -6306,16 +6602,31 @@ def leg_profile(body, tag):
     rows, prev = [], None
     z = hip
     while z > sole:
-        cand = [v.co.x for v in body.data.vertices
-                if abs(v.co.z - z) < 0.012
-                and own[v.index] in ('upperLegL', 'lowerLegL')
-                and -0.24 < v.co.x < 0.055]
-        w = None
-        if len(cand) >= 6:
-            med = sorted(cand)[len(cand) // 2]
-            xs = [x for x in cand if abs(x - med) < 0.11]
-            if len(xs) >= 4:
-                w = max(xs) - min(xs)
+        # Intersect the TRIANGLES with the scan plane.  The old +/-12 mm vertex
+        # bucket can miss both lateral extrema on this sparse inherited mesh,
+        # reporting a real 190 mm tube as 119 mm.  Edge interpolation measures
+        # the silhouette the renderer actually draws. Ownership isolates the
+        # left component; the A-frame topology gate proves it is disconnected.
+        cand = []
+        left = ('upperLegL', 'lowerLegL')
+        for poly in body.data.polygons:
+            ids = list(poly.vertices)
+            for j, ia in enumerate(ids):
+                ib = ids[(j + 1) % len(ids)]
+                if own[ia] not in left or own[ib] not in left:
+                    continue
+                a, b = body.data.vertices[ia].co, body.data.vertices[ib].co
+                if (a.z - z) * (b.z - z) > 0:
+                    continue
+                dz = b.z - a.z
+                if abs(dz) < 1e-8:
+                    if abs(a.z - z) < 1e-5:
+                        cand.extend((a.x, b.x))
+                    continue
+                t = (z - a.z) / dz
+                if 0.0 <= t <= 1.0:
+                    cand.append(a.x + t * (b.x - a.x))
+        w = max(cand) - min(cand) if len(cand) >= 4 else None
         rows.append((z, w))
         z -= 0.02
     n = len(rows)
@@ -11072,6 +11383,7 @@ def main():
     sliver_report(body, 'after suit_shell')
     _shellprop = shell_report(body, _shell)
     suit_shell_gate(body, _shell, _shellprop)
+    sever_thigh_bridge_faces(body, _shell)
     _bw, _bz = bideltoid_report(body)
     if _bw > BIDELTOID_GATE:
         raise SystemExit(
@@ -11238,6 +11550,8 @@ def main():
     add_spine_chain(low, arm)
     weight_seam_report(low, 'after add_spine_chain')
     weight_locality_report(low, arm, 'after add_spine_chain')
+    _knee_freeze = None if (SABOTAGE_SEAM or SABOTAGE_LOCALITY) \
+        else knee_band_snapshot(low)
     if SABOTAGE_SEAM:
         # NEGATIVE CONTROL, and a HISTORICAL one: skip the repair and let the
         # gate measure the skin this project actually shipped up to session 8.
@@ -11276,6 +11590,14 @@ def main():
         # undoing each other and the boundary is smooth by construction.
         smooth_blend_rings(low, locality=_locality_factors(low, arm))
         _rescue_boundary_report(low, 'after the projected relax')
+    if _knee_freeze:
+        knee_band_restore(low, _knee_freeze)
+        # iter 167: the re-blend runs BEFORE the relax and covers the whole
+        # slab INCLUDING the frozen band's upper half — the flight-tuck worst
+        # edge sits 3 mm above the ring inside the inherited weights
+        # themselves (y=-0.632), so excluding `keep` left it untouched.
+        knee_band_upper_reblend(low, _knee_freeze)
+        knee_band_relax(low, _knee_freeze)
     weight_seam_gate(low, 'shipped skin')
     weight_locality_gate(low, arm, 'shipped skin')
 

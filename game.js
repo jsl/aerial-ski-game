@@ -2393,11 +2393,11 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=67";   // 67: NEXT.md step 2 — shell curvature gates extended to upper arms/thighs (chest-wall + fit exclusions, smoothing 20 iters); thigh iron freed to 16 mm per the garment thigh_depth ruling; assets re-baked
+    const ASSET_V = "?v=68";   // 68: NEXT.md step 1 — knee-band upper slab re-blend — athlete assets re-baked
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
-    // washed the scene out the first time a bake was wired in); a multiplier
+
     // can only ever scale down something that is already there.
     //
     //   terrain_skyvis.png   how much of the sky each point can actually see.

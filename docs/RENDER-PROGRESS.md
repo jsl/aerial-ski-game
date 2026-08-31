@@ -260,6 +260,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; the relaunched full run-all LANDED ALL GREEN (drive 136 passed / 3 skipped — the parked aframe.spec; 41.8 m). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: drive FAIL-to-start (stale :8099 server, killed); leg 2 on the freed port: ALL GREEN, drive 136/3. Shots regenerated + inspected. See entry 165. |
+| — | Iteration 167 | **NEXT.md step 1 LANDED: the knee-band upper slab (ring..+60 mm, INCLUDING the frozen band's upper half) re-blended toward lowerLeg after the freeze — flight-tuck knee strain 11.709 → 4.174, in-run crouch 2.65 (gate ≤ 8.0, both GREEN, p999 4.02/2.40); unit 81/81, golden 30/30, spine 4/4, chain green, look 6/6; the two PRE-EXISTING rig reds stand byte-identical (open questions 1/3, pending reviewer rulings); ASSET_V 68.** | 2 Blender builds 38 s each, all build gates green (89 verts re-blended, seam/locality gates green); spine+rig+chain 35 passed / 2 pre-existing reds; shots regenerated. See entry 167. |
 | — | Iteration 166 | **NEXT.md #15 combined slice ADVANCED, not landed (164's disposition repeated, now with the missing data): 164's scratch patch RE-APPLIED to the merged tip + the knee-band freeze/relax PORTED onto it (164's preserved full script was stale vs HEAD — the port is the new artefact); build ALL build-gates green in 38 s; drive 34/3 with the SAME three reds; the 164's-unknown flight-tuck number CAPTURED: 11.709 vs gate 8.0; NEW experiment — widening the freeze band upward (+0.02 → +0.06) makes flexion WORSE (flight tuck 28.554, crouch 7.447) ⇒ the upper band's upperLeg-dominant weights are the strain source, the +0.02 band is the right one. Tree honestly REVERTED (red drive suite never ships); patch + ported script + both build logs + numbers preserved in scratch/iter-166. NEXT.md retained.** | build2 exit 0 (AFRAME TOPOLOGY 156 verts/11 faces/0 remain, gap +54.0 mm, arm/thigh 0.522, SHELLCURV ≤ 0.324, seam relax 8×0.5 over 413 verts); unit 81/81, golden 30/30 on the new assets; spine+rig+chain 34 passed / 3 failed (hands −56.6 mm class, stand-off 0.1891 vs 0.201, flight-tuck knee 11.709); tree byte-clean vs HEAD after revert. See entry 166. |
 | — | Iteration 164 | **NEXT.md #15 thigh-tube RE-APPLIED (reference `sol/aframe-wip` 73220fc, per the 23:20 ruling) + a NEW knee-band freeze/relax that takes the weight-seam gate green for the first time on the tube (max 0.893, 0 hot edges; NEW root-cause finding: the upperLeg/lowerLeg flip already exists in the PRE-repair skin — the decimator keeps different verts under the moved mid-thigh geometry — so route (a) freeze + a band-local no-ramp relax is what repairs it). Build gates ALL green (AFRAME TOPOLOGY 11 L<->R faces cut, gap +54.0 mm, arm/thigh 0.522, curvature ≤ 0.324). NOT LANDED: three drive gates RED (hands-vs-thigh clearance −56.6 mm; suit stand-off reads the new 189 mm tube as "missing"; spine flight-tuck knee) — the tube architecture clashes with hands-at-sides without the withdrawn #15 stance bind work. Tree REVERTED to the green 20e0c48; patch + full evidence in scratch/iter-164. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | probe build 2048/96 exit 0 all build gates green; unit 81/81; golden 30/30; drive spine+rig+chain 34 passed / 3 failed (the three above). See entry 164. |
 | — | Iteration 163 | **NEXT.md #15 thigh-tube root-cause ADVANCED, not landed: the Sol diff's seam failure is NOT the clamp, NOT the locality reach, NOT the rescue branch — the shipped knee-ring weights themselves re-converge under the moved mid-thigh geometry (my build `upperLegL` 0.775 dominant at z −0.739 vs HEAD 0.08 there), and the failure is "both-ramped" in the locality repair. Tube diff REVERTED (gate red = no asset); env-gated `BODY_SEAM_DEBUG` edge-dump instrumentation LANDED on the green HEAD build. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | instrumented HEAD build 2048/96 green (exit 0, all gates); unit 81/81; golden 30/30. See entry 163. |
@@ -1655,6 +1656,75 @@ description is this entry's title and body (165→166 summary above); the traile
 `Co-Authored-By: GLM-5.3-Flash (glm-5.3-flash) <noreply@z.ai>` IS present in the
 commit. The diff is exactly `docs/RENDER-PROGRESS.md` +83 lines (status board row
 + entry 166).
+
+### 167 — NEXT.md step 1 LANDED: the knee-band upper slab re-blended toward
+lowerLeg after the freeze — flight-tuck knee strain 11.709 → 4.174 (gate 8.0
+GREEN for the first time since the shell landed); unit/golden/spine/chain/look
+all green; the two rig reds are the pre-existing open questions 1/3,
+byte-identical, and now gate on the reviewer's rulings
+
+**Scope.** `docs/NEXT.md` step 1 only (step 0 is CLOSED by the 14:55 ruling —
+the inversion NEXT.md asked for was measured wrong on the merged branch; the
+≥ 0.15 gate and the throw-after-`figure_side.png` ordering stand). Touched:
+`blender/build_body.py`, `assets/` (rebaked), `game.js` (ASSET_V 67 → 68 only).
+The athlete-file ban stays lifted exactly under NEXT.md.
+
+**What changed.** 166's conclusion was that the flight-tuck strain comes from
+the upper side of the knee ring carrying upperLeg-dominant weights, and that
+widening the frozen band upward INHERITS that dominance (28.554 — worse).
+167 implements the lever 166 named — re-partition the upper side itself:
+
+- `knee_band_upper_reblend(obj, keep, slab=0.06)` (new, after
+  `knee_band_relax`): every leg vert in `[ring, ring+60 mm]` gets its
+  upperLeg share re-blended onto lowerLeg with factor `f = (1 − t) × 0.85`
+  for `t = (z − ring)/slab` — strongest at the ring, zero at the slab top.
+  Call order at the shipped-skin site: `knee_band_restore` →
+  `knee_band_upper_reblend` → `knee_band_relax` (the Jacobi pass then
+  smooths the re-blend into the band). Sabotage builds keep the raw path.
+- First build EXCLUDED `keep` verts from the re-blend and had no effect at
+  all (flight tuck still 11.709): the spec's worst edge sits at y = −0.632,
+  3 mm ABOVE the ring, INSIDE the frozen band — the inherited weights
+  themselves carry the step. Second build covers the whole slab including
+  the frozen band's upper half; 89 verts moved; seam gate and locality gate
+  (0 over 1.70 reach) stayed green on the shipped skin.
+
+**Verification.**
+- Build 2 (shipped): exit 0, 38 s, all build gates green — AFRAME FIT 190 mm
+  tubes / inner face 27 mm, AFRAME TOPOLOGY 156/11/0, seam + locality green,
+  BODY_EXPORTED verts=8996 bones=21.
+- `npm run test:unit` 81/81; `npm run test:golden` 30/30 (no re-capture —
+  display-only weights, physics untouched).
+- Drive `spine rig chain` (DRIVE_PORT=8167): **35 passed / 2 failed**.
+  KNEE gates: neutral 1.0, **in-run crouch 2.65** (p999 2.402),
+  **flight tuck 4.174** (p999 4.02), pike 1.0 — all ≤ 8.0. The 2 failures
+  are the PRE-EXISTING rig reds from 164/166, byte-identical values:
+  hands-vs-thigh daylight −56.6 mm (open question 1) and suit stand-off
+  0.1891 vs the stale 0.201 floor bound to the OLD 213 mm shell (open
+  question 3). Neither is touched by knee weights; NEXT.md step 1 is the
+  knee gate, and it is green.
+- `look` 6/6; `figure.png`, `figure_front.png`, `figure_side.png`,
+  `scene.png` regenerated (PIL rasterisation unavailable for viewing here;
+  the FACEDIST and grey-attribute gates in the suite are the recorded
+  checks).
+
+**Disposition.** LANDED — step 1's gate is green without recalibrating
+anything; flight tuck has 3.8 mm/strain-units of headroom. NEXT.md is
+RETAINED (steps 2, 2b, 2c, 2d, 3 remain).
+
+**Open questions for the reviewer.**
+1. **May the two rig reds be re-derived so the A-frame tube build can ship a
+   fully green drive suite?** 166 open question 1 (hands gate: is the fix the
+   stance bind re-export or the thigh tube's fit axis?) and open question 3
+   (stand-off floor re-derived from the build's own SHELLPROP report — the
+   tube measures 0.1891 against the stale 0.201 floor on every build) are
+   now the ONLY reds on the branch. Every iteration since 164 has carried
+   them; a ruling unblocks a clean full-suite green.
+2. 165's open questions 1 (run-all owning the :8099 port) and 2 (the
+   dark-green ridge-over-peaks read) remain unanswered and unchanged.
+
+**Scratch.** Both build logs preserved as
+`/home/justin/aerial-agents/scratch/iter-167-build{1,2}.log` (build 1 is the
+keep-excluded negative result).
 
 ### 164 — NEXT.md #15: the Sol thigh-tube diff RE-APPLIED plus a knee-band
 freeze/relax that takes the weight-seam gate GREEN on the tube for the first
