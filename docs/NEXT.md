@@ -26,6 +26,12 @@ all apply.
    (elbows in), toe AND heel affixed to the skis in EVERY non-crash frame (per-frame flight sweep
    gate; heel lift = failure; skis eject only on crash). Pose/display only; golden physics
    unchanged (census-only recapture with audit if display traces move).
+5b. **#24 — GROUNDED SLIDE + WEIGHTY GET-UP (author, 12:05).** Full spec in the #24 entry: the
+   slide conforms to terrain every frame (same clearance bounds as #20; only the tumble may leave
+   the ground), and the get-up is contact-driven (knees/hands then feet planted, root rises only
+   over planted contacts, ≤ ~1.2 m/s, no foot drift) — no levitation, no float. Gates per world
+   with the current build as the failing negative control; #14 walk-off and #20 rest gates stay
+   green. Display-only.
 6. **HANDS STEP 2.** The ±7.5° build-side arm abduction (scheme in entry 172; the hand pipeline is
    already frame-independent per 174 with its equivalence control green). Bind==driver re-derived;
    the hands gate goes green with its contract unchanged. NOTE: if item 5's tuck arms make the
