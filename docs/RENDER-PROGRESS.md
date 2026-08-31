@@ -269,6 +269,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 180 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30 (re-verified last), browser+mutation+coverage PASS, walkoff 2/2 solo; the run-all drive leg's single walkoff negative-control red was a self-inflicted port-8099 collision (look run racing the suite) — green in isolation. Shots inspected + measured: snow 0.849 / corridor 0.83 bright (grey-ramp holds); cone peaks read 0.67 vs sky 0.652 (≈ glass-pyramid class, top scene gap); green wedge (0.35) still reviewer-owned; #23 legs watertight by eye but thigh flare/calf belly persist (09:20 ruling); mirrored bib digits + pink smear = NEXT item 7. No source/asset/gate change; NEXT.md item 5 next.** | run-all + look + walkoff solo re-run; scene luminance numbers in entry 180. See entry 180. |
 | — | Iteration 179 | **NEXT.md item 4 — HT#22 FANG PEAK LANDED (display-side only): root-caused by hide-mesh probe — the "hooked claw summit" is NOT a cone peak; it is the OPEN lateral end edge of a ridge heightfield sheet (`ridge_ahead`, same class for all 8 ridge sheets) seen nearly edge-on past the other ridges: the sheet drops full-crest → ground in ONE 6 m column step at its run ends, and that free ~40 m wall projects as a dark hooked sliver over the pale cones. FIX: `_ridgeMesh` crests fade to ground over `RIDGE_END_TAPER_FRAC` = 14% of the run at both ends (smoothstep); negative-control hook `?fangkeepends=1` rebuilds the unfaded ends. NEW GATE `tests/drive/peak-overhang.spec.js` (mesh-space, live Babylon vertex data): every ridge sheet's crest may step ≤ 12 m per 6 m column — the unfaded fang end steps ~24 m and FAILS, tapered ends ≤ ~6 m PASS; negative control verified firing. A render-space sky-below-mountain pixel detector was prototyped and SHELVED (open item — layered ridges have genuine sky gaps; horizon haze within a few RGB points of snow). Fang verified gone by eye in scene.png. unit 81/81, golden 30/30, ridges3d 5/5, peak-overhang 2/2, look 6/6.** | see entry 179. |
 | — | Iteration 176 | **NEXT.md item 1 — HT#23.1 leg transparency carve-outs LANDED: the 94 open rim edges left by the thigh-tube sever + crotch shard cuts are LOOP-AWARE capped in `sever_thigh_bridge_faces` (`_fill_small_rims`, ≤ 0.12 m loops only; the designed between-tube daylight loop, 0.243 m, is deliberately left open) + `close_boundary` on the delivered mesh; new `watertight_gate` (mesh space) + `tests/drive/leg-watertight.spec.js` (render space: enclosed-background components from front/side/back, holes = mid-limb interior-to-one-leg-span components ≥ 20 px, the between-legs daylight pocket excluded by construction). ASSET_V 71 → 72. NEGATIVE CONTROLS: pre-#23.1 committed assets FAIL the render gate (side framing 128 px interior hole at x 644-656/y 434-455); `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log: 94 rims left open). unit 81/81, golden 30/30, aframe+body 5/5, look 6/6, leg-watertight 1/1; shots regenerated + inspected — no visible carve-outs front/side.** | see entry 176. |
 | — | Iteration 177 | **NEXT.md item 2 — HT#23.2 CROTCH HEIGHT LANDED: the sever cut plane moves from the hip line (top of upperLeg) to the anatomical inseam, `hip − CROTCH_FRAC × leg_length` (0.46, gated [0.44, 0.48], `BODY_CROTCH_FRAC` env hook; leg 720 mm → inseam 331 mm below the hip, z=−0.606); the crotch web above the plane is retained; junk web welded/dissolved in a midline band kept BELOW the hip line (arm UV-zone-safe); RIM_LOOP_MAX 0.12 → 0.16 m so the inseam loops (0.147/0.157) close while the 0.243 daylight V stays open. LATENT BUG FIXED: the second bmesh in `sever_thigh_bridge_faces` was NEVER WRITTEN BACK — 176's cuts/fills in that block were discarded and only `close_boundary` masked it. aframe daylight row moved below the new crotch (0.55 × hip→ankle): 5.65 cm (gate ≥ 3; was 0.81 cm). ASSET_V 72 → 73. unit 81/81, golden 30/30, aframe+leg-watertight 2/2 (holes 0 front/side/back), look 6/6; negative control BODY_CROTCH_FRAC=0.52 fails the build.** | see entry 177. |
@@ -10989,6 +10990,62 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 180 — REVIEW-ONLY: suite green (one self-inflicted port-collision red, green solo); #23 legs read improved but still not finished; peaks read at ≈ sky luminance; green wedge + mirrored bib remain the worst gaps
+
+**Scope.** Review-only slot. No source, asset, gate, engine, DoF, or NEXT.md
+change. `docs/NEXT.md` intact (items 1–4 of the 176–205 mandate landed in
+176–179; item 5, tuck+boots, is the next work slot). No Reviewer feedback to
+act on beyond the standing rules.
+
+**Suite.** `./tests/run-all.sh`: unit PASS (81/81), golden PASS (30/30,
+re-verified solo as the last check), browser + mutation + coverage PASS,
+drive 25 passed / 2 skipped / **1 failed** — `walkoff.spec.js` crash #14
+"negative control: the previous stay-down ending fails". ROOT CAUSE OF THE
+RED: my own doing — the review `look` run and run-all's drive leg ran
+CONCURRENTLY on port 8099 (I first killed a stale leftover
+`python3 -m http.server 8099` serving this repo, then both suites raced a
+webserver); two SwiftShader browsers contested the same box and the
+timing-sensitive negative control fired. In isolation `walkoff.spec.js` is
+**2/2 green** (NEGCONTROL phase stayed-down, sinceRest 12.77 s, hipClearance
+0.118 m, minBootClearance 0.197 m). Recorded as environment-induced, not a
+code regression; process lesson for review slots: serialize the full suite
+and the shot regeneration.
+
+**Shots (regenerated, inspected; measured from `scene.png`).**
+- snow foreground luminance **0.849**, corridor mid **0.83** — run reads as
+  the brightest surface; grey-ramp closed state holds by eye and number.
+- sky band top **0.652** vs peak band **0.67** — the cone peaks read at or
+  slightly ABOVE the sky's luminance in the summit band; even though the
+  `ridges3d` contrast gate passes on its mask, by eye the far peaks remain
+  the palest element in frame, close to a glass-pyramid read (136's fix made
+  them opaque but they are still near-sky-white). This is the top remaining
+  scene gap against the footage (peaks should read darker than sky with a
+  visible rock band mid-slope).
+- the **dark-green ridge wedge** (left horizon, luma **0.35**) is still the
+  flat untextured wedge the reviewer owns for the horizon-debt block.
+- kicker reads white block + red edge lines (author ruling held); B-net and
+  fence present both sides; wind sock visible at the knoll.
+
+**Athlete (`figure.png` / `figure_front.png`).** Leg carve-out fixes from
+176–177 hold: no visible see-through holes front or side; the between-legs
+daylight reads as a designed pocket, not a tear; the "30" front bib digits
+are legible and correctly oriented. Still RED by eye against the mandate:
+(1) #23.3 not finished — thighs still flare at the hip (glute jut), calf
+belly visible in `figure.png`, consistent with the 09:20 "not yet tubular"
+ruling; (2) bib digits on the side/back framing still mirrored/garbled
+(NEXT item 7); (3) a stray pink smear below the bib plate front (crotch/
+inner-thigh paint cleanup, NEXT item 7); (4) stance fans out — feet turned
+outboard, knees not over boots by eye (bind-side, NEXT item 6 territory).
+
+**Re-prioritised for 181+.** (a) NEXT.md item 5 (tuck + boots, per-frame
+affixation sweep) unchanged as the next work slot; (b) item 6 hands step 2 —
+consider landing with 5 per the NEXT.md note; (c) item 7 paint slice gains
+urgency because the mirrored digits and the pink smear are the most visible
+athlete defects left after the legs converge; (d) after the mandate's
+athlete items: peak albedo re-visit (peaks ≤ 0.85 × sky with a rock band,
+per the 08:15 order — currently ~1.03 × sky in the summit band) and the
+reviewer-owned green wedge as the horizon block.
+
 ### 179 — NEXT.md item 4: HT#22 fang peak root-caused (ridge sheet END edge, not a cone) + end-taper fix with mesh-space gate
 
 **What changed.**
