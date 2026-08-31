@@ -258,6 +258,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; run-all's drive leg was blocked AGAIN by a stale :8099 server (killed; the relaunch was still in flight at commit time). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: unit/golden/mutation/coverage PASS, drive FAIL-to-start (port); look + grey-attr re-run green; shots regenerated + inspected. See entry 165. |
 | — | Iteration 164 | **NEXT.md #15 thigh-tube RE-APPLIED (reference `sol/aframe-wip` 73220fc, per the 23:20 ruling) + a NEW knee-band freeze/relax that takes the weight-seam gate green for the first time on the tube (max 0.893, 0 hot edges; NEW root-cause finding: the upperLeg/lowerLeg flip already exists in the PRE-repair skin — the decimator keeps different verts under the moved mid-thigh geometry — so route (a) freeze + a band-local no-ramp relax is what repairs it). Build gates ALL green (AFRAME TOPOLOGY 11 L<->R faces cut, gap +54.0 mm, arm/thigh 0.522, curvature ≤ 0.324). NOT LANDED: three drive gates RED (hands-vs-thigh clearance −56.6 mm; suit stand-off reads the new 189 mm tube as "missing"; spine flight-tuck knee) — the tube architecture clashes with hands-at-sides without the withdrawn #15 stance bind work. Tree REVERTED to the green 20e0c48; patch + full evidence in scratch/iter-164. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | probe build 2048/96 exit 0 all build gates green; unit 81/81; golden 30/30; drive spine+rig+chain 34 passed / 3 failed (the three above). See entry 164. |
 | — | Iteration 163 | **NEXT.md #15 thigh-tube root-cause ADVANCED, not landed: the Sol diff's seam failure is NOT the clamp, NOT the locality reach, NOT the rescue branch — the shipped knee-ring weights themselves re-converge under the moved mid-thigh geometry (my build `upperLegL` 0.775 dominant at z −0.739 vs HEAD 0.08 there), and the failure is "both-ramped" in the locality repair. Tube diff REVERTED (gate red = no asset); env-gated `BODY_SEAM_DEBUG` edge-dump instrumentation LANDED on the green HEAD build. No asset, ASSET_V, game, engine, or threshold change; NEXT.md remains.** | instrumented HEAD build 2048/96 green (exit 0, all gates); unit 81/81; golden 30/30. See entry 163. |
 | — | Iteration 160 (review) | **REVIEW-ONLY (GLM re-check after the Sol window): no source/asset/gate/engine/DoF/athlete change; NEXT.md untouched and remains the mandate. Suite green except the known quality.spec frame-time flake; kneeMax 5.725 and FACEDIST 0.1803 hold; arm-stripe leak gate 0.0872 green (step 3 verification holds); #15 A-frame and #16 boots still visibly RED by eye; scene debt unchanged (P6 horizon worst).** | run-all: unit 81/81, golden 30/30, browser, mutation, coverage PASS; its drive leg failed to START on a leftover :8099 server (open question); full drive re-run on DRIVE_PORT=8199: 125 passed / 1 failed (quality flake); look shots regenerated and inspected. See entry 160. |
@@ -1466,6 +1467,102 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 165 — REVIEW-ONLY: suite audited on the merged tip (unit/golden/mutation/coverage green; look 6/6, grey-attr 2/2, FACEDIST 0.1803 holds); #15/#16/#21 confirmed RED by eye with fresh shots; scene reads clean at the canonical framing except a dark-green ridge wedge crossing the horizon; stale :8099 server blocked run-all's drive leg AGAIN (killed); #15 combined slice re-committed as the 166 work slot
+
+**Scope.** Review-only per the driver cadence (150/155/160/165/…). No source, asset, gate,
+threshold, engine, DoF, or NEXT.md change; no Reviewer feedback items to act on beyond the
+existing rulings.
+
+**Self-review of 163/164.** `git log -3 --stat`: `abdf890` (164, docs-only), `20e0c48` (163,
+instrumentation), `78b2683` (Sol crash-cluster merge). Both entries match their diffs; the
+164 "honest revert" claim re-verified: working tree byte-clean vs HEAD, no asset/ASSET_V/game
+leftovers. 164's scratch evidence (patch + probe logs) present in
+`/home/justin/aerial-agents/scratch/iter-164/`.
+
+**Suite on this tip.**
+- `./tests/run-all.sh`: unit 81/81, golden 30/30, mutation PASS (all 5 mutations caught),
+  coverage PASS (30 traces → 28 behaviours, the two known duplicate pairs unchanged);
+  **drive leg FAILED TO START — `[Errno 98] Address already in use` on :8099** — the same
+  stale `python3 -m http.server 8099` leftover that hit iteration 160 had re-appeared
+  (pid 1378634, serving this repo). Killed it; the second full `run-all.sh` was relaunched
+  with the port free and was STILL IN FLIGHT at this entry's commit time (45-minute budget
+  reached; 166's self-review quotes its tail). **Process ask: something in the loop is
+  re-leaving that server behind between sessions — run-all should either kill a stale
+  listener on its own port or pick a free port via `DRIVE_PORT` by default.**
+- `look` solo (fresh server, DRIVE_PORT=8123): 6/6 green. FACEDIST **0.1803** ≥ 0.15 —
+  matches the 14:55 ruling's merged-branch number; front lensFrac 0.1567 / back 0.0303 /
+  front−back 0.126 — the lens discrimination is healthy; `figure_side.png` written (the
+  step-0 non-fatality holds). Silhouettes: FIGSIL span 0.936, SIDESIL 0.775; pose shots
+  all framed (standOff 0.998–1.806).
+- `grey-attr` solo: 2/2. In-run corridor/flank **0.8367/0.8067 = 1.037** (gate ≥ 0.95),
+  darkFrac 0.0047; the scene-framing canary is also inside those 2 passes.
+
+**What now reads wrong (by eye, fresh shots).**
+1. **#15 A-frame — still the worst athlete defect.** In `figure_front.png` the thighs read
+   as ONE merged white mass from crotch to knee; there is no projected daylight anywhere.
+   The calves kick outward slightly to meet the skis (the author's fan-out). This is the
+   failing negative control NEXT.md 2b names; the 45.5 mm mesh-space gap gate does not
+   show in the render. Confirms 164's diagnosis: only the tube + build-side bind stance
+   fixes it.
+2. **#16 boots — RED.** `figure.png` side view: the foot is a low dark shoe with a tapering
+   toe; no clog/cuff split, no ribbed tongue, no buckles; the shin enters it at ankle
+   height, not inside a mid-shin cuff.
+3. **Front bib number is rotated/mirrored** — `figure_front.png` reads the plate digits as
+   "3D"/"З0" (glyphs upside-down-mirrored); `figure.png` side view shows the mirrored "3"
+   too. The 125-era "mirrored front bib" observation is still live; the paint belongs to
+   the suit lane (`paint_suit`/bib mask) — fold into slice 2 with the band-wrap fix.
+4. **Magenta sponsor band still wraps wider than the plate** at the waist/hips in
+   `figure_front.png` — the 17:20 ruling (bind the band's wrap to the bib plate width)
+   is not yet implemented; it is slice-2 paint work.
+5. **Face likeness** is structurally gated green (lens + FACEDIST + FACEGATE dark 0.1845,
+   skin 0.0464, cov 0.9929 all pass) but by eye the front close-up still reads as a dark
+   visor band with two pale dots — eyes/brow/mouth are not readable at figure distance.
+   Not a gate defect; a likeness gap for the face pass whenever a slot opens.
+6. **Scene:** at the canonical ready framing the corridor, flanks, B-net and peaks read
+   correctly (corridor white and brighter than flank — matches 1.037; peaks opaque grey
+   with rock banding). ONE oddity: a large **dark-green ridge wedge at the top-left
+   crosses ABOVE the grey peak silhouettes and reads as a floating dark band against the
+   sky** — geometrically it is the near-ridge forest cap seen from this camera over the
+   far range; it visually merges with the parked pale-blue "lake" band underneath. Worth
+   a look from the reviewer's next 8201 pass before spending a slot; no scene work done
+   here (standing rule).
+
+**Gaps against the plan / reference footage.** Suit is still white-on-white (no two-tone
+panels/collar/cuffs — NEXT.md 2 item 2); crotch/inner-thigh shard cluster visible as small
+white protrusions in `figure_front.png`; #21 heel-affixation/tuck rebuild not started (it
+is gated on the #16 boots landing first per NEXT.md's pairing); the #12 curvature/segment
+gates all hold on the shipped HEAD shell (164's build numbers), so the remaining distance
+to the footage is concentrated in stance (A-frame), boots, and paint — in that order.
+
+**Re-prioritised list for the next iterations.**
+1. **166 — the ONE COMBINED SLICE (Fable 01:35 ruling, unchanged):** 164's scratch patch
+   (Sol thigh tubes + knee-band freeze/relax) + the A-frame stance as a build-side bind
+   re-export + `rig.spec` bind==driver re-derived against the new binds + the #15
+   render-space daylight gate in `figure_front` (≥ 3 cm projected at mid-thigh) + the
+   flight-tuck knee number captured. Acceptance = the three 164 drive reds green.
+2. **167 — #16 boots + #21 (paired per NEXT.md):** two-part boot shell, cuff at mid-shin,
+   toe/heel-on-binding ≤ 5 mm in all non-crash frames incl. flight, tuck rebuilt
+   knees-to-chest with upright torso; per-frame flight sweep gate.
+3. **168 — slice-2 paint:** two-tone panels, red collar line, cuffs, bib band wrap bound
+   to plate width, mirrored-bib-number fix, crotch shard cleanup.
+4. **169+ — polish block per the 13:05 order:** height haze → LOD → near-tree low-poly →
+   snowfall auto-intensity, with the scene-oddity above only if the reviewer confirms it.
+
+**Open questions for the reviewer.**
+1. The stale :8099 server keeps re-appearing between sessions and silently reds run-all's
+   drive leg (160, now 165). May run-all own the port (kill stale listener / default to a
+   free `DRIVE_PORT`)? A one-line infra fix; asking because run-all is shared.
+2. The top-left dark-green ridge-over-peaks read in `scene.png` — defect or accepted near-
+   ridge geometry? (No scene work taken without your call.)
+3. 164's stand-off question (rig.spec 0.213 expectation vs the 190 mm tube) is now folded
+   into the 166 slice's spec re-derivation — confirm the re-derived expectations bind to
+   the build's own SHELLPROP report.
+
+**Verification.** No tree change this iteration: `git status` clean before the entry edits;
+unit 81/81; golden 30/30 (verify.js quoted from the run-all leg); look 6/6 and grey-attr
+2/2 re-run solo on a free port; shots regenerated and inspected (scene, figure,
+figure_front, figure_side, face, pose_*).
 
 ### 164 — NEXT.md #15: the Sol thigh-tube diff RE-APPLIED plus a knee-band
 freeze/relax that takes the weight-seam gate GREEN on the tube for the first
