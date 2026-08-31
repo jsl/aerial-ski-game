@@ -271,6 +271,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 183 | **NEXT.md #23.3 FINAL UNIT — the 10:55 ruling's DE-SHADING slice LANDED: `flatten_leg_shading` in build_body.py removes the MID-FREQUENCY (muscle-scale) band from the leg garment's AO+normal maps (edge-preserving band-stop inside the upperLeg/lowerLeg UV mask, 550k texels; low-freq shading + weave kept — suit NM variance floor 6.3 holds at 6.95; panel seams kept via gradient mask). Texture mid-band: normal 13.30→5.21, ao 15.71→8.14 /255. Build-side HARD gate added; negative control BODY_FLATTEN_OFF=1 build FAILS it (fires). NEW `leg-shading.spec.js` gates the flatten stats in athlete_maps.json (≤7.0/≤10.0 and <70% of before); render-space band-pass instrument REPORTED HONESTLY NON-DISCRIMINATIVE (thigh bp3_7 13.65 pre vs 13.26 post — lighting/SSAO/panel edges swamp the texture signal; open question 1). Shots inspected: legs read near-flat fabric, no carve-outs, bib 30 legible. ASSET_V 74→75.** | unit 81/81, golden 30/30, tube-smooth 1/1, leg-shading 1/1, look 6/6. See entry 183. |
 | — | Iteration 182 | **NEXT.md #23.3 COMPLETED: the pending pre-#23.3 negative control FALSIFIED the inflection gate (e0c0658 measures side thigh 1 / shin 0 — identical to v74); new BELLY-DEPTH metric added (max deviation of the side width profile from its taper chord: thigh 2.6 px pre vs 0.5 px v74), HARD gate ≤ 2.0 px landed — v74 passes, e0c0658 fails, injected belly fails (7.7). Targeted smoothing pass NOT applied on evidence: v74's side tube already measures 0.5 px belly / 1 inflection — nothing measurable to remove; residual by-eye read must be breadth (open question: breadth gate or close #23.3). No source/asset change, ASSET_V 74.** | unit 81/81, golden 30/30; tube-smooth green on v74 and RED on the e0c0658 scratch worktree (both directions verified); look 6/6 regenerated. See entry 182. |
 | — | Iteration 181 | **NEXT.md item 3 cont. (#23.3) — the 09:20 ruling's SILHOUETTE INSTRUMENT LANDED: `tests/drive/tube-smooth.spec.js`. Anchor rows derive from the LEG BONES' FINAL matrices (hlpHip = hip, hlpKnee = knee, lowerLeg origin = ankle), projected only AFTER the first render under the measurement camera (stale-transform projection was 178's torso-window failure, re-proven: pre-render projection compresses hip→ankle to 27 px vs the true ~135). Two more instrument lessons proven: Vector3.Project's y is TOP-DOWN (the H−1−y flip belongs to readPixels only), and bone anchors must be sanity-checked as ROW-SPAN containment, not a point window (the ankle origin sits ≤ 21 px fore-aft off the skinned boot from the bind rotation — band-relaxed form for lowerLeg only). Sanity: all six anchors inside in front/side/back. GATE: side-framing fore-aft width profile, 2× smooth + 1.5 px deadband, ≤ 2 inflections/segment — v74 measures thigh 1 / shin 0 (front: 2/1); injected-belly self-test fires (3/3/2). NO asset/gate-threshold change; the targeted anterior-thigh/glute/calf smoothing pass is deferred (v74 already passes the render gate); pre-#23.3-asset negative control pending. unit 81/81, golden 30/30.** | tube-smooth 1/1; unit + golden on the final tree. See entry 181. |
 | — | Iteration 180 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30 (re-verified last), browser+mutation+coverage PASS, walkoff 2/2 solo; the run-all drive leg's single walkoff negative-control red was a self-inflicted port-8099 collision (look run racing the suite) — green in isolation. Shots inspected + measured: snow 0.849 / corridor 0.83 bright (grey-ramp holds); cone peaks read 0.67 vs sky 0.652 (≈ glass-pyramid class, top scene gap); green wedge (0.35) still reviewer-owned; #23 legs watertight by eye but thigh flare/calf belly persist (09:20 ruling); mirrored bib digits + pink smear = NEXT item 7. No source/asset/gate change; NEXT.md item 5 next.** | run-all + look + walkoff solo re-run; scene luminance numbers in entry 180. See entry 180. |
@@ -10994,6 +10995,59 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 183 — NEXT.md #23.3 final unit: the 10:55 ruling's de-shading slice — leg-garment AO/normal mid-band (muscle) flatten in build_body.py, texture-side gate + build-side hard gate; render-space instrument honestly reported non-discriminative
+
+**What changed.**
+
+1. `blender/build_body.py` — `flatten_leg_shading`: after the NORMAL and AO
+   bakes, inside the leg-garment UV mask (`_owned_uv_tris` unanimous
+   upperLegL/R+lowerLegL/R, dilated 4; 549 887 texels), each channel gets a
+   band-stop: low-frequency shading kept (blur σ=18), high-frequency weave
+   kept (everything above σ≈1.5), the MID band removed; strong per-texel
+   gradients (panel seams) are masked out of the filter so seams stay crisp.
+   Measured in the build log: mid-band energy in the leg mask
+   **normal 13.30 → 5.21 /255, ao 15.71 → 8.14 /255**. The suit NM variance
+   floor holds: **6.95 ≥ 6.3** (the weave band survived, as designed).
+2. Build-side HARD gate after the flatten: a build where the pass did not run
+   (mask empty / skipped) or left > 70 % of the mid-band exits non-zero.
+   NEGATIVE CONTROL EXECUTED: a `BODY_FLATTEN_OFF=1` scratch build FAILS with
+   `[body] LEG-SHADING FLATTEN gate FAILED: normal_flatten never ran`.
+3. `tests/drive/leg-shading.spec.js` (new) — GATES on the flatten stats
+   carried in `athlete_maps.json` (`stats.normal_flatten.after ≤ 7.0`,
+   `stats.ao_flatten.after ≤ 10.0`, each `< 70 %` of `before`; v75 measures
+   5.21 / 8.14; a pre-flatten build has no fields / 13.30 → fails). Plus a
+   render-space band-pass INSTRUMENT (side/front figure framings, bone-anchored
+   hip/knee/ankle windows as in tube-smooth) with an instrument self-test
+   (synthetic σ=4 px shading patch measured through the counter alone: 3.73
+   RMS — the counter responds to muscle-scale shading).
+4. `game.js` — ASSET_V 74 → 75.
+
+**Honest negative finding (the ruling's requested instrument).** The
+render-space "leg-region shading variance in the figure framings" does NOT
+discriminate pre/post flatten: band-pass RMS (r3–r7) of the side-framing thigh
+luminance measures **13.65 pre-flatten (v74) vs 13.26 post (v75)** — within run
+noise, dominated by lighting gradients, SSAO and suit-panel edges, not the
+baked texture band. The gate therefore lives texture-side (item 3), where the
+signal is unambiguous; the render numbers are reported, not gated.
+
+**Verification.** unit 81/81; golden 30/30 (display-only change, no physics
+movement); tube-smooth 1/1; leg-shading 1/1; look 6/6. Shots inspected:
+`figure.png` / `figure_front.png` — legs read as near-flat white fabric tubes,
+no carve-outs, bib 30 legible front; `scene.png` unchanged in character.
+
+**Open questions for the reviewer.**
+
+1. If the author's by-eye muscular read persists on the v75 figure shots, the
+   shading hypothesis is spent (texture mid-band is down 60 %+ and the render
+   band metric is swamped by lighting) — the next hypothesis per the 10:55
+   ruling is BREADTH (side thigh width vs shin width at matched rows). Say the
+   word and 184 builds that gate; otherwise #23.3 is complete and item 5
+   (tuck + boots) starts next slot.
+2. The flatten's edge-preservation threshold (normal 0.04 / ao 0.06 per-texel
+   gradient) kept the weave floor green with margin; if the author wants the
+   seams even crisper or the flatten stronger, both are single constants
+   (`FLATTEN_EDGE`, `FLATTEN_MID_SIGMA`).
+
 ### 182 — NEXT.md #23.3 completion: the pending pre-#23.3 asset negative control EXECUTED and it FALSIFIED the inflection gate — belly-depth metric added (the instrument now discriminates), hard gate landed; targeted smoothing pass stays deferred, now with numbers
 
 **Verification.** unit 81/81; golden 30/30 (no source or asset change — ASSET_V stays 74);
