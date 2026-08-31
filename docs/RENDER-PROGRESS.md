@@ -272,6 +272,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 184 | **NEXT.md item 5 (#21 half) — the PER-FRAME FLIGHT BOOT–SKI SWEEP gate LANDED: `flight-sweep.spec.js` drives a full jump (comp=easy), pulses the tuck airborne (blend-up → deep tuck → blend-down all swept) and samples `_bootSkiProbe()` every rAF frame: toe AND heel ≤ 5 mm both skis every live frame (crash excluded as the allowed violation), airborne ski-vs-shin pitch ≤ 2°. MEASURED: worst gap 0.00 mm / worst pitch 0.00° over 24 live airborne frames — the pin already seats analytically every frame; flight keeps zero cuff lean (armRaise=1 semantics untouched). `_flightPinOff` negative control (skip pin + 30 mm heel lift) FAILS the gate (fires). Tuck-vs-photo numbers: kneeToChest 0.419 m, torso −25°, knee 105°. OPEN: #16 the real boot (clog/cuff/ledges/buckles) = item 5's remainder, routed to 185. No asset change, ASSET_V 75.** | unit 81/81, golden 30/30, flight-sweep 2/2, inrun-contact+crouch+hop-turn+chain+aframe 17/17, look 6/6 shots inspected. See entry 184. |
 | — | Iteration 183 | **NEXT.md #23.3 FINAL UNIT — the 10:55 ruling's DE-SHADING slice LANDED: `flatten_leg_shading` in build_body.py removes the MID-FREQUENCY (muscle-scale) band from the leg garment's AO+normal maps (edge-preserving band-stop inside the upperLeg/lowerLeg UV mask, 550k texels; low-freq shading + weave kept — suit NM variance floor 6.3 holds at 6.95; panel seams kept via gradient mask). Texture mid-band: normal 13.30→5.21, ao 15.71→8.14 /255. Build-side HARD gate added; negative control BODY_FLATTEN_OFF=1 build FAILS it (fires). NEW `leg-shading.spec.js` gates the flatten stats in athlete_maps.json (≤7.0/≤10.0 and <70% of before); render-space band-pass instrument REPORTED HONESTLY NON-DISCRIMINATIVE (thigh bp3_7 13.65 pre vs 13.26 post — lighting/SSAO/panel edges swamp the texture signal; open question 1). Shots inspected: legs read near-flat fabric, no carve-outs, bib 30 legible. ASSET_V 74→75.** | unit 81/81, golden 30/30, tube-smooth 1/1, leg-shading 1/1, look 6/6. See entry 183. |
 | — | Iteration 182 | **NEXT.md #23.3 COMPLETED: the pending pre-#23.3 negative control FALSIFIED the inflection gate (e0c0658 measures side thigh 1 / shin 0 — identical to v74); new BELLY-DEPTH metric added (max deviation of the side width profile from its taper chord: thigh 2.6 px pre vs 0.5 px v74), HARD gate ≤ 2.0 px landed — v74 passes, e0c0658 fails, injected belly fails (7.7). Targeted smoothing pass NOT applied on evidence: v74's side tube already measures 0.5 px belly / 1 inflection — nothing measurable to remove; residual by-eye read must be breadth (open question: breadth gate or close #23.3). No source/asset change, ASSET_V 74.** | unit 81/81, golden 30/30; tube-smooth green on v74 and RED on the e0c0658 scratch worktree (both directions verified); look 6/6 regenerated. See entry 182. |
 | — | Iteration 181 | **NEXT.md item 3 cont. (#23.3) — the 09:20 ruling's SILHOUETTE INSTRUMENT LANDED: `tests/drive/tube-smooth.spec.js`. Anchor rows derive from the LEG BONES' FINAL matrices (hlpHip = hip, hlpKnee = knee, lowerLeg origin = ankle), projected only AFTER the first render under the measurement camera (stale-transform projection was 178's torso-window failure, re-proven: pre-render projection compresses hip→ankle to 27 px vs the true ~135). Two more instrument lessons proven: Vector3.Project's y is TOP-DOWN (the H−1−y flip belongs to readPixels only), and bone anchors must be sanity-checked as ROW-SPAN containment, not a point window (the ankle origin sits ≤ 21 px fore-aft off the skinned boot from the bind rotation — band-relaxed form for lowerLeg only). Sanity: all six anchors inside in front/side/back. GATE: side-framing fore-aft width profile, 2× smooth + 1.5 px deadband, ≤ 2 inflections/segment — v74 measures thigh 1 / shin 0 (front: 2/1); injected-belly self-test fires (3/3/2). NO asset/gate-threshold change; the targeted anterior-thigh/glute/calf smoothing pass is deferred (v74 already passes the render gate); pre-#23.3-asset negative control pending. unit 81/81, golden 30/30.** | tube-smooth 1/1; unit + golden on the final tree. See entry 181. |
@@ -10996,6 +10997,50 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 184 — NEXT.md item 5, #21 half: the PER-FRAME FLIGHT BOOT–SKI SWEEP gate landed — toe AND heel ≤ 5 mm and ski-vs-shin pitch ≤ 2° sampled on every rendered frame of a full jump (tuck pulse through blend-up, deep tuck, blend-down); `_flightPinOff` negative control fires. The boot remodel (#16, clog/cuff/buckles) is the open remainder of item 5
+
+**What changed.**
+
+1. `tests/drive/flight-sweep.spec.js` (NEW) — the gate the #21 amendment
+   names ("the per-frame flight sweep gate stands") did not exist:
+   inrun-contact.spec.js's flight coverage was comment-only. The new spec
+   drives a full run (`?comp=easy`), pulses the tuck in the air (engage at
+   z≈21.5, release at tuck > 0.95) so the sweep covers the tuck BLEND-UP, the
+   deep tuck AND the BLEND-DOWN before touchdown — the mid-blend frames are
+   where linear-blend skinning could open a heel — and samples
+   `window._bootSkiProbe()` on every rAF frame from z > 5 through the ride-out.
+   Gates: sole-to-ski-top ≤ 5 mm at toe AND heel, both skis, EVERY live frame
+   (crash frames counted and excluded — crash eject is the allowed violation);
+   airborne frames additionally |shin rx − ski pitch| ≤ 2° (zero cuff lean
+   airborne — nothing to flex against).
+2. `game.js` — `window._flightPinOff` NEGATIVE CONTROL: while set and
+   airborne, the boot–ski pin is skipped and the shins lifted 30 mm,
+   re-creating the author's historic flight heel lift. The gate FAILS under
+   it (verified). The healthy path is byte-identical to before (the pin seats
+   unconditionally every frame already; flight keeps armRaise=1 semantics,
+   i.e. zero cuff lean airborne).
+3. Finding: the flight invariant HOLDS on the current build by construction —
+   measured worst sole-to-ski-top **0.00 mm**, worst airborne pitch
+   **0.00°** over 24 live airborne frames (46 sampled, 10 crash frames at the
+   end of one run's tumble, excluded). The pin re-derives the legs from the
+   ski analytically each frame, so the gaps read 0.0000.
+4. Tuck-vs-photo numbers (author_tuck_ref_2026-08-31 is the acceptance test;
+   reported, the eye rules): knee-to-chest **0.419 m**, torso rx **−25°**
+   (back compact), knee rx **105°** (knees up) at peak flight tuck.
+
+**Verification.** unit 81/81; golden 30/30 (display-only, physics untouched);
+flight-sweep 2/2 (including the firing negative control); inrun-contact +
+inrun-crouch + hop-turn + chain + aframe 17/17; look 6/6 — shots inspected,
+figure/scene unchanged in character (no asset change, ASSET_V 75 stands).
+
+**Open.** NEXT item 5's other half, **#16 the real boot** (clog + cuff,
+smooth toe box, sole ledges, buckles, no logos, per
+`author_boot_ref_2026-08-30.jpg`) — a Blender remodel in build_body.py with an
+ASSET_V bump; routed to 185. The sweep run ends in a crash-landing on easy
+with the tuck pulse (10 excluded frames); if the reviewer wants a clean
+landing inside the spec, the tuck timing needs a taught line — the invariant
+frames themselves are all green.
+
 ### 183 — NEXT.md #23.3 final unit: the 10:55 ruling's de-shading slice — leg-garment AO/normal mid-band (muscle) flatten in build_body.py, texture-side gate + build-side hard gate; render-space instrument honestly reported non-discriminative
 
 **What changed.**
