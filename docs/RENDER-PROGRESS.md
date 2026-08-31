@@ -263,6 +263,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
+| — | Iteration 172 | **Hands-vs-thigh build-side fix (05:10 ruling) IMPLEMENTED end-to-end (mesh+bone+bind+driver+helpers, A-frame template) but NOT LANDED: at ±7.5° the bideltoid gate passes at its exact 0.410 ceiling and the hands clear by ~+8.7 mm, but the hand pipeline (`relax_hands`/`hand_spread_gate`) assumes world-vertical fingers — the horizontal z-cut ladder deepens 0.45→0.78, reads finger gaps of 200+ mm (gate 8) and the build exits 1. REVERTED; tree byte-identical to 171's tip; unit 81/81, golden 30/30 re-verified. Open questions posted (hand-pipeline frame independence).** | attempt numbers in entry 172; unit + golden re-run after revert. See entry 172. |
 | — | Iteration 171 | **Hands-vs-thigh slot: the 04:00 ruling's "arms-pose fix" was attempted and MEASURED IMPOSSIBLE — rig.spec's hand/thigh measurement reads raw BIND-pose vertices transformed by the mesh world matrix only (no bone matrices), so no driver-side pose write can move the hand centroid by a single vertex; a `_restArmsOutboard` ±8.5° abduction helper (game.js, _inrunArmForward style) changed hx/tf by exactly 0.0000 while breaking the green `bind==driver` gate (lowerArmL residual 0.0482 m). REVERTED — unit 81/81, golden 30/30 re-verified on the reverted tip; tree is byte-identical to 170. The real fix is BUILD-side (see entry + open question 1).** | unit + golden re-run after revert; the attempt's numbers in entry 171. See entry 171. |
 | — | Iteration 169 | **NEXT.md / 04:00 ruling Q2 LANDED — the crouch-knee red is cleared two ways: (1) the A-frame stance is now written by `applyPose` itself (drivers mirror `_pinBootsToSkis`'s rz/hip walk-in, same `_aFrameOff` control), so probe-path instruments stop skinning a 3° rest mismatch (spine dose rest 2.054 → 1.003 rigid, crouch 8.503 → 8.035); (2) the 167 upper-slab re-blend widened 60 → 80 mm for the rotated rest — crouch 4.063, flight tuck 3.734 (gate ≤ 8.0, both comfortably green). ASSET_V 69 → 70; golden census-only re-capture after audit showed 0 physics diffs; unit 81/81, golden 30/30, look 6/6 (FACEDIST 0.1806), aframe/chain/spine green; the ONE remaining red is the known hands-vs-thigh gate, which the 04:00 ruling routes to the next slot as an arms-pose fix.** | 2 Blender builds ~38 s each; spine knee sweep neutral 1.003 / crouch 4.063 / flight 3.734 / pike 1.003; aframe kneeDev 1.62/1.52 vs control 12.51/11.77; chain 10/10. See entry 169. |
 
@@ -1477,6 +1478,66 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 172 — Hands-vs-thigh build-side fix: the full A-frame-template implementation (mesh + bones + binds + drivers + helpers) works geometrically but the HAND PIPELINE is world-z-locked and rejects any tilted hand — attempt measured at ±8.5° and ±7.5°, REVERTED; unit 81/81 + golden 30/30 re-verified on the reverted (171-identical) tip
+
+**Mandate.** The 05:10 ruling on 171: the hands fix is BUILD-SIDE — bake the
+arm abduction into the binds in `build_body.py`, bind==driver re-derived
+against the new binds, gate contract unchanged. NEXT.md step 1 (the shell knee
+band) was re-verified FIRST and is already green on this tip: spine.spec 14/14
+with kneeMax **1.003** in all four poses (gate ≤ 8.0; the 32.516 number in
+NEXT.md was the session-28 bisect state, cleared by the 167/168 work). So the
+carried rig red is the slot's item, per the ruling.
+
+**What was implemented (complete, both sides, one coherent scheme).**
+`ARM_ABDUCT` in `build_body.py` + `arm_abduct_xz()` (frontal-plane rotation of
+a Babylon (lateral, up) point about the shoulder pivot (±0.175, 0.150)),
+applied at: `bl()` (arm stations), `seg_ends()` (arm bones rotate about the
+pivot, head unmoved), `seg_matrix()` (abducted rest station + rotation
+`Rx(π) @ Rz(φ)`, matching game's Euler-YXZ `Mx·Mz` composition so the node
+rest equals the driver rest), `_helper_rest_translation()` (shoulder/elbow
+helper points) and `helper_matrix()` (hlpShoulder φ/2, hlpElbow φ — exactly
+what `updateJointHelpers` composes). `game.js` carries the same rest write in
+`applyPose` (centre = pivot + (dy·sin rz, dy·cos rz), rz = ±_ARM_ABDUCT) beside
+the A-frame block, under the same `_aFrameOff` negative control. Hand-clearance
+arithmetic: at 8.5° the hand band moves +62.8 mm outboard (hx 0.1561 → 0.2189
+vs the leg face 0.2029 → Δ +16 mm, gate ≥ +4 mm).
+
+**Measured refusals, both builds exiting non-zero.**
+1. ±8.5°: `bideltoid gate FAILED: 411 mm at z=+0.11 (gate 410)` — the abducted
+   upper-arm verts at the shoulder band add ~2×5.9 mm to the deltoid slice.
+2. ±7.5°: bideltoid **0.410 ≤ 0.410 PASS** (zero margin) and hand clearance
+   ~+8.7 mm (comfortable), but `relax_hands`' finger ladder — which cuts the
+   glove with HORIZONTAL z-planes and sorts finger tips by world z — degrades
+   on the 7.5°-tilted hand: cut fraction 0.45 → 0.78, measured finger gap
+   27 mm → **222 → 200 mm** (gate 8 mm), `hand_spread_gate` raises and the
+   build exits 1. The pipeline, not the magnitude, is the blocker: the hand
+   axis is no longer world-vertical, so the z-cut picks junk components.
+
+**Disposition.** REVERTED per the carried-red policy — a red build never
+ships, and a hand-pipeline reframe (cutting in the hand's own frame) is a new
+instrument change needing reviewer eyes. Tree is byte-identical to 171's tip
+(`git status` clean apart from this file). Scratch: the two build logs live in
+`/home/justin/aerial-agents/scratch/iter-172/`.
+
+**Open questions for the reviewer.**
+1. The 05:10 ruling's fix is implemented and blocked ONLY by
+   `relax_hands`/`hand_spread_gate`/`_finger_axes` assuming the fingers run
+   along world −z. Authorized to reframe that pipeline (cut perpendicular to
+   the measured hand axis `hax` instead of world z, gates unchanged)? It
+   touches only `blender/build_body.py` hand code under the NEXT.md mandate.
+2. Bideltoid at ±7.5° lands EXACTLY on the 0.410 gate; ±8.5° (the ruling's
+   number, +16 mm hand clearance) fails it at 0.411 because abducted arm verts
+   enter the deltoid slice. Should the deltoid slice measure body-side verts
+   only (arm-ownership excluded, as the curvature metric already excludes the
+   designed seam), or should the abduction ride at 7.5° with its 8.7 mm
+   clearance?
+
+**Verification.** `npm run test:unit` 81/81 PASS; `npm run test:golden` 30/30
+PASS — both on the reverted tip, byte-identical to HEAD (`6ef92b7`'s parent
+state; spine 14/14 re-run this session, kneeMax 1.003). The carry-over rig red
+(hands-vs-thigh, hx − tf = −46.8 mm class) remains honestly red, unchanged.
+
 ### 171 — Hands-vs-thigh: the mandated "arms-pose fix" is measurably impossible — the gate reads BIND-pose vertices, so the fix is BUILD-side; attempt implemented, measured (Δ = 0.0000 mm), and reverted; unit 81/81 + golden 30/30 re-verified on the reverted (170-identical) tip
 
 **Mandate.** The 04:00 ruling on 168 routed the hands-vs-thigh red to this slot
