@@ -261,6 +261,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
 | — | Iteration 169 | **NEXT.md / 04:00 ruling Q2 LANDED — the crouch-knee red is cleared two ways: (1) the A-frame stance is now written by `applyPose` itself (drivers mirror `_pinBootsToSkis`'s rz/hip walk-in, same `_aFrameOff` control), so probe-path instruments stop skinning a 3° rest mismatch (spine dose rest 2.054 → 1.003 rigid, crouch 8.503 → 8.035); (2) the 167 upper-slab re-blend widened 60 → 80 mm for the rotated rest — crouch 4.063, flight tuck 3.734 (gate ≤ 8.0, both comfortably green). ASSET_V 69 → 70; golden census-only re-capture after audit showed 0 physics diffs; unit 81/81, golden 30/30, look 6/6 (FACEDIST 0.1806), aframe/chain/spine green; the ONE remaining red is the known hands-vs-thigh gate, which the 04:00 ruling routes to the next slot as an arms-pose fix.** | 2 Blender builds ~38 s each; spine knee sweep neutral 1.003 / crouch 4.063 / flight 3.734 / pike 1.003; aframe kneeDev 1.62/1.52 vs control 12.51/11.77; chain 10/10. See entry 169. |
 
 | — | Iteration 165 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, mutation+coverage PASS; look 6/6 + grey-attr 2/2 solo on a free port, FACEDIST 0.1803 and in-run corridor ratio 1.037 hold; the relaunched full run-all LANDED ALL GREEN (drive 136 passed / 3 skipped — the parked aframe.spec; 41.8 m). #15/#16/#21 confirmed RED by eye on fresh shots (merged thigh mass; toed shoe; rotated/mirrored bib digits; unbounded magenta band wrap); one scene oddity flagged (dark-green ridge wedge over the peaks, top-left). No source/asset/gate change; NEXT.md untouched — the 01:35 combined slice is the 166 slot.** | run-all leg 1: drive FAIL-to-start (stale :8099 server, killed); leg 2 on the freed port: ALL GREEN, drive 136/3. Shots regenerated + inspected. See entry 165. |
@@ -1474,6 +1475,75 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 170 — REVIEW-ONLY: the 169 tip holds under a fresh full re-measure (unit 81/81, golden 30/30, look 6/6 FACEDIST 0.1806, spine/chain/aframe green, rig 37/38 with the carried hands-vs-thigh red); shots regenerated + inspected — #15 daylight, #16 boots, suit paint and the ridge wedge all confirmed still RED; re-prioritised list posted
+
+**Scope.** Review-only per the driver cadence (…165/170/…). No source, asset, gate,
+threshold, engine, DoF or NEXT.md change. `docs/NEXT.md` exists (suit reshape, steps
+1–3 remaining) — step 0 there is CLOSED by the 14:55 ruling and was not revisited; the
+work steps are out of scope for a review slot.
+
+**Self-review of 167–169.** `git log -3 --stat`: `2fac9d8` (169, applyPose stance +
+slab 80 mm + ASSET_V 70 + census-only trace re-capture), `c4ba4d8` (docs rulings),
+`d24ee51` (168, build-side A-frame bind re-export). 169's diff matches its entry exactly: 7 trace
+files changed 2 lines each (legs-carry-stance display census), `build_body.py` +7,
+`game.js` +25/−, athlete assets rebaked, no gate/threshold touched. Nothing
+half-done found; the carried red is disclosed in the entry.
+
+**Fresh measurements on this tip (all re-run this session, not quoted).**
+- `npm run test:unit` **81/81 PASS**; `npm run test:golden` **30/30 PASS**.
+- `look` **6/6 PASS**, shots regenerated: LOOK w 0.5 / h 1.379 / d 0.493, verts
+  13737, surfaces 34, uvSpan 0.992; FIGSIL span 0.935 frac 0.1983; FACEDIST
+  **0.1806** (≥ 0.15; front lensFrac 0.1567 vs back 0.0307 — lens discrimination
+  green); POSESHOT standOffs 0.998/0.998/1.806/0.6 as gated.
+- `spine chain aframe rig` (single run, free port): **37 passed / 1 failed** — the
+  one red is rig's hands-vs-thigh at **hx − tf = −0.0468 m** (gate ≥ 0.004), the
+  same −46.8 mm class 168/169 recorded. Spine, chain and aframe all green
+  (aframe kneeDev 1.62/1.52° vs control 12.51/11.77°; crouch knee 4.063 holds).
+
+**What reads wrong now (with the fresh shots + numbers).**
+1. **Hands-vs-thigh — the ONLY suite red, and now overdue.** The 04:00 ruling
+   routed it to "the next slot" as an arms-pose fix; that slot (169) was consumed
+   by the (also-ruling-mandated) crouch-knee fix, so the carried-red policy
+   ("clears next iteration or revert") is now formally breached by one slot. It
+   must LEAD the next work iteration.
+2. **#15 A-frame daylight still RED.** `figure_front.png`: the thighs read as one
+   merged mass from crotch to knees; the 0.81 cm mesh-space daylight (168) does
+   not survive the crotch shard cluster into render space. Gate ≥ 3 cm projected
+   stands red; the shard cleanup is still the named blocker.
+3. **#16 boots — author's negative control still on screen.** `figure.png` /
+   `figure_front.png`: the foot reads as a low dark shoe; cuff height, buckles and
+   the smooth toe box are absent. No boot work has landed since the #16 entry.
+4. **Suit paint white-on-white.** Two-tone panels, collar and cuffs (step 2 item
+   2) are absent; the only non-white suit content is the bib plate, the blue arm
+   stripe (present on BOTH arms, outer seam — step-3 verification still holds) and
+   the magenta waist band (ruled correct in front, wrap-bounded — the bounded-wrap
+   slice-2 work is still pending).
+5. **Scene: the 165 dark-green ridge wedge** still crosses the horizon right of
+   the peaks in `scene.png`. Unowned since 165; a display defect in existing
+   scenery, fixable under the standing rules.
+6. Corridor read is healthy: white against the flanks at the canonical framing,
+   FACEDIST/canary instruments all hold — no P0 regression seen.
+
+**Re-prioritised list for the next iterations.**
+1. **Hands-vs-thigh arms-pose fix** (04:00 ruling; overdue; carried-red policy).
+2. **Crotch/inner-thigh shard cluster cleanup** → unblocks 2b's ≥ 3 cm render-space
+   daylight gate (currently 0.81 cm mesh, bridged).
+3. **#16 real boots + #21 heels/tuck** (NEXT.md 2c+2d, ordered together by NEXT.md).
+4. **Step-2 paint slice:** two-tone panels, red collar line, cuffs, bounded
+   bib-band wrap.
+5. **Ridge-wedge scene defect** (165; may ride along in any slice with spare time).
+
+**Open questions for the reviewer.**
+1. Hands fix led 171 — confirm, and confirm the carried-red policy applies to it
+   as a DEFECT fix (revert is meaningless for a pose defect; the policy's teeth
+   here should be "the slot may not be spent on anything else until it is green").
+2. NEXT.md step 0 is stale (superseded by the 14:55 ruling) — leave it untouched
+   (reviewer-owned file) or may a work iteration annotate it as closed?
+3. The ridge wedge: is it mine to fix (existing-scenery defect) and where does it
+   rank against items 2–4?
+
+**Scratch.** none (no files outside the repo tree; shots are gitignored).
 
 ### 169 — NEXT.md crouch-knee red cleared: the A-frame stance moves into `applyPose` + the knee slab re-blend is re-faded for the rotated rest (crouch 8.503 → 4.063, flight tuck 3.734, gate 8.0); spine dose "rest must be rigid" 2.054 → 1.003; ASSET_V 70; golden census-only re-capture (audit: 0 physics diffs); the hands-vs-thigh red stands, routed by the 04:00 ruling to the arms-pose fix
 
