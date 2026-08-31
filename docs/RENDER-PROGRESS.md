@@ -11547,6 +11547,13 @@ into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-1
 2. crash-ragdoll was already 10/10 before the nudge (see change 4). Keep
    7.5 (ruling text) or roll back to 7.0 (the measured-green state)?
 
+**Follow-up (same slot, docs commit).** The batched run finished:
+`chain` + `flight-sweep` + `look` — **18 passed / 0 failed** on the welded
+skin (the hip weld did not disturb the chain solver's hip ≤ 20 mm gates, the
+per-frame flight boot–ski sweep, or any look gate; shots regenerated).
+Entry-192 verification is now complete except the two recorded opens
+(frozen side/back full-body numbers, crash-ragdoll at floor 7.5).
+
 ### 191 — NEXT.md 5a-NEW(i), #26 root cause SPLIT by render probe: front hole = skinned-inverted faces (culled backfaces), back hole = a real geometric gap (survives culling off); fix scoped for 192
 
 **Route.** Work slot on NEXT.md 5a-NEW(i) (the #26 mesh-side abdomen/hip fix,
