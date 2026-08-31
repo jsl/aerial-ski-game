@@ -34,6 +34,41 @@ async function measureFraming(page, label, alphaOff, fullBody) {
             if (m.isEnabled() && !isAthlete(m)) { hidden.push(m); m.setEnabled(false); }
         }
         const parts = scene.meshes.filter(isAthlete);
+        // ── POSE FREEZE (ruling on 191, 16:20: APPROVED) ────────────────
+        // The ready-state idle sway re-poses the athlete every frame, so
+        // side/back measurements flaked between runs (side 84 -> 0 px,
+        // entry 191) — both a false-green risk and it makes byte-stable
+        // reproduction claims impossible. Freeze the posed frame: snapshot
+        // every athlete transform (meshes + skeleton bones) and restore it
+        // in a LAST-registered before-render callback, so it runs after the
+        // game's pose solver and the raster always sees the same frame.
+        const frozen = [];
+        for (const p of parts) {
+            frozen.push({ o: p, p: p.position.clone(), r: p.rotation.clone(),
+                          q: p.rotationQuaternion ? p.rotationQuaternion.clone() : null,
+                          s: p.scaling.clone() });
+        }
+        const bones = [];
+        for (const sk of scene.skeletons) {
+            for (const b of sk.bones) {
+                bones.push({ b, p: b.position ? b.position.clone() : null,
+                             r: b.rotation ? b.rotation.clone() : null,
+                             q: b.rotationQuaternion ? b.rotationQuaternion.clone() : null });
+            }
+        }
+        const restorePose = () => {
+            for (const f of frozen) {
+                f.o.position.copyFrom(f.p); f.o.rotation.copyFrom(f.r);
+                if (f.q) { if (!f.o.rotationQuaternion) f.o.rotationQuaternion = f.q.clone(); else f.o.rotationQuaternion.copyFrom(f.q); }
+                f.o.scaling.copyFrom(f.s);
+            }
+            for (const f of bones) {
+                if (f.p) f.b.position.copyFrom(f.p);
+                if (f.r) f.b.rotation.copyFrom(f.r);
+                if (f.q) { if (!f.b.rotationQuaternion) f.b.rotationQuaternion = f.q.clone(); else f.b.rotationQuaternion.copyFrom(f.q); }
+            }
+        };
+        scene.registerBeforeRender(restorePose);
         let lo = null, hi = null;
         for (const p of parts) {
             p.computeWorldMatrix(true);
@@ -189,6 +224,7 @@ async function measureFraming(page, label, alphaOff, fullBody) {
             : comps.filter(c => c.minY > crotchLimit && c.area >= 20
                             && inSpan(c));
         scene.render();
+        scene.unregisterBeforeRender(restorePose);
         return { hipRow, crotchLimit,
             holes: holes.reduce((a, c) => a + c.area, 0),
             holeCount: holes.length,

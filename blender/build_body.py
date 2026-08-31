@@ -1812,6 +1812,142 @@ WEIGHT_SEAM_MAX = 1.10
 WEIGHT_SEAM_HOT_MAX = 6
 
 
+def weld_abdomen_hip_seam(low, arm):
+    """#26 (iter 192; rulings 2026-08-31 16:00 and 16:20): make the
+    abdomen/hip junction deform as ONE surface under pose.
+
+    The rest mesh is closed (the winding and watertight gates prove it), yet
+    under pose the junction tears — entry 191's probe split the symptom:
+    BACK, a real gap (survives culling off): the torso-shell bottom rim and
+    the thigh-tube top rim carry different weight vectors, so LBS shears one
+    past the other and background shows through. FRONT, culled backfaces:
+    the same shear degenerates/flips triangles at the belly, which Babylon
+    backface-culls away.
+
+    Fix per the 16:00 ruling ("make the abdomen/hip junction boundary
+    vertices share IDENTICAL weights across the seam — weld/unify so
+    skinning cannot separate them"): for every mesh edge whose endpoints'
+    dominant RUNTIME weight groups are torso-class vs upperLeg-class, both
+    endpoints take the normalised mean of the two weight vectors. The
+    deformation is then C0 across the seam by construction: identical
+    weights deform identically, whatever the pose.
+
+    Runs LAST in the weight pipeline (after the joint helpers and their
+    gates), so it touches only the abdomen/hip transition and cannot be
+    re-converged by a later pass. The seam and locality gates re-run after
+    it. Negative control: BODY_SABOTAGE_WELD=1 skips the pass.
+    """
+    if os.environ.get('BODY_SABOTAGE_WELD') == '1':
+        log('abdomen/hip weld SABOTAGED: pass SKIPPED — the render-space '
+            'full-body watertight gate must reject this build')
+        return 0
+    names = {g.index: g.name for g in low.vertex_groups}
+    W = _vertex_weights(low)
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W = [_collapse_helpers(w, names) for w in W]
+
+    def cls(w):
+        for gi, _ in sorted(w.items(), key=lambda kv: -kv[1]):
+            nm = names.get(gi, '')
+            if nm.startswith('upperLeg'):
+                return 'leg'
+        for gi, _ in sorted(w.items(), key=lambda kv: -kv[1]):
+            nm = names.get(gi, '')
+            if nm == 'torso' or nm.startswith('spine'):
+                return 'torso'
+        return None
+
+    groups = list(low.vertex_groups)
+    seam_edges = []
+    # Seam edges form connected RINGS; welding edge-by-edge cascades (welding
+    # (a,b) then (b,c) re-breaks a==b), so weld per CONNECTED COMPONENT:
+    # union-find over the seam edges, then every component takes ONE
+    # normalised mean weight vector — C0 inside the component by construction.
+    parent = list(range(len(low.data.vertices)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    n_seam = 0
+    comp_members = {}
+    for e in low.data.edges:
+        a, b = int(e.vertices[0]), int(e.vertices[1])
+        ca, cb = cls(W[a]), cls(W[b])
+        if not ca or not cb or ca == cb:
+            continue
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+        n_seam += 1
+        seam_edges.append((a, b))
+    for v in range(len(low.data.vertices)):
+        comp_members.setdefault(find(v), []).append(v)
+    for members in comp_members.values():
+        if len(members) < 2:
+            continue
+        seam_class = None
+        for v in members:
+            c = cls(W[v])
+            if c in ('torso', 'leg'):
+                seam_class = c
+                break
+        if seam_class is None:
+            continue
+        # only components that actually straddle the junction weld
+        classes = {cls(W[v]) for v in members}
+        if not ('torso' in classes and 'leg' in classes):
+            continue
+        acc = {}
+        for v in members:
+            for k, w in W[v].items():
+                acc[k] = acc.get(k, 0.0) + w
+        mean = {k: w / len(members) for k, w in acc.items()}
+        # A tiny mean weight (e.g. 0.063 upperLegR on a torso-side member)
+        # buys nothing mechanically but trips the locality gate (weight
+        # ≥ 0.05 beyond 1.70 x reach). Drop sub-0.10 keys — every member
+        # gets the same vector either way, so the seam stays C0.
+        mean = {k: w for k, w in mean.items() if w >= 0.10}
+        if not mean:
+            continue
+        top = sorted(mean.items(), key=lambda kv: -kv[1])[:WEIGHT_SEAM_INFLUENCES]
+        s2 = sum(w for _, w in top) or 1.0
+        avg = {k: v / s2 for k, v in top}
+        for v in members:
+            W[v] = dict(avg)
+            for g in groups:
+                if g.index in avg:
+                    g.add([v], avg[g.index], 'REPLACE')
+                else:
+                    # weight — a leftover group re-enters the runtime's
+                    # top-`cap` renormalisation and re-splits the seam.
+                    g.remove([v])
+    low.data.update()
+
+    # HARD GATE: every edge that straddled the junction BEFORE the weld —
+    # the rim pair that could tear apart under pose — must now carry
+    # IDENTICAL weights. (Edges from the welded ring to its blended
+    # neighbours remain smooth transitions by design; they were never the
+    # tearing pair.)
+    W2 = _vertex_weights(low)
+    if any(nm in JOINT_HELPERS for nm in names.values()):
+        W2 = [_collapse_helpers(w, names) for w in W2]
+    hot = 0
+    for (a, b) in seam_edges:
+        d = sum(abs(W2[a].get(k, 0.0) - W2[b].get(k, 0.0))
+                for k in set(W2[a]) | set(W2[b]))
+        if d > 1e-6:
+            hot += 1
+    log(f'ABDOMEN/HIP WELD: {n_seam} seam edge(s) in {len(comp_members)} '
+        f'component(s); residual discontinuities on the original seam '
+        f'{hot} (limit 0)')
+    if hot:
+        raise SystemExit('[body] ABDOMEN/HIP WELD gate FAILED: '
+                         f'{hot} seam edge(s) still carry different weights '
+                         'across the junction — skinning can separate them '
+                         'under pose (the #26 abdomen/hip see-through).')
+    return n_seam
 def weight_seam_gate(obj, tag):
     r = weight_seam_report(obj, tag)
     if r['max'] > WEIGHT_SEAM_MAX or r['hot'] > WEIGHT_SEAM_HOT_MAX:
@@ -1822,6 +1958,7 @@ def weight_seam_gate(obj, tag):
             f'hinge in it: neighbouring vertices driven by disjoint bones tear '
             f'under any pose that moves those bones apart.')
     return r
+
 # ── KNEE WEIGHT FREEZE (iter 164/166, NEXT.md #15 route (a)) ────────────────
 # The Sol thigh tubes move mid-thigh geometry, and the locality repair chain's
 # re-convergence then re-ramps the knee ring into an upperLeg-dominant step
@@ -2197,6 +2334,85 @@ def reclaim_chest_wall(body, joints):
         raise SystemExit(f'[body] chest reclaim selected nothing '
                          f'({dbg}) — the ownership defect is gone or the '
                          f'rule broke')
+
+def strip_arm_from_belly(body, joints):
+    """#26 front hole (iter 192; entry 191 finding 2): the lower-belly skin
+    carries MINORITY upperArm weight (the session-23 belly-vertex class).
+    reclaim_chest_wall only reclaims upperArmR-DOMINANT verts, so these
+    survive; under pose the arm's rotation shears the belly skin until its
+    triangles degenerate/flip and Babylon culls them — the byte-stable
+    52 px hole at x 674-679, y 324-338 (identical in 189/190/191/192).
+
+    Strip ANY upperArm{L,R} weight from a TORSO-SURFACE vertex in the
+    reclaim band: same z band and the same surface test reclaim_chest_wall
+    uses (a torso vertex's normal points away from the TORSO axis, an arm
+    vertex's away from the ARM axis), applied without the dominance
+    requirement. The removed weight renormalises onto the vertex's
+    remaining bone groups. Negative control: BODY_SABOTAGE_BELLY=1 skips
+    the pass — the full-body watertight gate must reject that build.
+    """
+    if os.environ.get('BODY_SABOTAGE_BELLY') == '1':
+        log('belly arm-strip SABOTAGED: pass SKIPPED')
+        return
+    gi = {g.name: g.index for g in body.vertex_groups}
+    arms = [gi[nm] for nm in ('upperArmL', 'upperArmR') if nm in gi]
+    it = gi.get('torso')
+    if it is None or not arms:
+        raise SystemExit('[body] belly strip: torso/upperArm groups missing')
+    tc = bl('torso')
+    half = SEGMENTS['torso']['h'] / 2
+    sh, elb = joints['shoulderR'], joints['elbowR']
+    axis = elb - sh
+    L2 = axis.length_squared
+    groups = list(body.vertex_groups)
+    n = 0
+    for v in body.data.vertices:
+        ws = {g.group: g.weight for g in v.groups if g.weight > 1e-6}
+        arm_w = sum(ws.get(a, 0.0) for a in arms)
+        if arm_w <= 0.02:
+            continue
+        if v.co.z > sh.z - 0.025 or v.co.z < tc.z - half:
+            continue
+        # FRONT MIDLINE BELLY only: the measured hole sits just above the
+        # hip at the front of the abdomen (front figure, x 674-679/1280).
+        # The hanging arms live at |x| ~ 0.13-0.17 — a wider net stripped
+        # 704 verts and hinge-cut the arm side wall (measured: seam gate
+        # max 1.676, 69 hot edges).
+        if abs(v.co.x) >= 0.10 or v.co.y <= 0.03:
+            continue
+        z = max(tc.z - half, min(tc.z + half, v.co.z))
+        near = Vector((tc.x, tc.y, z))
+        r_t = v.co - near
+        s = max(0.0, min(1.0, (v.co - sh).dot(axis) / L2))
+        r_a = v.co - (sh + axis * s)
+        nrm = Vector(v.normal)
+        if nrm.normalized().dot(r_a.normalized()) >= \
+           nrm.normalized().dot(r_t.normalized()):
+            continue
+        # Lateral RAMP, not a binary cut (the binary strip hinge-cut the
+        # boundary at |x| ~ 0.10, measured: seam max 1.572, 9 hot edges).
+        # Full strip at |x| <= 0.06, no-op at 0.10.
+        t = max(0.0, min(1.0, (0.10 - abs(v.co.x)) / 0.04))
+        new_arm = arm_w * (1.0 - t)
+        keep = {k: w for k, w in ws.items() if k not in arms and w > 1e-6}
+        tot_keep = sum(keep.values())
+        if tot_keep <= 1e-9:
+            continue
+        scale = (1.0 - new_arm) / tot_keep
+        keep = {k: w * scale for k, w in keep.items()}
+        for a in arms:
+            if a in ws:
+                keep[a] = new_arm * (ws[a] / arm_w)
+        for g in groups:
+            if g.index in keep:
+                g.add([v.index], keep[g.index], 'REPLACE')
+            else:
+                g.remove([v.index])
+        n += 1
+    body.data.update()
+    log(f'BELLY ARM-STRIP: {n} torso-surface vert(s) ramped (minority '
+        f'upperArm weight reduced, renormalised onto the remaining groups)')
+
 
 def _arm_cloud_dbg(body, tag):
     if os.environ.get('ARM_TRACE') != '1':
@@ -12191,6 +12407,16 @@ def main():
     joint_span_gate(low, arm, 'shipped skin')
     weight_seam_gate(low, 'shipped skin, after the helpers')
     weight_locality_gate(low, arm, 'shipped skin, after the helpers')
+    # #26 (iter 192): weld the abdomen/hip junction in weight space — the
+    # last weight operation before the stripe repair, so nothing re-opens it.
+    weld_abdomen_hip_seam(low, arm)
+    weight_seam_gate(low, 'shipped skin, after the abdomen/hip weld')
+    weight_locality_gate(low, arm, 'shipped skin, after the abdomen/hip weld')
+    # #26 front half: the minority-arm belly weights go too (after the weld,
+    # before the stripe repair — nothing re-opens either).
+    strip_arm_from_belly(low, joints)
+    weight_seam_gate(low, 'shipped skin, after the belly arm-strip')
+    weight_locality_gate(low, arm, 'shipped skin, after the belly arm-strip')
 
     # THE STRIPE OWNERSHIP REPAIR RUNS HERE, on the SHIPPED weights, and that
     # position is the whole point.  add_spine_chain and smooth_blend_rings both
