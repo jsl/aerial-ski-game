@@ -1462,11 +1462,15 @@ const _BOOT_CUFF_LEAN = 0.5000;   // 28.6 deg — see POSE_INRUN_TUCK: the rulin
                                   // 15-20 cannot reach the pre-existing hip-over-heel
                                   // gate (min 0.1718 m vs 0.12); 28.6 is inside the
                                   // footage band chain.spec.js already gates (15-35).
-// HUMAN TESTING #15 (A-frame): a stance change is a BIND change — the rig's
-// bind==driver-at-rest contract (rig.spec) requires the asset's inverse binds
-// to be re-exported against the new rest, so the 3-degree stance tilt is NOT
-// applied display-side. `tests/drive/aframe.spec.js` documents the measured
-// numbers and is parked (test.skip) until that build-side rebind lands.
+// HUMAN TESTING #15 (A-frame, reviewer ruling on 167 — 03:15): the stance
+// ships as ONE slice — the build-side bind re-export (build_body.py bakes the
+// A-frame rest, so bind==driver holds shipped-to-shipped) plus THIS
+// display-side tilt that puts the driver rests on the same stance. Three
+// degrees is visibly A-shaped while staying inside the reviewer's <=5 deg
+// knee-deviation gate; the shin stays vertical (no calf fan-out) and the
+// ankle never leaves the ski. `window._aFrameOff` is the browser negative
+// control for aframe.spec (it restores the pre-A-frame pin).
+const _A_FRAME_RZ = 3 * Math.PI / 180;
 // ── AUTHOR, HUMAN TESTING #12 item 3 (2026-08-30) ─────────────────────────
 // `reference/shots/author_binding_top_2026-08-30.png`, top view: the boots do
 // not stand on their skis and the binding blocks clamp nothing. Both faults
@@ -1642,9 +1646,22 @@ function _pinBootsToSkis(meshes, tuck, armRaise) {
         const solverFlex = ul.rotation.x - ll.rotation.x; // Simplified; need to preserve original knee flex
         const rxU = rxL + solverFlex, cU = Math.cos(rxU), sU = Math.sin(rxU);
         ul.rotation.x = rxU;
+        ll.rotation.z = 0;
+        const rzU = window._aFrameOff ? 0
+            : (side === 'L' ? -_A_FRAME_RZ : _A_FRAME_RZ);
+        const upX = -Math.sin(rzU);
+        ul.rotation.z = rzU;
+        // The thigh's bottom endpoint (knee) stays on the ski line while its
+        // top endpoint moves inward to the natural-width hip. The negative
+        // control centres the thigh on the midline while the shin still
+        // reaches the ski — the author-visible pinched-thigh fan.
+        ul.position.x = window._aFrameOff ? 0 : ax + _BOOT_SKI.hl * upX;
         ul.position.y = ay + 2 * _BOOT_SKI.hl * cL + _BOOT_SKI.hl * cU;
         ul.position.z = az + 2 * _BOOT_SKI.hl * sL + _BOOT_SKI.hl * sU;
     }
+    // Helper bones own the hip/knee skin bands, so they must read the final
+    // A-frame transforms rather than the pre-pin vertical pose.
+    updateJointHelpers(meshes);
     // Calibrate once, AFTER the seating above and only from the ready stance:
     // the residual to measure is what is left when the pin has already put the
     // shin where it means to, and the cuff lean swings the boot about the
@@ -2393,7 +2410,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=68";   // 68: NEXT.md step 1 — knee-band upper slab re-blend — athlete assets re-baked
+    const ASSET_V = "?v=69";   // 69: A-frame stance bind re-export — athlete assets re-baked (NEXT.md #15 slice)
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what

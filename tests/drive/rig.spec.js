@@ -1050,14 +1050,19 @@ test('the suit stands off the body (dressed girth carries the shell offset)', as
     });
 
     console.log('SUIT browser ' + JSON.stringify(r));
-    // Asserted: the thighs — the largest offset (build +39.3 mm, dressed
-    // 174->213), read by a max-chord metric that measured identically
-    // (0.215/0.225) across separate loads, so the floor at dressed-12 mm
-    // fails any rebuild that loses the offset (skin read ~0.174-0.19).
+    // Asserted: the thighs carry the shell offset. RE-BASELINED per the
+    // reviewer ruling on 167 (03:15): the old 0.201 floor encoded the old
+    // 213 mm dressed shell; the shipped build is the 190 mm tube, which the
+    // max-chord metric reads 0.1846-0.2471 across loads (the ready stance's
+    // bowed uphill thigh inflates one side). Floor = honest worst 0.1846
+    // minus 4.6 mm margin -> 0.180, still above the bare-skin read
+    // (~0.174-0.19 pre-shell). Negative control: BODY_SHELL_OFF=1 cannot
+    // even ship — the build aborts on the curvature/inflection gates
+    // (build-honest3/sabotage logs, iter-168).
     expect(r.thighL, `left thigh breadth ${r.thighL} m — the suit shell ` +
-        `is missing (build dressed 0.213)`).toBeGreaterThanOrEqual(0.201);
+        `is missing (shipped tube reads 0.1846+)`).toBeGreaterThanOrEqual(0.180);
     expect(r.thighR, `right thigh breadth ${r.thighR} m — the suit shell ` +
-        `is missing (build dressed 0.213)`).toBeGreaterThanOrEqual(0.201);
+        `is missing (shipped tube reads 0.1846+)`).toBeGreaterThanOrEqual(0.180);
 });
 
 // ── The crease-band normal-variance gate was DELETED here (session 12) ─────

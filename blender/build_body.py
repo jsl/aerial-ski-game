@@ -449,6 +449,17 @@ ARM_BIND = {
 
 def is_arm(name):
     return name in ARM_BIND
+# ── HUMAN TESTING #15: the A-frame stance (reviewer ruling on 167, 03:15) ──
+# The game pins the legs with the thighs tilted 3 deg in the FRONTAL plane
+# (game.js `_A_FRAME_RZ`): hips natural-width, knees over the ski line, shins
+# vertical. A stance change is a BIND change — rig.spec's bind==driver-at-rest
+# contract compares shipped-to-shipped, so the rest pose and the inverse binds
+# exported here must carry the same tilt the driver rests carry, or every
+# standing frame carries a residual deformation. These two constants mirror
+# game.js exactly (hl = _BOOT_SKI.hl; rz = _A_FRAME_RZ); bind==driver is an
+# exact-equality gate, so no slack lives here.
+AFRAME_RZ = 3 * math.pi / 180
+AFRAME_HL = 0.18
 
 
 def bl(name):
@@ -489,13 +500,18 @@ def bl(name):
         lateral = p.get('x', 0.0)
         vertical = p.get('y', 0.0)
         forward = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
+        if name.startswith('upperLeg'):
+            # A-frame: the thigh's TOP (hip) sits at the natural-width
+            # station ax + hl*(-sin rz) while the knee stays on the ski line
+            # (game.js _pinBootsToSkis). The centre moves by half the hip
+            # shift; the full slant lives in seg_ends.
+            sgn = 1.0 if lateral >= 0 else -1.0
+            lateral -= sgn * AFRAME_HL * math.sin(AFRAME_RZ) * 0.5
     return Vector((lateral, -forward, vertical))
 
 
 def seg_ends(name):
     """
-    The game's segment as a (head, tail) pair in Blender axes.
-
     A bone runs head -> tail, and for a hanging arm that is shoulder -> hand, so
     the arms run DOWNWARD while everything else runs up. That matches the driver's
     own rotation in the resting pose (rx = -pi), which is what makes the bind
@@ -504,6 +520,15 @@ def seg_ends(name):
     c = bl(name)
     half = SEGMENTS[name]['h'] / 2
     up = Vector((0, 0, half))
+    if name.startswith('upperLeg'):
+        # A-frame slant: head = knee ON the ski line, tail = hip at the
+        # shifted station — the bone carries the 3 deg frontal tilt and the
+        # mesh reshapes onto it (pose_as_rest).
+        sgn = 1.0 if c.x >= 0 else -1.0
+        d = AFRAME_HL * math.sin(AFRAME_RZ) * 0.5
+        hip = Vector((c.x + sgn * d, c.y, c.z))
+        knee = Vector((c.x - sgn * d, c.y, c.z))
+        return (knee - up, hip + up)
     return (c + up, c - up) if is_arm(name) else (c - up, c + up)
 
 
@@ -9991,6 +10016,13 @@ def _helper_rest_translation(name):
     sgn = 1.0 if end == 'outer' else -1.0
     lat, up = (ARM_BIND[prox] if is_arm(prox)
                else (p.get('x', 0.0), p.get('y', 0.0)))
+    if name.startswith('hlpHip'):
+        # A-frame (game.js _pinBootsToSkis + updateJointHelpers): the driver
+        # walks to the thigh top from the ALREADY shifted hip station, so the
+        # helper lands at ax - 2*hl*sin(rz) — one shift from _pinBootsToSkis'
+        # station plus one from walking up the tilted bone.
+        s2 = 1.0 if lat >= 0 else -1.0
+        lat -= s2 * 2.0 * AFRAME_HL * math.sin(AFRAME_RZ)
     return Vector((lat, up + sgn * half,
                    BASE_Z.get(prox, 0.0) + p.get('dz', 0.0)))
 
@@ -10275,11 +10307,11 @@ def patch_skin_binds(path):
     def seg_matrix(name):
         """
         The DRIVER'S REST LOCAL MATRIX, composed straight in the BABYLON axes
-        the accessor is consumed in (the game links bones and never rebakes,
         so these floats ARE the binding): translation = the POSE_UNTUCKED
-        centre exactly as game.js drives it — lateral on X, UP on Y, the
+        station exactly as game.js drives it — lateral on X, UP on Y, the
         BASE_Z fore/aft stagger on Z — rotation = identity except pi about X
-        for the arms (armSweep(phi = pi) at armDrop = 1).
+        for the arms (armSweep(phi = pi) at armDrop = 1) and the A-frame
+        frontal tilt for the thighs (game.js _A_FRAME_RZ).
         """
         p = POSE.get(name, {})
         if is_arm(name):
@@ -10291,6 +10323,13 @@ def patch_skin_binds(path):
         rot = Matrix.Identity(4)
         if is_arm(name):
             rot = Matrix.Rotation(math.pi, 4, 'X')
+        elif name.startswith('upperLeg'):
+            # A-frame (game.js _pinBootsToSkis): the thigh driver rests at
+            # the natural-width hip station ax - s*hl*sin(rz) with a frontal
+            # tilt of s*AFRAME_RZ about Z.
+            s = 1.0 if lat >= 0 else -1.0
+            lat -= s * AFRAME_HL * math.sin(AFRAME_RZ)
+            rot = Matrix.Rotation(s * AFRAME_RZ, 4, 'Z')
         return Matrix.Translation(Vector((lat, up, fore))) @ rot
 
     def spine_matrix(name):
@@ -10311,15 +10350,19 @@ def patch_skin_binds(path):
 
     def helper_matrix(name):
         """
-        The joint helpers' REST local matrices: translation to the joint, no
-        rotation. game.js walks each one to the same point off the thigh
-        driver every frame (updateJointHelpers), and at rest every leg driver
-        is unrotated, so the hip helper sits exactly on the thigh's top and the
-        knee helper exactly on its bottom. Bind == driver for the helpers is
-        the same statement it is for the spine, and rig.spec.js asserts it on
-        all of them.
+        The joint helpers' REST local matrices. game.js walks each one to the
+        same point off the proximal driver every frame (updateJointHelpers);
+        under the A-frame stance the leg helpers sit on the tilted thigh and
+        carry the HALF-ANGLE of its frontal tilt (rz = (arz + brz) / 2 =
+        AFRAME_RZ / 2), so the bind carries the same rotation — bind ==
+        driver for the helpers is the same statement it is for the spine,
+        and rig.spec.js asserts it on all of them.
         """
-        return Matrix.Translation(_helper_rest_translation(name))
+        m = Matrix.Translation(_helper_rest_translation(name))
+        if name.startswith(('hlpHip', 'hlpKnee')):
+            side = 1.0 if name.endswith('R') else -1.0
+            m = m @ Matrix.Rotation(side * AFRAME_RZ / 2.0, 4, 'Z')
+        return m
 
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
     want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})

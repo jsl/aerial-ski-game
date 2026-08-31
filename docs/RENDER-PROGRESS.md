@@ -10485,3 +10485,68 @@ traces; no trace re-capture and no physics/display census change.
 floodlight exclusion and rendered pole-luminance gate. The pre-existing
 `crash_rest.png` rest-x framing soft gate remains unrelated. No physics question
 or camera-clamp change was introduced.
+
+### 168 — NEXT.md #15 slice: the A-frame stance LANDED as a build-side bind
+re-export — bind==driver GREEN, aframe.spec UN-PARKED and green
+(kneeDev 1.62/1.52 deg vs 12.51/11.77 control), stand-off floor re-baselined
+0.201 → 0.180 per the authorized ruling; unit 81/81, golden 30/30 after
+census-only re-capture (audit: 0 physics-state diffs); TWO honest reds
+carried and analysed
+
+**Mandate.** `docs/NEXT.md` (#15 combined slice, components (2)+(3)+(4) of the
+163 ruling; the 03:15 ruling on 167 assigns this to 168). ASSET_V 68 → 69,
+athlete assets rebaked.
+
+**What changed.**
+- `blender/build_body.py`: AFRAME_RZ/AFRAME_HL mirror game.js exactly.
+  `bl()`/`seg_ends` pose the thigh bones on the slanted hip→knee line (hip at
+  the natural-width station, knee on the ski line); `seg_matrix` bakes the
+  driver rest with the 3 deg frontal tilt; `_helper_rest_translation` walks
+  the hip helper to ax − 2·hl·sin(rz); `helper_matrix` carries the half-angle
+  Rz(∓1.5 deg) on hlpHip/hlpKnee. Build self-check: binds verified against
+  driver rests, worst element diff 0.0; AFRAME FIT/TOPOLOGY/SHELLPROP all
+  green (tube 190 mm, gap +54 mm, arm/thigh 0.525).
+- `game.js`: `_pinBootsToSkis` now applies `_A_FRAME_RZ` (∓3 deg) +
+  `ll.rotation.z = 0` + helper refresh; `window._aFrameOff` negative control
+  (re-applied from the verified `sol/aframe-wip` probe, now legal because the
+  binds ship with it).
+- `tests/drive/aframe.spec.js` UN-PARKED: shipped kneeDev **1.62/1.52 deg**
+  (gate ≤ 5), shinTilt 1.62/1.52 (≤ 8), negative control **12.51/11.77 FAILS**
+  as required. Render-space mid-thigh daylight **0.81 cm** — still bridged by
+  the crotch shard cluster (recorded defect; step-2b gate is ≥ 3 cm).
+- `tests/drive/rig.spec.js`: stand-off floor re-baselined 0.201 → **0.180**
+  per the 03:15 authorization (shipped 190 mm tube reads 0.1846–0.2471 across
+  loads; old floor encoded the retired 213 mm shell; negative control
+  BODY_SHELL_OFF=1 aborts the build itself). Bind==driver now GREEN
+  (was failing on hlpHipL 0.0261 m, then upperLegL 0.0334 m — both bind-side,
+  fixed build-side, no game-side bind patching).
+
+**Verification.** unit 81/81; golden: audit-physics-state **0 physics diffs**
+(22 display-node scenarios re-captured census-only), verify **30/30** (final
+run). rig 11/13, aframe+spine+chain+look 29/31. FACEDIST 0.1806 (≥ 0.15).
+
+**Honest reds (both analysed, neither threshold touched beyond the authorized
+floor).**
+1. **hands-vs-thigh −46.8 mm L / −34.5 mm R** (was −56.6): improved by the
+   stance but NOT green — the 03:15 prediction ("clears geometrically,
+   gate green UNCHANGED") is falsified on the ready state: the ready-stance
+   bowed thigh juts to x=0.2029 while the hands hang at 0.1561. The gate's
+   contract (hand clears the leg face) is genuinely false in this pose;
+   fixing it is an arms/stance pose question, not an instrument question.
+2. **spine in-run crouch knee 8.503 max** (p999 4.312; was 2.65 in 167):
+   the A-frame tilt deepens the crouch knee strain past the 8.0 gate
+   (flight tuck 3.733, fine). Same class as 166/167; likely fix is
+   re-fading the upper-slab re-blend for the rotated rest, next iteration.
+
+**Open questions for the reviewer.**
+1. Hands gate: may it be re-derived to the ready-stance geometry (e.g. gate
+   the STANDING state instead, or gate hand-fore vs leg-face), or is the
+   ready bow itself the defect to fix? Numbers above.
+2. The crouch-knee 8.503: is fixing it in-slice (167's re-blend lever) the
+   order for 169, before step 2's curvature work?
+3. aframe render-space daylight 0.81 cm: the crotch shard cleanup (step 2
+   visual items) is now the only blocker for the 2b gate — confirm it may
+   lead the next slice.
+
+**Scratch.** `/home/justin/aerial-agents/scratch/iter-168/` (build logs ×4,
+probe patch; sabotage probe aborts by design — its log is the control).

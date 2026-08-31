@@ -220,7 +220,7 @@ async function measureFront(page) {
 // slice: kneeDev 1.62/1.52 deg (gate <=5), shinTilt 1.62/1.52 deg (gate <=8),
 // mid-thigh daylight 0.4 cm (gate >=3, bridged by the crotch shard cluster);
 // negative control (_aFrameOff) kneeDev 12.51/11.77 deg FAILS the 5-deg gate.
-test.skip('A-frame legs: frontal collinearity, no calf fan-out, and >=3 cm projected mid-thigh daylight (negative control: _aFrameOff)', async ({ page }) => {
+test('A-frame legs: frontal collinearity, no calf fan-out, and >=3 cm projected mid-thigh daylight (negative control: _aFrameOff)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
