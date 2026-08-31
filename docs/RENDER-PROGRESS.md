@@ -9719,3 +9719,34 @@ cover the decisions; nothing at 120 changes architecture).
 **Open questions for the reviewer:** none new — entry 112's crash-envelope
 question and entry 119's census-re-capture question remain open; the loop ends
 here at 120 as authorized.
+
+### CRASH-LANE session 1 — grounded crash rest
+
+**What changed (#20, display-only):** `game.js` no longer declares rest from a
+single planted torso / loose 0.5 m whole-body envelope. The bounded settle now
+continues until the lowest cap of every torso, head, arm and leg segment plus a
+hip cap is within 2.5 cm of its local surface; exact-length and terrain-contact
+passes alternate so lowering a limb cannot push another segment through the
+snow. `engine/`, body-model files, athlete assets, `ASSET_V`, and the parallel
+suit lane are untouched. `crash-ragdoll.spec.js` adds rendered per-segment gates
+for single/double/triple and a preserved-old-settle negative control.
+
+**Gate evidence:** the untouched runtime failed all three new world gates:
+single max clearance **0.288 m** (hip/leg absent), double **0.372 m** with
+0.011 m penetration (hip/leg absent), triple **0.136 m** with **0.068 m
+penetration** (hip absent). Fixed full serial spec: **7/7 PASS**; final
+clearance/penetration = single **0.029/0.016 m**, double **0.029/0.011 m**,
+triple **0.028/0.020 m**, with torso + hip + arm + leg contact true in every
+world. The old-settle control still failed at **0.294 m** max clearance. Legacy
+crash gates remained green: restAt **6.44 s** (3–7), support **19**, maxAbove
+0.132 m, post-stop exactly-zero span 23.56 s, worst joint angular speed 0.454
+rad/s, ski offsets 3.66/3.46 m. Unit **81/81 PASS**. Golden **30/30 PASS**
+after a **CENSUS-ONLY** recapture of 13 crash-tail scenarios;
+`audit-physics-state.js` reported **0 physics-state diffs across 30 scenarios /
+5408 frames**, 13 scenarios with display-node changes.
+
+**Open:** NEXT.md remains for ordered item #13 (crash-slide tuning remainder),
+then #14/#18/#19. The pre-existing `crash_rest.png` silhouette soft gate still
+reports span 0 because its camera does not thread rest-x; it is unrelated to
+ground contact. No physics rest-state defect was measured and no reviewer
+physics approval is needed for #20.

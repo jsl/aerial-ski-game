@@ -6245,6 +6245,11 @@ void main(void) {
             // fully limp ragdoll must FAIL the tumble-excursion gate.
             noRoll: typeof window !== 'undefined' && window._crashRollDisabled === true,
             limp: typeof window !== 'undefined' && window._crashLimp === true,
+            // HUMAN TESTING #20 negative control: retain the old loose
+            // "some support somewhere" settle (which left calves/hips up to
+            // 37 cm in the air) when the drive spec asks for it explicitly.
+            looseGroundRest: typeof window !== 'undefined' &&
+                window._crashLooseGroundRest === true,
         };
     }
 
@@ -6661,7 +6666,13 @@ void main(void) {
                     const _gap = pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
                     if (_gap > _propped) _propped = _gap;
                 }
-                if (!R.noRoll && _propped > 0.52) {
+                // HT#20: a planted torso is not a grounded body.  The old
+                // 0.52 m whole-particle threshold could stop with both legs
+                // and the hips visibly suspended.  The strict path always
+                // enters the bounded settle below, which measures the lowest
+                // cap of EVERY rendered segment.  The old decision remains
+                // reachable only for the firing negative control.
+                if (!R.noRoll && (!R.looseGroundRest || _propped > 0.52)) {
                     R.phase = 'settling'; R.settleT0 = R.t; R.maxSpeed = 0;
                 } else {
                 // Zero the settle's residual joint gaps: relax the hard
@@ -6725,10 +6736,12 @@ void main(void) {
             }
         } else if (R.phase === 'settling') {
             // Bounded post-stop settle: lower non-contacting parts at
-            // 0.15 m/s per frame (the rolling-settle rate; joint angular
-            // speed stays far under the 90°/s gate), relaxing the hard
-            // sticks so joints stay ≤ 2 cm, until every point is within
-            // 0.5 m of the snow or 2 s has elapsed — then rest.
+            // 0.15 m/s (the rolling-settle rate; joint angular speed stays
+            // far under the 90°/s gate), relaxing the hard sticks so joints
+            // stay ≤ 2 cm.  HT#20 replaces the old "any support, max point
+            // 0.5 m" finish with per-segment support: the lowest end cap of
+            // every torso/head/arm/leg segment, plus a hip cap, must be within
+            // 2.5 cm internally (headroom for the rendered 8 cm gate).
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
@@ -6736,17 +6749,48 @@ void main(void) {
                 if (_gap > _above) _above = _gap;
                 if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
             }
-            for (const hp of R.hard) {
-                const a = hp.a.p, b = hp.b.p;
-                const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-                const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
-                const k = (l - hp.rest) / l * 0.5;
-                a.x += dx * k; a.y += dy * k; a.z += dz * k;
-                b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+            // Alternate exact segment lengths with terrain projection.  The
+            // former settle ran only the length pass, so its final pass could
+            // push a supported torso through the snow (triple measured 6.8
+            // cm).  Four rounds converge both constraints without touching
+            // engine state or visually teleporting a limb.
+            for (let _round = 0; _round < 4; _round++) {
+                for (const hp of R.hard) {
+                    const a = hp.a.p, b = hp.b.p;
+                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                    const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                    const k = (l - hp.rest) / l * 0.5;
+                    a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                    b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                }
+                for (const pt of R.parts) {
+                    const _floor = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y < _floor) pt.p.y = _floor;
+                }
             }
+            const _gapAt = function (pt) {
+                return pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
+            };
+            const _restSegs = [
+                ['torsoBottom', 'torsoTop'], ['neck', 'headTop'],
+                ['shL', 'elbowL'], ['elbowL', 'wristL'],
+                ['shR', 'elbowR'], ['elbowR', 'wristR'],
+                ['hipL', 'kneeL'], ['kneeL', 'ankleL'],
+                ['hipR', 'kneeR'], ['kneeR', 'ankleR'],
+            ];
+            let _segmentAbove = 0;
+            for (const _pair of _restSegs) {
+                _segmentAbove = Math.max(_segmentAbove, Math.min(
+                    _gapAt(R.byName[_pair[0]]), _gapAt(R.byName[_pair[1]])));
+            }
+            const _hipAbove = Math.min(_gapAt(R.byName.hipL), _gapAt(R.byName.hipR));
             R.maxSpeed = 0;
-            if (_above <= 0.5 || R.t - R.settleT0 > 2) {
-                for (let _i = 0; _i < 10; _i++) {
+            const _settled = R.looseGroundRest
+                ? (_above <= 0.5 || R.t - R.settleT0 > 2)
+                : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025) ||
+                    R.t - R.settleT0 > 3.25);
+            if (_settled) {
+                for (let _i = 0; _i < 12; _i++) {
                     for (const hp of R.hard) {
                         const a = hp.a.p, b = hp.b.p;
                         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -6754,6 +6798,10 @@ void main(void) {
                         const k = (l - hp.rest) / l * 0.5;
                         a.x += dx * k; a.y += dy * k; a.z += dz * k;
                         b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                    for (const pt of R.parts) {
+                        const _floor = _crashFloorY(pt.p.z) + pt.r;
+                        if (pt.p.y < _floor) pt.p.y = _floor;
                     }
                 }
                 for (const pt of R.parts) {

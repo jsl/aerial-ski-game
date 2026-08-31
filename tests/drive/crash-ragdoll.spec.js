@@ -55,6 +55,140 @@ const SEG_H = {
     upperLegL: 0.36, upperLegR: 0.36, lowerLegL: 0.36, lowerLegR: 0.36,
 };
 
+// HUMAN TESTING #20: sample the lowest rendered point of every capsule-like
+// body segment after the crash state machine has stopped.  A segment is on the
+// snow when at least one of its two end caps is within 8 cm of the local
+// surface; checking every segment prevents a planted torso from hiding a
+// floating forearm, calf, or head.  The separate hip sample uses the proximal
+// caps of the thighs (their +Y ends in the driver convention above).
+async function measureGroundedCrashRest(page, world, looseRestControl) {
+    await page.goto('/index.html?world=' + world);
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    if (looseRestControl) {
+        await page.evaluate(() => { window._crashLooseGroundRest = true; });
+    }
+    await page.waitForTimeout(400);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._groundRestRun = { armed: false, down: false, tuck: false };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            const C = window._groundRestRun;
+            if (!C || C.done) return;
+            const g = window._getGameState();
+            if (g.crashed) {
+                if (C.down) { C.down = false; send('keyup', 'ArrowDown'); }
+                if (C.tuck) { C.tuck = false; send('keyup', 'Space'); }
+                return requestAnimationFrame(tick);
+            }
+            if (!g.grounded && g.posZ >= g.KICKER_END_Z && !C.armed) {
+                C.armed = true;
+                window._debugTriggerCrash();
+            }
+            if (g.grounded && !C.down && g.flipPower < 0.999) {
+                C.down = true; send('keydown', 'ArrowDown');
+            } else if (C.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                C.down = false; send('keyup', 'ArrowDown');
+            }
+            if (!g.grounded && !C.tuck) {
+                C.tuck = true; send('keydown', 'Space');
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window._getGameState().crashed,
+        null, { timeout: 90_000 });
+    await page.waitForFunction(() => {
+        const p = window._ragdollProbe && window._ragdollProbe();
+        return p && p.resting;
+    }, null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._groundRestRun.done = true;
+        BABYLON.EngineStore.LastCreatedScene.render();
+    });
+    return page.evaluate(({ SEG_H }) => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const radius = {
+            torso: 0.15, head: 0.11,
+            upperArmL: 0.08, upperArmR: 0.08,
+            lowerArmL: 0.08, lowerArmR: 0.08,
+            upperLegL: 0.08, upperLegR: 0.08,
+            lowerLegL: 0.08, lowerLegR: 0.08,
+        };
+        const ends = {};
+        for (const [name, height] of Object.entries(SEG_H)) {
+            const mesh = scene.getMeshByName(name);
+            const p = mesh.getAbsolutePosition();
+            const d = mesh.getDirection(BABYLON.Axis.Y);
+            ends[name] = [-1, 1].map((sign) => {
+                const x = p.x + d.x * height * 0.5 * sign;
+                const y = p.y + d.y * height * 0.5 * sign;
+                const z = p.z + d.z * height * 0.5 * sign;
+                return { x, y, z, clearance: y - radius[name] - window._crashFloorY(z) };
+            });
+        }
+        const segmentClearance = {};
+        let maxClearance = -Infinity;
+        let maxPenetration = 0;
+        for (const [name, pair] of Object.entries(ends)) {
+            segmentClearance[name] = Math.min(pair[0].clearance, pair[1].clearance);
+            maxClearance = Math.max(maxClearance, segmentClearance[name]);
+            maxPenetration = Math.max(maxPenetration,
+                -pair[0].clearance, -pair[1].clearance);
+        }
+        // Leg +Y is proximal, so ends[name][1] is the rendered hip cap.
+        const hipClearance = Math.min(
+            ends.upperLegL[1].y - 0.10 - window._crashFloorY(ends.upperLegL[1].z),
+            ends.upperLegR[1].y - 0.10 - window._crashFloorY(ends.upperLegR[1].z));
+        const armClearance = Math.min(...['upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR']
+            .map((n) => segmentClearance[n]));
+        const legClearance = Math.min(...['upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR']
+            .map((n) => segmentClearance[n]));
+        const contacts = {
+            torso: segmentClearance.torso <= 0.08,
+            hip: hipClearance <= 0.08,
+            arm: armClearance <= 0.08,
+            leg: legClearance <= 0.08,
+        };
+        return { segmentClearance, maxClearance, maxPenetration,
+            hipClearance, armClearance, legClearance, contacts };
+    }, { SEG_H });
+}
+
+for (const world of ['single', 'double', 'triple']) {
+    test(`crash #20: ${world} grounded rest contacts every body segment`, async ({ page }) => {
+        test.setTimeout(240_000);
+        const m = await measureGroundedCrashRest(page, world, false);
+        console.log(`CRASHGROUND world=${world} maxClear=${m.maxClearance.toFixed(3)} ` +
+            `maxPen=${m.maxPenetration.toFixed(3)} contacts=${JSON.stringify(m.contacts)} ` +
+            `segments=${JSON.stringify(m.segmentClearance)}`);
+        expect(m.maxClearance,
+            `${world}: every segment's lowest point clearance ≤ 8 cm`).toBeLessThanOrEqual(0.08);
+        expect(m.maxPenetration,
+            `${world}: every segment penetration ≤ 5 cm`).toBeLessThanOrEqual(0.05);
+        expect(m.contacts, `${world}: torso + hip + arm + leg contact set`).toEqual({
+            torso: true, hip: true, arm: true, leg: true,
+        });
+    });
+}
+
+test('crash #20 negative control: the old loose settle leaves a segment airborne', async ({ page }) => {
+    test.setTimeout(240_000);
+    const m = await measureGroundedCrashRest(page, 'double', true);
+    const gatePasses = m.maxClearance <= 0.08 && m.maxPenetration <= 0.05 &&
+        Object.values(m.contacts).every(Boolean);
+    console.log(`CRASHGROUND NEGCONTROL maxClear=${m.maxClearance.toFixed(3)} ` +
+        `maxPen=${m.maxPenetration.toFixed(3)} contacts=${JSON.stringify(m.contacts)}`);
+    expect(gatePasses,
+        'negative control: old loose settle must FAIL clearance/penetration/contact gate').toBe(false);
+});
+
 test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, settles with skis at rest', async ({ page }) => {
     // 240 s: the state predicates below are the real gates; this is only the
     // wall-clock budget for reaching them under in-suite SwiftShader load
