@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=75";   // 75: #23.3 de-shading — leg-garment AO/normal mid-band (muscle) flatten in build_body.py, iter 183
+    const ASSET_V = "?v=76";   // 76: #16 real boots — athleteBoot{L,R} primitives in athlete_body.glb (build_body.py --boots on), iter 188
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -2890,6 +2890,22 @@ void main(void) {
                         part.alwaysSelectAsActiveMesh = true;
                     }
 
+                    // #16 (NEXT.md item 5): rigid ski boots, one primitive per
+                    // side, skinned in the build to lowerLegL/R (weight sums
+                    // verified 1.000 in the shipped glb). Same treatment as the
+                    // body primitives: parented, skeleton-linked, never culled.
+                    // They use the build's own glossy navy PBR material, keep
+                    // the body's reveal gating, and stay hidden outside the
+                    // alpine worlds (same rule as the skis).
+                    const bootParts = res.meshes.filter(m =>
+                        m.name && /^athleteBoot[LR]$/.test(m.name) &&
+                        m.getTotalVertices && m.getTotalVertices() > 0);
+                    for (const b of bootParts) {
+                        b.parent = character.root;
+                        b.skeleton = skel;
+                        b.alwaysSelectAsActiveMesh = true;
+                    }
+
                     // The body exports with two material slots — suit and helmet —
                     // so Babylon receives two submeshes. Shading them differently is
                     // most of what makes the head legible at distance; as one blue
@@ -3014,7 +3030,8 @@ void main(void) {
 
                     window._athleteMaps = [suitAlbedo, suitNormal, suitAO];
                     for (const m of res.meshes) {
-                        if (!bodyParts.includes(m) && !/^ski[LR]$/.test(m.name)) {
+                        if (!bodyParts.includes(m) && !bootParts.includes(m)
+                            && !/^ski[LR]$/.test(m.name)) {
                             try { m.dispose(); } catch (e) {}
                         }
                     }
@@ -3023,7 +3040,9 @@ void main(void) {
                     // loader, so hide them (and keep the skis hidden) until
                     // the maps are ready and one frame has rendered.
                     for (const part of bodyParts) part.isVisible = false;
-                    _pendingBodyParts = bodyParts;
+                    for (const b of bootParts) b.isVisible = false;
+                    _pendingBodyParts = _alpineWorld()
+                        ? bodyParts.concat(bootParts) : bodyParts;
                     window._bodyLinked = linked;
                 })
                 .catch(function () {
@@ -7977,6 +7996,7 @@ void main(void) {
                 for (const m of scene.meshes) {
                     if (!m.name) continue;
                     if (m.name.startsWith('athleteBody')) m.isVisible = true;
+                    else if (/^athleteBoot[LR]$/.test(m.name)) m.isVisible = _alpineWorld();
                     else if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
                         m.isVisible = !window._bodyLinked;
                     }

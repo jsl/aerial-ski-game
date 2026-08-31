@@ -10155,7 +10155,12 @@ def add_boots(arm, joints, body):
         bpy.ops.object.join()
         boot = bpy.context.active_object
         boot.name = f'athleteBoot{side}'
+        boot.data.name = f'athleteBoot{side}'
+        # 187: shade_smooth over a JOINED pile of primitives reads as lumps —
+        # it bends across what should be hard shell edges. Angle-limited
+        # smoothing keeps the cylinders/cuff round and the sole ledges crisp.
         bpy.ops.object.shade_smooth()
+        bpy.ops.object.shade_smooth_by_angle(angle=math.radians(35))
         boot.vertex_groups.new(name=leg)
         boot.vertex_groups[leg].add(list(range(len(boot.data.vertices))), 1.0, 'ADD')
         mod = boot.modifiers.new('arm', 'ARMATURE')
@@ -10165,7 +10170,7 @@ def add_boots(arm, joints, body):
         mat.use_nodes = True
         bsdf = mat.node_tree.nodes.get('Principled BSDF')
         if bsdf:
-            bsdf.inputs['Base Color'].default_value = (0.028, 0.034, 0.075, 1.0)
+            bsdf.inputs['Base Color'].default_value = (0.050, 0.060, 0.130, 1.0)
             bsdf.inputs['Roughness'].default_value = 0.35
         boot.data.materials.append(mat)
         log(f'boot {side}: shell to z={cuff_top:.3f}, sole {sole:.3f}, '
@@ -12034,17 +12039,16 @@ def main():
     bpy.data.objects.remove(high, do_unlink=True)
 
     equip = add_equipment()
-    # #16 boots (NEXT.md item 5): OPT-IN until the skin defect below is fixed.
-    # Iter 187 measured the exported boot primitives: JOINTS_0 all correct
-    # (11/12 = lowerLegL/R) but WEIGHTS_0 sums ran 0..0.75 instead of 1.0, so
-    # zero-weight vertices stay in mesh-local space and float at the skeleton
-    # root (stray navy boxes at the neck in figure_front.png). Default build
-    # therefore ships the v75 painted-leg boots; --boots on reproduces the
-    # defect for the next iteration to debug.
+    # #16 boots (NEXT.md item 5): rigid boot shells skinned to the shins.
+    # Iter 187's "WEIGHTS_0 sums 0..0.75" was NOT a weight defect: the boots
+    # were never in the export selection (use_selection ships low + arm +
+    # equip only), so the glb 187 read was the previous build and the sum
+    # readback itself mis-parsed VEC4 ubyte joints / float weights. Measured
+    # on the real export (iter 188): both boot primitives sum exactly 1.000,
+    # joints 11/12 = lowerLegL/R. boots join equip so the selection ships
+    # them.
     boots = add_boots(arm, joints, low) if arg('--boots', 'off') == 'on' else []
-    if boots:
-        raise SystemExit('[body] --boots on: the exported boot weights are '
-                         'broken (see the block comment above); not shippable')
+    equip = equip + boots
 
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.

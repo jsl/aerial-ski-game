@@ -278,6 +278,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 188 | **NEXT.md item 5 COMPLETED (#16 real boots LANDED): 187's "WEIGHTS_0 sums 0..0.75" was NOT a weight defect — the boots were never in the glTF export selection (`use_selection` ships low+arm+equip only) and 187's sum readback mis-parsed VEC4 ubyte joints / float weights. `build_body.py`: boots now join `equip` (shipped), `--boots on` hard-exit gate removed, angle-limited shading (`shade_smooth_by_angle` 35°, fixes 187's "pile of lumps"), navy lightened (0.050,0.060,0.130). MEASURED on the shipped glb: athleteBootL/R 414 verts each, JOINTS_0 {11}/{12}=lowerLegL/R, WEIGHTS_0 sums exactly 1.000 on all 5 primitives. `game.js`: bootParts parented to skierRoot, skeleton-linked, alwaysSelectAsActiveMesh, excluded from the dispose sweep, revealed with the body only in alpine worlds, re-shown with the body on run reset. ASSET_V 75→76. CARRIED (pre-existing, byte-identical on clean HEAD): rig.spec hands-vs-thigh (−0.0403 m) and suit stand-off right thigh (0.1792 vs ≥0.180) reds, both pending the reviewer's open rulings. NEXT.md next: item 6 hands step 2.**
 | — | Iteration 184 | **NEXT.md item 5 (#21 half) — the PER-FRAME FLIGHT BOOT–SKI SWEEP gate LANDED: `flight-sweep.spec.js` drives a full jump (comp=easy), pulses the tuck airborne (blend-up → deep tuck → blend-down all swept) and samples `_bootSkiProbe()` every rAF frame: toe AND heel ≤ 5 mm both skis every live frame (crash excluded as the allowed violation), airborne ski-vs-shin pitch ≤ 2°. MEASURED: worst gap 0.00 mm / worst pitch 0.00° over 24 live airborne frames — the pin already seats analytically every frame; flight keeps zero cuff lean (armRaise=1 semantics untouched). `_flightPinOff` negative control (skip pin + 30 mm heel lift) FAILS the gate (fires). Tuck-vs-photo numbers: kneeToChest 0.419 m, torso −25°, knee 105°. OPEN: #16 the real boot (clog/cuff/ledges/buckles) = item 5's remainder, routed to 185. No asset change, ASSET_V 75.** | unit 81/81, golden 30/30, flight-sweep 2/2, inrun-contact+crouch+hop-turn+chain+aframe 17/17, look 6/6 shots inspected. See entry 184. |
 | — | Iteration 186 | **NEXT.md item 5 remainder (#21 TUCK REMODEL) — `POSE_TUCKED` rebuilt to the author's photo by chain-consistent forward kinematics, DISPLAY ONLY (POSE_TUCKED_INERTIA byte-frozen): kneeToChest 0.419 → 0.190 m (≤ 0.22), knee interior 30° → 130° flexion, torso −25° → −14.3°, arms wrap the knees (hand on the knee front, elbows in), head up, skis pitched with the shins and ankle on the binding anchor (0 mm analytic). unit 81/81; golden audit 0 physics diffs / 5408 frames, census-only recapture → 30/30; chain+flight-sweep 12/12; inrun/crouch/hop/aframe/spine 30/30; look 6/6, pose_tuck_side inspected (matches photo). CARRIED RED: crash-ragdoll #13 triple pastRollOut 9.945 vs band ≥ 10 (−0.055 m; all other sub-checks pass, single/double green) — ragdoll seeds from the posed frame, disposition question posted. #16 boots next.** | see entry 186. |
 | — | Iteration 183 | **NEXT.md #23.3 FINAL UNIT — the 10:55 ruling's DE-SHADING slice LANDED: `flatten_leg_shading` in build_body.py removes the MID-FREQUENCY (muscle-scale) band from the leg garment's AO+normal maps (edge-preserving band-stop inside the upperLeg/lowerLeg UV mask, 550k texels; low-freq shading + weave kept — suit NM variance floor 6.3 holds at 6.95; panel seams kept via gradient mask). Texture mid-band: normal 13.30→5.21, ao 15.71→8.14 /255. Build-side HARD gate added; negative control BODY_FLATTEN_OFF=1 build FAILS it (fires). NEW `leg-shading.spec.js` gates the flatten stats in athlete_maps.json (≤7.0/≤10.0 and <70% of before); render-space band-pass instrument REPORTED HONESTLY NON-DISCRIMINATIVE (thigh bp3_7 13.65 pre vs 13.26 post — lighting/SSAO/panel edges swamp the texture signal; open question 1). Shots inspected: legs read near-flat fabric, no carve-outs, bib 30 legible. ASSET_V 74→75.** | unit 81/81, golden 30/30, tube-smooth 1/1, leg-shading 1/1, look 6/6. See entry 183. |
@@ -11469,6 +11470,113 @@ fragments sit between the legs' spans.
 into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
 (negative-control logs, sabotaged/experiment builds — reviewer sweeps).
 
+### 188 — NEXT.md item 5 COMPLETED: #16 real boots LANDED — 187's "weight defect" was a measurement artefact (boots were never in the export selection and the sum readback mis-parsed the GLB); boots shipped in the glb, wired in game.js, ASSET_V 76
+
+**Root cause of 187's failure.** Two independent errors, neither in the skin:
+(1) `add_boots`' output was never added to the export selection —
+`bpy.ops.export_scene.gltf(use_selection=True)` ships low + arm + equip
+(skis) only, so any boot primitives 187 found in a glb were stale carry-over
+from a previous file, not this build's mesh; (2) the JOINTS_0/WEIGHTS_0
+"byte readback" parsed VEC4 ubyte joints and float weights without applying
+buffer-view offsets/strides, producing garbage sums (this session's first
+three parser attempts reproduced exactly that class of false 0..4 sums).
+With the boots in the selection, the export measures **exactly**: boot
+primitives sum 1.000 on every vertex, joints {11}/{12} = lowerLegL/R; the
+body primitives are unchanged (sums 1.000, same joints as the shipped v75).
+
+**What shipped.** `blender/build_body.py`: boots join `equip` (so
+`use_selection` exports them); the `--boots on` hard-exit gate removed;
+`shade_smooth_by_angle(35°)` after the join (187's "pile of lumps" was
+smooth shading bending across hard shell edges); navy lightened to
+(0.050, 0.060, 0.130) so the cuff separates from the dark painted liner.
+`game.js`: `bootParts` (meshes named `athleteBootL/R` by node name) parented
+to `skierRoot`, `skeleton = skel`, `alwaysSelectAsActiveMesh`, excluded from
+the post-import dispose sweep, hidden until the body reveal and revealed
+with the body ONLY in alpine worlds (skis' rule), re-shown with the body on
+run reset (`_alpineWorld()`-gated). They ride the build's own glossy navy
+PBR (`bootShell`) — no game-side material needed. They are under
+`skierRoot`, so `_linkAthleteShadowCasters` picks them up at the reveal, and
+the P11 crash keeps them visible (skinned rigid to the shins the ragdoll
+drives). `ASSET_V` 75 → 76; `assets/athlete_body.glb` + the four map files
+rebuilt (maps byte-differ only in bake GPU noise).
+
+**Verification.** Shipped glb weight audit (scratch `weights.mjs`, offsets
+and strides applied): athleteBootL/R 414 verts, sums min=max=1.0000, joints
+[11]/[12]; humanBase primitives unchanged vs v75. `npm run test:unit`
+**81/81**; `npm run test:golden` **30/30** (no trace movement — display
+only). `rig.spec.js` + `hop-turn.spec.js`: 12 passed, 2 failed — BOTH
+reproduced byte-identically on clean HEAD via `git stash` (the long-carried
+hands-vs-thigh red, hx−tf = −0.0403 m, and the suit stand-off right-thigh
+red, 0.1792 vs ≥ 0.180): pre-existing, not this change. `look` regenerated;
+`figure_front.png` navy-pixel census: mass at the helmet (top) and the feet
+(y 700–850: 2.2–3.4k px/band), none at shoulders/torso — 187's stray-box
+signature is gone.
+
+**Open questions for the reviewer:**
+- The carried red from 186 (`crash-ragdoll` #13 triple, 9.945 vs ≥ 10)
+  still awaits a disposition ruling ((a) band re-derivation vs (b) ragdoll
+  seed decoupling); now joined by the two pre-existing rig.spec reds above
+  if the earlier rulings have lapsed. Per the carried-red policy these are
+  documented, not worked this slot.
+- Is `ASSET_V` 76 with boots default-ON acceptable to the author's eye, or
+  should the boot shell's proportions be tuned (sole width/ledge prominence)
+  before #17?
+
+
+### 187 — NEXT.md item 5 remainder, #16 real boots: built the full boot geometry in build_body.py and wired it end-to-end (Blender → glb → game.js), then REVERTED the asset: the skinned export has a weight defect, so the shipped build stays at v75. Opt-in reproduction kept behind `--boots on`
+
+**What was built (one coherent unit, attempted and measured honestly).**
+`blender/build_body.py: add_boots(arm, joints, low)` — per side a merged
+13-piece boot modelled on `reference/shots/author_boot_ref_2026-08-30.jpg`:
+sole plate + DIN toe/heel ledges, clog with a half-round toe cap, tapered
+shank, forward-leaning cuff (12°), power strap, 3 outer-face buckles + 1
+instep buckle, navy shell material, no logos. All vertices weighted to
+`lowerLeg{L,R}` (rigid, the rigid_boots argument); exported with the skis'
+selection block. game.js: `bootParts` (named `athleteBootL/R`) parented to
+`skierRoot`, skeleton-linked, given a glossy navy `athleteBoot_mat`, hidden in
+non-alpine worlds, exempted from the post-import `res.meshes` dispose sweep
+(that sweep was silently deleting them), and re-shown with the body on crash
+re-skin.
+
+**Why it did NOT ship.** End-to-end the boots DID appear in the live scene
+(probe: 2 meshes, 324 verts each, skinned, correct material, on the skis) —
+but the render is defective, measured and seen:
+- WEIGHTS_0 sums on both boot primitives run **0 .. 0.75** instead of 1.0
+  (byte readback of JOINTS_0/WEIGHTS_0, both meshes). JOINTS_0 themselves are
+  correct (324/324 verts at joint 11 / 12 = lowerLegL/R). Zero-weight vertices
+  are not transformed by the skin and float at the skeleton root — the stray
+  navy boxes at the neck/shoulders in the regenerated figure shots.
+- The joined-primitive shell with `shade_smooth` reads as a pile of lumps, not
+  a boot; the cuff is visually lost against the dark painted liner leg.
+With ~15 minutes of slot left and a broken-looking figure, the asset, the
+ASSET_V bump and the game.js wiring were reverted to committed v75 state
+(`git checkout`), and the Blender-side builder was kept but gated:
+`--boots on` now REPRODUCES the defect and hard-exits so the default build
+can never ship it. `ASSET_V` stays 75 (assets byte-restored; a default
+rebuild without `--boots` produced an identical glb, confirming the gate).
+
+**Verification.** Default build re-run post-gate: exports clean (no boots,
+equipment=2), assets restored to committed v75 bytes. `npm run test:unit`
+**81/81**; `npm run test:golden` **30/30** (no trace movement — nothing
+shipped). Look spec ran green earlier on the experimental build (6/6) but
+that build's figure shots showed the defect described above; shots regenerated
+afterwards are identical to v75's.
+
+**Open / not done.** #16 remains the open remainder of NEXT.md item 5. Next
+slot: root-cause the exporter weight path (likely the manual
+`vertex_groups[leg].add(...)` on a just-joined mesh vs. how the body's
+`humanBase` groups are authored — the body skins perfectly through the same
+exporter), then re-land geometry + game wiring + ASSET_V bump in one go, with
+the buckle/shell read (shade_smooth → flat/smooth split, lighter navy) fixed
+in the same pass.
+
+**Open questions for the reviewer:**
+- The carried red from 186 (`crash-ragdoll` #13 triple, 9.945 vs ≥10) still
+  awaits a disposition ruling: (a) band re-derivation vs (b) ragdoll seed
+  decoupling. One slot to clear or revert per policy.
+- Is `--boots on` + hard-exit an acceptable way to keep the exploratory
+  builder in the tree, or should it come out until it can ship?
+
 ### 186 — NEXT.md item 5 remainder, #21 tuck remodel: POSE_TUCKED rebuilt to the
 author's photo (`reference/shots/author_tuck_ref_2026-08-31.jpg`) per the ruling on
 184 — chain-consistent forward kinematics, DISPLAY ONLY
@@ -11541,57 +11649,3 @@ deleted (items 5b, 6, 7, 8 remain).
   184 + the standing 17:05 POSE_TUCKED approval + NEXT.md item 5's display-only
   mandate. If the reviewer wants it governed differently, say so and I will
   revert to the previous table (trivially recoverable).
-
-### 187 — NEXT.md item 5 remainder, #16 real boots: built the full boot geometry in build_body.py and wired it end-to-end (Blender → glb → game.js), then REVERTED the asset: the skinned export has a weight defect, so the shipped build stays at v75. Opt-in reproduction kept behind `--boots on`
-
-**What was built (one coherent unit, attempted and measured honestly).**
-`blender/build_body.py: add_boots(arm, joints, low)` — per side a merged
-13-piece boot modelled on `reference/shots/author_boot_ref_2026-08-30.jpg`:
-sole plate + DIN toe/heel ledges, clog with a half-round toe cap, tapered
-shank, forward-leaning cuff (12°), power strap, 3 outer-face buckles + 1
-instep buckle, navy shell material, no logos. All vertices weighted to
-`lowerLeg{L,R}` (rigid, the rigid_boots argument); exported with the skis'
-selection block. game.js: `bootParts` (named `athleteBootL/R`) parented to
-`skierRoot`, skeleton-linked, given a glossy navy `athleteBoot_mat`, hidden in
-non-alpine worlds, exempted from the post-import `res.meshes` dispose sweep
-(that sweep was silently deleting them), and re-shown with the body on crash
-re-skin.
-
-**Why it did NOT ship.** End-to-end the boots DID appear in the live scene
-(probe: 2 meshes, 324 verts each, skinned, correct material, on the skis) —
-but the render is defective, measured and seen:
-- WEIGHTS_0 sums on both boot primitives run **0 .. 0.75** instead of 1.0
-  (byte readback of JOINTS_0/WEIGHTS_0, both meshes). JOINTS_0 themselves are
-  correct (324/324 verts at joint 11 / 12 = lowerLegL/R). Zero-weight vertices
-  are not transformed by the skin and float at the skeleton root — the stray
-  navy boxes at the neck/shoulders in the regenerated figure shots.
-- The joined-primitive shell with `shade_smooth` reads as a pile of lumps, not
-  a boot; the cuff is visually lost against the dark painted liner leg.
-With ~15 minutes of slot left and a broken-looking figure, the asset, the
-ASSET_V bump and the game.js wiring were reverted to committed v75 state
-(`git checkout`), and the Blender-side builder was kept but gated:
-`--boots on` now REPRODUCES the defect and hard-exits so the default build
-can never ship it. `ASSET_V` stays 75 (assets byte-restored; a default
-rebuild without `--boots` produced an identical glb, confirming the gate).
-
-**Verification.** Default build re-run post-gate: exports clean (no boots,
-equipment=2), assets restored to committed v75 bytes. `npm run test:unit`
-**81/81**; `npm run test:golden` **30/30** (no trace movement — nothing
-shipped). Look spec ran green earlier on the experimental build (6/6) but
-that build's figure shots showed the defect described above; shots regenerated
-afterwards are identical to v75's.
-
-**Open / not done.** #16 remains the open remainder of NEXT.md item 5. Next
-slot: root-cause the exporter weight path (likely the manual
-`vertex_groups[leg].add(...)` on a just-joined mesh vs. how the body's
-`humanBase` groups are authored — the body skins perfectly through the same
-exporter), then re-land geometry + game wiring + ASSET_V bump in one go, with
-the buckle/shell read (shade_smooth → flat/smooth split, lighter navy) fixed
-in the same pass.
-
-**Open questions for the reviewer:**
-- The carried red from 186 (`crash-ragdoll` #13 triple, 9.945 vs ≥10) still
-  awaits a disposition ruling: (a) band re-derivation vs (b) ragdoll seed
-  decoupling. One slot to clear or revert per policy.
-- Is `--boots on` + hard-exit an acceptable way to keep the exploratory
-  builder in the tree, or should it come out until it can ship?
