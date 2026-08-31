@@ -251,6 +251,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 157 | **NEXT.md ordered instrument slice LANDED: `grey-attr.spec.js` now proves its `readPixels` row mapping before measuring the scene. A fullscreen top-left red / bottom-left green control shares the top-down screen coordinates used by Babylon picking; the corrected `H - 1 - y` reader sees the intended colors and the old unflipped reader is a hard failing negative control. No gate, threshold, scene, athlete, asset, engine, or DoF change. NEXT.md remains; HUMAN #15 A-frame is next.** | row self-test: correct top `[233,0,18]`, bottom `[110,219,59]`; unflipped control swaps them exactly. Grey-attr scene remains corridor/flank **0.8433/0.7707 = 1.094**, darkFrac **0.0455**; in-run **0.8367/0.8067 = 1.037**. Unit 81/81, golden 30/30, grey-attr 2/2, look 6/6; shots regenerated and inspected. See entry 157. |
 | — | Iteration 155 (review) | **REVIEW-ONLY: current athlete/scene audited after the reverted 153–154 chain; no feature, asset, engine, gate, or threshold change. NEXT.md remains intact. The closed self-test state holds (FACEDIST 0.1803; kneeMax crouch 5.725 / flight 7.247), but the author-facing #15 A-frame and #16 real-boot gates are visibly RED and still absent; suit shards/white-on-white paint remain. Scene still trails the footage in mountain silhouette, forest depth and landing-surface read.** | focused chain+look+rig+spine 38/38; unit 81/81 and golden 30/30; run-all unit/golden/browser/mutation/coverage green, drive leg stopped after exceeding the review time box. Required shots regenerated and inspected. See entry 155. |
 | — | Iteration 152 | **Grey-attr instrument ROOT-CAUSED + FIXED (test-only; no scene/asset/engine change): the 150 canary was the readPixels Y-FLIP, not pick misclassification — probes (a) honest as-is corridor 0.5743/flank 0.8325 RED, (b) peaks hidden (reviewer's probe) 0.6649, dark 1790→739 with classification UNMOVED, (c) peaks made pickable NO change ⇒ classified rays correct, luminance mirrored; with the flip: corridor 0.8433 / flank 0.7707 (1.094) GREEN, inrun 0.8367/0.8067 (1.037) green, dark attribution now truthful (terrainCorridor 110, was 1792 false attributions); darkFrac gate re-bounded 0.035→0.060 on the corrected instrument (honest 0.0455 = ridgelines/birch/fence content); pickable-peaks guard kept** | unit 81/81; grey-attr 2/2; golden 30/30 (no physics/game-side change — confirmation run). See entry 152. |
 | — | Iteration 151 | **Corridor-dimming ROOT-CAUSED (diagnosis only, no source change landed): the scene-framing deficit is a dark in-run band the ready camera crosses, NOT shadows (CSM render list emptied: darkN 3192→3191), NOT the bake (inrun gate 0.964 green), NOT away-facing aspect (14039/14124 corridor samples sun-facing, 0.594); no scene code/asset changed 146–149 (git-verified) — remaining correlate is the athlete-anchored camera target drifting with the 146–148 stance rebuilds; grey-attr instrument now reports the sun-aspect split (corSun/corAway)** | unit 81/81; golden 30/30; grey-attr scene canary still red 0.5952/0.8335 (deterministic, unchanged by every toggle); inrun 0.7869/0.816 = 0.964 PASS; look 6/6 shots regenerated. See entry 151. |
@@ -1447,6 +1448,49 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+### 157 — Grey-attr row-order self-test closes the instrument checklist
+
+**Scope and previous-iteration review.** `docs/NEXT.md` exists and remains the only mandate. The
+latest reviewer order explicitly puts the grey-attr row-order self-test before HUMAN #15; this
+iteration implements only that slice. `git log -3 --stat` and `git show --stat HEAD` showed a clean,
+documentation-only tip after the accepted iteration-155 review, with no half-landed source or asset
+work. Baseline golden was **30/30**. The first sandboxed unit run reported `scripts.test.js` red
+because child Node processes received sandbox `EPERM` and empty captured stdout; the required
+unsandboxed run passed **81/81**, so no repository regression was present.
+
+**What changed.** `tests/drive/grey-attr.spec.js` now runs `assertReadbackRowOrder` before its scene
+measurement. A temporary fullscreen GUI paints the top-left 20% red and bottom-left 20% green in
+the same top-down screen coordinate system supplied to Babylon picking. After two renders, the
+instrument samples those coordinates through its shipped `H - 1 - y` mapping and also through the
+old unflipped mapping as a negative control. The temporary GUI is disposed and the original scene
+is rendered twice before the actual canary runs. The controls measured:
+
+- corrected mapping: top **[233, 0, 18, 255]**, bottom **[110, 219, 59, 255]**;
+- deliberately unflipped mapping: top **[110, 219, 59, 255]**, bottom
+  **[233, 0, 18, 255]** — the controls swap exactly and the negative-control assertions catch it.
+
+No gate or threshold changed. No `game.js`, `engine/`, athlete source, asset, ASSET_V, or DoF change.
+`docs/NEXT.md` is intentionally retained because HUMAN #15, HUMAN #16, paint/shard cleanup and the
+authorized thigh readout remain open.
+
+**Verification.** `npm run test:unit` **81/81** (unsandboxed as above); `npm run test:golden`
+**30/30**; grey-attr **2/2**. The corrected scene reading is unchanged within sampling noise:
+corridor **0.8433** / flank **0.7707** = **1.094**, darkFrac **0.0455**, nCor/nFlank
+**12949/5441**. The in-run reading remains corridor **0.8367** / flank **0.8067** = **1.037**,
+darkFrac **0.0047**, nCor/nFlank **16732/8427**. `npx playwright test --config
+tests/drive/playwright.config.js look` passed **6/6** and regenerated the canonical shots;
+FACEDIST remained **0.1803**.
+
+**Shot inspection (original resolution).** `scene.png` remains unchanged-good for this slice: the
+snow corridor is bright and continuous with readable athlete/tree shadows, while the already-filed
+regular peak silhouettes, dense aliased B-net and weak gameplay-distance landing relief remain.
+`figure.png` still shows the white/grey suit shards and the low toe-shaped shoe identified in review
+155. `figure_front.png` still has no continuous daylight between the thighs and shows the calf
+direction change at the knees; it remains the required failing negative control for HUMAN #15.
+
+**Open / next.** HUMAN #15 A-frame geometry/pose plus its render-space daylight and frontal
+collinearity gates is the next ordered NEXT.md slice. No new reviewer question.
+
 ### 155 — Review-only: inherited gates hold; A-frame, real boots and suit finish remain visibly red
 
 **Scope and self-review.** Review only; `docs/NEXT.md` is the review-slot exception and remains

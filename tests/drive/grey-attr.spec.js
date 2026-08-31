@@ -19,6 +19,67 @@ const { test, expect } = require('@playwright/test');
 
 const GRID_X = 220, GRID_Y = 170;
 
+async function assertReadbackRowOrder(page) {
+    const r = await page.evaluate(async () => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const eng = scene.getEngine();
+        const W = eng.getRenderWidth(), H = eng.getRenderHeight();
+        // Fullscreen GUI uses the same top-down screen coordinates supplied to
+        // scene.pick/createPickingRay below. Opposite-colour corner patches
+        // therefore give the readPixels-to-pick-space mapping an unambiguous
+        // positive control and make the old unflipped mapping fail.
+        const ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI(
+            'greyAttrRowOrderUI', true, scene);
+        const makePatch = (name, verticalAlignment, color) => {
+            const rect = new BABYLON.GUI.Rectangle(name);
+            rect.width = '20%';
+            rect.height = '20%';
+            rect.thickness = 0;
+            rect.background = color;
+            rect.alpha = 1;
+            rect.isHitTestVisible = false;
+            rect.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            rect.verticalAlignment = verticalAlignment;
+            ui.addControl(rect);
+        };
+        makePatch('greyAttrRowTop', BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP, '#ff0000');
+        makePatch('greyAttrRowBottom', BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM, '#00ff00');
+
+        try {
+            scene.render();
+            scene.render();
+            const px = await eng.readPixels(0, 0, W, H);
+            const sx = Math.round(W * 0.10);
+            const topY = Math.round(H * 0.10);
+            const bottomY = H - 1 - topY;
+            const rgbaAt = (x, y, flip) => {
+                const row = flip ? H - 1 - y : y;
+                const i = (row * W + x) * 4;
+                return Array.from(px.slice(i, i + 4));
+            };
+            return {
+                top: rgbaAt(sx, topY, true),
+                bottom: rgbaAt(sx, bottomY, true),
+                wrongTop: rgbaAt(sx, topY, false),
+                wrongBottom: rgbaAt(sx, bottomY, false),
+            };
+        } finally {
+            ui.dispose();
+            scene.render();
+            scene.render();
+        }
+    });
+
+    expect(r.top[0], `top-left control is not red: ${r.top}`).toBeGreaterThan(r.top[1] + 80);
+    expect(r.bottom[1], `bottom-left control is not green: ${r.bottom}`)
+        .toBeGreaterThan(r.bottom[0] + 80);
+    expect(r.wrongTop[1], `unflipped negative control did not read bottom row: ${r.wrongTop}`)
+        .toBeGreaterThan(r.wrongTop[0] + 80);
+    expect(r.wrongBottom[0], `unflipped negative control did not read top row: ${r.wrongBottom}`)
+        .toBeGreaterThan(r.wrongBottom[1] + 80);
+    return r;
+}
+
 async function measure(page) {
     return page.evaluate(async ([NX, NY]) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
@@ -158,6 +219,8 @@ test('scene: run at least as bright as its flanks; no near-black band', async ({
     await page.waitForTimeout(1000);
     await page.setViewportSize({ width: 1100, height: 850 });
     await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    const rowOrder = await assertReadbackRowOrder(page);
+    console.log('ROW_ORDER_SELF_TEST ' + JSON.stringify(rowOrder));
     await page.evaluate(() => {
         const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
         cam.radius = 14; cam.beta = Math.PI / 2.7; cam.alpha = Math.PI * 1.35;
