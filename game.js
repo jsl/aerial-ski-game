@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=71";   // 71: crotch shard-cluster cut — 43 one-sided leg faces crossing the midline removed (iter 173)
+    const ASSET_V = "?v=72";   // 72: #23.1 watertight legs — 94 open cut rims capped (build_body.py #23.1 fill, iter 176)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

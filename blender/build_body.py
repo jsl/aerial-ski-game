@@ -6279,6 +6279,123 @@ def suit_shell(body, joints):
             'thigh_bridge': set(thigh_bridge)}
 
 
+SEVER_BASE_BOUNDARY = 0     # boundary edges the build had BEFORE the sever cuts
+RIM_LOOP_MAX = 0.12        # m: a closed rim loop may span at most this much
+
+
+def _boundary_loops(bm):
+    """Group boundary edges (one face) into connected rim loops."""
+    edges = [e for e in bm.edges if len(e.link_faces) == 1]
+    at = {}
+    for e in edges:
+        for v in e.verts:
+            at.setdefault(v, []).append(e)
+    seen, loops = set(), []
+    for e in edges:
+        if e in seen:
+            continue
+        loop, stack = [], [e]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            loop.append(cur)
+            for v in cur.verts:
+                for e2 in at.get(v, []):
+                    if e2 not in seen:
+                        stack.append(e2)
+        loops.append(loop)
+    return loops
+
+
+def _loop_span(loop):
+    pts = [v.co for e in loop for v in e.verts]
+    d = 0.0
+    for i, a in enumerate(pts):
+        for b in pts[i + 1:]:
+            d = max(d, (a - b).length)
+    return d
+
+
+def _fill_small_rims(bm, tag):
+    """Close every rim loop up to RIM_LOOP_MAX across; leave larger loops.
+
+    The two garment tubes are deliberately SEPARATE below the crotch (the
+    158 ruling): the big boundary loop between them is the A-frame daylight,
+    not a hole — filling it read as 692 enclosed background px in the
+    render-space gate and bridged the tubes. The author's carve-outs are
+    local ragged rims at the outer thighs, hips and knees, so only loops
+    that span at most RIM_LOOP_MAX are closed.
+    """
+    filled = 0
+    sizes = []
+    for loop in _boundary_loops(bm):
+        span = _loop_span(loop)
+        sizes.append(round(span, 3))
+        if span <= RIM_LOOP_MAX:
+            bmesh.ops.contextual_create(bm, geom=loop)
+            filled += 1
+    remain = sum(1 for e in bm.edges if len(e.link_faces) == 1)
+    log(f'AFRAME WATERTIGHT: fill_small_rims[{tag}] {filled} loop(s) '
+        f'closed, loops seen {sorted(sizes, reverse=True)[:8]}, '
+        f'{remain} boundary edges remain')
+    return filled
+
+
+def close_boundary(mesh, tag):
+    """Close small rim loops on the SHIPPED low-poly mesh (#23.1).
+
+    finish_lowpoly's decimation re-opens local rims (measured: 24 rims)
+    where merged vertices tear the fill n-gons, so the shipped mesh gets
+    its own pass right before the export. BODY_SABOTAGE_CAPS=1 skips this
+    too, so the negative control exercises the full delivered path.
+    """
+    if os.environ.get('BODY_SABOTAGE_CAPS') == '1':
+        log(f'AFRAME WATERTIGHT: close_boundary[{tag}] SABOTAGED — skipped')
+        return
+    bm = bmesh.new()
+    bm.from_mesh(mesh.data)
+    _fill_small_rims(bm, tag)
+    bm.to_mesh(mesh.data)
+    bm.free()
+    mesh.data.update()
+
+def watertight_gate(mesh, tag):
+    """NEXT.md #23.1 (iter 176): the visible garment must be CLOSED.
+
+    A small boundary loop in the shipped mesh is a see-through carve-out:
+    the tube separation and the crotch shard-cluster cuts left several, and
+    the author photographed the resulting ragged holes at the outer thighs,
+    hips and knees. `sever_thigh_bridge_faces` fills every rim it opens up
+    to RIM_LOOP_MAX across; this gate runs on the delivered mesh and fails
+    if any rim loop that small survived. Larger boundary loops are the
+    DESIGNED separation between the two leg tubes (the A-frame daylight) —
+    they are logged, not failed.
+
+    Negative control: BODY_SABOTAGE_CAPS=1 skips the fill; the gate must
+    reject that build.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(mesh.data)
+    loops = _boundary_loops(bm)
+    sizes_all = sorted((round(_loop_span(l), 3) for l in loops),
+                       reverse=True)
+    small = [(l, _loop_span(l)) for l in loops
+             if _loop_span(l) <= RIM_LOOP_MAX]
+    bm.free()
+    log(f'AFRAME WATERTIGHT [{tag}]: {len(loops)} boundary loop(s), sizes '
+        f'{sizes_all[:8]}, small {len(small)} (limit {RIM_LOOP_MAX})')
+    if small:
+        raise SystemExit(
+            f'[body] WATERTIGHT gate FAILED at {tag}: {len(small)} rim '
+            f'loop(s) of span <= {RIM_LOOP_MAX} m (sizes '
+            f'{sorted(round(s, 3) for _, s in small)}) — open rims '
+            f'render as the see-through leg carve-outs (negative control '
+            f'BODY_SABOTAGE_CAPS=1)')
+    return len(loops)
+
+
 def sever_thigh_bridge_faces(body, shell):
     """Turn the fitted thigh surfaces into two disconnected garment tubes.
 
@@ -6297,6 +6414,10 @@ def sever_thigh_bridge_faces(body, shell):
         bm.free()
         raise SystemExit('[body] A-frame topology gate FAILED: the inherited '
                          'cross-thigh sheet was not found')
+    # #23.1 base census BEFORE any cut: the source build is closed, so every
+    # boundary edge later is a rim a cut opened (the gate's allowance).
+    global SEVER_BASE_BOUNDARY
+    SEVER_BASE_BOUNDARY = sum(1 for e in bm.edges if len(e.link_faces) == 1)
     bmesh.ops.delete(bm, geom=mixed, context='FACES_ONLY')
     bm.to_mesh(body.data)
     bm.free()
@@ -6348,22 +6469,30 @@ def sever_thigh_bridge_faces(body, shell):
         f'{len(ribbon)} ribbon fragments removed (crotch shard cluster)')
     cut = {f.index: f for f in straddle + ribbon}
     bmesh.ops.delete(bm, geom=list(cut.values()), context='FACES_ONLY')
-    bm.to_mesh(body.data)
-    bm.free()
-    body.data.update()
-
-    remain2 = 0
-    for p in body.data.polygons:
-        xs = [body.data.vertices[i].co.x for i in p.vertices]
-        zs = [body.data.vertices[i].co.z for i in p.vertices]
-        if sum(zs) / len(zs) >= crotch_z:
-            continue
-        if min(xs) < 0.0 < max(xs) or max(abs(x) for x in xs) < 0.025:
-            remain2 += 1
-    if remain2:
-        raise SystemExit(f'[body] A-frame topology gate FAILED: {remain2} '
+    # NEXT.md #23.1 (iter 176): the two FACES_ONLY deletions leave the cut
+    # rims OPEN — every boundary edge here is a rim these cuts opened (the
+    # pre-cut census set SEVER_BASE_BOUNDARY; the source build measured 0),
+    # and an open rim renders as the ragged see-through carve-outs the
+    # author photographed at the outer thighs, hips and knees. Close every
+    # rim with hole fills.
+    # The midline gate runs BEFORE the fill: it guards against cut leftovers
+    # bridging the silhouette, and the fill's own caps (hidden between the
+    # tubes) are legitimate new geometry, not straddlers.
+    midline = [f for f in bm.faces
+               if sum(v.co.z for v in f.verts) / len(f.verts) < crotch_z
+               and (min(v.co.x for v in f.verts) < 0.0
+                    < max(v.co.x for v in f.verts)
+                    or max(abs(v.co.x) for v in f.verts) < 0.025)]
+    if midline:
+        raise SystemExit(f'[body] A-frame topology gate FAILED: {len(midline)} '
                          'faces still cross or hug the midline below the '
                          'crotch')
+    if os.environ.get('BODY_SABOTAGE_CAPS') == '1':
+        opened = sum(1 for e in bm.edges if len(e.link_faces) == 1)
+        log(f'AFRAME CAPS SABOTAGED: {opened} rim edges left open '
+            f'(negative control for the watertight gate)')
+    else:
+        _fill_small_rims(bm, 'sever')
 
 
 
@@ -11783,6 +11912,14 @@ def main():
     arm.select_set(True)
     for o in equip:
         o.select_set(True)
+    # #23.1: the shipped glb must be closed. This runs LAST — after every
+    # gate, the bake and the weight passes — because closing the rim changes
+    # adjacency and UV assignment upstream (measured: it moved the back bib
+    # plate's sampled ink out of band when run before them). The caps are
+    # hidden interior geometry; the bake and the gates measure exactly what
+    # they measured before, the delivered mesh is closed.
+    close_boundary(low, 'pre-export')
+    watertight_gate(low, 'delivered mesh (pre-export)')
     bpy.ops.export_scene.gltf(
         filepath=out, export_format='GLB', use_selection=True,
         export_yup=True, export_apply=False,   # apply=False keeps the armature

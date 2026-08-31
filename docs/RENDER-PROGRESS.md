@@ -268,7 +268,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
-| — | Iteration 175 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST **0.1803** and FRONTGATE navyFrac **0.0535** (stripe leak gate green, step 3 verification holds); aframe+spine+chain **25/25**; rig **12/13** — the only red remains the carried hands-vs-thigh gate, re-measured **L −46.8 mm** (hand 0.1561 vs leg face 0.2029) / **R −34.5 mm** (0.1551 vs 0.1896), exactly 168's numbers, unblocked by 174 and awaiting ruling step 2. No source/asset/gate change; NEXT.md intact.** | unit/golden; look shots regenerated + inspected; aframe/spine/chain/rig re-run. See entry 175. |
+| — | Iteration 176 | **NEXT.md item 1 — HT#23.1 leg transparency carve-outs LANDED: the 94 open rim edges left by the thigh-tube sever + crotch shard cuts are LOOP-AWARE capped in `sever_thigh_bridge_faces` (`_fill_small_rims`, ≤ 0.12 m loops only; the designed between-tube daylight loop, 0.243 m, is deliberately left open) + `close_boundary` on the delivered mesh; new `watertight_gate` (mesh space) + `tests/drive/leg-watertight.spec.js` (render space: enclosed-background components from front/side/back, holes = mid-limb interior-to-one-leg-span components ≥ 20 px, the between-legs daylight pocket excluded by construction). ASSET_V 71 → 72. NEGATIVE CONTROLS: pre-#23.1 committed assets FAIL the render gate (side framing 128 px interior hole at x 644-656/y 434-455); `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log: 94 rims left open). unit 81/81, golden 30/30, aframe+body 5/5, look 6/6, leg-watertight 1/1; shots regenerated + inspected — no visible carve-outs front/side.** | see entry 176. |
 | — | Iteration 174 | **172-ruling step 1 LANDED — the hand pipeline is FRAME-INDEPENDENT: `relax_hands`/`hand_spread_gate` + `hand_metrics`/`scale_hands`/`_hand_cluster`/`_finger_axes`/`_pack_fingers` re-measured along the forearm bone's own axis (wrist = `seg_ends` tail, depth = dot with `adir`) instead of world z. EQUIVALENCE CONTROL green: full build log's hand lines byte-identical to the pre-refactor baseline (spread 34.7→6.8/33.0→7.6 deg, HAND SPREAD 8.5 deg / 6.6 mm, HAND GATE 0.75); remaining log deltas are the ±1-vertex GPU-bake-noise class proven present in same-code rebuilds. No assets shipped, no ASSET_V bump. unit 81/81, golden 30/30, drive 37/38 (only the carried hands-vs-thigh red, which ruling step 2 — the ±7.5° bind abduction, now unblocked — targets next slot).** | see entry 174. |
 | — | Iteration 173 | **NEXT.md step 2 (170 list item 2) — crotch/inner-thigh shard cluster cut LANDED in `sever_thigh_bridge_faces`: 11 L↔R mixed faces (existing pass) + 40 midline straddlers + 6 ribbon fragments, gated to zero remaining below the crotch plane; ASSET_V 70 → 71. The #15 render-space daylight number is UNCHANGED (0.81 cm vs ≥ 3 cm gate, reported not gated) — the bridge is NOT (only) the deleted faces; by eye the thighs still merge. The carried hands-vs-thigh red stands. unit 81/81, golden 30/30, spine 14/14, chain+rig 22/23, aframe green, look 6/6 (FACEDIST 0.1803).** | see entry 173. |
 | — | Iteration 170 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30; look 6/6 with FACEDIST 0.1806 held; spine/chain/aframe green; drive 37 passed / 1 failed — the ONLY red is the carried hands-vs-thigh gate (−46.8 mm class, arms-pose fix per the 04:00 ruling, now ONE slot overdue under the carried-red policy). #15 daylight still RED by eye (thighs read touching in figure_front; 0.81 cm mesh vs ≥ 3 cm gate); #16 boots and white-on-white paint visibly unchanged; the 165 dark-green ridge wedge is still on the horizon. No source/asset/gate change; NEXT.md (steps 1–3) remains the mandate.** | unit/golden/look + spine+chain+aframe+rig re-run on the 169 tip; shots regenerated + inspected. See entry 170. |
@@ -10917,6 +10917,7 @@ floor).**
 **Scratch.** `/home/justin/aerial-agents/scratch/iter-168/` (build logs ×4,
 probe patch; sabotage probe aborts by design — its log is the control).
 
+
 ### 175 — REVIEW-ONLY: all landed gates hold; the hands red re-measured unchanged; the A-frame daylight now reads by eye; #16 boots and the horizon debt are the worst remaining gaps
 
 **Scope and self-review.** Review-only slot. `docs/NEXT.md` exists and stays the
@@ -10985,3 +10986,74 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+
+### 176 — NEXT.md item 1: HT#23.1 leg transparency carve-outs capped + watertight
+gates in mesh space and render space; ASSET_V 72
+
+**Scope.** `docs/NEXT.md` item 1 only (the athlete ban is lifted exactly while
+NEXT.md exists). Files touched: `blender/build_body.py`,
+`tests/drive/leg-watertight.spec.js` (new), `assets/athlete_*` (rebuilt),
+`game.js` (ASSET_V 71 → 72 only), this log.
+
+**What changed.**
+
+1. `sever_thigh_bridge_faces` now CLOSES the rims its two FACES_ONLY cuts open
+   (the tube-separation `mixed` cut and the crotch shard-cluster cut). Measured:
+   the source build is closed (0 boundary edges before the cuts) and the cuts
+   open 94 rim edges — these were the ragged see-through carve-outs the author
+   photographed at the outer thighs, hips and knees
+   (`reference/shots/author_legs1/2/3_2026-08-31.png`).
+2. The fill is LOOP-AWARE (`_fill_small_rims`, RIM_LOOP_MAX = 0.12 m): only rim
+   loops up to 0.12 m across are capped. Sever sees 5 loops with spans
+   0.278/0.157/0.147/0.049/0.048 m; the two small ones are closed, the large
+   ones are the DESIGNED separation between the two garment tubes. A first
+   naive fill (holes_fill sides=0) closed the between-tube daylight too and
+   measured 692 enclosed background px in the render gate — that mistake is
+   recorded because it is exactly the failure class the render gate exists to
+   catch (the A-frame daylight must survive).
+3. `close_boundary(low, 'pre-export')` re-caps small rims on the shipped
+   low-poly mesh right before the GLB export (decimation perturbs rims), and
+   `watertight_gate(low, 'delivered mesh')` then measures boundary LOOPS: it
+   fails if any loop ≤ RIM_LOOP_MAX survives. Shipped mesh measures exactly 1
+   boundary loop, span 0.243 m — the designed between-tubes gap.
+4. The midline gate (`remain2`) moved BEFORE the fill: the fill's own caps are
+   hidden interior geometry, not silhouette straddlers, and counting them
+   failed the gate spuriously.
+5. `close_boundary` runs AFTER every bake/gate/weight pass because closing rims
+   pre-bake moved the back bib plate's sampled ink out of band (0.009 vs
+   [0.10, 0.45]) — measured, reverted to last.
+6. ASSET_V 72 (assets/athlete_body.glb + 3 webp + athlete_maps.json rebuilt;
+   build log green: bib gate, stripe bake 115/3243 = 0.035, seam/locality, all).
+
+**Render-space gate.** `tests/drive/leg-watertight.spec.js`: athlete-only
+frames at front/side/back (alpha 0/±π/2 about the face direction), flood-fill
+background from the frame border, connected-component-label the enclosed
+background below the hip row. The between-legs daylight is a legitimate
+enclosed pocket (tubes deliberately separate, legs converge at the ankles), so
+a component is a carve-out hole only when it starts below hipRow + 10% of the
+leg span AND is ≥ 20 px AND lies interior (≥ 8 px margin) to a single leg's own
+projected hip→ankle span. Texel-level AA fragments measure 1–8 px; the pocket
+fragments sit between the legs' spans.
+
+**Verification (all on the final tree).**
+
+- Negative control A (mandate's): the pre-#23.1 committed assets FAIL — side
+  framing measures a 128 px interior hole component (x 644-656, y 434-455).
+- Negative control B: `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log:
+  "94 rim edges left open"; pre-export closure logs SABOTAGED — skipped).
+  HONEST CAVEAT: with the loop-aware pipeline the decimated delivered mesh ends
+  up with the same single 0.243 m loop either way, so this control now fails
+  only the mesh-space understanding of the defect, not the gate; the binding
+  render-space control is negative control A.
+- Shipped build: leg-watertight 1/1 (front 0 holes, side 0, back 0 — largest
+  enclosed components are the daylight pocket, 843 px front / 677+566 px back,
+  all between the legs' spans, reaching to the crotch limit).
+- unit 81/81; golden 30/30 (no physics change; verify not needed — no census
+  node renamed, but `npm run test:golden` run green as the last check before
+  this entry); aframe+body drive 5/5; look 6/6; shots regenerated and inspected
+  (figure_front/figure_side: no visible carve-outs; thigh daylight preserved;
+  bib "30" still mirrored — NEXT item 7, untouched).
+
+**Open.** NEXT.md item 2 (crotch height) next; the naive-fill lesson is baked
+into the spec comments; scratch under `/home/justin/aerial-agents/scratch/iter-176/`
+(negative-control logs, sabotaged/experiment builds — reviewer sweeps).
