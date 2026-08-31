@@ -269,6 +269,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 179 | **NEXT.md item 4 — HT#22 FANG PEAK LANDED (display-side only): root-caused by hide-mesh probe — the "hooked claw summit" is NOT a cone peak; it is the OPEN lateral end edge of a ridge heightfield sheet (`ridge_ahead`, same class for all 8 ridge sheets) seen nearly edge-on past the other ridges: the sheet drops full-crest → ground in ONE 6 m column step at its run ends, and that free ~40 m wall projects as a dark hooked sliver over the pale cones. FIX: `_ridgeMesh` crests fade to ground over `RIDGE_END_TAPER_FRAC` = 14% of the run at both ends (smoothstep); negative-control hook `?fangkeepends=1` rebuilds the unfaded ends. NEW GATE `tests/drive/peak-overhang.spec.js` (mesh-space, live Babylon vertex data): every ridge sheet's crest may step ≤ 12 m per 6 m column — the unfaded fang end steps ~24 m and FAILS, tapered ends ≤ ~6 m PASS; negative control verified firing. A render-space sky-below-mountain pixel detector was prototyped and SHELVED (open item — layered ridges have genuine sky gaps; horizon haze within a few RGB points of snow). Fang verified gone by eye in scene.png. unit 81/81, golden 30/30, ridges3d 5/5, peak-overhang 2/2, look 6/6.** | see entry 179. |
 | — | Iteration 176 | **NEXT.md item 1 — HT#23.1 leg transparency carve-outs LANDED: the 94 open rim edges left by the thigh-tube sever + crotch shard cuts are LOOP-AWARE capped in `sever_thigh_bridge_faces` (`_fill_small_rims`, ≤ 0.12 m loops only; the designed between-tube daylight loop, 0.243 m, is deliberately left open) + `close_boundary` on the delivered mesh; new `watertight_gate` (mesh space) + `tests/drive/leg-watertight.spec.js` (render space: enclosed-background components from front/side/back, holes = mid-limb interior-to-one-leg-span components ≥ 20 px, the between-legs daylight pocket excluded by construction). ASSET_V 71 → 72. NEGATIVE CONTROLS: pre-#23.1 committed assets FAIL the render gate (side framing 128 px interior hole at x 644-656/y 434-455); `BODY_SABOTAGE_CAPS=1` skips both fills (sever-stage log: 94 rims left open). unit 81/81, golden 30/30, aframe+body 5/5, look 6/6, leg-watertight 1/1; shots regenerated + inspected — no visible carve-outs front/side.** | see entry 176. |
 | — | Iteration 177 | **NEXT.md item 2 — HT#23.2 CROTCH HEIGHT LANDED: the sever cut plane moves from the hip line (top of upperLeg) to the anatomical inseam, `hip − CROTCH_FRAC × leg_length` (0.46, gated [0.44, 0.48], `BODY_CROTCH_FRAC` env hook; leg 720 mm → inseam 331 mm below the hip, z=−0.606); the crotch web above the plane is retained; junk web welded/dissolved in a midline band kept BELOW the hip line (arm UV-zone-safe); RIM_LOOP_MAX 0.12 → 0.16 m so the inseam loops (0.147/0.157) close while the 0.243 daylight V stays open. LATENT BUG FIXED: the second bmesh in `sever_thigh_bridge_faces` was NEVER WRITTEN BACK — 176's cuts/fills in that block were discarded and only `close_boundary` masked it. aframe daylight row moved below the new crotch (0.55 × hip→ankle): 5.65 cm (gate ≥ 3; was 0.81 cm). ASSET_V 72 → 73. unit 81/81, golden 30/30, aframe+leg-watertight 2/2 (holes 0 front/side/back), look 6/6; negative control BODY_CROTCH_FRAC=0.52 fails the build.** | see entry 177. |
 | — | Iteration 174 | **172-ruling step 1 LANDED — the hand pipeline is FRAME-INDEPENDENT: `relax_hands`/`hand_spread_gate` + `hand_metrics`/`scale_hands`/`_hand_cluster`/`_finger_axes`/`_pack_fingers` re-measured along the forearm bone's own axis (wrist = `seg_ends` tail, depth = dot with `adir`) instead of world z. EQUIVALENCE CONTROL green: full build log's hand lines byte-identical to the pre-refactor baseline (spread 34.7→6.8/33.0→7.6 deg, HAND SPREAD 8.5 deg / 6.6 mm, HAND GATE 0.75); remaining log deltas are the ±1-vertex GPU-bake-noise class proven present in same-code rebuilds. No assets shipped, no ASSET_V bump. unit 81/81, golden 30/30, drive 37/38 (only the carried hands-vs-thigh red, which ruling step 2 — the ±7.5° bind abduction, now unblocked — targets next slot).** | see entry 174. |
@@ -10988,6 +10989,61 @@ green ridge wedge (a fix or a deliberate-landmark ruling), then P6 horizon.
 3. The eye vs 0.81 cm daylight disagreement: may the next suit slot add the
    ≥ 3 cm render-space gate to a spec (projected silhouette measurement in
    `figure_front`) so #15 closes on a number instead of an impression?
+### 179 — NEXT.md item 4: HT#22 fang peak root-caused (ridge sheet END edge, not a cone) + end-taper fix with mesh-space gate
+
+**What changed.**
+- **Diagnosis (hide-mesh probe, per-mesh):** the author's `author_tooth2` claw
+  is NOT a cone peak and NOT texture. Hiding `pk_body_*` leaves the claw;
+  hiding `ridge_*` removes it; per-sheet isolation pins it on **`ridge_ahead`**
+  (present-by-class on every ridge sheet). Cause: `_ridgeMesh` builds an OPEN
+  heightfield sheet whose crest runs at full height right up to the last 6 m
+  column and then drops to below the valley floor — a free ~40 m wall. Seen
+  nearly edge-on past the other ridges, that end wall projects as a dark
+  hooked sliver floating over the pale cone peaks: the "fang".
+- **Fix (game.js, `_ridgeMesh`):** the crest now fades to ground over
+  `RIDGE_END_TAPER_FRAC` = 0.14 of the run at BOTH lateral ends
+  (smoothstep), so each sheet end meets the ground and cannot project a free
+  edge. `?fangkeepends=1` restores the unfaded ends — the negative control.
+  No engine/, no athlete, no DoF, no asset, no ASSET_V change (no assets
+  regenerated). Display geometry only — golden physics untouched (30/30
+  without re-capture).
+- **New gate `tests/drive/peak-overhang.spec.js`:** mesh-space, reads the LIVE
+  Babylon vertex data of every `ridge_*` sheet: the crest row (j=0) may step
+  at most **12 m per 6 m column**. The unfaded fang end steps ~24 m in one
+  column (crest → floor); the tapered ends step ≤ ~6 m, as does the sine
+  silhouette itself (max sine step ≈ amp·f·6 m ≈ 5.7 m).
+
+**Verification numbers.**
+- peak-overhang 2/2: positive gate green on all 8 ridge sheets; negative
+  control (`?fangkeepends=1`) FAILS the gate as required (worst step > 12 m).
+- unit 81/81; golden 30/30 (no traces moved); ridges3d 5/5 (depth ≥ 21% and
+  textured-material gates unaffected by the taper); look 6/6, shots
+  regenerated; `shots/scene.png` inspected by eye — the hooked claw is gone,
+  the skyline is clean layered ridges and cones.
+- Shelved experiment: a render-space "sky-below-mountain" pixel overhang
+  detector. Two dead ends are recorded so nobody re-treads them: (1) with the
+  real gradient sky, horizon haze sits within ~5 RGB points of the snowfield
+  (sky-mid 193/202/211 vs snow 203/205/214), so no colour test separates
+  sky from snow near the skyline; (2) with a synthetic magenta backdrop the
+  ridges' GENUINE inter-layer sky gaps make legitimate layered hills read as
+  "floating fragments" (648 false-positive columns). Open for the reviewer.
+
+**Open questions for the reviewer.**
+1. The NEXT.md #22 gate wording is render-space ("no peak silhouette pixel
+   column contains sky-below-mountain"). I landed the mesh-space crest-step
+   gate because the render-space form is not well-defined for THIS scene:
+   layered ridge sheets legitimately show sky between layers, and the fang's
+   own columns mostly overlap the cone behind it (no sky beneath the fang
+   body — only under the hook's curl). Options: (a) accept the mesh-space
+   gate as the #22 gate; (b) define a render-space variant that hides the
+   venue dressing + sky dome and asserts no SMALL isolated dark component
+   hangs above the skyline band. Happy to build (b) on a ruling.
+2. The taper slightly lowers the outer ~14% of every ridge run (ends now
+   fade to ground instead of ending as cliffs). No gate regressed
+   (ridges3d 5/5), but if the author wants the ridge_back/ahead end walls
+   visible as cliff faces at the valley closures, say so and I will cap the
+   taper at a height instead of the ground.
+
 
 ### 178 — NEXT.md item 3: HT#23.3 de-muscularize — smoothing/relief raised (ASSET_V 74); render-space tube gate BLOCKED on instrument calibration
 

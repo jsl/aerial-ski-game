@@ -5134,6 +5134,12 @@ void main(void) {
     // mix toward the fog colour with distance (EXP2 0.0022 barely reaches).
     // Two summed sines per layer — no RNG, stable golden census.
     const RIDGE_STEP = 6;                                   // m between columns
+    // HUMAN TESTING #22: fraction of each ridge run faded at both lateral
+    // ends (crest → 0) so no open sheet edge reads as a floating "fang"
+    // above the skyline. ?fangkeepends=1 restores the unfaded ends — the
+    // negative control for the peak-overhang gate.
+    const RIDGE_END_TAPER_FRAC = new URLSearchParams(location.search).get('fangkeepends')
+        ? 1e-9 : 0.14;
     const FOG = scene.fogColor;
     const RIDGE_SNOWLINE_M = 80;   // elevation mapped to uv v ∈ 0..~1 — must
     // span the tallest crest (far ≈ 75 m above the valley floor) so the
@@ -5194,8 +5200,19 @@ void main(void) {
         const pos = [], uv = [], idx = [];
         for (let i = 0; i < n; i++) {
             const t = from + L * i / (n - 1);
-            const crest = base + amp * (0.55 * Math.sin(t * f1 + p1)
-                                      + 0.45 * Math.sin(t * f2 + p2) + 0.5);
+            // HUMAN TESTING #22 (the "fang"): an open sheet edge at the run
+            // ends, seen nearly edge-on past the other ridges, read as a
+            // hooked claw floating above the skyline (the tallest crest
+            // columns project as a sliver). The crest now fades out over the
+            // end fraction of the run, so every sheet end meets the ground
+            // and no end column pokes above the skyline as a free edge.
+            // Negative control: ?fangkeepends=1 rebuilds the unfaded ends
+            // for the overhang-detector gate (tests/drive/peak-overhang.spec.js).
+            const endD = Math.min(t - from, to - t) / (L * RIDGE_END_TAPER_FRAC);
+            const endF = Math.min(1, Math.max(0, endD));
+            const taper = endF * endF * (3 - 2 * endF);          // smoothstep
+            const crest = (base + amp * (0.55 * Math.sin(t * f1 + p1)
+                                      + 0.45 * Math.sin(t * f2 + p2) + 0.5)) * taper;
             for (let j = 0; j <= STEPS; j++) {
                 const u = j / STEPS;            // 0 = crest edge
                 const roll = Math.pow(1 - u, 1.25);          // falloff
