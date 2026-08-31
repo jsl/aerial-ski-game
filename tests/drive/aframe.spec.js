@@ -209,7 +209,18 @@ async function measureFront(page) {
     });
 }
 
-test('A-frame legs: frontal collinearity, no calf fan-out, and >=3 cm projected mid-thigh daylight (negative control: _aFrameOff)', async ({ page }) => {
+// PARKED (iter 161, after verification): the stance slice was WITHDRAWN
+// because a stance change is a BIND change — with the display-side 3-degree
+// thigh tilt, rig.spec's bind==driver-at-rest contract measured
+// upperLegL/R trans 0.0334 m / 3 deg (hlpHip 0.0261 via the then-per-frame
+// helper update), and a load-time setBindMatrix rebase corrupted every bone
+// (90 deg residuals — the absolute matrices at link time do not yet reflect
+// the linked nodes). The fix belongs build-side: re-export the binds against
+// the A-frame rest in build_body.py. Measured on the (now withdrawn) stance
+// slice: kneeDev 1.62/1.52 deg (gate <=5), shinTilt 1.62/1.52 deg (gate <=8),
+// mid-thigh daylight 0.4 cm (gate >=3, bridged by the crotch shard cluster);
+// negative control (_aFrameOff) kneeDev 12.51/11.77 deg FAILS the 5-deg gate.
+test.skip('A-frame legs: frontal collinearity, no calf fan-out, and >=3 cm projected mid-thigh daylight (negative control: _aFrameOff)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');

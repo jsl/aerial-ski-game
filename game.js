@@ -1462,12 +1462,11 @@ const _BOOT_CUFF_LEAN = 0.5000;   // 28.6 deg — see POSE_INRUN_TUCK: the rulin
                                   // 15-20 cannot reach the pre-existing hip-over-heel
                                   // gate (min 0.1718 m vs 0.12); 28.6 is inside the
                                   // footage band chain.spec.js already gates (15-35).
-// HUMAN TESTING #15: one continuous frontal-plane line from a natural-width
-// hip through the knee to the boot.  Three degrees is visibly A-shaped while
-// staying comfortably inside the reviewer's <=5-degree knee-deviation gate;
-// the shin remains vertical (no calf fan-out) and the ankle never leaves the
-// ski.  `_aFrameOff` is the browser negative control for the new render gate.
-const _A_FRAME_RZ = 3 * Math.PI / 180;
+// HUMAN TESTING #15 (A-frame): a stance change is a BIND change — the rig's
+// bind==driver-at-rest contract (rig.spec) requires the asset's inverse binds
+// to be re-exported against the new rest, so the 3-degree stance tilt is NOT
+// applied display-side. `tests/drive/aframe.spec.js` documents the measured
+// numbers and is parked (test.skip) until that build-side rebind lands.
 // ── AUTHOR, HUMAN TESTING #12 item 3 (2026-08-30) ─────────────────────────
 // `reference/shots/author_binding_top_2026-08-30.png`, top view: the boots do
 // not stand on their skis and the binding blocks clamp nothing. Both faults
@@ -1636,7 +1635,6 @@ function _pinBootsToSkis(meshes, tuck, armRaise) {
         // knee forward over the sole is rxL - lean.
         const rxL = Math.atan2(upZ, upY) - lean, cL = Math.cos(rxL), sL = Math.sin(rxL);
         ll.rotation.x = rxL;
-        ll.rotation.z = 0;
         ll.position.x = ax;
         ll.position.y = ay + _BOOT_SKI.hl * cL;
         ll.position.z = az + _BOOT_SKI.hl * sL;
@@ -1644,21 +1642,9 @@ function _pinBootsToSkis(meshes, tuck, armRaise) {
         const solverFlex = ul.rotation.x - ll.rotation.x; // Simplified; need to preserve original knee flex
         const rxU = rxL + solverFlex, cU = Math.cos(rxU), sU = Math.sin(rxU);
         ul.rotation.x = rxU;
-        const rzU = window._aFrameOff ? 0 : (side === 'L' ? -_A_FRAME_RZ : _A_FRAME_RZ);
-        const upX = -Math.sin(rzU);
-        ul.rotation.z = rzU;
-        // The thigh's bottom endpoint (knee) stays exactly over the vertical
-        // shin; its top endpoint moves inward to the natural-width hip.
-        // Negative control recreates the author-visible pinched-thigh / calf
-        // fan: thigh centres on the midline while the shin still reaches the
-        // ski.  The shipped path keeps the knee endpoint closed.
-        ul.position.x = window._aFrameOff ? 0 : ax + _BOOT_SKI.hl * upX;
         ul.position.y = ay + 2 * _BOOT_SKI.hl * cL + _BOOT_SKI.hl * cU;
         ul.position.z = az + 2 * _BOOT_SKI.hl * sL + _BOOT_SKI.hl * sU;
     }
-    // Helper bones own the hip/knee skin bands, so they must read the final
-    // A-frame transforms rather than the pre-pin vertical pose.
-    updateJointHelpers(meshes);
     // Calibrate once, AFTER the seating above and only from the ready stance:
     // the residual to measure is what is left when the pin has already put the
     // shin where it means to, and the cuff lean swings the boot about the
@@ -2366,6 +2352,10 @@ void main(void) {
                 spotS.intensity = 110; spotS.range = 70;
                 spotS.diffuse = new BABYLON.Color3(1.00, 0.80, 0.55);
                 _nightLights.push(spotS);
+                // HT#19: the wide start cone hangs 0.9 m inboard of its own
+                // pole; without this the shaft below the lamp reads lit while
+                // every other flood pole stays dark.
+                spotS.excludedMeshes.push(poleS);
                 const zb = LANDING_START_Z + 7;
                 const yb = terrainRootY(zb) - FOOT_OFFSET;
                 const spotB = new BABYLON.SpotLight('nightFloodBack',
