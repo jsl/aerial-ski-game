@@ -12460,3 +12460,67 @@ offset would then be fixed in build_body.py, an athlete-lane change), or
 (c) gate re-baseline without a clearance contract (weak — the contract is
 the point). Items 2 and 3 of the 22:25 ruling are CLOSED. NEXT.md list
 resumes at 203 sticky camera (#27) per the 20:40 order.
+
+### 203 — HANDS STEP 2 (the ruled ±7.5° build-side arm abduction) implemented per 172's scheme, then REVERTED on a new measured refusal: the 174 hand-pipeline reframe holds, but the ARM-side build passes (mesh transport + arm-chain gates + hand spread) still assume the vertical hang; unit 81/81 + golden 30/30 re-verified on the reverted (202-identical) tip
+
+**Mandate.** The 22:55 ruling on 202: 203's first unit = NEXT item 6, the
+±7.5° build-side arm abduction (mesh + bones + binds + drivers + helpers,
+A-frame template), with bind==driver re-derived and the hands gate green with
+its contract unchanged.
+
+**What was implemented (complete, both sides, one coherent derivation).**
+`ARM_ABDUCT = 7.5°` in `build_body.py` with `_arm_dir(s) = (s·sinφ, −cosφ)`
+(the outboard hang axis in Babylon lateral/up): applied at `bl()` (arm
+centres walked out from the shoulder pivot (±0.175, +0.150) by d = 0.150 /
+0.425), `seg_ends()` (bone ends on the tilted axis), `seg_matrix()` (abducted
+station + rotation `Rx(π) @ Rz(−s·φ)` — exactly the game driver's Euler
+`Mx(−π) @ Mz(rz)`), `_helper_rest_translation()` (hlpShoulder stays ON the
+pivot — proved from `updateJointHelpers`' walk; hlpElbow at pivot + 0.30·axis)
+and `helper_matrix()` (hlpShoulder `Rz(−s·φ/2)`, hlpElbow `Rz(−s·φ)` — exactly
+the half-angle walk `arz + (brz−arz)/2`). `game.js`: `_ARM_ABDUCT` constant +
+an abducted arm rest block in `applyPose` (rz = −s·φ, centre walked down the
+abducted axis, only while armDrop = 1, under the `_aFrameOff` negative
+control). One real bug found and fixed during bring-up: a first draft used
+`abs(lat0)` for the pivot lateral, mirroring the left arm across the midline.
+
+**Measured refusals (probe build, exits non-zero).**
+1. GOOD NEWS: the 172 bideltoid blocker is GONE — **0.409 ≤ 0.410 PASS** at
+   7.5° (172 measured exactly 0.410 at zero margin; vertex-count noise is no
+   longer decisive).
+2. BLOCKER: the arm-side build passes refuse the tilted hand even with the
+   174 frame-free hand pipeline: ARM GATES upper-forearm collinear **39.7 mm**
+   / forearm-hand **36.5 mm** (limits 10 — the ~36 mm lateral centroid offset
+   is exactly the legitimate 0.275·sin 7.5° geometry of one straight tilted
+   chain measured against a world-vertical contract), hand axis **38.1°** off
+   the forearm (limit 10), elbow step 15.0 mm (limit 5); HAND SPREAD worst
+   **54.6°** on R / gap **20.5 mm** on L (gates 15° / 8 mm). The weight
+   centroids also sit ~23–27 mm off the abducted stations — the arm mesh
+   transport (`mesh_arm_joints` re-anchors bones onto the mesh's near-vertical
+   PCA axis "onto the vertical driver" by design) and downstream settle passes
+   fight the tilt; this is deeper than the gate framings alone.
+
+**Disposition.** REVERTED per the carried-red policy — a red build never
+ships, and re-authorising the arm transport + arm-chain gates is a new
+instrument change needing reviewer eyes (same class as 174's authorized hand
+reframe, but a bigger surface). Tree is clean; `assets/` untouched, ASSET_V
+stays 80, shots from 202 stand. Scratch logs:
+`/home/justin/aerial-agents/scratch/iter-203/` (probe + full build logs).
+
+**Open questions for the reviewer.**
+1. Authorize a tilt-aware reframe of the ARM-side instruments — arm-chain
+   gates measured perpendicular to the bone's own axis (contract unchanged:
+   straightness/joins ≤ 10 mm), hand-axis angle against the forearm axis, and
+   the `mesh_arm_joints`/settle arm transport re-anchored onto the ABDUCTED
+   axis instead of the vertical PCA? Without the transport fix the gates are
+   measuring a genuinely deformed mesh, so gate reframing alone is likely
+   insufficient — this looks like a 2-slot unit (transport, then gates+hands
+   gate green).
+2. If the transport reframe is not authorized, propose the alternative route
+   to the ≥ 5 mm hands clearance (the red now measures −40.3 / −29.1 mm vs
+   the flexed-stance thigh face on the 202 tip).
+
+**Verification.** `npm run test:unit` **81/81**; `npm run test:golden`
+**30/30**; drive `rig` **12 passed / 1 failed** — only the carried
+hands-vs-thigh red (HANDSSHINS L 0.1561 / R 0.1551 vs thigh face 0.1964 /
+0.1842), unchanged class on the 202-identical tip.
+
