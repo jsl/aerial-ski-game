@@ -7058,28 +7058,98 @@ void main(void) {
         };
 
         if (onGetup) {
-            W.phase = getT < 0.65 ? 'roll' : getT < 1.35 ? 'kneel' : 'stand';
             W.speed = 0;
-            const u = getT / _WALKOFF_GETUP;
-            if (u < 0.5) {
-                const b = _walkoffSmooth(u / 0.5);
+            // HT#24(b) weighty get-up: contact-driven rise.  The legacy
+            // root-interpolation path (the author's "float up") is retained
+            // verbatim behind the negative-control flag so the spec can
+            // prove the new gates discriminate.
+            if (typeof window !== 'undefined' && window._crashGetupWeightDisabled) {
+                W.phase = getT < 0.65 ? 'roll' : getT < 1.35 ? 'kneel' : 'stand';
+                const u = getT / _WALKOFF_GETUP;
+                if (u < 0.5) {
+                    const b = _walkoffSmooth(u / 0.5);
+                    const crouch = AerialEngine.pose.computePose({ tuck: 1,
+                        armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                        armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                    writeSolved(crouch, b);
+                    rootX = W.root0.x + (W.standX - W.root0.x) * b;
+                    rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
+                    rootY = W.root0.y + (terrainRootY(rootZ) - 0.35 - W.root0.y) * b;
+                    q = _walkoffSlerp(W.q0, W.qWalk, b);
+                } else {
+                    const b = _walkoffSmooth((u - 0.5) / 0.5);
+                    const tuck = 1 - b;
+                    const pose = AerialEngine.pose.computePose({ tuck,
+                        armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                        armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                    writeSolved(pose, null);
+                    rootY = terrainRootY(rootZ) - 0.35 * tuck;
+                    q = W.qWalk;
+                }
+            } else if (getT < 0.65) {
+                // ROLL (knees/hands planted): pose blends from the parked
+                // crumple to the kneel; the root stays DOWN where the
+                // ragdoll parked it — no rise while the mass is on the snow.
+                W.phase = 'roll';
+                const b = _walkoffSmooth(getT / 0.65);
                 const crouch = AerialEngine.pose.computePose({ tuck: 1,
                     armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
                     armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
                 writeSolved(crouch, b);
+                rootX = W.root0.x; rootZ = W.root0.z; rootY = W.root0.y;
+                q = _walkoffSlerp(W.q0, W.qWalk, b);
+            } else if (getT < 1.35) {
+                // KNEEL: slide the root ALONG the ground to the stand
+                // station; the body stays at kneel height (knees planted).
+                W.phase = 'kneel';
+                const b = _walkoffSmooth((getT - 0.65) / 0.70);
+                const pose = AerialEngine.pose.computePose({ tuck: 1,
+                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                writeSolved(pose, null);
                 rootX = W.root0.x + (W.standX - W.root0.x) * b;
                 rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
-                rootY = W.root0.y + (terrainRootY(rootZ) - 0.35 - W.root0.y) * b;
-                q = _walkoffSlerp(W.q0, W.qWalk, b);
+                rootY = W.root0.y + ((terrainRootY(W.standZ) - 0.35) - W.root0.y) * b;
+                q = W.qWalk;
             } else {
-                const b = _walkoffSmooth((u - 0.5) / 0.5);
-                const tuck = 1 - b;
+                // RISE (both feet planted): the root rises ONLY now, driven
+                // by the tuck release (the legs extend under the hips),
+                // peak speed 1.5·0.35/0.75 = 0.7 m/s < the 1.2 m/s cap, and
+                // the ankle pair is tracked to its kneel-end planted pose
+                // (horizontal correction full; vertical correction blends
+                // out so the rise ends standing exactly on the snow).
+                W.phase = 'rise';
+                const u = _walkoffSmooth(Math.min(1, (getT - 1.35) / 0.75));
+                const tuck = 1 - u;
                 const pose = AerialEngine.pose.computePose({ tuck,
                     armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
                     armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
                 writeSolved(pose, null);
+                rootX = W.standX; rootZ = W.standZ;
                 rootY = terrainRootY(rootZ) - 0.35 * tuck;
                 q = W.qWalk;
+                let ax = 0, ay = 0, az = 0, nA = 0;
+                for (const sideName of ['L', 'R']) {
+                    const ll = M['lowerLeg' + sideName];
+                    if (!ll) continue;
+                    const d = _crashSegAxis(ll);
+                    const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
+                        ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
+                    const ankle = _crashQRotV(q, ankleLocal);
+                    ax += ankle.x + rootX; ay += ankle.y + rootY; az += ankle.z + rootZ;
+                    nA++;
+                }
+                if (nA > 0) {
+                    ax /= nA; ay /= nA; az /= nA;
+                    if (!W.plantedAnkles) {
+                        W.plantedAnkles = { x: ax, y: ay, z: az };
+                    } else {
+                        const P = W.plantedAnkles;
+                        rootX += P.x - ax;
+                        rootZ += P.z - az;
+                        rootY += (P.y - ay) * (1 - u);
+                    }
+                }
             }
         } else {
             const walkT = getT - _WALKOFF_GETUP;

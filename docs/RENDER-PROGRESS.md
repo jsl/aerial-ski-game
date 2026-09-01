@@ -296,6 +296,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
 | — | Iteration 198 | **NEXT.md 5a-NEW(ii) #21 v3 PART 2 — the SITTING tuck LANDED under `APPROVED: POSE_TUCKED display-table adjustment` (ruling on 197): torso −25°→−14.3°→**10.03° from upright**, hip flexion/knee fold kept (kneeToChest 0.193 ≤ 0.22), arms 2-link-IK'd to the KNEECAP — hand-to-knee **24.9 mm** (was 59 mm proximity; limit ≤ 50 mm, contact), elbows in (rz 0.12), elbow interior ~40°; chain-closed by FK, max gap 0.05 mm; POSE_TUCKED_INERTIA byte-frozen. New gate `tuck-sitting.spec.js` (torso ≤ 10.5°, grasp ≤ 5 cm, ≥ 1 cm floor, chain ≤ 3 cm) with the OLD grasp as the FAILING negative control. Audit 0 physics-state diffs ×30/5408 frames, census-only recapture → golden 30/30; unit 81/81; chain+flight-sweep+tuck-coverage+inrun-contact 24/24; look 6/6 + pose-shots inspected (reads as sitting, gloves on the kneecaps). ASSET_V 78.** | entry 198. |
 | — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
 | — | Iteration 196 | **18:40-ruling slot — (0) walkoff #14 negative-control red CLEARED BY SOLO REPRODUCTION: the control fires on HEAD (double world: `phase:"stayed-down"`, hipClearance 0.119 < 0.60, lateral 0, sinceRest 12.8, gate fails; both disable sites re-audited, `R.walkoff` has one writer) — 195's red was a run-all environment artefact, not a mechanism regression; the disable-flag state is now emitted in the control's JSON for future diagnosability. (1) Corrected-band strip (|x| ≤ 0.15) ATTEMPTED and FALSIFIED in four configurations (0.15/r0.04 → seam max 1.611/37 hot; 0.12-full/r0.20 → 1.625/40; +boundary-ring gradient → 1.545/34; +reduce-group fix +midchain dominance → 1.680/93) — the strip's hard predicates inherently cut hinges the pre-repair-chain gate rejects; REVERTED to the 193 tip, hole PARKED per the 17:50 park rule (tracked cosmetic, gate stays red-and-known). No asset change, ASSET_V 78. unit 81/81, golden 30/30, walkoff 2/2 (control fires with `disabled:true,flagAtSample:true`), look 6/6, shots regenerated. #21 v3 tuck from 197 per the ruling.** | entry 196. |
@@ -12525,3 +12526,59 @@ stays 80, shots from 202 stand. Scratch logs:
 hands-vs-thigh red (HANDSSHINS L 0.1561 / R 0.1551 vs thigh face 0.1964 /
 0.1842), unchanged class on the 202-identical tip.
 
+
+### 204 — NEXT.md 5b #24 part (b): the WEIGHTY GET-UP lands — contact-driven roll→kneel→rise replaces the root interpolation (the author's "float up"); per-frame get-up gate + firing negative control in `walkoff.spec.js`; unit 81/81, golden 30/30 (physics untouched), look 6/6, walkoff + crash-ragdoll re-run
+
+**Mandate.** NEXT.md item 5b (#24, author 12:05/~15:00): the get-up must read as
+pushing off the ground. This slot lands (b); (a) grounded-slide gate is recorded
+as open (see below).
+
+**What changed (display-only, `game.js` `_crashWalkoffStep`).**
+The old get-up interpolated the root from the parked crumple to kneel height
+and back — root motion with no contact story. New contact machine:
+- **roll** (0–0.65 s): pose blends crumple→kneel; the root stays where the
+  ragdoll parked it (only the pre-existing boot-sole projection may lift it —
+  contact-driven, not a float).
+- **kneel** (0.65–1.35 s): the root slides ALONG the ground to the stand
+  station at kneel height (terrain − 0.35 m, knees planted).
+- **rise** (1.35–2.10 s): the root rises ONLY now, driven by the tuck release
+  (legs extending under the hips), smoothstep peak 0.7 m/s ≤ the 1.2 m/s cap,
+  with the mean ankle tracked to its kneel-end planted pose (horizontal
+  correction full, vertical correction blended out so the rise ends standing
+  exactly on the snow). The walk phase is unchanged.
+The legacy root-interpolation path is retained verbatim behind
+`window._crashGetupWeightDisabled` as the negative control.
+
+**Gates (`tests/drive/walkoff.spec.js`).** The sampler now records a per-frame
+get-up trace (phase, rootY, both ankle world positions); `getupGatePasses`
+requires the phases roll→kneel→rise observed in order, rise speed ≤ 1.2 m/s,
+and mean-ankle horizontal drift ≤ 2 cm through the rise. First draft gated
+"root does not rise during roll" — FALSIFIED and corrected: the roll-phase
+lift is the existing contact projection, so the gate keys on the phase order
+and the rise, not absolute root height (noted for the reviewer).
+
+**Verification numbers.**
+- `npm run test:unit` **81/81**; `npm run test:golden` **30/30** (no engine
+  or asset change; ASSET_V stays 80).
+- `walkoff.spec.js` solo: 3/3 worlds pass the #14 gate AND the new get-up
+  gate (phase done, hipClearance 0.750, minBootClearance ≥ 0.005, ski drift
+  ≤ 4e-6 m); new negative control (legacy flag) **fires** — the legacy path
+  never enters 'rise' (phases roll,kneel → gate false), 30.9 s.
+- `crash-ragdoll.spec.js` re-run after the change: **9/10 passed** — the one
+  failure (crash #13 world-scaled bands) is a load flake that passes solo
+  (single past=5.05 in 3–8, double 7.11 in 6–12, triple 11.02 in 10–18,
+  onset 0.600, all skis resting); untouched code path (walkoff disabled
+  there).
+- `look` 6/6, shots regenerated (scene/figure/framings unaffected by the
+  crash-branch change).
+
+**Open / next.**
+1. #24 part (a) GROUNDED SLIDE gate not yet landed: the roll phase already
+   conforms the body every frame (rigid slope-follow lift + settle-while-
+   rolling at 0.15 m/s), but a per-slide-frame clearance gate (≤ 8 cm /
+   ≤ 5 cm pen, tumble-end→rest, every world) plus a
+   `_crashSlideGroundingDisabled` negative control is the natural next unit —
+   the flag site in the roll branch is identified (the `if (_lift > 0)` /
+   settle-while-rolling block).
+2. NEXT.md then continues: item 7 paint slice, item 8 coach (item 6 hands is
+   PARKED per the 23:21 ruling).

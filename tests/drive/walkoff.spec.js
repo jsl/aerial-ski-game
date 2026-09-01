@@ -8,12 +8,13 @@ const { test, expect } = require('@playwright/test');
 const path = require('path');
 const OUT = path.join(__dirname, '..', '..', 'shots');
 
-async function measureWalkoff(page, world, disabled) {
+async function measureWalkoff(page, world, disabled, getupLegacy) {
     await page.goto('/index.html?world=' + world);
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
     if (disabled) await page.evaluate(() => { window._crashWalkoffDisabled = true; });
+    if (getupLegacy) await page.evaluate(() => { window._crashGetupWeightDisabled = true; });
     await page.waitForTimeout(400);
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window._getGameState().readyState === false,
@@ -64,7 +65,7 @@ async function measureWalkoff(page, world, disabled) {
         const W = window._walkoffSample = {
             start: performance.now(), skiPos, minBootClearance: Infinity,
             netCrossed: false, maxAbsX: 0, last: null, speed: Infinity,
-            doneAt: null, samples: 0,
+            doneAt: null, samples: 0, getup: [],
         };
         const sample = (now) => {
             try {
@@ -80,6 +81,21 @@ async function measureWalkoff(page, world, disabled) {
                     rp.z - W.last.z) / dt;
             }
             W.last = { t: now, x: rp.x, y: rp.y, z: rp.z };
+            // HT#24(b): per-frame get-up trace — root height and both ankle
+            // (lower-leg −Y cap) world positions while the contact machine
+            // is in roll/kneel/rise.
+            if (wp && (wp.phase === 'roll' || wp.phase === 'kneel' ||
+                       wp.phase === 'rise')) {
+                const ank = (name) => {
+                    const leg = scene.getMeshByName(name);
+                    leg.computeWorldMatrix(true);
+                    const p = leg.getAbsolutePosition();
+                    const d = leg.getDirection(BABYLON.Axis.Y);
+                    return [p.x - d.x * 0.18, p.y - d.y * 0.18, p.z - d.z * 0.18];
+                };
+                W.getup.push({ t: now, phase: wp.phase, rootY: rp.y,
+                    aL: ank('lowerLegL'), aR: ank('lowerLegR') });
+            }
             for (const name of ['lowerLegL', 'lowerLegR']) {
                 const leg = scene.getMeshByName(name);
                 leg.computeWorldMatrix(true);
@@ -136,6 +152,7 @@ async function measureWalkoff(page, world, disabled) {
         return {
             disabled,
             flagAtSample: !!window._crashWalkoffDisabled,
+            getupLegacy: !!window._crashGetupWeightDisabled,
             phase: probe ? probe.phase : 'stayed-down',
             sinceRest: probe ? probe.sinceRest : (performance.now() - W.start) / 1000,
             lateral: Math.abs(root.x),
@@ -146,6 +163,7 @@ async function measureWalkoff(page, world, disabled) {
             maxAbsX: W.maxAbsX,
             skiDrift: Math.max(...skiDrift),
             samples: W.samples,
+            getup: W.getup,
             sampleError: W.error || null,
         };
     });
@@ -159,12 +177,44 @@ function walkoffGatePasses(m) {
         m.skiDrift <= 0.01;
 }
 
+// HT#24(b) weighty-get-up gate, evaluated over the per-frame get-up trace:
+//   - the contact phases roll → kneel → rise are observed IN ORDER (the
+//     legacy float path never enters 'rise' — that is the negative control);
+//   - during 'rise' the peak upward root speed ≤ 1.2 m/s (no pop);
+//   - the mean planted ankle holds its kneel-end position through the rise
+//     (horizontal drift ≤ 2 cm — the root tracks the planted feet, not the
+//     reverse). The root's small roll/kneel-phase lift is the EXISTING
+//     boot-sole projection (contact-driven), not a float, so it is not
+//     gated on root height.
+function getupGatePasses(m) {
+    const g = m.getup || [];
+    const phases = [...new Set(g.map(r => r.phase))];
+    const rise = g.filter(r => r.phase === 'rise');
+    if (phases.join(',') !== 'roll,kneel,rise' || rise.length < 2) return false;
+    let maxRiseSpd = 0;
+    for (let i = 1; i < rise.length; i++) {
+        const dt = Math.max(1e-3, (rise[i].t - rise[i - 1].t) / 1000);
+        maxRiseSpd = Math.max(maxRiseSpd, (rise[i].rootY - rise[i - 1].rootY) / dt);
+    }
+    const meanXZ = r => [(r.aL[0] + r.aR[0]) / 2, (r.aL[2] + r.aR[2]) / 2];
+    const m0 = meanXZ(rise[0]);
+    let footDrift = 0;
+    for (const r of rise) {
+        const mm = meanXZ(r);
+        footDrift = Math.max(footDrift, Math.hypot(mm[0] - m0[0], mm[1] - m0[1]));
+    }
+    return maxRiseSpd <= 1.2 && footDrift <= 0.02;
+}
+
 test('crash #14: get up and walk clear of the corridor in every world', async ({ page }) => {
     test.setTimeout(600_000);
     for (const world of ['single', 'double', 'triple']) {
         const m = await measureWalkoff(page, world, false);
         console.log('WALKOFF ' + JSON.stringify(m));
         expect(walkoffGatePasses(m), `${world}: ${JSON.stringify(m)}`).toBe(true);
+        expect(getupGatePasses(m),
+            `${world} get-up: rollRise/riseSpeed/footDrift ${JSON.stringify(m.getup && m.getup.length)}`)
+            .toBe(true);
         await page.evaluate(() => {
             const scene = BABYLON.EngineStore.LastCreatedScene;
             const root = scene.getTransformNodeByName('skierRoot').getAbsolutePosition();
@@ -182,4 +232,15 @@ test('crash #14 negative control: the previous stay-down ending fails', async ({
     console.log('WALKOFF NEGCONTROL ' + JSON.stringify(m));
     expect(walkoffGatePasses(m),
         'negative control: the previous stay-down ending must FAIL').toBe(false);
+});
+
+test('crash #24 negative control: the legacy float get-up fails the weighty-rise gate', async ({ page }) => {
+    test.setTimeout(240_000);
+    const m = await measureWalkoff(page, 'double', false, true);
+    console.log('WALKOFF GETUP-NEGCONTROL ' + JSON.stringify(
+        { getupLegacy: m.getupLegacy, phase: m.phase, getupRows: (m.getup || []).length }));
+    expect(m.getupLegacy, 'get-up legacy flag was active').toBe(true);
+    expect(getupGatePasses(m),
+        'negative control: the legacy root-interpolation get-up must FAIL the weighty-rise gate')
+        .toBe(false);
 });
