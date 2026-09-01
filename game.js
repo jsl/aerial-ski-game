@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=83";   // 83: sponsor band bounded to the plate width (NEXT item 7)
+    const ASSET_V = "?v=84";   // 84: crotch/inner-thigh baked-AO floor (NEXT item 7 texture cleanup)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

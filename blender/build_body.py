@@ -177,6 +177,20 @@ SABOTAGE_BIBBANDS = os.environ.get('BODY_SABOTAGE_BIBBANDS') == '1'
 SABOTAGE_BIBBANDWRAP = os.environ.get('BODY_SABOTAGE_BIBBANDWRAP') == '1'
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
+
+# ── NEXT item 7 remainder: crotch / inner-thigh TEXTURE CLEANUP ─────────────
+# The baked AO map froze the concavity between the thighs (the bake pose holds
+# the legs near each other, and the 40 mm AO distance spans the whole gap), so
+# a dirty grey mottle reads on the inner thighs / crotch in every framing even
+# though the runtime SSAO2 recomputes occlusion from the real pose every frame.
+# The cleanup FLOORS the baked AO inside the inner-thigh UV mask; the genuine
+# contact darkening stays the runtime SSAO2's job, exactly the split the
+# limited-distance AO bake comment above the bake already establishes for the
+# arms. NEGATIVE CONTROL: BODY_SABOTAGE_CROTCH=1 skips the clamp — the gate
+# below must reject that build.
+SABOTAGE_CROTCH = os.environ.get('BODY_SABOTAGE_CROTCH') == '1'
+CROTCH_AO_FLOOR = 0.60    # baked-AO floor inside the inner-thigh mask
+CROTCH_MIN_TEXELS = 400   # below this the mask is wrong, not the AO
 # OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
 # short of the binding (author/reviewer, session 4 (c)) — the boot GEOMETRY has
 # existed since `rigid_boots`/`seat_soles` and is already gated by
@@ -10462,6 +10476,7 @@ def flatten_leg_shading(low, img, kind, log):
         out[..., c] = filt * (1.0 - edge) + ch * edge
     sel = mask[..., None]
     before = float(np.abs(a - _blur(a, FLATTEN_MID_SIGMA))[mask].mean())
+
     a = np.where(sel, out, a)
     after = float(np.abs(a - _blur(a, FLATTEN_MID_SIGMA))[mask].mean())
     flat = np.concatenate([a, np.ones((h, w, 1))], axis=2).astype(np.float32)
@@ -10471,6 +10486,48 @@ def flatten_leg_shading(low, img, kind, log):
     return {'before': round(before * 255, 2), 'after': round(after * 255, 2),
             'texels': n}
 
+
+def clamp_crotch_ao(low, img, log):
+    """Floor the baked AO inside the inner-thigh / crotch UV mask (NEXT item 7).
+
+    The AO bake is limited to 40 mm precisely so it records only what the
+    low-poly cannot express per frame — but the between-thigh gap is under
+    40 mm in the BAKE POSE, so the map still froze that occlusion. At runtime
+    the legs separate and re-approach, and SSAO2 recomputes the real occlusion
+    every frame, so the baked grey is pure dirt: a mottle that follows the
+    figure into every framing (visible on the inner thighs in figure_front).
+    This floors the AO inside the inner-face mask of the upper-leg garment;
+    the runtime SSAO2 keeps providing the genuine contact shading.
+    """
+    if SABOTAGE_CROTCH:
+        return None
+    own = dominant_segments(low)
+
+    def inner(v):
+        if own[v] not in ('upperLegL', 'upperLegR'):
+            return False
+        _n, along, _r, out, _f, (lx, _ly, _lz) = segment_frame(
+            low.data.vertices[v].co, own[v])
+        # inner face = opposite the segment's outboard direction, upper half
+        # (the span that faces the crotch, not the knee)
+        return lx * out < 0.0 and along > 0.0
+
+    tris = _poly_uv_tris(low, inner)
+    w, h = img.size
+    mask = _dilate(_rasterize_uv(tris, w, h), 3)
+    n = int(mask.sum())
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    a = buf.reshape(h, w, 4)[..., :3].astype(np.float64)
+    before = float(a[mask].mean()) if n else 1.0
+    floored = np.maximum(a, CROTCH_AO_FLOOR)
+    after = float(floored[mask].mean()) if n else 1.0
+    out = np.concatenate([floored, np.ones((h, w, 1))], axis=2).astype(np.float32)
+    img.pixels.foreach_set(out.reshape(-1))
+    log(f'CROTCH AO CLAMP: inner-thigh mask {n} texels, mean AO '
+        f'{before * 255:.1f} -> {after * 255:.1f}/255 (floor {CROTCH_AO_FLOOR})')
+    return {'before': round(before * 255, 2), 'after': round(after * 255, 2),
+            'texels': n}
 
 def bake_maps(low, high, out_dir):
 
@@ -10548,12 +10605,27 @@ def bake_maps(low, high, out_dir):
     # the fold at a joint, the lip around the bib. Those are all within a few
     # centimetres. The pose-dependent part is SSAO2's job, and SSAO2 is already
     # in the pipeline — it is computed per frame from the actual pose, which is
-    # exactly what a baked map cannot be.
-    if bpy.context.scene.world is None:
-        bpy.context.scene.world = bpy.data.worlds.new('bakeWorld')
-    bpy.context.scene.world.light_settings.distance = 0.04
+    def ao_post(img, name):
+        # flatten first (the 181 ruling), then the item-7 crotch floor — both
+        # must land on the pixels BEFORE save_bake writes the delivery PNG.
+        post_flatten('ao')(img, name)
+        stats['crotch_ao'] = clamp_crotch_ao(low, img, log)
     stats['ao'] = run('AO', 'athlete_ao', srgb=False, fill=(1.0, 1.0, 1.0, 1.0),
-                      post=post_flatten('ao'))
+                      post=ao_post)
+
+    # NEXT item 7: the crotch clamp is not optional either. A build that skips
+    # it (BODY_SABOTAGE_CROTCH=1) or whose inner-thigh mask came out empty
+    # ships the frozen between-thigh occlusion as grey mottle on the figure.
+    _c = stats.get('crotch_ao')
+    if not _c or _c['texels'] < CROTCH_MIN_TEXELS:
+        raise SystemExit(
+            f'[body] CROTCH AO CLAMP gate FAILED: '
+            f'{_c["texels"] if _c else "never ran"} inner-thigh texels '
+            f'(floor {CROTCH_MIN_TEXELS}) — mask wrong or clamp skipped')
+    if _c['after'] < _c['before'] + 15.0:
+        raise SystemExit(
+            f'[body] CROTCH AO CLAMP gate FAILED: mean AO '
+            f'{_c["before"]} -> {_c["after"]}/255 — the floor did not bite')
 
     # RULING on 181: the flatten is not optional. A build that leaves the
     # muscle-frequency band in the leg-garment maps (BODY_FLATTEN_OFF=1, or a

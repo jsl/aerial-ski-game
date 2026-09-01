@@ -12991,6 +12991,57 @@ when released) and P2 sky depth as slots allow.
 
 
 
+### 212 — NEXT item 7 CLOSED: crotch / inner-thigh texture cleanup (baked-AO
+floor in the inner-thigh mask); two-tone panels + collar + cuffs CONFIRMED
+already shipped; ASSET_V 84
+
+**Mandate.** The 03:45 ruling: "212 = item 7 remainder: two-tone panels +
+collar + cuffs (+ crotch texture cleanup)". Diagnosis first: the panels
+(teal yoke / white plate / magenta band), the stand-up collar, the sleeve +
+ankle cuffs and the gaiter are all IN the build and gated
+(`collar_cuff_gate`, `paint_suit`'s required-tags check — COLLAR/CUFF/ankle
+branch constants, `bib_band_gate`); this session's by-eye on the fresh
+`figure_front`/`figure` shots confirms they read. The genuine remainder was
+the CROTCH TEXTURE: a grey mottle across the inner thighs / crotch in every
+framing.
+
+**Root cause.** The baked AO map froze the between-thigh occlusion: the bake
+pose holds the legs near each other and the 40 mm AO distance spans the whole
+gap, so the concavity was baked into `athlete_ao.webp` even though the
+runtime SSAO2 recomputes occlusion from the real pose every frame — the same
+pose-frozen-AO class the bake's own arms comment documents. Fix:
+`clamp_crotch_ao` in `blender/build_body.py` floors the baked AO at 0.60
+inside a UV mask of the upper legs' INNER faces (segment-frame `lx*out < 0`,
+upper half), applied in the AO bake's post chain after the 181 flatten and
+BEFORE `save_bake`.
+
+**Gates.**
+ - Build log: `CROTCH AO CLAMP: inner-thigh mask 36147 texels, mean AO
+   170.8 -> 186.7/255 (floor 0.6)`.
+ - Hard build gate: mask < 400 texels or mean-lift < +15/255 fails the
+   build (mirrors the LEG-SHADING FLATTEN gate pattern).
+ - NEGATIVE CONTROL (fires): `BODY_SABOTAGE_CROTCH=1` build exits with
+   `CROTCH AO CLAMP gate FAILED: never ran inner-thigh texels` (NC glb
+   written to scratch, deleted; shipped webps untouched — the NC run
+   fails before the delivery encode).
+ - Render-space numbers (fresh `figure_front.png`, 1100×850): inner-thigh
+   band mean luma 181.5 vs front-thigh 160.7 — the inner region now reads
+   BRIGHTER than the surrounding suit (the grey mottle was clearly darker
+   by eye pre-fix); crotch band 167.8. Bib "30" readable, band bounded,
+   boots seated — unchanged.
+
+**Verification.** Rebuild `--boots on` (the glb is byte-identical — only
+`athlete_ao.webp`/`athlete_normal.webp`/`athlete_maps.json` changed, bake-map
+resample noise as in 211), ASSET_V 83 → 84 in game.js + index.html preloads.
+Unit 81/81 (fail 0), golden 30/30 (physics untouched), look 7/7 (shots
+regenerated and inspected), `bib-number` + `boots` drive specs green (boots
+5/5 with NC1/NC2 firing).
+
+**Open.** NEXT.md item 8 — the COACH (#17) — is next; NEXT.md stays in place
+(the list is not complete). Item 7 is fully closed: bounded band (211),
+digit orientation (211, foreshortening), panels/collar/cuffs (confirmed
+shipped + gated), crotch texture (this iteration).
+
 ### 211 — NEXT item 7 PAINT SLICE: the sponsor band BOUNDED to the plate
 width (150-review 17:20 ruling) — floating pink lobes at the hips gone;
 digit orientation PROBED (both plates read correctly straight-on — the
