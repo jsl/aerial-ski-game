@@ -10606,10 +10606,33 @@ def add_boots(arm, joints, body):
     def build(side, sgn):
         leg = f'lowerLeg{side}'
         an = joints[f'ankle{side}']
-        ax = an.x
-        ay = an.y
-        sole = min(v.co.z for v in body.data.vertices)          # the ski top
-        cuff_top = an.z + 0.175
+        # 209 ROOT CAUSE (the 01:55 ruling's probe mandate): `joints` lives in
+        # the PRE-POSE metarig frame, but by the time add_boots runs the mesh
+        # has been seated (pose/girth/seat_soles) — measured on v82: joints put
+        # the ankle at z=+0.084 while the posed sole is at z=-0.995, 1.08 m
+        # apart. 208 built the clog from the real sole but the cuff/strap/
+        # buckles from joints, so the shell's upper half rendered as a navy
+        # column up the leg: the "block pile at the ski, old shoe visible".
+        # The anchors therefore come from the POSED vertex cloud, never from
+        # joints; the joints values are only logged beside them as provenance.
+        idxg = body.vertex_groups.find(leg)
+        assert idxg != -1, f'{leg}: no vertex group at boot build time'
+        cloud = [v for v in body.data.vertices
+                 if next((g.weight for g in v.groups if g.group == idxg), 0.0) > 0.9]
+        assert len(cloud) > 40, f'{leg}: thin shin cloud ({len(cloud)})'
+        sole = min(v.co.z for v in cloud)                    # this side's sole
+        band = [v for v in cloud if v.co.z <= sole + 0.10]   # ankle band
+        ax = sum(v.co.x for v in band) / len(band)
+        ay = sum(v.co.y for v in band) / len(band)
+        an_z = sole                                          # the shin's own ankle end
+        log(f'boot {side} anchors from the posed cloud: ankle ({ax:+.3f},{ay:+.3f},'
+            f'{an_z:+.3f}) vs stale joints ({an.x:+.3f},{an.y:+.3f},{an.z:+.3f})')
+        cuff_top = an_z + 0.175
+        # Hard gate (the 209 defect made impossible): a real cuff tops out
+        # ~14-21 cm above the sole. Anything else is the pre-pose-frame bug.
+        assert 0.14 <= cuff_top - sole <= 0.21, (
+            f'boot {side}: cuff top {cuff_top:+.3f} is {cuff_top - sole:+.3f} '
+            f'above the sole — ankle anchor not in the posed mesh frame')
         pieces = []
 
         def prim(kind, name, **kw):
@@ -10652,21 +10675,21 @@ def add_boots(arm, joints, body):
         # the flight boot-ski sweep pins SHIN to SKI and is untouched — the
         # cuff is display geometry skinned rigidly to the shin bone).
         # Iter 208 (15:10-ruling redo): the cuff now rises to the strap line
-        # (an.z + 0.175) so the boot reads as a tall shell around the foot,
+        # (an_z + 0.175) so the boot reads as a tall shell around the foot,
         # and the power strap SEATS on the cuff top instead of floating a
         # 3 cm gap above it (visible in the 208 measurement build's
         # figure_front.png).
         prim('cone', 'cuff', radius1=0.052, radius2=0.061, depth=0.175,
              rot_x=-0.21,
-             x=ax, y=ay - 0.010, z=an.z + 0.0875)
+             x=ax, y=ay - 0.010, z=an_z + 0.0875)
         # Power strap across the cuff top (overlapping the cuff cone so the
         # rendered boot is ONE connected component)
         prim('box', 'strap', w=0.128, d=0.034, h=0.024,
-             x=ax, y=ay - 0.010, z=an.z + 0.168)
+             x=ax, y=ay - 0.010, z=an_z + 0.168)
         # Buckles: 3 on the OUTER face of the cuff + 1 instep
         for k, dz in enumerate((0.030, 0.075, 0.120)):
             prim('box', f'buckle{k}', w=0.014, d=0.026, h=0.020,
-                 x=ax + sgn * 0.058, y=ay - 0.010, z=an.z + dz)
+                 x=ax + sgn * 0.058, y=ay - 0.010, z=an_z + dz)
         prim('box', 'buckle_instep', w=0.020, d=0.014, h=0.012,
              x=ax, y=ay + 0.055, z=sole + 0.115)
 

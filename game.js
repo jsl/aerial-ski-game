@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=81";   // 81: boots redo — tall cuff, seated strap, render-space gate green (iter 208)
+    const ASSET_V = "?v=82";   // 82: boots rebuild — anchors from the posed mesh (209 pre-pose-frame fix)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -2955,7 +2955,7 @@ void main(void) {
                     // shipped boot primitives render as misplaced blocks (old shoe
                     // still visible, stray quads at the shoulders). Hidden until the
                     // placement fix + render-space boot gate land; flip to true then.
-                    const BOOTS_ENABLED = false;  // reviewer 01:55: 208's render STILL a block pile at the ski (not the foot), old shoe visible — the 5/5 gate passed on it, so the gate is insufficient; see the 01:55 ruling
+                    const BOOTS_ENABLED = new URLSearchParams(location.search).has('boots');  // reviewer kill-switch (01:55 ruling) stays default-OFF; `?boots=1` is the gate's measurement override — the REVIEWER flips the shipped default, per the 01:55 protocol
                     const bootParts = res.meshes.filter(m =>
                         m.name && /^athleteBoot[LR]$/.test(m.name) &&
                         m.getTotalVertices && m.getTotalVertices() > 0);

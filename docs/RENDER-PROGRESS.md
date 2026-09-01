@@ -301,6 +301,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
+| — | Iteration 209 | **BOOTS: the 01:55-ruling probe FOUND THE FRAME BUG and the fix LANDED — `add_boots` anchored the cuff/strap/buckles on the PRE-POSE metarig `joints` frame (ankle z +0.073) while the posed mesh's sole is at −0.995 (1.07 m apart), so 208's shell upper half rendered as the navy column up the leg ("block pile at the ski, old shoe visible"); anchors now derive from the POSED vertex cloud (build log: ankle (−0.080,−0.011,−0.995) vs stale joints (−0.084,−0.014,+0.073); hard gate 0.14–0.21 m cuff-above-sole makes the class impossible). ASSET_V 82 (index.html preload URLs bumped in step). NEW bone-anchored containment gate `boots.spec.js` 4/4 (boot world bounds must contain the skinned ankle pulled through the body world matrix, ≤3 cm, both sides × front+side; navy surround ≥20% at the projected ankle disc; old-shoe neutral-dark ≤5%; NC1 displaced-boots fires containment; NC1b synthetic old-shoe control fires; NC2 hidden boots fire). Rendered boots (with `?boots=1`): y 6.018→6.230 (0.21 m shell from the ski top), 0.13 m wide, centred on the binding — surrounding the ankle at 6.03. KILL-SWITCH `BOOTS_ENABLED` stays default-OFF per the 01:55 protocol (the REVIEWER flips it); `?boots=1` is the measurement override. unit 81/81, golden 30/30 (physics untouched), look 7/7, boots 4/4.** | entry 209. |
 | — | Iteration 207 | **#27 STICKY CAMERA FIXED (display-only, `game.js` free-look pointer block): every manual drag-state site now takes `setPointerCapture` on the canvas AND clears its drag state on WINDOW-level `pointerup`/`pointercancel` + `blur` + `visibilitychange`. New gate in `freelook.spec.js` (#27 sticky drag): synthetic canvas pointerdown + tilt-engaging upward drag, release targeted at `document.body` (the exact missed-canvas-release case), then bare pointermoves must not drift the camera — FAILS on the unfixed build (drifted=true, tilt engaged), PASSES fixed; all 6 freelook specs green. unit 81/81, golden 30/30, look 7/7.** | entry 207. |
 | — | Iteration 206 | **#21 v4 STATIONARY GROUNDED TUCK LANDED (display-only): holding tuck while STOPPED now renders a deep squat (renderer-local `_STILL_SQUAT` table blended in `applyPose`, speed-gated 0.8 m/s fade to the downhill crouch) — torso 20.0° from upright, hand-to-knee 15.0 cm, knee interior 90.7°, chain ≤ 8.2 mm, ankle-on-ski 7.2 mm; boot pin/shin rows pin-compatible so heels stay planted. New gate `tuck-grounded.spec.js` 2/2 (keyboard-driven live game; negative control = the downhill crouch fires at ~44°). unit 81/81, golden 30/30 (0 physics change), look 6/6, affected drive specs (inrun-crouch, tuck-sitting, tuck-coverage, flight-sweep, ready-stance, chain, inrun-contact) all green.** | entry 206. |
 | — | Iteration 205 (review) | **REVIEW-ONLY (capped form per the 200 ruling): unit 81/81, golden 30/30, look 6/6, walkoff 3/3 (get-up gate green), crash-ragdoll 10/10 (the 204 flake green in batch — no recurrence). Scene luminance: corridor 212.9 vs flank-right 216.0 / flank-left 205.1 (grey-ramp holds); midground green ridge band 115.6 vs horizon 87.5. By-eye: bib digits still mirrored, pink smear at bib base persists (item 7 debts); boots read as gray slab blocks, not boots (redo queued); tuck reads compact in pose_tuck_side; no visible watertight holes in front/side framings. No source/asset change.** | entry 205. |
@@ -12849,3 +12850,83 @@ largest component 8,271 (84.8%).
    produced two DIFFERENT wrong answers (both disagreeing with the render);
    the landed gate measures pixels instead. If you want a geometry-space
    clause, it needs the engine's exact skin-matrix path documented first.
+
+### 209 — BOOTS: the mandated probe found the placement-frame root cause (pre-pose
+`joints` vs posed mesh, 1.07 m apart) and the fix landed; the gate is now
+BONE-ANCHORED CONTAINMENT; kill-switch stays REVIEWER-owned (default OFF)
+
+**Reviewer feedback acted on:** the 01:55 ruling on 208 verbatim — (1) probe
+build printing piece transforms vs the skinned ankle and diffing them;
+(2) bone-anchored containment gate with the 208 render as the failing
+control; (3) the kill-switch flips only on gate-green + reviewer by-eye, and
+the REVIEWER flips it.
+
+**Probe (mandated, run first):** a live headless-browser probe over the v81
+build with boots enabled printed, per side, the boot's skeleton-applied world
+bounds, the GLB bone's absolute position, the driver primitive, and a CPU
+skin of the boot vertices with the shader's own final matrices. Finding: the
+rendered boot stack spanned y 6.03 → 7.28 (1.25 m tall vs 0.31 m built), both
+sides folded onto centres 6 cm apart at the midline. The GLB accessor bounds
+pinpointed it: `athleteBootL/R` POSITION max y = **+0.2585** — the boot GEOMETRY
+itself is 1.25 m tall in mesh space.
+
+**Root cause:** `add_boots` (build_body.py) mixed frames. The clog/sole pieces
+used the real posed mesh (`sole = min z`), but the cuff/strap/buckles used
+`joints['ankle*'].z`, and `joints` lives in the PRE-POSE metarig frame —
+measured at add_boots time: joints ankle z **+0.073** vs the posed sole
+**−0.995** (1.07 m apart). The "cuff" therefore rendered as a navy column
+running from the boot up the leg — the reviewer's "block pile at the ski, old
+shoe (painted boot tube) visible". The v81 gate measured navy-pixel statistics
+only, so it passed 5/5 on it.
+
+**Fix (build_body.py `add_boots`):** all anchors now derive from the POSED
+lowerLeg vertex cloud (sole = cloud min z; ankle x/y = mean of the 10 cm band
+above the sole); the stale joints values are only logged beside them as
+provenance. New hard gate: cuff top must sit 0.14–0.21 m above the sole —
+the frame bug class now fails the build. Build log: `boot L anchors from the
+posed cloud: ankle (-0.080,-0.011,-0.995) vs stale joints (-0.084,-0.014,+0.073)`;
+cuff top −0.820 both sides. Full rebuild, assets shipped (glb + 3 webp + maps),
+**ASSET_V 82** (game.js + index.html preload URLs, which 208 had left at 78).
+
+**New gate (`tests/drive/boots.spec.js`, rewritten):** bone-anchored
+containment, per side, front AND side framings:
+- geometry: the skinned ankle (bone absolute transform pulled through the
+  body's world matrix) must lie inside the boot's skeleton-applied world
+  bounds ± 3 cm, and the boot top below the knee helper;
+- pixels: navy surround ≥ 20% of the 14 px disc at the projected ankle;
+- OLD SHOE: neutral-dark non-boot pixels (the painted tube; the shell keeps
+  b−r ≈ 20 even in shadow) ≤ 5% of the same disc.
+NEGATIVE CONTROLS: NC1 — boots displaced +0.5 m (the 208 fold) fails
+containment AND surround; NC1b — synthetic exposed-tube disc fires the
+old-shoe classifier (clean disc passes); NC2 — boots hidden fail the rendered
+clause. **boots.spec 4/4.** (The displaced live render's ankle disc reads
+ski-navy/white rather than neutral-dark in SwiftShader's small framing, so
+the old-shoe firing control is the synthetic NC1b; recorded as a limitation.)
+
+**Rendered result (with `?boots=1`):** boot bounds y 6.018→6.230 (0.21 m
+shell from the ski top), 0.13 m wide, centred on the binding station,
+ankle at 6.03 INSIDE; inspected by eye — the shell reads as a boot seated at
+the binding, no column, no pile.
+
+**Kill-switch:** `BOOTS_ENABLED` remains default-OFF (now expressed as
+`?boots=1` override off by default) — per the 01:55 protocol the REVIEWER
+flips the shipped default after the by-eye check. The canonical look shots
+therefore still show the (hidden-boots) state; boot visuals above are from
+the override run.
+
+**Verification:** unit 81/81, golden 30/30 (physics untouched — asset +
+display-only change), look 7/7, boots 4/4. Scratch probes cleaned from
+`~/aerial-agents/scratch/iter-209/`.
+
+**Open questions for the reviewer:**
+1. Please by-eye `?boots=1` (or flip the switch) against
+   `author_boot_ref_2026-08-30.jpg` — if it passes, the kill-switch flip is
+   yours per the 01:55 protocol.
+2. The boots are rigid-skinned to the shins and render correctly at rest and
+   through the pin; no per-frame game-side placement was added. If you want
+   the boots hidden with the body during crash ragdoll (bindings-release
+   semantics), say so — not attempted this slot.
+3. The old-shoe negative control is synthetic (NC1b) because the displaced
+   live render occludes the ankle with the navy ski; acceptable, or should
+   the clause move to a frame where the ski is out of the disc?
+
