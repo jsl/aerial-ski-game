@@ -313,6 +313,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 228 | **SKI-TAIL CURL INVESTIGATION CLOSED (220's flag, the 14:30 ruling's next slot): the raised element aft of the rear binding is the INTENDED 14 mm tail kick + brake bar, NOT a reversed tip. New `ski-tail.spec.js` 2/2 (gates + firing NC): mid-run tip leads tail by 1.55 m along travel (+z), tip lift 47.6 mm vs tail 6.6 mm over the waist deck, brake top within 23 mm of the tail deck; NC (180° yaw = the reversed-tip defect) fires. No change to `game.js`/assets, ASSET_V unchanged. unit 81/81, golden 30/30, rig 12/13 (carried rig:496 hands red), look 7/7, figure.png inspected — shovel with sidecut clearly fore, aft element small.** | entry 228. |
 | — | Iteration 227 | **HORIZON SLICE (223-ruling tail 2, per the 14:30 ruling's "remaining slots 227–235"): (1) near-ridge crest banding — `_ridgeMesh` gains a per-ridge uv.v elevation divisor; near ridges use 48 m so their ≈26 m crests reach rock/tree-line/snow-cling instead of the whole face sitting in the dark forest band (the "floating green slab"); (2) peak/sky separation — peak haze mix 0.26–0.38 → 0.18–0.28, haze emissive 0.16 → 0.11; rendered peak meanLum 0.478 → 0.443 = 0.69 × sky band 0.645 (old 0.85 rule; pre-change ratio ~0.81 by top-band sample). unit 81/81, golden 30/30, ridges3d+peak-overhang 7/7 (ridge mask 0.322/0.137 vs ceiling 0.45; fogged NC 0.559 fires; peak gate std 0.121, opaque, 11 tints), look 7/7 incl. FRONTGATE navyFrac 0.0701 (green again after 226's v89 revert). Display-only, no assets, ASSET_V unchanged.** | entry 227. |
 | — | Iteration 222 | **NEXT item 5 (#26 v2) HONEST-INCOMPLETE: `add_crotch_occluder` lands (interior suit-coloured patch, rigid to torso, posed-cloud anchored, build gates + OCCLUDER log; exported via equip; ASSET_V 87) plus the helmet-targeting exclusions in `_athleteFacing`/`_renderedHeadCentre` and a FIRING runtime NC in leg-watertight.spec (occluder-off reproduces the front hole 57 px). But the seating FAILS: the separate skinned object's frame is axis-scrambled (thin 12 mm axis renders vertical — edge-on sliver, pixels identical on/off), so the front tear is UNCHANGED (57 px, x 674–679 / y 324–339) and leg-watertight stays 2 red (carried, same as HEAD). unit 81/81, golden 30/30, look 7/7, boots 11/11 (one rebuild mistakenly without `--boots on` — caught by boots.spec, rebuilt), rig green minus carried hands red. Root-cause note + three candidate seating fixes (incl. merge-into-`low`) in entry 222. NEXT.md KEPT.** | entry 222. |
 | — | Iteration 225 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 6/1 (known front gate red, navyFrac 0.0087). ROOT CAUSE FOUND: the front-gate red is NOT a camera bug — camera and SKELETON verified exactly per spec (radius 2.40, head bone (0,7.36,−17.30), 1.4 m driver span) but the v88 RENDERED mesh is collapsed to ≈0.36 m (head projects to screen y=118, rendered helmet y≈345; helmet primitive bbox 3 cm). Regression window: asset v87 (222, look 7/7) → v88 (223 occluder merge). Fix is in build_body.py/assets — Opus lane, reported not touched. Horizon wedge + flat grey peaks confirmed on scene.png (debt stands).** | entry 225. |
@@ -13791,3 +13792,43 @@ green face at the ready framing acceptable, or should the next horizon slot
 lower/soften the near ridge's silhouette (geometry change — would touch the
 peak-overhang/ridges3d gate framings)? (2) the ski-tail curl investigation is
 next per the ruling — confirm.
+
+### 228 — Ski-tail curl investigation CLOSED: intended tail kick, not a reversed tip
+
+The 220 review's flag ("the curled raised element aft of the rear binding on
+the near ski — intended tail kick or a reversed tip?"), scheduled for 228 by
+the 14:30 ruling. Investigation only; no change to `game.js` or assets
+(ASSET_V unchanged), no scene additions.
+
+**Method:** new `tests/drive/ski-tail.spec.js` measures the styled skis
+(`skiL/R_vis`) in WORLD space at two states — ready stance and mid-inrun
+(posZ 8–15). Travel is +z (terrainRootY descends toward +z at the start:
+7.798 → 6.99 → 6.182 over z−2/z/z+2; posZ increases through the run).
+
+**Verdict — INTENDED.** Mid-run, per ski (both sides identical):
+- tip deck lift over the waist deck **47.6 mm** (the 55 mm shovel builder
+  constant, minus cap rounding) vs tail deck **6.6 mm** (the 14 mm tail kick);
+  tip leads the tail by **1.55 m** along travel — the ski is NOT mounted
+  backwards. At the ready stance the whole rig yaws (tip direction world
+  +x), so figure.png frames the ski across-camera — that is the pose, not a
+  mount error.
+- The aft raised element = the 14 mm tail kick + the tail cap (half-width
+  ×0.70 rounding) + the **brake bar**, whose top sits within **23 mm** of the
+  tail deck (ready stance) and effectively flush mid-run — a binding brake,
+  not a second shovel. `figure.png` re-inspected: the fore end is clearly the
+  tall sidecut shovel; the aft element is small.
+
+**Gates:** tip-vs-tail lift margin > 20 mm; mid-run tip ahead of tail along
+travel > 1.0 m; brake top ≤ 25 mm above the tail deck. **NC (fires):** the
+same measurement through an extra 180° yaw — exactly what a reversed ski is
+— fails the orientation gate (tipMinusTailZ < −1.0).
+
+**Verification:** ski-tail 2/2 (gate + firing NC); unit 81/81; golden 30/30
+(no physics state touched); rig 12/13 (the carried rig:496 hands red, parked
+per the 203 ruling); look 7/7 with shots regenerated; scene/figure
+inspected.
+
+**Open questions for the reviewer:** none new — the curl reads as intended
+equipment; if the aft element still bothers the eye at the figure framing,
+the lever is TAIL_LIFT (14 mm) / the brake bar's proud height, one-line
+display-side tweaks, on your call.
