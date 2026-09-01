@@ -11008,6 +11008,72 @@ def add_boots(arm, joints, body):
     return made
 
 
+def add_crotch_occluder(arm, low):
+    """#26 v2 (NEXT.md item 5): interior suit-coloured occluder at the crotch.
+
+    The abdomen/hip junction tears under pose (the 191-195 probes proved the
+    shipped mesh is CLOSED and winding-consistent — the front 54 px hole is
+    pure skinned separation between the torso- and thigh-owned banks). Three
+    weight-space welds did not close it, so the authorised approach ships an
+    INTERIOR patch behind the tear: a thin box a few centimetres inside the
+    suit's front surface at the pelvis, skinned rigidly to `torso`, painted
+    suit fabric. With the suit intact it is invisible; through the tear it
+    reads as suit fabric, so the render-space full-body watertight gate
+    (leg-watertight.spec.js) goes green.
+
+    Anchors come from the POSED vertex cloud (the 209 lesson — `joints` is
+    stale by this stage). Runtime negative control: the spec disables the
+    `athleteBodyOccluder` mesh and the hole must reappear.
+    """
+    idx = low.vertex_groups.find('torso')
+    assert idx != -1, 'occluder: no torso vertex group'
+    cloud = [v for v in low.data.vertices
+             if next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.5]
+    assert len(cloud) > 40, f'occluder: thin torso cloud ({len(cloud)})'
+    zlo = min(v.co.z for v in cloud)          # pelvis bottom, posed frame
+    # Front surface of the suit near the midline over the tear band.
+    band = [v for v in low.data.vertices
+            if zlo - 0.02 <= v.co.z <= zlo + 0.26 and abs(v.co.x) <= 0.10]
+    assert len(band) > 40, f'occluder: thin midline band ({len(band)})'
+    yfront = max(v.co.y for v in band)
+    xc = sum(v.co.x for v in band) / len(band)
+    yc = yfront - 0.035                       # 35 mm inside the front surface
+    zc = zlo + 0.12     # spans pelvis -> mid-abdomen: the tear sits HIGH
+                        # (measured 222: hole centre above the hip row, so a
+                        # pelvis-height patch never covered it)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.mesh.primitive_cube_add(size=1.0)
+    o = bpy.context.active_object
+    o.name = 'athleteBodyOccluder'
+    o.data.name = 'athleteBodyOccluder'
+    o.scale = (0.16, 0.012, 0.24)
+    o.location = (xc, yc, zc)
+    bpy.ops.object.transform_apply(scale=True, location=True)
+    mat = bpy.data.materials.new('occluderSuit')
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get('Principled BSDF')
+    bsdf.inputs['Base Color'].default_value = (0.85, 0.87, 0.92, 1.0)
+    bsdf.inputs['Roughness'].default_value = 0.7
+    o.data.materials.append(mat)
+    o.vertex_groups.new(name='torso')
+    o.vertex_groups['torso'].add(list(range(len(o.data.vertices))), 1.0, 'ADD')
+    mod = o.modifiers.new('arm', 'ARMATURE')
+    mod.object = arm
+    # GATES: rigid skin, seated INSIDE the body, on the midline.
+    oidx = o.vertex_groups['torso'].index
+    w = _vertex_weights(o)
+    assert all(len(vg) == 1 and abs(vg.get(oidx, 0.0) - 1.0) < 1e-6
+               for vg in w), 'occluder: not rigid to torso'
+    assert yc <= yfront - 0.015, (
+        f'occluder only {yfront - yc:.3f} m behind the front surface '
+        f'({yfront:.3f}) — would show through the suit')
+    assert abs(xc) <= 0.03, f'occluder off the midline (x={xc:.3f})'
+    log(f'OCCLUDER: pelvis zlo={zlo:.3f} front y={yfront:.3f} patch at '
+        f'({xc:+.3f},{yc:+.3f},{zc:+.3f}) 0.16x0.012x0.24 rigid to torso, '
+        f'{len(band)}-vert anchor band')
+    return o
+
+
 def add_equipment():
     """Skis stay rigid, separate objects."""
     made = []
@@ -12887,6 +12953,12 @@ def main():
     # them.
     boots = add_boots(arm, joints, low) if arg('--boots', 'off') == 'on' else []
     equip = equip + boots
+    # #26 v2: the interior crotch occluder ships with the equipment (same
+    # selection + skin path as the boots). After the boots, before the spine
+    # split — the occluder is skinned to `torso`, which stays a driven bone
+    # (game.js keeps the rigid torso rod; the vertebrae only take over `low`'s
+    # weights, never the occluder's own group).
+    equip = equip + [add_crotch_occluder(arm, low)]
 
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.

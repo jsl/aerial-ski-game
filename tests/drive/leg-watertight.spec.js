@@ -28,7 +28,9 @@ async function measureFraming(page, label, alphaOff, fullBody) {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const eng = scene.getEngine();
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
-        const isAthlete = (m) => m.name && m.name.indexOf('athleteBody') === 0;
+        // athleteBodyOccluder (#26 v2) is athlete geometry: it must stay
+        // enabled here so the FRONT framing measures WITH the occluder.
+        const isAthlete = (m) => m.name && (m.name.indexOf('athleteBody') === 0);
         const hidden = [];
         for (const m of scene.meshes) {
             if (m.isEnabled() && !isAthlete(m)) { hidden.push(m); m.setEnabled(false); }
@@ -272,4 +274,32 @@ test('full-body watertight (#26): no enclosed background above the hip inside an
             + `components: ${JSON.stringify(m.holesDetail)}`)
             .toBe(0);
     }
+});
+
+test('full-body watertight NC (#26 v2): disabling the interior crotch occluder reproduces the front abdomen/hip hole', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto('/index.html');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.waitForTimeout(1200);
+    // The shipped build is gated green on the front framing (test above);
+    // here the occluder mesh is disabled and the SAME instrument must see
+    // the tear again — the control that fires if the occluder is ever
+    // dropped from the build or stops covering the tear.
+    const occ = await page.evaluate(() => {
+        const m = BABYLON.EngineStore.LastCreatedScene.getMeshByName('athleteBodyOccluder');
+        if (!m) return { found: false };
+        m.setEnabled(false);
+        return { found: true, name: m.name };
+    });
+    expect(occ.found, 'athleteBodyOccluder missing from the scene — the #26 v2 occluder did not ship').toBe(true);
+    const m = await measureFraming(page, 'front-nc', 0, true);
+    console.log('WATERTIGHT-NC front(no occluder)', JSON.stringify(m.holesDetail));
+    await page.evaluate(() => {
+        BABYLON.EngineStore.LastCreatedScene.getMeshByName('athleteBodyOccluder').setEnabled(true);
+    });
+    expect(m.holes, `with the occluder disabled the front framing shows `
+        + `${m.holes} px of enclosed background (want >= 20): the NC must `
+        + `reproduce the #26 abdomen/hip tear; components: `
+        + `${JSON.stringify(m.holesDetail)}`).toBeGreaterThanOrEqual(20);
 });

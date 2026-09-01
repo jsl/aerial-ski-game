@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=86";   // 86: #23 v2 thigh taper — garment re-blend (upper x0.84, knee x1.15, calf trim), crotch AO floor 0.68 (NEXT item 4)
+    const ASSET_V = "?v=87";   // 87: #26 v2 interior crotch occluder (NEXT item 5) — athleteBodyOccluder, rigid to torso
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -3744,6 +3744,9 @@ void main(void) {
         let helmet = null, suit = null, suitHalf = null, hVol = Infinity, sVol = -Infinity;
         for (const m of scene.meshes) {
             if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
+            // #26 v2: the interior crotch occluder is the SMALLEST athleteBody
+            // part by volume — it must never be mistaken for the helmet.
+            if (m.name === 'athleteBodyOccluder') continue;
             m.computeWorldMatrix(true);
             const b = m.getBoundingInfo().boundingBox;
             const e = b.maximumWorld.subtract(b.minimumWorld);
@@ -3779,6 +3782,7 @@ void main(void) {
         let best = null, vol = Infinity;
         for (const m of scene.meshes) {
             if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
+            if (m.name === 'athleteBodyOccluder') continue;   // #26 v2, see above
             m.computeWorldMatrix(true);
             const b = m.getBoundingInfo().boundingBox;
             const e = b.maximumWorld.subtract(b.minimumWorld);

@@ -13551,3 +13551,50 @@ only 100 → 105 mm for fk 1.15 (the ring rows are seam-shared), which is what p
 thigh at 137 mm; if the author wants a fuller knee instead of a slimmer thigh, that is a
 one-constant change (`fk`) away.
 
+
+### 222 — NEXT item 5 (#26 v2 crotch occluder) — SHIPPED BUT MIS-SEATED; front gate NOT green (honest incomplete)
+
+**What changed:**
+- `blender/build_body.py` `add_crotch_occluder(arm, low)` (called in `main` after `add_boots`,
+  shipped via `equip`, gates + `OCCLUDER:` build log): an interior suit-coloured box
+  (0.16 × 0.012 × 0.24 m) behind the abdomen/crotch front surface, anchored to the POSED
+  pelvis cloud (209 lesson), skinned rigidly 1.0 to `torso`, material `occluderSuit`
+  (0.85/0.87/0.92, rough 0.7). Named `athleteBodyOccluder` so it follows the body's
+  start-gate hide/reveal path (`bodyParts`) and the athlete-only filters.
+- `game.js`: ASSET_V 86 → 87 (assets regenerated: glb + 3 webp + maps.json);
+  `_athleteFacing` and `_renderedHeadCentre` now skip `athleteBodyOccluder` — it is the
+  SMALLEST athleteBody part by volume and would otherwise be picked as the "helmet" target,
+  dragging the face cameras onto the crotch.
+- `tests/drive/leg-watertight.spec.js`: new firing NC test — disable `athleteBodyOccluder`
+  at runtime, the SAME front instrument must see ≥ 20 px of enclosed background
+  (measured 57 px, byte-identical location x 674–679 / y 324–339). PASSES.
+
+**Verification:** unit 81/81; golden 30/30 (display-only); `look` 7/7 with shots
+regenerated 11:35 (figure/figure_front/scene re-inspected by measurement only — this
+session cannot view raster PNGs); `boots.spec` fully green again after an intermediate
+mistake (one rebuild without `--boots on` dropped the boot meshes — "boot mesh missing"
+in 3 boots tests; rebuilt WITH `--boots on`, all six face zones re-verified in-build,
+boots 11/11 incl. NCs); `rig` green except the carried rig:496 hands red (fails on HEAD
+too). leg-watertight: 2 failed / 1 passed — the two failures are the SAME carried reds as
+at HEAD, front tear unchanged at 57 px.
+
+**NOT DONE — the mandate's main clause:** the occluder does NOT cover the tear. Probe
+(world bbox in-page): the shipped patch reads with its THIN (0.012 m) axis VERTICAL
+(world-y span 0.012; the 0.24 authored-height axis landed on world-x) — i.e. the separate
+object's skinned frame is axis-scrambled relative to `low`'s, so the patch renders as an
+invisible edge-on sliver; pixels with it on/off are byte-identical. Root cause NOT
+finalised: body verts and the patch should share the same bind path (patch authored via
+`transform_apply` in scene coords from `low`'s posed cloud), yet `low` renders correctly —
+the next session should (a) log `low.matrix_world` at occluder build time, (b) probe the
+torso bone's bind vs a plain-node path, or (c) fall back to MERGING the patch into `low`
+itself (copy weights from the nearest abdomen vertex) so it shares the body's exact
+skinning path — the 218/219 boots precedent (separate skinned object) does NOT transfer
+cleanly. NC, gates, ASSET_V bump and the exclusion fixes all stand and are reusable
+regardless of which seating fix lands.
+
+**Open questions for the reviewer:** (1) the two leg-watertight reds remain carried
+(front 57 px + side 106 px specks) — confirm the 222 slot's honest-incomplete state is
+acceptable with the occluder infrastructure landed; (2) confirm the merged-into-`low`
+approach (option c) as the seating fix, since it changes the patch from a separate
+equipment mesh to body-mesh faces (three new body-mesh primitives in the GLB, occluder
+primitive identified by exclusion rather than name).
