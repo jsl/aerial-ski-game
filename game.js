@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=84";   // 84: crotch/inner-thigh baked-AO floor (NEXT item 7 texture cleanup)
+    const ASSET_V = "?v=85";   // 85: #16 v2 boot face zones — six boot materials shipped in athlete_body.glb (NEXT item 3b)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -2960,7 +2960,7 @@ void main(void) {
                     // (boots seated on the feet at the bindings). `?boots=0` is the off override.
                     const BOOTS_ENABLED = new URLSearchParams(location.search).get('boots') !== '0';
                     const bootParts = res.meshes.filter(m =>
-                        m.name && /^athleteBoot[LR]$/.test(m.name) &&
+                        m.name && /^athleteBoot[LR]/.test(m.name) &&   // prefix: the loader splits a multi-material mesh into <name>_primitive<N>
                         m.getTotalVertices && m.getTotalVertices() > 0);
                     for (const b of bootParts) {
                         b.parent = character.root;
@@ -8286,7 +8286,7 @@ void main(void) {
                 for (const m of scene.meshes) {
                     if (!m.name) continue;
                     if (m.name.startsWith('athleteBody')) m.isVisible = true;
-                    else if (/^athleteBoot[LR]$/.test(m.name)) m.isVisible = _alpineWorld();
+                    else if (/^athleteBoot[LR]/.test(m.name)) m.isVisible = _alpineWorld();
                     else if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
                         m.isVisible = !window._bodyLinked;
                     }

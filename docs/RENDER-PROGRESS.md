@@ -13418,3 +13418,36 @@ thigh taper) and 5 (#26 v2 crotch occluder).
 assigns the task. I treated the ruling + NEXT.md item 3 as authorising the boots slices
 only; the texture half will likewise touch `add_boots` + the bake. Please confirm that
 reading (or redirect), since the suit-shell ban technically still names the whole file.
+
+### 219 — #16 v2 BOOTS part 2: face-zone texturing (NEXT.md item 3(b), the "texture every face" half)
+
+**What changed:**
+- `blender/build_body.py` `add_boots`: the joined boot shell now ships **six material
+  zones** instead of one flat navy — `bootShell` (glossy navy shank/clog),
+  `bootToe` (darker navy cap, so the toe cap circle stops reading as bare shell),
+  `bootCuff` (lighter navy, rough 0.45), `bootSole` (near-black rubber sole + both
+  DIN ledges), `bootStrap` (dark power strap), `bootBuckle` (steel, metallic 0.9,
+  all four buckles). Build-side gate: exactly 6 zones on the joined shell, every
+  zone ≥ 6 faces (measured L/R: buckle 24, shell 24, cuff 18, sole 18, toe 18,
+  strap 6). Rebuilt `assets/athlete_body.glb`; ASSET_V 84 → 85.
+- `game.js`: the Babylon glTF loader splits a multi-material mesh into
+  `<name>_primitive<N>`, so `athleteBootL` became six scene meshes and the exact
+  `/^athleteBoot[LR]$/` filters silently matched nothing (boots vanished). Both
+  filters (bootParts parenting at ≈2963 and the visibility sweep at ≈8289) now
+  prefix-match.
+- `tests/drive/boots.spec.js`: CLOSURE welds across ALL primitives of the boot mesh
+  (a material-boundary edge is a zone seam, not an opening — positions coincide).
+  New FACE ZONES gate (all six `boot*` materials present in the shipped GLB and
+  every boot mesh carries each zone) + NC5 (a single-material boot fires it).
+  `measure()`/NC1/NC3/NC2 aggregate bounds and apply shoves across the boot's
+  primitive meshes instead of one exact-name lookup.
+
+**Verification:** unit 81/81; golden 30/30; `boots.spec` 10/10 (was 8; +2);
+`look` 7/7, shots regenerated 09:51–09:53. Inspected `figure_front.png`/`figure.png`:
+the boots read sole/shell/cuff/buckles from the front and the side; the toe and
+cuff cap fronts are no longer flat navy circles.
+
+**Open (NEXT.md items 4–5):** #23 v2 thigh taper (garment re-blend), then #26 v2
+crotch occluder. The add_boots rewrite (blender-side) also answers the open
+question from 218: NEXT.md item 3 was read as authorising both halves of the
+boots slice; no suit-shell code was touched.

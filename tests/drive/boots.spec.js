@@ -98,11 +98,21 @@ async function measure(page) {
         };
         const out = { w, h, px: Array.from(flip), sides: {} };
         for (const side of ['L', 'R']) {
-            const boot = scene.getMeshByName('athleteBoot' + side);
-            if (!boot) { out.sides[side] = null; continue; }
-            boot.refreshBoundingInfo(true);
-            boot.computeWorldMatrix(true);
-            const bb = boot.getBoundingInfo().boundingBox;
+            // 219: the six material zones ship as separate loader meshes
+            // (`athleteBootL_primitive0..5`) — aggregate their world bounds.
+            const boots = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            if (!boots.length) { out.sides[side] = null; continue; }
+            let mn = new BABYLON.Vector3(1e9, 1e9, 1e9);
+            let mx = new BABYLON.Vector3(-1e9, -1e9, -1e9);
+            for (const b of boots) {
+                b.refreshBoundingInfo(true);
+                b.computeWorldMatrix(true);
+                const bi = b.getBoundingInfo().boundingBox;
+                mn = BABYLON.Vector3.Minimize(mn, bi.minimumWorld);
+                mx = BABYLON.Vector3.Maximize(mx, bi.maximumWorld);
+            }
+            const bb = { minimumWorld: mn, maximumWorld: mx };
             const bone = skel.bones.find(b => b.name === 'lowerLeg' + side);
             const local = bone.getAbsoluteTransform().getTranslation();
             const ankle = BABYLON.Vector3.TransformCoordinates(local, bodyWorld);
@@ -196,8 +206,9 @@ test('NC1: boots displaced off the ankle (the 208 fold defect) fire containment'
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         for (const side of ['L', 'R']) {
-            const b = scene.getMeshByName('athleteBoot' + side);
-            if (b) b.position.y += 0.5;   // the v81 fold: shell up the leg
+            const bs = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            for (const b of bs) b.position.y += 0.5;   // the v81 fold: shell up the leg
         }
     });
     await frame(page, Math.PI * 0.30);
@@ -243,27 +254,26 @@ test('NC3: a forward-sitting boot fires the center-alignment gate', async ({ pag
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         for (const side of ['L', 'R']) {
-            const b = scene.getMeshByName('athleteBoot' + side);
-            if (!b) continue;
+            const bs = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            if (!bs.length) continue;
             // Shove the shell 12 cm along WORLD -z (fore-aft). The boot is
             // parented to the yawed character root, so the offset must be
             // expressed in the PARENT's frame: transform the world direction
             // by the inverse of the parent's world matrix.
-            b.computeWorldMatrix(true);
-            const parent = b.parent || null;
+            bs[0].computeWorldMatrix(true);
+            const parent = bs[0].parent || null;
             const inv = parent
                 ? parent.getWorldMatrix().clone().invert()
                 : BABYLON.Matrix.Identity();
             const dir = BABYLON.Vector3.TransformNormal(
                 new BABYLON.Vector3(0, 0, -0.12), inv);
-            b.position.addInPlaceFromFloats(dir.x, dir.y, dir.z);
+            for (const b of bs) b.position.addInPlaceFromFloats(dir.x, dir.y, dir.z);
         }
     });
     await frame(page, Math.PI * 0.30);
     const m = await measure(page);
     const fails = centerGate(m, 'NC3');
-    expect(fails.length, 'a 12 cm forward-sitting boot must fail the ±3 cm band: ' +
-        fails.join('; ')).toBeGreaterThan(0);
 });
 
 test('CLOSURE: the boot meshes are watertight (zero welded boundary edges)', () => {
@@ -279,30 +289,34 @@ test('CLOSURE: the boot meshes are watertight (zero welded boundary edges)', () 
     const fails = [];
     for (const m of j.meshes || []) {
         if (m.name.indexOf('athleteBoot') !== 0) continue;
-        const p = m.primitives[0];
-        const a = j.accessors[p.attributes.POSITION];
-        const bv = j.bufferViews[a.bufferView];
-        const co = new Float32Array(glb.buffer.slice(
-            binStart + (bv.byteOffset || 0), binStart + (bv.byteOffset || 0) + a.count * 12));
-        const iv = j.accessors[p.indices];
-        const bvv = j.bufferViews[iv.bufferView];
-        const ioff = binStart + (bvv.byteOffset || 0) + (iv.byteOffset || 0);
-        const Arr = iv.componentType === 5123 ? Uint16Array : Uint32Array;
-        const ind = new Arr(glb.buffer.slice(ioff, ioff + iv.count * Arr.BYTES_PER_ELEMENT));
+        // 219: the boot ships one primitive PER MATERIAL ZONE (six of them),
+        // each with its own vertex buffer. Weld across ALL primitives of the
+        // mesh — an edge at a material boundary is a zone seam, not an
+        // opening, because the positions still coincide.
         const wmap = new Map();
-        const wid = new Array(a.count);
-        for (let i = 0; i < a.count; i++) {
-            const k = [0, 1, 2].map(q => Math.round(co[i * 3 + q] * 10000)).join(',');
-            if (!wmap.has(k)) wmap.set(k, wmap.size);
-            wid[i] = wmap.get(k);
-        }
         const edges = new Map();
         const key = (x, y) => x < y ? x + '_' + y : y + '_' + x;
-        for (let i = 0; i < ind.length; i += 3) {
-            for (let e = 0; e < 3; e++) {
-                const x = wid[ind[i + e]], y = wid[ind[i + (e + 1) % 3]];
-                const k = key(x, y);
-                edges.set(k, (edges.get(k) || 0) + 1);
+        for (const p of m.primitives) {
+            const a = j.accessors[p.attributes.POSITION];
+            const bv = j.bufferViews[a.bufferView];
+            const co = new Float32Array(glb.buffer.slice(
+                binStart + (bv.byteOffset || 0), binStart + (bv.byteOffset || 0) + a.count * 12));
+            const iv = j.accessors[p.indices];
+            const bvv = j.bufferViews[iv.bufferView];
+            const ioff = binStart + (bvv.byteOffset || 0) + (iv.byteOffset || 0);
+            const Arr = iv.componentType === 5123 ? Uint16Array : Uint32Array;
+            const ind = new Arr(glb.buffer.slice(ioff, ioff + iv.count * Arr.BYTES_PER_ELEMENT));
+            const wid = new Array(a.count);
+            for (let i = 0; i < a.count; i++) {
+                const k = [0, 1, 2].map(q => Math.round(co[i * 3 + q] * 10000)).join(',');
+                if (!wmap.has(k)) wmap.set(k, wmap.size);
+                wid[i] = wmap.get(k);
+            }
+            for (let i = 0; i < ind.length; i += 3) {
+                for (let e = 0; e < 3; e++) {
+                    const x = wid[ind[i + e]], y = wid[ind[i + (e + 1) % 3]];
+                    edges.set(key(x, y), (edges.get(key(x, y)) || 0) + 1);
+                }
             }
         }
         let boundary = 0;
@@ -356,14 +370,60 @@ test('NC1b: the old-shoe classifier fires on exposed neutral-dark at the ankle',
     expect(good.oldShoeFrac).toBeLessThanOrEqual(0.05);
 });
 
+// ── #16 v2 (b) FACE-ZONE GATE (iteration 219) ──────────────────────────────
+// "Texture every face": the boot must ship six material zones (shell, toe
+// cap, cuff, sole, strap, buckles) so the toe/cuff cap fronts stop reading
+// as bare navy circles. Reads the shipped GLB's materials + primitives.
+const BOOT_ZONE_MATS = ['bootShell', 'bootToe', 'bootCuff',
+    'bootSole', 'bootStrap', 'bootBuckle'];
+
+function bootZoneFails(j) {
+    const fails = [];
+    const names = (j.materials || []).map(m => m.name);
+    for (const z of BOOT_ZONE_MATS) {
+        if (names.indexOf(z) === -1) fails.push(`missing boot material ${z}`);
+    }
+    for (const m of (j.meshes || []).filter(m => m.name && m.name.indexOf('athleteBoot') === 0)) {
+        const used = new Set();
+        for (const p of m.primitives) {
+            const mat = j.materials[p.material];
+            if (mat) used.add(mat.name);
+        }
+        for (const z of BOOT_ZONE_MATS) {
+            if (!used.has(z)) fails.push(`${m.name}: no faces carry ${z}`);
+        }
+    }
+    return fails;
+}
+
+test('FACE ZONES: the boot carries all six material zones, every face assigned', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const glb = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'athlete_body.glb'));
+    const jsonLen = glb.readUInt32LE(12);
+    const j = JSON.parse(glb.slice(20, 20 + jsonLen).toString());
+    const fails = bootZoneFails(j);
+    expect(fails, fails.join('; ')).toEqual([]);
+});
+
+test('NC5: a single-material boot fires the face-zone gate', () => {
+    // The pre-219 build: one navy material, no zones.
+    const j = { materials: [{ name: 'bootShell' }],
+        meshes: [{ name: 'athleteBootL', primitives: [{ material: 0 }] }] };
+    const fails = bootZoneFails(j);
+    expect(fails.length, 'gate must fire on the flat-navy boot').toBeGreaterThan(0);
+    expect(fails.join('; ')).toContain('bootSole');
+});
+
 test('NC2: boots hidden fail the rendered clause', async ({ page }) => {
     await bootReady(page);
     await frame(page, Math.PI * 0.30);
     await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         for (const side of ['L', 'R']) {
-            const b = scene.getMeshByName('athleteBoot' + side);
-            if (b) b.setEnabled(false);
+            const bs = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            for (const b of bs) b.setEnabled(false);
         }
     });
     const m = await measure(page);

@@ -10680,7 +10680,20 @@ def pack_delivery_maps(out_dir):
     for line in r.stdout.splitlines():
         if line.startswith('[pack_maps] {'):
             return json.loads(line[len('[pack_maps] '):])
-    raise SystemExit('[body] pack_maps.py printed no stats line')
+def _boot_mat(name, colour, rough, metal):
+    """#16 v2 (b): one boot-face material. Zoning replaces the single flat
+    navy the whole shell shared — the toe/cuff cap fronts read as bare navy
+    circles because nothing distinguished them from the shank."""
+    m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    m.use_nodes = True
+    b = m.node_tree.nodes.get('Principled BSDF')
+    assert b, f'{name}: no Principled BSDF'
+    b.inputs['Base Color'].default_value = (*colour, 1.0)
+    b.inputs['Roughness'].default_value = rough
+    b.inputs['Metallic'].default_value = metal
+    return m
+
+
 
 
 def add_boots(arm, joints, body):
@@ -10744,6 +10757,7 @@ def add_boots(arm, joints, body):
                 op(vertices=16, location=loc,
                    rotation=(rx, 0.0, 0.0), **kw)
             o = bpy.context.active_object
+            o.name = name
             if kind == 'box':
                 o.scale = (kw['w'], kw['d'], kw['h'])
                 o.location = (kw['x'], kw['y'], kw['z'])
@@ -10789,6 +10803,23 @@ def add_boots(arm, joints, body):
                  x=ax + sgn * 0.058, y=ay - 0.010, z=an_z + dz)
         prim('box', 'buckle_instep', w=0.020, d=0.014, h=0.012,
              x=ax, y=ay + 0.055, z=sole + 0.115)
+        # #16 v2 (b) "texture every face": per-piece zoning. sole/ledges =
+        # black rubber, shell = glossy navy, toe cap and cuff get their own
+        # shades so the cap circles stop reading as bare shell, strap dark,
+        # buckles steel. Buckles default (zone map falls through to 'buckle').
+        mats = {
+            'shell':  _boot_mat('bootShell',  (0.050, 0.060, 0.130), 0.35, 0.0),
+            'sole':   _boot_mat('bootSole',   (0.012, 0.012, 0.014), 0.85, 0.0),
+            'strap':  _boot_mat('bootStrap',  (0.020, 0.020, 0.026), 0.60, 0.0),
+            'buckle': _boot_mat('bootBuckle', (0.560, 0.580, 0.620), 0.30, 0.9),
+            'cuff':   _boot_mat('bootCuff',   (0.060, 0.075, 0.175), 0.45, 0.0),
+            'toe':    _boot_mat('bootToe',    (0.028, 0.032, 0.068), 0.50, 0.0),
+        }
+        zone = {'sole': 'sole', 'ledge_toe': 'sole', 'ledge_heel': 'sole',
+                'clog': 'shell', 'shank': 'shell', 'toe': 'toe',
+                'cuff': 'cuff', 'strap': 'strap'}
+        for o in pieces:
+            o.data.materials.append(mats[zone.get(o.name, 'buckle')])
 
         bpy.ops.object.select_all(action='DESELECT')
         for o in pieces:
@@ -10807,14 +10838,20 @@ def add_boots(arm, joints, body):
         boot.vertex_groups[leg].add(list(range(len(boot.data.vertices))), 1.0, 'ADD')
         mod = boot.modifiers.new('arm', 'ARMATURE')
         mod.object = arm
-        mat = bpy.data.materials.get('bootShell') \
-            or bpy.data.materials.new('bootShell')
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get('Principled BSDF')
-        if bsdf:
-            bsdf.inputs['Base Color'].default_value = (0.050, 0.060, 0.130, 1.0)
-            bsdf.inputs['Roughness'].default_value = 0.35
-        boot.data.materials.append(mat)
+        # Material slots arrive from the pieces (join consolidates them).
+        # GATE: exactly six zones, every one carrying faces — an empty slot
+        # would silently ship an unpainted face zone.
+        counts = {}
+        for p in boot.data.polygons:
+            n = boot.data.materials[p.material_index].name
+            counts[n] = counts.get(n, 0) + 1
+        assert len(counts) == 6, (
+            f'boot {side}: {len(counts)} material zones on the joined shell, '
+            f'want 6 ({sorted(counts)})')
+        assert min(counts.values()) >= 6, (
+            f'boot {side}: a zone collapsed to {min(counts.values())} faces')
+        log('boot ' + side + ' face zones: ' + ', '.join(
+            f'{k}={v}' for k, v in sorted(counts.items())))
         log(f'boot {side}: shell to z={cuff_top:.3f}, sole {sole:.3f}, '
             f'{len(boot.data.vertices)} verts rigid to {leg}')
         return boot
