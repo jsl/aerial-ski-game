@@ -4892,6 +4892,10 @@ void main(void) {
         bnetTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         bnetTex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
         bnetTex.hasAlpha = true;
+        // 16x anisotropic filtering (P12 rule; the fence is THE grazing-angle
+        // case, iter-233). NC: ?bnet_sabotage=1 reverts aniso to 1.
+        bnetTex.anisotropicFilteringLevel =
+            new URLSearchParams(location.search).get('bnet_sabotage') === '1' ? 1 : 16;
 
         const bnetMat = makePBR('bnetMat', scene);
         bnetMat.albedoTexture = bnetTex;
