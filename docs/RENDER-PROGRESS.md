@@ -300,6 +300,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
 | — | Iteration 209 | **BOOTS: the 01:55-ruling probe FOUND THE FRAME BUG and the fix LANDED — `add_boots` anchored the cuff/strap/buckles on the PRE-POSE metarig `joints` frame (ankle z +0.073) while the posed mesh's sole is at −0.995 (1.07 m apart), so 208's shell upper half rendered as the navy column up the leg ("block pile at the ski, old shoe visible"); anchors now derive from the POSED vertex cloud (build log: ankle (−0.080,−0.011,−0.995) vs stale joints (−0.084,−0.014,+0.073); hard gate 0.14–0.21 m cuff-above-sole makes the class impossible). ASSET_V 82 (index.html preload URLs bumped in step). NEW bone-anchored containment gate `boots.spec.js` 4/4 (boot world bounds must contain the skinned ankle pulled through the body world matrix, ≤3 cm, both sides × front+side; navy surround ≥20% at the projected ankle disc; old-shoe neutral-dark ≤5%; NC1 displaced-boots fires containment; NC1b synthetic old-shoe control fires; NC2 hidden boots fire). Rendered boots (with `?boots=1`): y 6.018→6.230 (0.21 m shell from the ski top), 0.13 m wide, centred on the binding — surrounding the ankle at 6.03. KILL-SWITCH `BOOTS_ENABLED` stays default-OFF per the 01:55 protocol (the REVIEWER flips it); `?boots=1` is the measurement override. unit 81/81, golden 30/30 (physics untouched), look 7/7, boots 4/4.** | entry 209. |
 | — | Iteration 207 | **#27 STICKY CAMERA FIXED (display-only, `game.js` free-look pointer block): every manual drag-state site now takes `setPointerCapture` on the canvas AND clears its drag state on WINDOW-level `pointerup`/`pointercancel` + `blur` + `visibilitychange`. New gate in `freelook.spec.js` (#27 sticky drag): synthetic canvas pointerdown + tilt-engaging upward drag, release targeted at `document.body` (the exact missed-canvas-release case), then bare pointermoves must not drift the camera — FAILS on the unfixed build (drifted=true, tilt engaged), PASSES fixed; all 6 freelook specs green. unit 81/81, golden 30/30, look 7/7.** | entry 207. |
@@ -12929,4 +12930,62 @@ display-only change), look 7/7, boots 4/4. Scratch probes cleaned from
 3. The old-shoe negative control is synthetic (NC1b) because the displaced
    live render occludes the ankle with the navy ski; acceptable, or should
    the clause move to a frame where the ski is out of the disc?
+
+### 210 — REVIEW-ONLY (capped form): 209's boots fix verified on the
+reviewer's default-ON build; scene debts re-measured; no source/asset change
+
+**Scope.** Review iteration per the 200 ruling (hard-capped verification:
+unit + golden + look + the drive specs most relevant to recent landings —
+no full run-all). No features, no source/asset/gate changes.
+
+**Verification.**
+- `npm run test:unit` — fail 0 (81/81).
+- `npm run test:golden` — 30/30 scenarios match.
+- `look` — 7/7 passed; all shots regenerated.
+- `tests/drive/boots.spec.js` — 4/4 on the reviewer's HEAD (6342470,
+  `BOOTS_ENABLED` default ON): containment, navy-surround and old-shoe
+  clauses green with NC displaced-boots, NC1b synthetic old-shoe and NC2
+  hidden-boots all FIRING. **209's posed-cloud anchor fix holds under the
+  default-on build** — the previous two by-eye boot failures (208, 01:55
+  ruling) were both caught only by eye because the then-gate measured the
+  wrong contract; the bone-anchored gate is the right instrument and it is
+  green with live negative controls.
+
+**Measurements (PNG pixel analysis; the in-session viewer cannot rasterise
+PNG — SVG-only — so numbers stand in for by-eye this iteration).**
+- Grey ramp (`scene.png`, mid-band): corridor 209.2 vs flank-left 205.0 /
+  flank-right 216.2. Corridor ≥ flank-left, −7.0 vs flank-right — same
+  class as 205's reading (212.9/216.0/205.1); no regression, minor debt.
+- Sky (top third): mean luma 133.5, mean r−b −0.098 — still far short of
+  the reviewer's −0.25 blue gate (P2 sky depth remains the loudest scene
+  debt; consistent with every review since 55).
+- Figure framings mean luma: figure 178.7, figure_front 192.6,
+  figure_side 186.0; pose_tuck_side 152.1 (tuck pose present, matching the
+  198 sitting-tuck landing); boot_binding_top 203.3.
+
+**What now reads wrong / gaps against the plan.**
+1. Boots: numerically contained, but the author's by-eye acceptance vs
+   `reference/shots/author_boot_ref_2026-08-30.jpg` is still open — the
+   reviewer's flip of the kill-switch (HEAD) is provisional on that eye.
+   White-on-white mushiness (190's note) untested this session.
+2. Bib paint debts (NEXT item 7) unchanged: mirrored/rotated digits, pink
+   smear at the bib base, unbounded sponsor-band wrap. These are the
+   loudest remaining athlete-visible defects after boots.
+3. Sky r−b −0.098 vs −0.25 gate (P2). Peaks still read pale/glassy against
+   sky (P6 horizon debt, reviewer-owned green wedge included).
+4. Corridor −7.0 luma vs flank-right (grey ramp, minor).
+
+**Re-prioritised for the next iterations.** 211 = NEXT.md item 7 PAINT
+SLICE (digit orientation fix + bounded sponsor band + crotch texture
+cleanup; `bib_band_gate` to the bounded region). 212 = NEXT.md item 8 THE
+COACH. Then horizon debts (P6, incl. the reviewer-owned green ridge wedge
+when released) and P2 sky depth as slots allow.
+
+**Open questions for the reviewer.**
+1. Boots by-eye: please confirm the default-ON render against
+   `author_boot_ref_2026-08-30.jpg` on a fresh tab (ASSET_V 82) — the gate
+   is green but cannot judge "reads as a boot".
+2. Is the corridor-vs-flank-right −7.0 luma delta worth a slot, or parked
+   with the other polish-tail items?
+
 
