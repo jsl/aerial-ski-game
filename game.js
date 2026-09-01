@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=88";   // 88: #26 v2 occluder MERGED into the body mesh (occluderSuit slot -> athleteBody_primitive3)
+    const ASSET_V = "?v=89";   // 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
