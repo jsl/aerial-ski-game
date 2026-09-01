@@ -307,6 +307,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 220 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, boots.spec 10/10 (NCs firing), look 7/7 — shots regenerated + inspected. 216–219 landings HOLD: boots v2 zones/buckles read in both figure framings, boot centred on ski. Still loudest: #23 v2 thigh taper (front view ~1.5 upper/knee by-eye, gate ≤ 1.35 unlanded) then #26 v2 crotch gap (visible seam in figure_front); mirrored bib digits ("0E" in figure.png) need a defect/accepted ruling; horizon grey wedge debt confirmed on scene.png. No source/asset change. NEXT 221 = item 4 thigh taper → item 5 crotch occluder.** | entry 220. |
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
 | — | Iteration 216 | **NEXT item 1 CLOSED — #28 "R" RESTART DRIFT: per-frame root update writes only y/z; the R reset never restored `position.x` (owned by the crash park + get-up walk-off, |x| = 6 m at the B-net), so each crash+R cycle started AND took off the next run at the stale lateral offset. Fix: reset restores the corridor centre-line (`window._restartXFixDisabled` NC hook). New `restart-drift.spec.js` 2/2: crash + full walk-off then R ×10 → start x/z byte-identical (< 1e-6), takeoff point < 0.02 m (worst 0.0081 m frame jitter), start on centre-line; NC fires (> 0.3 m offset without the fix). unit 81/81, golden 30/30, hotkeys+crash-ragdoll+look 20/20. Display-only, ASSET_V unchanged. NEXT items 2–5 remain.** | entry 216. |
 | — | Iteration 217 | **NEXT item 2 CLOSED — #29 CRASH GET-UP SWOOP: the defect was the ROLL phase's uncapped boot-sole lift — measured root rise 4.46 m/s (single, +0.83 m) and 8.01 m/s (triple, +3.20 m) during the lie→crouch blend, then the kneel sank it back. Fix (display-only): (1) the roll blend is now CONTACT-PACED — it advances only as fast as the contact lift it demands fits inside the rise cap (bisection over the blend fraction each frame); (2) a whole-chain rise governor clamps ANY upward root motion to 1.2 m/s in every phase and blend-in (descent free); (3) get-up phases moved from getT arithmetic to a roll→kneel→rise state machine with per-frame planted contact sets (knees-hands / knees / ankles) exposed via `_walkoffProbe().planted`. NC hook `_crashSwoopFixDisabled` restores the unpaced blend. New whole-chain gate in `walkoff.spec.js` (≤1.45 m/s sampled, planted on every frame) + firing NC test (triple). Post-fix peaks: roll 1.36/0.00/1.20 m/s (single/double/triple), rise ≤ 0.70, kneel only descends; walkoff 4/4 incl. both legacy NCs; unit 81/81, golden 30/30. Known pre-existing flake: baseline triple run timed out mid-walk on 200 ms janky frames — green in this run. Open: triple's roll still lifts the root +2.9 m total (knees-hands planted, ≤1.2 m/s) — see Open questions.** | entry 217. |
@@ -13452,3 +13453,57 @@ cuff cap fronts are no longer flat navy circles.
 crotch occluder. The add_boots rewrite (blender-side) also answers the open
 question from 218: NEXT.md item 3 was read as authorising both halves of the
 boots slice; no suit-shell code was touched.
+
+### 220 — REVIEW (capped form, per the 220/225/230/235 review schedule): 216–219 landings hold; re-prioritised queue
+
+**Verification (capped, per instructions — full run-all NOT run):** unit 81/81; golden
+30/30; `boots.spec` 10/10 (both negative controls firing); `look` 7/7, shots
+regenerated 10:10. Inspected in-session: `scene.png`, `figure.png`, `figure_front.png`.
+
+**What holds (216–219):**
+- **Boots v2 (219)** reads correctly in both figure framings: sole/cuff/shell zones
+  distinct, all four steel buckles visible from the front, toe and cuff cap fronts no
+  longer flat navy circles. Boot placement sits centred over the ski (front view: both
+  boots on-ski, no fore-aft sit).
+- Restart drift (216) and the paced get-up (217) are not regressible from stills; their
+  gates stayed green in the capped suite.
+
+**What reads wrong (with measurements / framing):**
+1. **Thigh taper (#23 v2, NEXT item 4) is the loudest remaining athlete defect.**
+   `figure_front.png`: the upper-thigh silhouette still bulges then collapses toward the
+   knee — the ≤ ~1.35 upper/knee width ratio gate of item 4 is not yet landed; by-eye the
+   ratio reads near the old ~1.5 profile. The legs also read slightly knock-kneed with a
+   fabric gap at mid-thigh that foreshadows item 5.
+2. **Crotch/abdomen gap (#26 v2, NEXT item 5) still visible** in `figure_front.png` as a
+   shaded vertical seam/gap between the thighs below the bib hem; the interior occluder
+   patch remains unlanded (ordered after item 4 by NEXT.md).
+3. **Mirrored bib digits persist**: in `figure.png` the number patch reads "0E" (mirrored
+   "30") from the athlete's back three-quarter view; known item-7 debt, unchanged by
+   216–219. Candidate cheap fix (UV/flip on one bib face) not yet scheduled — needs the
+   reviewer to confirm it is a defect and not a deliberate back-number.
+4. **Horizon debt (NEXT "slots remaining") confirmed on `scene.png`**: the far ridge reads
+   as a flat grey wedge with pale near-white peaks against a light sky band — low contrast,
+   no atmospheric perspective layering. Still unscheduled; ranks behind items 4–5.
+5. Minor: in `figure.png` the ski tail region shows a curled raised element aft of the
+   rear binding on the near ski — worth one look to confirm it is the intended tail kick
+   and not a reversed tip.
+
+**Gaps against the plan / reference footage:** all NEXT.md items 1–3 closed and holding;
+items 4–5 open with firing NCs available from prior probes (thigh profile, occluder-off
+hole). Athlete body/suit remains the Opus lane except where NEXT.md explicitly assigns
+(per the 2026-08-30 amendment, item 4's garment re-blend is THIS lane's next task).
+
+**Re-prioritised list for 221+:**
+1. #23 v2 thigh taper (garment re-blend: upper radius down, knee radius up; tube gates
+   stay green) — NEXT item 4.
+2. #26 v2 crotch occluder (skinned hip patch; front watertight gate green; NC =
+   occluder-off reproduces the hole) — NEXT item 5.
+3. Reviewer ruling requested on the mirrored bib digits (defect or accepted?).
+4. Horizon debt (green wedge, pale peaks) — after items 4–5.
+5. Coach shoulder pass — author-judged, when the author calls it.
+
+**Open questions for the reviewer:** (a) confirm 218's reading that NEXT.md item 3
+authorised both boots halves touching `add_boots` (entry 219's question, still
+unanswered); (b) mirrored bib digits — defect to schedule or accepted; (c) the curled
+aft element on the ski tail in `figure.png` — intended or reversed tip?
+
