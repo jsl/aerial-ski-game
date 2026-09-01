@@ -312,6 +312,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 ## Status board
+| — | Iteration 227 | **HORIZON SLICE (223-ruling tail 2, per the 14:30 ruling's "remaining slots 227–235"): (1) near-ridge crest banding — `_ridgeMesh` gains a per-ridge uv.v elevation divisor; near ridges use 48 m so their ≈26 m crests reach rock/tree-line/snow-cling instead of the whole face sitting in the dark forest band (the "floating green slab"); (2) peak/sky separation — peak haze mix 0.26–0.38 → 0.18–0.28, haze emissive 0.16 → 0.11; rendered peak meanLum 0.478 → 0.443 = 0.69 × sky band 0.645 (old 0.85 rule; pre-change ratio ~0.81 by top-band sample). unit 81/81, golden 30/30, ridges3d+peak-overhang 7/7 (ridge mask 0.322/0.137 vs ceiling 0.45; fogged NC 0.559 fires; peak gate std 0.121, opaque, 11 tints), look 7/7 incl. FRONTGATE navyFrac 0.0701 (green again after 226's v89 revert). Display-only, no assets, ASSET_V unchanged.** | entry 227. |
 | — | Iteration 222 | **NEXT item 5 (#26 v2) HONEST-INCOMPLETE: `add_crotch_occluder` lands (interior suit-coloured patch, rigid to torso, posed-cloud anchored, build gates + OCCLUDER log; exported via equip; ASSET_V 87) plus the helmet-targeting exclusions in `_athleteFacing`/`_renderedHeadCentre` and a FIRING runtime NC in leg-watertight.spec (occluder-off reproduces the front hole 57 px). But the seating FAILS: the separate skinned object's frame is axis-scrambled (thin 12 mm axis renders vertical — edge-on sliver, pixels identical on/off), so the front tear is UNCHANGED (57 px, x 674–679 / y 324–339) and leg-watertight stays 2 red (carried, same as HEAD). unit 81/81, golden 30/30, look 7/7, boots 11/11 (one rebuild mistakenly without `--boots on` — caught by boots.spec, rebuilt), rig green minus carried hands red. Root-cause note + three candidate seating fixes (incl. merge-into-`low`) in entry 222. NEXT.md KEPT.** | entry 222. |
 | — | Iteration 225 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 6/1 (known front gate red, navyFrac 0.0087). ROOT CAUSE FOUND: the front-gate red is NOT a camera bug — camera and SKELETON verified exactly per spec (radius 2.40, head bone (0,7.36,−17.30), 1.4 m driver span) but the v88 RENDERED mesh is collapsed to ≈0.36 m (head projects to screen y=118, rendered helmet y≈345; helmet primitive bbox 3 cm). Regression window: asset v87 (222, look 7/7) → v88 (223 occluder merge). Fix is in build_body.py/assets — Opus lane, reported not touched. Horizon wedge + flat grey peaks confirmed on scene.png (debt stands).** | entry 225. |
 | — | Iteration 220 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, boots.spec 10/10 (NCs firing), look 7/7 — shots regenerated + inspected. 216–219 landings HOLD: boots v2 zones/buckles read in both figure framings, boot centred on ski. Still loudest: #23 v2 thigh taper (front view ~1.5 upper/knee by-eye, gate ≤ 1.35 unlanded) then #26 v2 crotch gap (visible seam in figure_front); mirrored bib digits ("0E" in figure.png) need a defect/accepted ruling; horizon grey wedge debt confirmed on scene.png. No source/asset change. NEXT 221 = item 4 thigh taper → item 5 crotch occluder.** | entry 220. |
@@ -13749,3 +13750,43 @@ full look cascade (COACHZOOM + face gates) once (1) lands.
 vs in-place fix for the athlete build; (2) the leg-watertight runtime-NC
 instrument discrepancy from 223 (build-level control shows 54 px, runtime
 disable shows 0) is now doubly suspect given the collapse — re-audit after (1).
+
+### 227 — Horizon slice: near-ridge crest banding + peak/sky separation (223-ruling tail item 2)
+
+Per the 14:30 ruling ("remaining slots 227–235: the horizon slice (green wedge
+band + peak-vs-sky luminance per the old 0.85 rule) → ski-tail curl → polish").
+Display-only, `game.js` ridge/peak block; no assets, no ASSET_V change, no
+engine/ or athlete files touched.
+
+**Change 1 — the "floating green slab":** the near ridges' whole visible face
+sat in the band map's forest band (crest ≈ 26 m over the shared 80 m elevation
+divisor ⇒ uv.v ≈ 0.33 < the 0.42 forest edge), so they rendered as flat dark
+felt slabs over the peaks. `_ridgeMesh` now takes a per-ridge elevation
+divisor; the near ridges pass 48 m, lifting the same crest to v ≈ 0.54 —
+forest foot, tree-line/rock crest, snow clinging near the top. Mid/far/back/
+ahead ridges keep the 80 m divisor (their crests already reach rock/snow).
+
+**Change 2 — peaks vs sky:** peak haze mix 0.26–0.38 → 0.18–0.28 and the haze
+emissive lift 0.16 → 0.11. Rendered peak-pixel meanLum 0.478 → **0.443**
+(ridges3d peak-hide diff mask) = **0.69 ×** the scene.png sky band (0.645) —
+inside the old 0.85 rule with margin (pre-change in-scene top-band sample read
+peak flank ≈ 0.53 vs sky 0.654 ≈ 0.81).
+
+**Verification:** unit 81/81; golden 30/30 (no physics state change);
+`ridges3d` + `peak-overhang` 7/7 — ridge contrast mask mean 0.322 / std 0.137
+(ceiling 0.45 / floor 0.10; the crest banding did NOT push the mean up),
+fogged NC still fails at 0.559; peak gate: 11 opaque culled cones, 11 unique
+tints, meanLum 0.443, stdLum 0.121; `look` 7/7 with shots regenerated —
+FRONTGATE navyFrac 0.0701 (green again after 226's v89 revert; the whole
+canonical-shot pipeline is back). scene.png inspected by eye + measurement.
+
+**Honest limit:** the wedge's FOREST face still dominates the ready-camera
+framing (the crests are high above it), so the slab read is reduced, not
+eliminated; full fix likely needs the near ridge's silhouette amplitude or
+its lateral placement revisited — flagged below, not attempted this slot.
+
+**Open questions for the reviewer:** (1) is the reduced-but-still-present
+green face at the ready framing acceptable, or should the next horizon slot
+lower/soften the near ridge's silhouette (geometry change — would touch the
+peak-overhang/ridges3d gate framings)? (2) the ski-tail curl investigation is
+next per the ruling — confirm.
