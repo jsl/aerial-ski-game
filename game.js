@@ -8246,6 +8246,20 @@ void main(void) {
             }
 
             readyState = true; readyTurnT = 0.0;
+            // HUMAN TESTING #28 (author, 2026-09-01): "when I used 'r' to
+            // restart several times, the athlete moves over to the right of
+            // the screen for starting position, and then takes off of an
+            // invisible jump on the right of the knoll." The per-frame root
+            // update writes only y/z; position.x is owned by the crash
+            // display paths — the ragdoll park and the get-up walk-off park
+            // the root out at the B-net (|x| ≈ 6 m) — and this reset never
+            // restored it, so every crash+R cycle carried the parked lateral
+            // offset into the next run's start AND takeoff point. Restore
+            // the corridor centre-line explicitly. Negative control:
+            // window._restartXFixDisabled (tests/drive/restart-drift.spec.js).
+            if (!window._restartXFixDisabled) {
+                character.root.position.x = _poolDiveMode ? POOL_DIVE_PLATFORM_X : 0;
+            }
             // HUMAN TESTING #10 (author, 2026-08-30): "Reset to top with R
             // doesn't seem to work". The state DID reset — but free-look was
             // active after the crash, so the follow block stood down and the

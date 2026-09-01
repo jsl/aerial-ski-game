@@ -13288,3 +13288,42 @@ mandate is complete, so this is the hand-back).**
    division-derived gate metrics for a possible NaN guard is cheap and
    could be a review-slot task if wanted.
 2. Confirm the coach is DONE or fund pass 3 (shoulders only).
+
+### 216 — HT#28 "R" restart drift: root-caused and fixed (NEXT.md item 1 of 5)
+
+**NEXT.md item 1 (#28, gameplay-breaking) — COMPLETE.** The author's report: repeated
+`R` restarts accumulate a rightward start offset, and the run then launches ("takes off")
+from a displaced/invisible kicker to the right of the knoll.
+
+**Root cause.** The per-frame root update writes only `character.root.position.y/z`
+(`game.js` ≈ 9420); `position.x` is owned by the crash display paths — the ragdoll park
+(`R._park.x`) and the get-up walk-off, which parks the root at the B-net
+(`targetX = side * _WALKOFF_X`, |x| = 6.0 m). The `R` reset block (≈ 8132–8266) reset
+`state.posZ`, velocities, crash state and the camera — but never restored
+`position.x` — so every crash+R cycle carried the parked lateral offset into the next
+run's start position AND takeoff point (physics is z-only; the whole run renders at the
+stale x, i.e. "off of an invisible jump on the right of the knoll").
+
+**Fix** (display-side, `game.js`, one guarded block at the end of the R reset):
+`character.root.position.x = _poolDiveMode ? POOL_DIVE_PLATFORM_X : 0`, behind the
+negative-control hook `window._restartXFixDisabled`.
+
+**New gate** `tests/drive/restart-drift.spec.js` (2 tests, both green):
+- Main: real crash (charge → crash-arm past the lip → tuck), ragdoll rests, get-up
+  walk-off runs to completion (root parked at the B-net, `phase === 'done'`), then
+  R ×10 → rendered torso start x/z byte-identical every restart (< 1e-6), takeoff
+  point (first airborne frame past `KICKER_END_Z`) repeats within one frame of
+  sampling jitter (< 0.02 m — measured worst 0.0081 m, from the pre-fix run's
+  frame-timing; the tolerance is instrument jitter, not drift), and start x sits on
+  the corridor centre-line (< 0.05 m).
+- Negative control (fires): `_restartXFixDisabled` + crash + full walk-off + one R →
+  start x offset from the centre-line by > 0.3 m (the shipped drift; expected ≈ 6 m
+  at the B-net). Test PASSES on the offset, proving the gate discriminates.
+
+**Verification.** unit 81/81, golden 30/30 (no physics path touched — reset is
+display-only), restart-drift 2/2, hotkeys 3/3 + crash-ragdoll 10/10 (R-handler
+neighbours) + look 7/7 all green in one run (20 passed); shots regenerated. No
+`assets/` change, ASSET_V unchanged, no scene additions.
+
+**Open.** NEXT.md items 2–5 remain (#29 crash get-up swoop, #16 v2 boots, #23 v2 thigh
+taper, #26 v2 crotch occluder). NEXT.md kept (deleted only when the list completes).
