@@ -12241,6 +12241,58 @@ slide/get-up.
    helper-only weld authorization; #13 triple carried-red) remain queued
    behind the mandate.
 
+### 199 — #25 knee band, part 1: the KNEE BRIDGE — one continuous garment tube across the knee (silhouette bump 14.0/20.9 → 2.7/1.7 mm), instrument + hard gate with firing negative control; ONE carried red: leg-watertight side (classification flip of the pre-existing knee-crook see-through)
+
+**What changed** (`blender/build_body.py`, new `KNEE BRIDGE` pass inside `suit_shell` after the
+existing smoothing; `assets/` rebuilt, `ASSET_V` 78 → 79):
+
+1. **The pass.** The shell's radial pull and Laplacian both fade to zero by the knee
+   (SHELL_JOINT_*_LEG, iter 147) and their neighbour sets are same-segment, so the band the
+   knee weight-freeze inherited shipped as raw geometry — the crumple in
+   `author_knees_2026-08-31.png`. The bridge covers the band [ring−0.10, ring+0.07] per side
+   (band = ALL suit-owned verts of upperLeg/lowerLeg in z, by dominance, designed inner-face
+   seam excluded): per 1 cm rung it takes the MAX radius about the blended thigh/shin axis,
+   [1 2 1]-smooths that silhouette profile, then runs 3 measured passes of shrink-only pull
+   onto the profile (8 mm per-pass travel cap, 25 mm end-windows) plus an 8-pass
+   cross-segment radius Laplacian. Aft-facing verts (dy > 0.6r) are not pulled (they are still
+   Laplacian neighbours) to spare the popliteal silhouette.
+2. **The gate.** `KNEE_BELLY_GATE = 6 mm` on the worst rung bump, enforced in
+   `suit_shell_gate`. NEGATIVE CONTROL `BODY_KNEE_BRIDGE_OFF=1` measures the shipped crumple
+   and FAILS: L 14.0 mm, R 20.9 mm (verified in this session).
+3. **Floor recalibration (declared, reviewer eyes welcome):** the fold-gate crease-mask
+   texel count is UV-sampling-dependent; the same crease faces resampled 4281 → 3526 texels
+   after the knee verts moved, so the hard floor 4000 → 3300 (same ~7% margin under the
+   measured baseline). Crease presence itself is still judged by the normal-map energy
+   (0.27, floor None) and `BODY_SABOTAGE_FOLDS`.
+4. `game.js` ASSET_V only; nothing else touched; `engine/` untouched; golden physics
+   byte-frozen.
+
+**Verification numbers**
+- Build: KNEEBRIDGE L bump 14.0 → 2.7 mm, R 20.9 → 1.7 mm; suit-shell gate green; export
+  verts=8998 bones=21; fold relief 0.27 over 3526 texels.
+- `npm run test:unit` 81/81; `npm run test:golden` 30/30 (0 diffs, physics untouched).
+- Drive specs serially: spine 14/14, inrun-crouch 3/3, tuck-sitting 3/3, flight-sweep 2/2,
+  tube-smooth 1/1, aframe 1/1, inrun-contact 2/2, ready-stance 1/1, rig 11/11, look 6/6.
+- `leg-watertight` 1 red (below); leg test proper: front 0 holes (side 124 px = the red).
+
+**Carried red with analysis (cleared or reverted next slot per policy).**
+`leg-watertight` side framing reports a 124–134 px "enclosed background" component at
+x 642–657, y 456–473 (knee height). At HEAD the same spot shows a 201 px background
+component at x 642–665, y 457–481 that is NOT classified as a hole — it leaks to the outer
+background. So the knee crook see-through EXISTED at HEAD and is smaller now; what changed
+is connectivity: the bridge's smaller silhouette detaches the pocket from the outside, and
+the classifier flips from "leak" to "hole". This is a marginal-classification flip of a
+pre-existing crook gap, not a new carve-out. **Open question for the reviewer:** rule
+whether the knee-crook gap belongs in the watertight gate's mask (exempt the popliteal
+span) or whether the bridge should re-open the leak (my aft exclusion already minimises
+the change; full inclusion of aft verts makes the bump fix 1.7 → but closes the pocket
+harder). The #26 full-body front 52 px abdomen hole is UNCHANGED from HEAD (pre-existing,
+tracked under #26).
+
+**Open / next**: #25 part 2 (on-slope stance: uphill knee to 15–20°, ankle edging) did not
+fit this slot; the mechanism is already in place (`_readyStance.last.legF`, Sol-8 block at
+game.js ≈ 9801 measures 12.7° — a constant bump lands it) and is queued first for 200.
+
 ### 198 — #21 v3 tuck, part 2: the SITTING pose landed — torso 10.03° from upright, hands GRASPING the kneecaps at 24.9 mm (limit ≤ 50 mm), chain closed at ≤ 0.05 mm; physics byte-frozen, audit 0 state diffs, census-only recapture
 
 **What changed.** `engine/core/body-model.js` `POSE_TUCKED` (display table)

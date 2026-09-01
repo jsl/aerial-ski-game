@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=78";   // 78: belly arm-CHAIN strip incl. hlpElbow/hlpShoulder (iter 193 probe fix)
+    const ASSET_V = "?v=79";   // 79: #25 knee bridge — continuous garment across the knee band (iter 199)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

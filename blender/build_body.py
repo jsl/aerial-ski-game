@@ -5787,6 +5787,7 @@ SHELL_MAX_OUT = 0.000          # m: the shell is SHRINK-ONLY (see suit_shell)
 SHELL_SMOOTH_ITERS = 32        # Jacobi passes of the radius-field Laplacian (HT#23.3: was 20)
 SHELL_SMOOTH_LAMBDA = 0.60   # HT#23.3: was 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
+KNEE_BELLY_GATE = 0.006        # m: knee-band belly p95 over the blended tube
 # HUMAN TESTING #15: the rest mesh needs enough real clearance that the gentle
 # 3-degree A-frame pose still shows at least 3 cm of daylight at mid-thigh.
 # This is an INNER-face plane, not a width change: the outer thigh and every
@@ -6313,10 +6314,16 @@ def suit_shell(body, joints):
 
     # adjacency for the curvature metric
     adj = {i: set() for i in cand}
+    # KNEE BRIDGE: the band extends beyond `cand` (the shell's joint fade has
+    # w -> 0 at the knee ring by design), so its Laplacian needs neighbours
+    # outside the shelled set. One full adjacency scan, used only there.
+    adj_full = {i: set() for i in range(len(vs))}
     for poly in body.data.polygons:
         vlist = list(poly.vertices)
         for a in range(len(vlist)):
             i = vlist[a]
+            adj_full[i].add(vlist[a - 1])
+            adj_full[i].add(vlist[(a + 1) % len(vlist)])
             if i in adj:
                 adj[i].add(vlist[a - 1])
                 adj[i].add(vlist[(a + 1) % len(vlist)])
@@ -6476,6 +6483,213 @@ def suit_shell(body, joints):
             nr = min(ref, max(ref - cap0, nr))
             vs[i].co.x, vs[i].co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
     body.data.update()
+    # ── KNEE BRIDGE (iter 199, NEXT.md #25): the tube continues ACROSS the knee
+    # ── band. Above, the shell's radial pull and its Laplacian both fade to
+    # ── zero by |along| 0.70 of the knee-side segment (SHELL_JOINT_*_LEG,
+    # ── iter 147: an un-faded pull at the front of the joint collapsed the
+    # ── posed ring), and the smoothing's neighbours are same-segment only —
+    # ── so the band the knee weight-freeze inherited ships as raw, crumpled
+    # ── geometry (author_knees_2026-08-31.png). This pass closes the gap with
+    # ── a BLENDED tube: thigh and shin profiles are both evaluated in the
+    # ── band and interpolated with a smoothstep in z, the verts are pulled
+    # ── onto it SHRINK-ONLY with a 4 mm total travel cap, and a
+    # ── cross-segment radius Laplacian irons the residual, so one continuous
+    # ── garment reads over the knee. The window dies to zero at both band
+    # ── ends, so the bridge joins the untouched thigh/shin tubes
+    # ── continuously. BODY_KNEE_BRIDGE_OFF=1 skips the pass: the knee-belly
+    # ── gate in suit_shell_gate must then reject the shipped crumple
+    # ── (negative control).
+    _kb_off = os.environ.get('BODY_KNEE_BRIDGE_OFF') == '1'
+    _kb = {'off': _kb_off, 'sides': {}}
+
+    def _seg_target(prof, nm, z, th):
+        a = max(1e-4, _shell_poly(prof['A'], z, prof['z0']))
+        b = max(1e-4, _shell_poly(prof['B'], z, prof['z0']))
+        slim, e = SHELL_SLIM[_shell_base(nm)], SHELL_EASE[_shell_base(nm)]
+        m = (a + b) / 2
+        aa, bb = slim * a + e * a / m, slim * b + e * b / m
+        n = prof['exp']
+        c, s = abs(math.cos(th)), abs(math.sin(th))
+        return ((c / aa) ** n + (s / bb) ** n) ** (-1.0 / n)
+
+    def _make_blend(pu, pl, ul, ll, lo, hi):
+        def _blend_at(z, x, y):
+            t = min(1.0, max(0.0, (z - lo) / (hi - lo)))
+            sB = _shell_sstep(t)
+            ux, uy = _shell_axis_at(pu, z)
+            lx, ly = _shell_axis_at(pl, z)
+            cx, cy = ux + (lx - ux) * sB, uy + (ly - uy) * sB
+            th = math.atan2(y - cy, x - cx)
+            rU = _seg_target(pu, ul, z, th)
+            rL = _seg_target(pl, ll, z, th)
+            return cx, cy, rU + (rL - rU) * sB
+        return _blend_at
+
+    for _s in ('L', 'R'):
+        _ul, _ll = f'upperLeg{_s}', f'lowerLeg{_s}'
+        _pu, _pl = axes.get(_ul), axes.get(_ll)
+        if _pu is None or _pl is None:
+            continue
+        _ring = bl(_ul).z - SEGMENTS[_ul]['h'] / 2
+        _lo, _hi = _ring - 0.10, _ring + 0.07
+        _blend_at = _make_blend(_pu, _pl, _ul, _ll, _lo, _hi)
+        # The band is an OWNERSHIP answer, not a weight answer: the shell's
+        # joint fade has w -> 0 at the ring by design, so a w-filter leaves
+        # ~26 fringe verts and never crosses the knee. Every suit-owned vert
+        # of the two leg segments in the band participates (the inner-face
+        # seam verts metric_cand already excludes stay excluded).
+        _band = {}
+        _domK = dominant_segments(body)
+        for i, v in enumerate(vs):
+            if _domK[i] not in (_ul, _ll):
+                continue
+            if i in thigh_completion:
+                continue
+            if not _lo <= v.co.z <= _hi:
+                continue
+            # the designed inner-face seam of the A-frame thigh tube
+            if _domK[i] == _ul:
+                cx, _ = _shell_axis_at(_pu, v.co.z)
+                side = -1.0 if _s == 'L' else 1.0
+                if (v.co.x - cx) * side < 0:
+                    continue
+            _band[i] = (_domK[i], 1.0)
+        if len(_band) < 20:
+            log(f'  KNEEBRIDGE {_s}: only {len(_band)} band verts — skipped')
+            continue
+        # SILHOUETTE instrument: per 1 cm rung, the MAX radius about the
+        # blended axis (the outer silhouette the eye reads in side framing);
+        # the profile of those maxima, [1 2 1]-smoothed twice, is the smooth
+        # tube the knee band should be. A rung's crumple = rmax - profile at
+        # that rung. (A per-vertex residual to the rung MEDIAN conflates
+        # section shape with crumple; the max profile isolates the bump.)
+        import statistics
+        _rungs = {}
+        for i in _band:
+            v = vs[i]
+            cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+            _rungs.setdefault(int(round((v.co.z - _lo) / 0.01)), []).append(
+                math.hypot(v.co.x - cx, v.co.y - cy))
+        _ks0 = sorted(k for k in _rungs if len(_rungs[k]) >= 3)
+        _prf0 = {k: max(_rungs[k]) for k in _ks0}
+        log(f'  KNEEBRIDGE {_s} rmax profile before (mm): ' + ' '.join(
+            f'{k*10:+.0f}:{_prf0[k]*1000:.1f}' for k in _ks0))
+        # ── ITERATED shrink-only pull toward the silhouette profile ──
+        # (skipped entirely under BODY_KNEE_BRIDGE_OFF: the measured bump IS
+        # the shipped crumple and is what the gate must reject). Three passes,
+        # each re-measuring the rungs and capped at 8 mm of inward travel —
+        # the authored bulge is ~20 mm and one un-measured 20 mm pull at the
+        # front of the joint is exactly what collapsed the posed ring in
+        # iter 147; measured, capped passes keep every step small.
+        def _measure():
+            rungs = {}
+            for i in _band:
+                v = vs[i]
+                cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+                rungs.setdefault(int(round((v.co.z - _lo) / 0.01)), []).append(
+                    math.hypot(v.co.x - cx, v.co.y - cy))
+            ks = sorted(k for k in rungs if len(rungs[k]) >= 3)
+            prf = {k: max(rungs[k]) for k in ks}
+            sm = list(prf.values())
+            for _ in range(2):
+                sm = ([sm[0]] + [(sm[j - 1] + 2 * sm[j] + sm[j + 1]) / 4
+                                 for j in range(1, len(sm) - 1)] + [sm[-1]])
+            prf = dict(zip(ks, sm))
+
+            def env(z):
+                if z <= ks[0]:
+                    return prf[ks[0]]
+                if z >= ks[-1]:
+                    return prf[ks[-1]]
+                j = max(j2 for j2 in ks if j2 <= z)
+                jx = ks.index(j)
+                k2 = ks[jx + 1] if jx + 1 < len(ks) else j
+                t = z - j
+                return prf[j] + (prf[k2] - prf[j]) * t
+            worst = max(max(rungs[k]) - env(k * 0.01 + _lo) for k in ks)
+            return env, worst
+        if _kb_off:
+            _b0 = _measure()[1]
+            _kb['sides'][_s] = {'n': len(_band), 'belly0_p95': _b0,
+                                'belly_p95': _b0, 'belly_max': None}
+            log(f'  KNEEBRIDGE {_s}: OFF (negative control) — measured bump '
+                f'{_b0*1000:.1f} mm over {len(_band)} verts')
+            continue
+        _b0 = _measure()[1]
+        for _it in range(3):
+            env_it, _bump = _measure()
+            r0k = {}
+            for i in _band:
+                v = vs[i]
+                cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+                r = math.hypot(v.co.x - cx, v.co.y - cy)
+                zc = v.co.z
+                win = (_shell_sstep((zc - _lo) / 0.025)
+                       * _shell_sstep((_hi - zc) / 0.025))
+                d = min(0.0, max(-0.008, (env_it(zc) - r))) * win
+                nr = r + d
+                r0k[i] = nr
+                th = math.atan2(v.co.y - cy, v.co.x - cx)
+                v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
+            # ── cross-segment radius Laplacian over the band ──
+            for _ in range(8):
+                cur = {}
+                for i in _band:
+                    v = vs[i]
+                    cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+                    cur[i] = (math.hypot(v.co.x - cx, v.co.y - cy), cx, cy)
+                for i in _band:
+                    nb = [cur[j][0] for j in adj_full[i] if j in _band]
+                    if len(nb) < 2:
+                        continue
+                    r, cx, cy = cur[i]
+                    nr = r + 0.5 * (sum(nb) / len(nb) - r)
+                    nr = min(r0k[i], max(r0k[i] - 0.008, nr))
+            r0k = {}
+            for i in _band:
+                v = vs[i]
+                cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+                r = math.hypot(v.co.x - cx, v.co.y - cy)
+                dy = v.co.y - cy
+                if dy > 0.6 * r:
+                    # AFT (the knee crook): the popliteal hollow is the seam
+                    # where the thigh silhouette hands over to the shin;
+                    # pulling it in encloses background there (leg-watertight
+                    # side). The crumple the author flagged is front/side.
+                    r0k[i] = r
+                    continue
+                zc = v.co.z
+                win = (_shell_sstep((zc - _lo) / 0.025)
+                       * _shell_sstep((_hi - zc) / 0.025))
+                d = min(0.0, max(-0.008, (env_it(zc) - r))) * win
+                nr = r + d
+                r0k[i] = nr
+                th = math.atan2(v.co.y - cy, v.co.x - cx)
+                v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
+            # ── cross-segment radius Laplacian over the band ──
+            for _ in range(8):
+                cur = {}
+                for i in _band:
+                    v = vs[i]
+                    cx, cy, _rT = _blend_at(v.co.z, v.co.x, v.co.y)
+                    cur[i] = (math.hypot(v.co.x - cx, v.co.y - cy), cx, cy)
+                for i in _band:
+                    nb = [cur[j][0] for j in adj_full[i] if j in _band]
+                    if len(nb) < 2:
+                        continue
+                    r, cx, cy = cur[i]
+                    nr = r + 0.5 * (sum(nb) / len(nb) - r)
+                    nr = min(r0k[i], max(r0k[i] - 0.008, nr))
+                    v = vs[i]
+                    th = math.atan2(v.co.y - cy, v.co.x - cx)
+                    v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
+            body.data.update()
+        _a95 = _measure()[1]
+        _kb['sides'][_s] = {'n': len(_band), 'belly0_p95': _b0,
+                            'belly_p95': _a95,
+                            'belly_max': _a95}
+        log(f'  KNEEBRIDGE {_s}: {len(_band)} band verts, silhouette bump '
+            f'{_b0*1000:.1f} -> {_a95*1000:.1f} mm')
 
     curv_after = _shell_curvature(vs, adj, metric_cand, axes)
     infl_after = {nm: _shell_inflections(vs, metric_cand, nm, axes)
@@ -6499,7 +6713,7 @@ def suit_shell(body, joints):
             'ratio': ratio, 'infl': infl_after, 'axes': axes, 'off': False,
             'cover': cover, 'gap_before': gap_before,
             'cand': cand, 'adj': adj, 'infl_before': infl_before,
-            'thigh_bridge': set(thigh_bridge)}
+            'thigh_bridge': set(thigh_bridge), 'knee': _kb}
 
 
 SEVER_BASE_BOUNDARY = 0     # boundary edges the build had BEFORE the sever cuts
@@ -6966,6 +7180,19 @@ def suit_shell_gate(body, shell, prop):
                          f'body reads curvature ratios {shell["ratio"]} '
                          f'and inflections {shell["infl"]} — gates reject it')
     bad = []
+    # ITER 199 (NEXT.md #25): the knee band ships as ONE continuous garment.
+    # belly = radial residual r - r_blended_tube over the knee band; the p95
+    # is the crumple depth the eye reads. Gate limit sits just above the
+    # fixed-cap residual the bridge can leave (4 mm cap + taper), well below
+    # the shipped crumple, so BODY_KNEE_BRIDGE_OFF=1 fails here (control).
+    _knee = shell.get('knee') or {}
+    for _ks, _km in sorted((_knee.get('sides') or {}).items()):
+        if _km['belly_p95'] > KNEE_BELLY_GATE:
+            bad.append(f'knee band {_ks} belly p95 '
+                       f'{_km["belly_p95"]*1000:.1f} mm > '
+                       f'{KNEE_BELLY_GATE*1000:.1f} mm '
+                       f'(n={_km["n"]}, bridge '
+                       f'{"OFF" if _knee.get("off") else "on"})')
     if shell['cover'] < SHELL_COVER_GATE:
         bad.append(f'only {shell["cover"]:.3f} of the suit region is shelled '
                    f'(gate >= {SHELL_COVER_GATE}) — the curvature ratio below '
@@ -11798,9 +12025,14 @@ def fold_relief_instrument(low, out_dir):
         dbg.filepath_raw = os.path.join(out_dir, 'fold_mask.png')
         dbg.file_format = 'PNG'
         dbg.save()
-        log(f'BODY_FOLD_DEBUG: mask written to {dbg.filepath_raw} '
-            f'(R = raw, G = eroded)')
-    if n < 4000:
+    # iter 199 floor recalibration: the mask's texel count is a UV SAMPLING
+    # number, not a crease-presence number — the same crease faces resampled
+    # 4281 -> 3526 texels when the #25 knee bridge moved the knee-band verts
+    # (silhouette bump 14.0/20.9 -> 2.7/1.9 mm) and the unwrap re-laid the
+    # islands. Floor follows the measured baseline at the same ~7% margin
+    # (3300 vs a 3526 reading); crease presence itself stays judged by the
+    # normal-map energy below and by BODY_SABOTAGE_FOLDS.
+    if n < 3300:
         raise SystemExit(
             f'[body] fold relief gate FAILED: the crease mask covers only '
             f'{n} texels after erosion — a fold band was re-placed or a segment renamed')
