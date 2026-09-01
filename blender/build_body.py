@@ -11009,27 +11009,43 @@ def add_boots(arm, joints, body):
 
 
 def add_crotch_occluder(arm, low):
-    """#26 v2 (NEXT.md item 5): interior suit-coloured occluder at the crotch.
+    """#26 v2 (NEXT.md item 5, 223 seating fix): interior crotch occluder.
 
     The abdomen/hip junction tears under pose (the 191-195 probes proved the
     shipped mesh is CLOSED and winding-consistent — the front 54 px hole is
     pure skinned separation between the torso- and thigh-owned banks). Three
     weight-space welds did not close it, so the authorised approach ships an
     INTERIOR patch behind the tear: a thin box a few centimetres inside the
-    suit's front surface at the pelvis, skinned rigidly to `torso`, painted
-    suit fabric. With the suit intact it is invisible; through the tear it
-    reads as suit fabric, so the render-space full-body watertight gate
-    (leg-watertight.spec.js) goes green.
+    suit's front surface at the pelvis, painted suit fabric. With the suit
+    intact it is invisible; through the tear it reads as suit fabric, so the
+    render-space full-body watertight gate (leg-watertight.spec.js) goes
+    green.
+
+    222 shipped the patch as a SEPARATE skinned object and it arrived
+    axis-scrambled in the browser (thin axis rendered vertical, pixels
+    identical on/off) — the separate-object bind path does not survive the
+    runtime bind relink the body itself goes through (game.js links every
+    bone to its driver node). 223 therefore MERGES the patch into `low`
+    itself (222's option c): new vertices appended to the body mesh, each
+    copying the full weight list of its nearest body vertex, so the patch
+    deforms through the EXACT same skinning path as the skin around it.
+    The patch carries its own `occluderSuit` material slot -> a separate
+    glTF primitive -> its own flat material in game.js, so the runtime
+    negative control can still disable it.
 
     Anchors come from the POSED vertex cloud (the 209 lesson — `joints` is
     stale by this stage). Runtime negative control: the spec disables the
-    `athleteBodyOccluder` mesh and the hole must reappear.
+    occluder primitive (material 'occluderSuit') and the hole must reappear.
     """
-    idx = low.vertex_groups.find('torso')
-    assert idx != -1, 'occluder: no torso vertex group'
+    # By this point the torso group has been split into the spine vertebrae
+    # (add_spine_chain), so anchor on spine_01 — the pelvis vertebra. The
+    # patch never references a group by name anyway: its weights are copied
+    # from the nearest body vertex below.
+    idx = low.vertex_groups.find('spine_01')
+    assert idx != -1, 'occluder: no spine_01 vertex group'
     cloud = [v for v in low.data.vertices
-             if next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.5]
-    assert len(cloud) > 40, f'occluder: thin torso cloud ({len(cloud)})'
+             if next((g.weight for g in v.groups if g.group == idx), 0.0) > 0.05]
+    assert len(cloud) > 40, f'occluder: thin spine_01 cloud ({len(cloud)})'
     zlo = min(v.co.z for v in cloud)          # pelvis bottom, posed frame
     # Front surface of the suit near the midline over the tear band.
     band = [v for v in low.data.vertices
@@ -11041,37 +11057,60 @@ def add_crotch_occluder(arm, low):
     zc = zlo + 0.12     # spans pelvis -> mid-abdomen: the tear sits HIGH
                         # (measured 222: hole centre above the hip row, so a
                         # pelvis-height patch never covered it)
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_cube_add(size=1.0)
-    o = bpy.context.active_object
-    o.name = 'athleteBodyOccluder'
-    o.data.name = 'athleteBodyOccluder'
-    o.scale = (0.16, 0.012, 0.24)
-    o.location = (xc, yc, zc)
-    bpy.ops.object.transform_apply(scale=True, location=True)
-    mat = bpy.data.materials.new('occluderSuit')
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get('Principled BSDF')
-    bsdf.inputs['Base Color'].default_value = (0.85, 0.87, 0.92, 1.0)
-    bsdf.inputs['Roughness'].default_value = 0.7
-    o.data.materials.append(mat)
-    o.vertex_groups.new(name='torso')
-    o.vertex_groups['torso'].add(list(range(len(o.data.vertices))), 1.0, 'ADD')
-    mod = o.modifiers.new('arm', 'ARMATURE')
-    mod.object = arm
-    # GATES: rigid skin, seated INSIDE the body, on the midline.
-    oidx = o.vertex_groups['torso'].index
-    w = _vertex_weights(o)
-    assert all(len(vg) == 1 and abs(vg.get(oidx, 0.0) - 1.0) < 1e-6
-               for vg in w), 'occluder: not rigid to torso'
-    assert yc <= yfront - 0.015, (
-        f'occluder only {yfront - yc:.3f} m behind the front surface '
-        f'({yfront:.3f}) — would show through the suit')
-    assert abs(xc) <= 0.03, f'occluder off the midline (x={xc:.3f})'
+
+    mesh = low.data
+    base_v = len(mesh.vertices)
+    base_p = len(mesh.polygons)
+    # Own material slot so the exporter emits a separate primitive the
+    # runtime can address (NC + game.js pick exclusions).
+    mi = next((i for i, m in enumerate(mesh.materials)
+               if m and m.name == 'occluderSuit'), None)
+    bm = bmesh.new()
+    bm.from_mesh(mesh)   # keep the existing UV/attribute layers intact
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=(0.16, 0.012, 0.24), verts=bm.verts)
+    bmesh.ops.translate(bm, vec=(xc, yc, zc), verts=bm.verts)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+    if mi is None:
+        mat = bpy.data.materials.new('occluderSuit')
+        mat.use_nodes = True
+        bsdf = mat.node_tree.nodes.get('Principled BSDF')
+        bsdf.inputs['Base Color'].default_value = (0.85, 0.87, 0.92, 1.0)
+        bsdf.inputs['Roughness'].default_value = 0.7
+        mesh.materials.append(mat)
+        mi = len(mesh.materials) - 1
+    for poly in mesh.polygons[base_p:]:
+        poly.material_index = mi
+
+    # Weights: copy the FULL weight list of each new vertex's nearest body
+    # vertex (the midline band around the tear, within 6 cm) — the merged
+    # patch then deforms exactly like the skin around it; no bind path of
+    # its own to scramble (the 222 failure mode).
+    anchors = [(v.co.copy(), [(g.group, g.weight) for g in v.groups])
+               for v in low.data.vertices[:base_v]
+               if abs(v.co.x) <= 0.10 and zlo - 0.02 <= v.co.z <= zlo + 0.26]
+    assert len(anchors) > 40, f'occluder: thin anchor list ({len(anchors)})'
+    for i in range(base_v, len(mesh.vertices)):
+        co = mesh.vertices[i].co
+        j, d = min(((k, (a[0] - co).length) for k, a in enumerate(anchors)),
+                   key=lambda t: t[1])
+        assert d <= 0.09, (   # face 0.06 + the corner diagonal to the band
+            f'occluder: vert {i} {d:.3f} m from any body vertex')
+        for g, w in anchors[j][1]:
+            low.vertex_groups[g].add([i], w, 'REPLACE')
+
+    # GATES: every patch vertex seated INSIDE the body, on the midline.
+    ys = [mesh.vertices[i].co for i in range(base_v, len(mesh.vertices))]
+    assert max(v.y for v in ys) <= yfront - 0.015, (
+        f'occluder only {yfront - max(v.y for v in ys):.3f} m behind the '
+        f'front surface ({yfront:.3f}) — would show through the suit')
+    assert max(abs(v.x - xc) for v in ys) <= 0.081 and abs(xc) <= 0.03, \
+        f'occluder off the midline (x={xc:.3f})'
     log(f'OCCLUDER: pelvis zlo={zlo:.3f} front y={yfront:.3f} patch at '
-        f'({xc:+.3f},{yc:+.3f},{zc:+.3f}) 0.16x0.012x0.24 rigid to torso, '
-        f'{len(band)}-vert anchor band')
-    return o
+        f'({xc:+.3f},{yc:+.3f},{zc:+.3f}) 0.16x0.012x0.24 MERGED into low, '
+        f'{len(anchors)}-vert anchor band, slot {mi}')
 
 
 def add_equipment():
@@ -12949,17 +12988,11 @@ def main():
     # equip only), so the glb 187 read was the previous build and the sum
     # readback itself mis-parsed VEC4 ubyte joints / float weights. Measured
     # on the real export (iter 188): both boot primitives sum exactly 1.000,
-    # joints 11/12 = lowerLegL/R. boots join equip so the selection ships
-    # them.
-    boots = add_boots(arm, joints, low) if arg('--boots', 'off') == 'on' else []
-    equip = equip + boots
-    # #26 v2: the interior crotch occluder ships with the equipment (same
-    # selection + skin path as the boots). After the boots, before the spine
-    # split — the occluder is skinned to `torso`, which stays a driven bone
-    # (game.js keeps the rigid torso rod; the vertebrae only take over `low`'s
-    # weights, never the occluder's own group).
-    equip = equip + [add_crotch_occluder(arm, low)]
-
+    # joints 11/12 = lowerLegL/R. boots join equip so the selection ships them.
+    # #26 v2 (223): the occluder is MERGED into `low` itself (its own
+    # `occluderSuit` material slot -> separate glTF primitive), so it rides
+    # the body's exact skinning path — 222's separate skinned object arrived
+    # axis-scrambled. low is in the export selection already.
     # OPUS ITEM 5: the spine goes in LAST, after every gate and the bake, so no
     # dominance query upstream can see the torso group split. See add_spine_chain.
     add_spine_chain(low, arm)
@@ -13086,6 +13119,13 @@ def main():
     # plate's sampled ink out of band when run before them). The caps are
     # hidden interior geometry; the bake and the gates measure exactly what
     # they measured before, the delivered mesh is closed.
+    # #26 v2 (223): the occluder merges into `low` HERE — after every weight
+    # pass, gate and the bake, so the new vertices cannot perturb the
+    # weight-localisation / joint-helper passes (measured 223: merging before
+    # them left hlpKneeL at 0 mass and failed the helper gate). The patch is
+    # interior geometry; the bake and every gate measure exactly what they
+    # measured before.
+    # PROBE: occluder disabled
     close_boundary(low, 'pre-export')
     orient_consistent(low, 'delivered mesh (pre-export)')
     watertight_gate(low, 'delivered mesh (pre-export)')

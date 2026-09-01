@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=87";   // 87: #26 v2 interior crotch occluder (NEXT item 5) — athleteBodyOccluder, rigid to torso
+    const ASSET_V = "?v=88";   // 88: #26 v2 occluder MERGED into the body mesh (occluderSuit slot -> athleteBody_primitive3)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -3071,12 +3071,23 @@ void main(void) {
                     faceMat.roughness   = 0.85;
                     faceMat.metallic    = 0.0;
 
+                    // primitive3 is material slot 3 (occluderSuit): the #26 v2
+                    // interior crotch patch, merged into the body mesh by the
+                    // build. Flat suit fabric — no baked maps (its UVs are a
+                    // degenerate corner), rough so it never glints.
+                    const occluderMat = makePBR('athleteOccluder_mat', scene);
+                    occluderMat.albedoColor = new BABYLON.Color3(0.85, 0.87, 0.92);
+                    occluderMat.roughness   = 0.7;
+                    occluderMat.metallic    = 0.0;
+
                     // primitive0 is material slot 0 (suit), primitive1 is slot
                     // 1 (helmet + goggle lens), primitive2 is slot 2 (face),
-                    // in Blender's slot order.
+                    // primitive3 is slot 3 (occluderSuit), in Blender's slot
+                    // order.
                     for (const part of bodyParts) {
                         part.material = /primitive1$/.test(part.name) ? helmetMat :
-                            /primitive2$/.test(part.name) ? faceMat : bodyMat;
+                            /primitive2$/.test(part.name) ? faceMat :
+                            /primitive3$/.test(part.name) ? occluderMat : bodyMat;
                     }
 
                     // Hide the solids the body replaces. They keep articulating —
@@ -3744,9 +3755,11 @@ void main(void) {
         let helmet = null, suit = null, suitHalf = null, hVol = Infinity, sVol = -Infinity;
         for (const m of scene.meshes) {
             if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
-            // #26 v2: the interior crotch occluder is the SMALLEST athleteBody
-            // part by volume — it must never be mistaken for the helmet.
-            if (m.name === 'athleteBodyOccluder') continue;
+            // #26 v2 (223): the interior crotch occluder merged into the body
+            // mesh (occluderSuit slot -> athleteBody_primitive3) is the
+            // SMALLEST athleteBody part by volume — it must never be mistaken
+            // for the helmet.
+            if (m.material && m.material.name === 'athleteOccluder_mat') continue;
             m.computeWorldMatrix(true);
             const b = m.getBoundingInfo().boundingBox;
             const e = b.maximumWorld.subtract(b.minimumWorld);
@@ -3782,7 +3795,7 @@ void main(void) {
         let best = null, vol = Infinity;
         for (const m of scene.meshes) {
             if (!m.name || m.name.indexOf('athleteBody') !== 0) continue;
-            if (m.name === 'athleteBodyOccluder') continue;   // #26 v2, see above
+            if (m.material && m.material.name === 'athleteOccluder_mat') continue;   // #26 v2 (223), see _athleteFacing
             m.computeWorldMatrix(true);
             const b = m.getBoundingInfo().boundingBox;
             const e = b.maximumWorld.subtract(b.minimumWorld);
