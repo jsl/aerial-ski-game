@@ -12339,3 +12339,68 @@ untouched).
    read correctly, but if the author wants the hands re-gripped to the shin
    (the footage grab point) instead of the kneecap, say so and the IK target
    moves.
+
+### 201 — #25 part 2: the ON-SLOPE STANCE lands at 16.7° (ruled 15–20° band), gate tightened; knee-crook PARKED per the two-attempt rule; THREE carried reds, all one cause (the deeper flex changes the figure three other gates measure)
+
+**What changed**
+1. `game.js` (Sol-8 block, ≈9806): the post-pin uphill-thigh re-application
+   `0.85 × legF` → `1.12 × legF` — the ready-stance knee flexion is now
+   **0.291 rad = 16.7°**, inside the ruling-on-198 band (~15–20°); was
+   12.7° (the ruling's named negative control, "today's stiff straight
+   stance"). Display-only; the Sol-8 block already re-applies after the
+   boot pin, so the seating/boot–ski gates stay exact.
+2. `tests/drive/ready-stance.spec.js`: the uphill-knee gate tightened from
+   ≥ 10° to the ruled band **≥ 15° and ≤ 20°** (the 12.7° stiff stance is
+   the failing negative control).
+3. `blender/build_body.py`: crook attempt 1 (aft verts included in the
+   knee-bridge's final pull) landed, measured, and was REVERTED in the same
+   iteration (analysis below); the shipped build comment records the park.
+   Attempt 2 (an abdomen-style C0 weight weld across the aft upperLeg|lowerLeg
+   seam) was implemented, run, and REMOVED: it found **0 seam edges** — the
+   aft knee band carries no upperLeg/lowerLeg dominance straddle (the freeze
+   band + helpers own it), so the proven abdomen mechanism does not apply.
+4. `assets/` rebuilt (KNEEBRIDGE unchanged: L 14.0 → 2.7 mm, R 20.9 → 1.7 mm,
+   knee-belly gate green); **ASSET_V 79 → 80**.
+
+**Knee-crook disposition (ruling on 199: two attempts, then park).**
+- Attempt 1 (rest-geometry pull of the popliteal verts): the side-framing
+  pocket stayed **125 px** (x 642–657, y 456–473) — the pocket is a POSED
+  deep-flexion skinned separation, not a rest gap — and the rest ironing
+  flipped collateral gates (below). Reverted.
+- Attempt 2 (C0 weld, abdomen mechanism): 0 applicable seam edges. Removed.
+- **PARKED as tracked cosmetic** per the 52-px precedent: the leg-watertight
+  side framing stays red-and-known at ~125 px (pre-existing at 199/HEAD as
+  the 201 px leak, correctly counted since the bridge enclosed it).
+
+**Verification numbers**
+- `npm run test:unit` **81/81**; `npm run test:golden` **30/30** after
+  census-only recapture; `audit-physics-state`: **0 scenarios with ANY
+  physics-state difference** (5408 frames), display-node diffs confined to
+  the ready-stance class — the APPROVED display-only precedent.
+- Drive specs: ready-stance (with the new 15–20° gate) **green**, hop-turn
+  12/12 batch green, chain green, spine/inrun-crouch/tuck-sitting/
+  flight-sweep/aframe/inrun-contact/look green; **leg-watertight: the two
+  known pre-existing reds unchanged** (side crook 125 px, front #26 abdomen
+  53 px).
+- **THREE carried reds, one cause (analysis, clears next slot or the
+  coefficient reverts per policy):** rig 496 ("L hand x 0.1561 vs leg face
+  0.1964, need ≥ 0.004"), rig 940 ("right thigh breadth 0.1792 m < 0.18
+  floor"), tube-smooth 215 (sabotage self-test reads 1 inflection). All
+  three measure the READY-STANCE figure; at the ruled 16.7° the deeper
+  thigh pitch (a) brings the hanging hand ~40 mm inside the leg face (the
+  arm chain's z-follow does not follow the flex in x), (b) foreshortens the
+  projected thigh breadth past its floor, and (c) smooths the side
+  silhouette so the injected-belly self-test under-fires. They were green at
+  12.7° (199). **Open question for the reviewer:** rule between
+  (a) retuning the three ready-stance-measuring gates to the ruled stance
+  (with the 12.7° readings as their negative controls), (b) a renderer fix
+  that keeps the hand clear of the flexed thigh (arm x-follow in the Sol-8
+  block), or (c) reverting the coefficient to 0.85 (12.7°) — which would
+  need a new ruling since 15–20° is the author-visible ask.
+
+**Open / next**: 202 = grounded tuck (#21 v4) per the 20:40 order; sticky
+camera (#27) and #24 get-up follow. The ankle-edging half of the stance
+ruling is NOT landed: the skis are gated FLAT on the slope plane and the
+boots are gated rigid to the skis (≤ 5 mm, ±3°), so an ankle edge roll is
+geometrically excluded by two closed gates — ruling needed on which gate
+yields before it can be built.
