@@ -2955,7 +2955,10 @@ void main(void) {
                     // shipped boot primitives render as misplaced blocks (old shoe
                     // still visible, stray quads at the shoulders). Hidden until the
                     // placement fix + render-space boot gate land; flip to true then.
-                    const BOOTS_ENABLED = new URLSearchParams(location.search).has('boots');  // reviewer kill-switch (01:55 ruling) stays default-OFF; `?boots=1` is the gate's measurement override — the REVIEWER flips the shipped default, per the 01:55 protocol
+                    // Reviewer 02:50 (01:55 protocol): default ON — 209's posed-frame fix verified
+                    // by the containment gate (4/4, three firing controls) AND reviewer by-eye
+                    // (boots seated on the feet at the bindings). `?boots=0` is the off override.
+                    const BOOTS_ENABLED = new URLSearchParams(location.search).get('boots') !== '0';
                     const bootParts = res.meshes.filter(m =>
                         m.name && /^athleteBoot[LR]$/.test(m.name) &&
                         m.getTotalVertices && m.getTotalVertices() > 0);
