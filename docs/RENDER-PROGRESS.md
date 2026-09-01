@@ -298,6 +298,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
+| — | Iteration 205 (review) | **REVIEW-ONLY (capped form per the 200 ruling): unit 81/81, golden 30/30, look 6/6, walkoff 3/3 (get-up gate green), crash-ragdoll 10/10 (the 204 flake green in batch — no recurrence). Scene luminance: corridor 212.9 vs flank-right 216.0 / flank-left 205.1 (grey-ramp holds); midground green ridge band 115.6 vs horizon 87.5. By-eye: bib digits still mirrored, pink smear at bib base persists (item 7 debts); boots read as gray slab blocks, not boots (redo queued); tuck reads compact in pose_tuck_side; no visible watertight holes in front/side framings. No source/asset change.** | entry 205. |
 | — | Iteration 198 | **NEXT.md 5a-NEW(ii) #21 v3 PART 2 — the SITTING tuck LANDED under `APPROVED: POSE_TUCKED display-table adjustment` (ruling on 197): torso −25°→−14.3°→**10.03° from upright**, hip flexion/knee fold kept (kneeToChest 0.193 ≤ 0.22), arms 2-link-IK'd to the KNEECAP — hand-to-knee **24.9 mm** (was 59 mm proximity; limit ≤ 50 mm, contact), elbows in (rz 0.12), elbow interior ~40°; chain-closed by FK, max gap 0.05 mm; POSE_TUCKED_INERTIA byte-frozen. New gate `tuck-sitting.spec.js` (torso ≤ 10.5°, grasp ≤ 5 cm, ≥ 1 cm floor, chain ≤ 3 cm) with the OLD grasp as the FAILING negative control. Audit 0 physics-state diffs ×30/5408 frames, census-only recapture → golden 30/30; unit 81/81; chain+flight-sweep+tuck-coverage+inrun-contact 24/24; look 6/6 + pose-shots inspected (reads as sitting, gloves on the kneecaps). ASSET_V 78.** | entry 198. |
 | — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
 | — | Iteration 196 | **18:40-ruling slot — (0) walkoff #14 negative-control red CLEARED BY SOLO REPRODUCTION: the control fires on HEAD (double world: `phase:"stayed-down"`, hipClearance 0.119 < 0.60, lateral 0, sinceRest 12.8, gate fails; both disable sites re-audited, `R.walkoff` has one writer) — 195's red was a run-all environment artefact, not a mechanism regression; the disable-flag state is now emitted in the control's JSON for future diagnosability. (1) Corrected-band strip (|x| ≤ 0.15) ATTEMPTED and FALSIFIED in four configurations (0.15/r0.04 → seam max 1.611/37 hot; 0.12-full/r0.20 → 1.625/40; +boundary-ring gradient → 1.545/34; +reduce-group fix +midchain dominance → 1.680/93) — the strip's hard predicates inherently cut hinges the pre-repair-chain gate rejects; REVERTED to the 193 tip, hole PARKED per the 17:50 park rule (tracked cosmetic, gate stays red-and-known). No asset change, ASSET_V 78. unit 81/81, golden 30/30, walkoff 2/2 (control fires with `disabled:true,flagAtSample:true`), look 6/6, shots regenerated. #21 v3 tuck from 197 per the ruling.** | entry 196. |
@@ -12583,3 +12584,61 @@ and the rise, not absolute root height (noted for the reviewer).
    settle-while-rolling block).
 2. NEXT.md then continues: item 7 paint slice, item 8 coach (item 6 hands is
    PARKED per the 23:21 ruling).
+
+### 205 — REVIEW: the queue is healthy (204 landed clean, no regressions); the loudest author-visible debts remain item 7 paint (mirrored digits, pink smear) and the boots; horizon green wedge still the worst scene defect
+
+**Scope.** Review-only slot, capped verification form (unit + golden + look + relevant
+drive specs, per the 200 ruling). No source, asset, gate, or NEXT.md change; nothing
+under Reviewer feedback required pre-work beyond the standing queue.
+
+**Verification (all on HEAD = 5d41a53).**
+- `npm run test:unit` **81/81**; `npm run test:golden` **30/30** (physics traces untouched).
+- `look` **6/6**, shots regenerated and inspected.
+- `walkoff` **3/3** — the #24(b) get-up gate green in all worlds; `crash-ragdoll` **10/10
+  in batch** (204's single load flake did not recur; the spec is healthy as gated).
+
+**Measurements (shots/scene.png, 1100×850, 0–255 luma).**
+- Grey ramp holds: corridor 212.9 vs sunlit flank-right 216.0, shadowed flank-left 205.1 —
+  corridor within 3 points of the brightest snow, far from the grey-ramp failure class.
+- Midground: the dark-green ridge wedge band reads **115.6** against 87.5 for the mountains
+  behind it — the wedge (reviewer-owned horizon debt, NEXT item 8) is still the single
+  strongest "wrong" element in the wide scene: a flat luminance plateau with a hard top edge
+  that no real midground produces.
+
+**By-eye review of the figure (v80 build, ASSET_V 80).**
+- Legs (item 1–3, #23): CLOSED pending the author's eye. Front and side framings show no
+  see-through carve-outs; thighs read as near-straight tapered tubes; the between-knees
+  crook pocket (the parked 125 px side red) is not visible at review framing distance.
+- Boots (#16 redo): the current build reads as GRAY SLAB BLOCKS under the ankles — flat
+  plates and ledges with no cuff, no clog volume, no buckles. Against
+  `author_boot_ref_2026-08-30.jpg` this is still a fail-by-eye class (188's precedent);
+  the queued "boots redo" slot is justified and should keep first claim on build time.
+- Paint (item 7): bib digits remain MIRRORED on the front framing ("30" reads
+  backwards) — confirmed still present, unambiguous UV/plane orientation debt; the pink
+  smear at the bib base persists in both framings. These are the two loudest
+  author-visible defects on the athlete.
+- Tuck (5a-NEW ii): `pose_tuck_side.png` reads compact — knees high, torso folded, skis
+  tracked with the shins; consistent with the 198 gates (torso 10.03°, grasp 24.9 mm).
+  Stationary-grounded tuck (#21 v4) per the 20:30 report remains the open pose question.
+- Get-up (#24b): no shot exercises it directly; walkoff 3/3 plus the firing legacy
+  control is the accepted instrument.
+
+**Gaps vs the plan / reference footage.** (1) Horizon: green wedge + pale cone peaks
+(peaks 0.67-class vs sky, per entry 180) — the wide scene still reads more "terrain
+demo" than footage; NEXT item 8's horizon debt is the right home. (2) Fence geometry
+reads as a floating blue lattice in `figure.png`'s background — candidate for the polish
+tail, unlisted in NEXT. (3) Boots as above.
+
+**Re-prioritised list for the next slots** (unchanged in substance from the 00:05
+ruling; confirmed by this review):
+1. 206 — grounded tuck (#21 v4, author's 20:30 report) per the re-queue.
+2. 207 — sticky camera (#27, pointer-capture audit + gate).
+3. Boots redo (fail-by-eye; every framing still shows slabs, not boots).
+4. Paint slice (item 7): mirrored digits FIRST (pure orientation fix), then the bounded
+   sponsor band and the pink smear/crotch cleanup.
+5. #24(a) grounded-slide gate, PENDING the author's fresh-build verdict on the
+   "in air until bottom of hill" report (cache-suspect per the 00:05 ruling).
+6. Coach (#17), then horizon debt.
+
+**Open questions for the reviewer.** None new; the standing asks (ankle-edging vs the
+two closed flat-ski gates, entry 201; the cache-suspect slide verdict) await the author.
