@@ -390,6 +390,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 233 | **B-NET ANISO (P12 conformance, polish buffer): `bnetTex.anisotropicFilteringLevel` 16 with `?bnet_sabotage=1` NC; new bnet-legibility.spec 2/2 (aniso==16 + fence-cloth visibility inFrame 86; NC fires aniso==1). Diagnoses recorded: (a) scene.png fence tangle is NOT texture filtering — near-black-albedo probe moved cloth-patch lum <0.06; it is dark background through the alpha holes at grazing angles, candidate fix depth-fade/LOD on the net material (reviewer call); (b) review-230 seam-worst-row (5.1% @ y=0.425) is diffuse horizon speckle peaking at the silhouette row (7.5% @ y=0.443), sky-through-bare-crown gaps + AA, not the box-seam class. unit 81/81, golden 30/30 (no recapture), venue+grey-ramp 7/7. index.html ?v=92; ASSET_V unchanged.** | entry 233. |
 | — | Iteration 232 | **KICKER WALL/FACE JUNCTION LINE (230 queue item 2): full-width dark lip tube `kickerJunctionLine` at the take-off-face/back-wall junction; red trim untouched (2026-08-29 ruling). kicker-edge.spec 2/2 (rendered lip band darkFrac 0.508, lum 0.198 vs snow 0.739; NC fires 0/0.528). unit 81/81, golden 30/30 after census-only recapture (0 physics diffs, 30 scen / 5408 frames), look 7/7, kicker-faces+venue+terrain-corridor 12/12. index.html ?v=91; ASSET_V unchanged. Queue: item 3 paint fixes are athlete-banned pending reviewer lane assignment.** | entry 232. |
 | — | Iteration 230 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected), review-measure 1/1, spray 2/2 (NC fires 2.55 m), crash-ragdoll 10/10 in batch. 227–229 landings HOLD. Measured: corridor 0.829 vs flanks 0.851/0.841 (grey-ramp −0.022, holds); athlete shadow 68% darker under; sky r−b −0.123 vs −0.25 gate (parked sky-colour slice still the loudest colour gap); kicker dark wall/face edge line still absent (loudest kicker gap). Athlete nits reported not touched: pink bib smear, side-view mirrored digits. Queue: sky slice → kicker edge line → paint fixes; review 235. No source/asset change, ASSET_V unchanged.** | entry 230. |
 | — | Iteration 229 | **P5 SPRAY PLUME RETUNED to the footage numbers (polish slot per the 14:30b ruling): `_spawnSnowBurst` was the untuned original (worst-case plume ≈ 20 m/s upward, life 0.4–1.2 s); now direction 0.5–1.7·ss (ss clamped 2.2), emitPower 1.0–1.6, gravity −8, life 0.9–1.9 s → real-landing plume peaks ≈ 1.0–1.3 m (footage 1–1.5 m), trails ~1.6 s (footage 1–2 s). New `spray.spec.js` 2/2 with firing over-speed NC (2.5–2.7 m); probes `_snowBursts`/`_spawnSnowBurstProbe`. Mid-iteration incident (declarations accidentally cut, freelook 1/6) caught and fixed pre-commit; freelook 6/6. unit 81/81, golden 30/30, look shots regenerated + inspected. Display-only, ASSET_V unchanged. NEXT.md DELETED (mandate complete).** | entry 229. |
@@ -13974,3 +13975,46 @@ new tube name) — the sanctioned census-recapture path (213/229 precedent).
 
 Open: queue item 3 (pink bib smear + mirrored digits) is athlete-banned
 paint work awaiting the reviewer's lane assignment.
+
+### 233 — bnetTex 16x anisotropy (P12 conformance) + fence/seam diagnoses; polish buffer of the 230 review
+
+Queue item 4 (polish buffer): item 3 (pink bib smear + mirrored digits) is
+athlete-banned paint work awaiting the reviewer's lane assignment.
+
+**Landed:** `bnetTex.anisotropicFilteringLevel = 16` in `game.js` — the 128 px
+alpha-cut net tile was the one tiled texture never given P12's 16x aniso
+treatment, and the fence is the grazing-angle case. NC
+`?bnet_sabotage=1` reverts aniso to 1. New `tests/drive/bnet-legibility.spec.js`
+**2/2**: structural gate aniso==16 plus a fence-cloth visibility probe
+(projected `_bnetDebug.samples`, inFrame **86**); NC fires (aniso==1).
+`index.html` preload ?v= 91 → 92 (232 precedent, game.js change); ASSET_V
+unchanged (no asset regenerated).
+
+**Diagnosis 1 — the scene.png fence "dark scribble" is NOT texture filtering.**
+Two probes: (a) a grazing-band cluster scan of the review-230 seam-worst row;
+(b) a cloth-patch probe that measured the fence band with aniso 16 vs 1 AND
+with near-black net albedo. Results: aniso 16 vs 1 moved band luminance
+0.8012 → 0.8072; near-black albedo moved cloth-patch lum only to 0.7852
+(darkFrac 0.038). The dark read is dark background (trees/shadowed terrain)
+seen through the net's alpha holes, compressed at grazing angles. Candidate
+fix: a depth-fade/LOD on the net material so the fence reads as a solid light
+blue-grey at distance. Reviewer call — not attempted this slot.
+
+**Diagnosis 2 — review-230's seam-worst-row (5.1% skyFrac at y=0.425) is not
+the box-seam class.** Cluster probe: no contiguous sky-like cluster; the 5.1%
+is diffuse speckle at x 0.63–0.90, peaking at the horizon silhouette row
+(7.5% at y=0.443, falling to 0.3% by y=0.49), colours matching sky through
+bare-crown tree gaps + silhouette anti-aliasing (deep blues mixed with snow
+whites). Closing it would mean walling the horizon gaps — against P4's forest
+design. Recorded, not pursued.
+
+**Verification:** unit 81/81, golden 30/30 (no recapture needed — no new
+display nodes), venue-dressing + grey-ramp 7/7, bnet-legibility 2/2, look
+shots regenerated (scene/figure/figure_front fresh and inspected).
+
+**Open questions for the reviewer:** (1) the fence depth-fade/LOD fix for the
+grazing-angle dark tangle — author-visible, one material+LOD slice, on your
+call; (2) queue item 3 (bib smear/mirrored digits) still awaits the athlete
+lane assignment; (3) if the seam-row metric should stop flagging legitimate
+horizon sky, the row scan could clamp to y ≥ 0.46 or restrict to below-silhouette
+rows — your call whether the gate or the scene changes.
