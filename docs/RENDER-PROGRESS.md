@@ -340,18 +340,17 @@ solo freelook re-run; declarations restored byte-identical to HEAD (git diff
 verified to contain ONLY the spray block + probe hook); freelook then 6/6.
 
 **Verification:** unit 81/81; golden 30/30 (0 physics touched); spray 2/2;
-freelook 6/6; look 7/7 on the pre-change tree (shots for scene/figure/
-figure_front regenerated + inspected: bib "30" legible front, corridor/flank
-and horizon read healthy; the pink waist smear in figure.png remains the
-athlete-banned paint debt, reported not touched). ASSET_V unchanged.
+freelook 6/6; crash-ragdoll 9/9 on the committed build (the burst helper is
+shared with the crash slide spray — confirmed unaffected); look 7/7 with all
+shots regenerated on the committed build; scene/figure/figure_front
+inspected: bib "30" legible front, corridor/flank and horizon healthy, the
+pink waist smear in figure.png remains the athlete-banned paint debt
+(reported, not touched). ASSET_V unchanged.
 
 **NEXT.md deleted in this commit** — its five items closed (216–223) and the
 223-ruling tail complete (224 coach, 227 horizon, 228 ski-tail, 229 polish).
 
-**Open questions for the reviewer:** none new. Crash-ragdoll (which shares
-the burst helper for its slide spray) re-run pending at commit time — the
-change only slows/redden-crash plumes via the same helper; will confirm
-green and record in the next entry if it lands after this commit.
+**Open questions for the reviewer:** none new.
 ## Status board
 | — | Iteration 229 | **P5 SPRAY PLUME RETUNED to the footage numbers (polish slot per the 14:30b ruling): `_spawnSnowBurst` was the untuned original (worst-case plume ≈ 20 m/s upward, life 0.4–1.2 s); now direction 0.5–1.7·ss (ss clamped 2.2), emitPower 1.0–1.6, gravity −8, life 0.9–1.9 s → real-landing plume peaks ≈ 1.0–1.3 m (footage 1–1.5 m), trails ~1.6 s (footage 1–2 s). New `spray.spec.js` 2/2 with firing over-speed NC (2.5–2.7 m); probes `_snowBursts`/`_spawnSnowBurstProbe`. Mid-iteration incident (declarations accidentally cut, freelook 1/6) caught and fixed pre-commit; freelook 6/6. unit 81/81, golden 30/30, look shots regenerated + inspected. Display-only, ASSET_V unchanged. NEXT.md DELETED (mandate complete).** | entry 229. |
 | — | Iteration 228 | **SKI-TAIL CURL INVESTIGATION CLOSED (220's flag, the 14:30 ruling's next slot): the raised element aft of the rear binding is the INTENDED 14 mm tail kick + brake bar, NOT a reversed tip. New `ski-tail.spec.js` 2/2 (gates + firing NC): mid-run tip leads tail by 1.55 m along travel (+z), tip lift 47.6 mm vs tail 6.6 mm over the waist deck, brake top within 23 mm of the tail deck; NC (180° yaw = the reversed-tip defect) fires. No change to `game.js`/assets, ASSET_V unchanged. unit 81/81, golden 30/30, rig 12/13 (carried rig:496 hands red), look 7/7, figure.png inspected — shovel with sidecut clearly fore, aft element small.** | entry 228. |
