@@ -4494,6 +4494,29 @@ void main(void) {
             { path: [new BABYLON.Vector3(arcHalfW - 0.8, topEdgeY, topEdgeZ), new BABYLON.Vector3(arcHalfW, topEdgeY, topEdgeZ)],
               radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
         edgeTubeR.material = cornerMat;
+
+        // ── Footage wall/face junction line (P0 delta, IMG_3765/3768) ──────
+        // A thin dark edge line across the FULL block width where the
+        // take-off face meets the lip's back wall. The red side trim above is
+        // untouched (author ruling 2026-08-29 bans recolouring it); this is a
+        // new, separate element. NC: ?kicker_sabotage=1 drops the line
+        // 1.2 m below the lip and shifts it 0.6 m down-slope — gates must fire.
+        const _sab = new URLSearchParams(location.search).get('kicker_sabotage') === '1';
+        const _jY = topEdgeY - (_sab ? 1.2 : 0);
+        const _jZ = topEdgeZ + (_sab ? 0.6 : 0);
+        const _jMat = makePBR('kickerJunctionMat', scene);
+        _jMat.diffuseColor  = new BABYLON.Color3(0.05, 0.05, 0.06);
+        _jMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+        const jTube = BABYLON.MeshBuilder.CreateTube('kickerJunctionLine',
+            { path: [new BABYLON.Vector3(-arcHalfW, _jY, _jZ), new BABYLON.Vector3(arcHalfW, _jY, _jZ)],
+              radius: 0.045, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+        jTube.material = _jMat;
+        jTube.isPickable = false;
+        window._kickerJunction = {
+            exists: true, halfSpanX: arcHalfW, y: +_jY.toFixed(4), z: +_jZ.toFixed(4),
+            lipY: +topEdgeY.toFixed(4), radius: 0.045, sabotage: _sab,
+            dark: [_jMat.diffuseColor.r, _jMat.diffuseColor.g, _jMat.diffuseColor.b],
+        };
     
         // ── P3: generic side panels on the kicker block (venue dressing) ──────
         // The block's near-vertical side walls (x = ±kickerWidth/2) read as bare

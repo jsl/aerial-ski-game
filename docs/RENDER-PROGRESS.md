@@ -13940,3 +13940,36 @@ Open: the kicker dark wall/face edge line (queue item 2) is next; the
 top-third region is ~50% terrain pixels, so if the reviewer ever wants the
 framing number meaningfully below −0.25 the lever moves to the
 ridge/peak haze colours (reviewer-owned per the 137 ruling), not the dome.
+
+### 232 — kicker wall/face junction line: thin dark lip-edge tube (queue item 2 of the 230 review)
+
+The review-230 kicker debt ("the block reads as a clean white slab with only
+the red trim marks") — the P0 footage delta (IMG_3765/3768: thin dark edge
+line at the wall/face junction). Added `kickerJunctionLine` in `game.js`
+(kicker edge block, after the red trim tubes): a thin (radius 0.045) dark
+`(0.05, 0.05, 0.06)` tube spanning the FULL block width |x| ≤ 1.7 at the lip
+(`y = _KBP_lY − FOOT_OFFSET + 0.017`, `z = KICKER_END_Z`) — the same y as the
+red lip stubs, so the line sits exactly where the take-off face meets the
+back wall. The red trim itself is untouched (author ruling 2026-08-29).
+NC hook `?kicker_sabotage=1` drops the line 1.2 m below the lip and 0.6 m
+down-slope. `index.html` ?v= bumped 90 → 91 (game.js change; assets
+untouched, ASSET_V unchanged).
+
+New `tests/drive/kicker-edge.spec.js` 2/2: structural gates (span 1.7,
+y == lipY ±1 cm, radius ≤ 0.06, all material channels ≤ 0.10) and a rendered
+gate from the uphill (−z) side camera — the projected lip band reads
+darkFrac **0.508** at lum < 0.25, band mean lum **0.198** vs the snow band
+above **0.739**; NC fires hard (darkFrac **0**, band lum **0.528**).
+By-eye on the fresh `shots/kicker.png`: the dark line reads at the lip
+between the red trims; scene.png unchanged elsewhere (blue sky, corridor
+parity, athlete all hold).
+
+Verification: **unit 81/81, golden 30/30, look 7/7** (all shots
+regenerated + kicker/scene inspected), kicker-faces + venue-dressing +
+terrain-corridor **12/12**, kicker-edge 2/2. Golden recapture was
+CENSUS-ONLY and audited first: `audit-physics-state.js` reports **0 physics
+state diffs across 30 scenarios / 5408 frames**, 22 display-node diffs (the
+new tube name) — the sanctioned census-recapture path (213/229 precedent).
+
+Open: queue item 3 (pink bib smear + mirrored digits) is athlete-banned
+paint work awaiting the reviewer's lane assignment.
