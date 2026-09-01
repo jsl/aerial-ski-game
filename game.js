@@ -5373,7 +5373,15 @@ void main(void) {
         }
         return m;
     };
-    function _ridgeMesh(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat) {
+    function _ridgeMesh(name, axis, fixed, from, to, base, amp, f1, f2, p1, p2, mat, snowM) {
+        // Iter 227 (horizon debt, 223-ruling tail item 2): per-ridge elevation
+        // divisor for uv.v (default RIDGE_SNOWLINE_M). The NEAR ridges' whole
+        // visible face sat in the forest band (crest ≈26 m over the 80 m
+        // divisor ⇒ v ≈ 0.33 < 0.42), reading as the flat dark-green slabs
+        // floating over the peaks. A shorter divisor (48, passed by the near
+        // call below) lifts the same crest to v ≈ 0.54: forest foot, rock
+        // crest, snow clinging near the top — a forested hill, not a cut-out.
+        const SNOW_M = snowM || RIDGE_SNOWLINE_M;
         const L = to - from;
         // Cross-run depth ≥ 21% of the run so every ridge has body under its
         // silhouette; the crest edge sits at the old curtain plane and the
@@ -5408,7 +5416,7 @@ void main(void) {
                 const off = dir * u * DEPTH;
                 if (axis === 'x') pos.push(fixed + off, y, t);
                 else              pos.push(t, y, fixed + off);
-                uv.push(t / 55, Math.max(0, (y - valleyFloorY) / RIDGE_SNOWLINE_M));
+                uv.push(t / 55, Math.max(0, (y - valleyFloorY) / SNOW_M));
             }
         }
         for (let i = 0; i < n - 1; i++) {
@@ -5445,8 +5453,8 @@ void main(void) {
     const matFar  = _ridgeMat('ridgeMatFar',  0.38, [0.38, 0.48, 0.55],
                               { strength: 2.2, strata: true });
     [-1, 1].forEach(function (s) {
-        _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear);
         // HUMAN TESTING #7 (author): "reduce one or two of the big peaks and
+        _ridgeMesh('ridge_near_' + (s < 0 ? 'L' : 'R'), 'x', s *  68, RZ0, RZ1, 16, 10, 0.045, 0.121, 0.7, 2.9, matNear, 48);
         // see some more sky" — mid/far crests lowered ~20 % and their
         // silhouette amplitude eased so the skyline reads as regular hills.
         _ridgeMesh('ridge_mid_'  + (s < 0 ? 'L' : 'R'), 'x', s * 102, RZ0, RZ1, 24, 12, 0.033, 0.087, 1.9, 4.2, matMid);
@@ -5514,7 +5522,13 @@ void main(void) {
         // Deterministic per-peak variation (no Math.random — census stable):
         // tint 0.90–1.08, haze mix 0.26–0.38, snowline 66–90 m.
         const tint = 0.90 + 0.18 * ((i * 73) % 7) / 6;
-        const haze = 0.26 + 0.12 * ((i * 37) % 5) / 4;
+        // Iter 227 (horizon debt): haze 0.26–0.38 lifted the pale peak faces
+        // to within ~15% of the sky band's luminance — 225/226 "flat grey, no
+        // pale separation from the sky". Range pulled to 0.18–0.28 (and the
+        // haze emissive 0.16 → 0.11) so the rendered peak pixels measure
+        // ≤ 0.85 × the sky above them (old 0.85 rule) while staying inside
+        // the ridges3d peak gate (meanLum < 0.75, std > 0.05).
+        const haze = 0.18 + 0.10 * ((i * 37) % 5) / 4;
         const snline = 66 + 24 * ((i * 53) % 6) / 5;
         const mat = makePBR('peakMat_' + i, scene);
         mat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
@@ -5530,11 +5544,11 @@ void main(void) {
         // contrast) plus a faint haze emissive that lifts the shaded flank.
         mat.fogEnabled = false; mat.backFaceCulling = true; mat.alpha = 1;
         mat.directIntensity = 0.55;
-        mat.emissiveColor = new BABYLON.Color3(FOG.r * 0.16, FOG.g * 0.16, FOG.b * 0.16);
         mat.albedoColor = new BABYLON.Color3(
             (1 + (FOG.r - 1) * haze) * tint,
             (1 + (FOG.g - 1) * haze) * tint,
             (1 + (FOG.b - 1) * haze) * tint);
+        mat.emissiveColor = new BABYLON.Color3(FOG.r * 0.11, FOG.g * 0.11, FOG.b * 0.11);
         const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
             height: m.h, diameterTop: m.rb * 0.06, diameterBottom: m.rb * 2,
             tessellation: 28    // regular cone silhouettes (author: "weird … not regular shapes")
