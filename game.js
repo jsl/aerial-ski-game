@@ -6191,20 +6191,33 @@ void main(void) {
         ps.color2     = new BABYLON.Color4(0.80, 0.90, 1.00, 0.60);
         ps.colorDead  = new BABYLON.Color4(0.70, 0.85, 1.00, 0.00);
         ps.minSize    = 0.06;   ps.maxSize     = 0.22;
-        ps.minLifeTime= 0.4;    ps.maxLifeTime = 1.2;
+        // P5 footage numbers (REFERENCE-FOOTAGE, IMG_7841): the landing plume
+        // peaks 1–1.5 m above the surface ~0.4–0.5 s after touchdown and
+        // trails 1–2 s. Particle speed = direction × emitPower, so the upward
+        // band 0.5–1.7·ss × 1.0–1.6 with gravity −8 puts the worst-case plume
+        // at v≈4.1 m/s → peak ≈ 1.05 m at t≈0.51 s for a real landing
+        // (ss = |vz|/12 ≈ 1.5); crash-scale bursts (ss up to 2.2) throw higher.
+        const _ss = Math.min(speedScale, 2.2);
+        ps.minLifeTime= 0.9;    ps.maxLifeTime = 1.9;
         ps.emitRate   = 0;      ps.manualEmitCount = count;
-        ps.direction1 = new BABYLON.Vector3(-3.5 * speedScale, 2.0 * speedScale, -2.5 * speedScale);
-        ps.direction2 = new BABYLON.Vector3( 3.5 * speedScale, 5.5 * speedScale,  2.5 * speedScale);
+        ps.direction1 = new BABYLON.Vector3(-1.75 * _ss, 0.5 * _ss, -1.25 * _ss);
+        ps.direction2 = new BABYLON.Vector3( 1.75 * _ss, 1.7 * _ss,  1.25 * _ss);
         ps.minAngularSpeed = 0;  ps.maxAngularSpeed = 1.5;
-        ps.minEmitPower    = 0.3 * speedScale;
-        ps.maxEmitPower    = 1.8 * speedScale;
+        ps.minEmitPower    = 1.0;
+        ps.maxEmitPower    = 1.6;
         ps.updateSpeed     = 0.016;
-        ps.gravity         = new BABYLON.Vector3(0, -6, 0);
+        ps.gravity         = new BABYLON.Vector3(0, -8, 0);
         ps.blendMode       = BM;
         ps.start();
-        setTimeout(() => { try { ps.dispose(); } catch(_){} }, 2000);
+        (window._snowBursts = window._snowBursts || []).push(ps);   // spray.spec probe
+        setTimeout(() => {
+            try {
+                const _l = window._snowBursts || [];
+                const _i = _l.indexOf(ps); if (_i >= 0) _l.splice(_i, 1);
+                ps.dispose();
+            } catch(_){}
+        }, 2400);
     }
-
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
@@ -6215,6 +6228,7 @@ void main(void) {
     let firstPersonMode = false; // true = FP camera from skier's eyes (V toggles)
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
+    window._spawnSnowBurstProbe = _spawnSnowBurst;   // spray.spec probe hook
     let targetL_flip    = 0.0;   // target L_flip to recover toward when arrow released
     let frontFlipQueued    = false; // up pressed in air → do front flip on next bounce
     let singleLayoutMode   = false; // active during air phase: cap rotation to 1 flip

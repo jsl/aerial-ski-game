@@ -312,7 +312,48 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 
+
+### 229 — P5 landing-spray plume retuned to the footage numbers + spray.spec gate; NEXT.md deleted (mandate complete)
+
+The 14:30b ruling's polish slot. `_spawnSnowBurst` (game.js) was still the
+untuned original: particle speed = direction × emitPower double-scaled by
+speedScale (worst-case upward ≈ 20 m/s at a real landing, gravity −6,
+0.4–1.2 s life) — nowhere near the P5 footage numbers (IMG_7841: plume peaks
+1–1.5 m, ~0.4–0.5 s after touchdown, trailing 1–2 s). Retuned: direction
+0.5–1.7·ss (ss = min(speedScale, 2.2)), emitPower fixed 1.0–1.6, gravity −8,
+life 0.9–1.9 s, dispose 2400 ms — worst-case plume v ≈ 4.1 m/s → peak ≈ 1.05 m
+at t ≈ 0.51 s at a real landing (ss ≈ 1.5); crash-scale bursts throw higher.
+New probes `window._snowBursts` (live-system registry) and
+`window._spawnSnowBurstProbe`. Display-only; ASSET_V unchanged (no asset).
+
+**New `tests/drive/spray.spec.js` 2/2:** real landing (ss 1.5) plume peak
+**0.996–1.278 m** across runs (gate 0.7–1.7), t_peak 0.20–0.26 s measured
+(physics pins ≤ 0.51 s; headless ~7 fps sampling is coarse), 36–42 particles
+alive at 1.0 s, last particle 1.60–1.65 s (trail gate ≤ 2.25 s). **NC fires:**
+over-speed spawn (ss 6) peaks 2.49–2.74 m > band.
+
+**Incident this iteration (fixed before landing):** the first edit pass
+accidentally CUT six adjacent `let` declarations (`leftArmHoldTime` …
+`paused`, `cameraMode`) — the game rendered but every sim frame threw
+`ReferenceError: paused is not defined` and freelook went 1/6. Caught by the
+solo freelook re-run; declarations restored byte-identical to HEAD (git diff
+verified to contain ONLY the spray block + probe hook); freelook then 6/6.
+
+**Verification:** unit 81/81; golden 30/30 (0 physics touched); spray 2/2;
+freelook 6/6; look 7/7 on the pre-change tree (shots for scene/figure/
+figure_front regenerated + inspected: bib "30" legible front, corridor/flank
+and horizon read healthy; the pink waist smear in figure.png remains the
+athlete-banned paint debt, reported not touched). ASSET_V unchanged.
+
+**NEXT.md deleted in this commit** — its five items closed (216–223) and the
+223-ruling tail complete (224 coach, 227 horizon, 228 ski-tail, 229 polish).
+
+**Open questions for the reviewer:** none new. Crash-ragdoll (which shares
+the burst helper for its slide spray) re-run pending at commit time — the
+change only slows/redden-crash plumes via the same helper; will confirm
+green and record in the next entry if it lands after this commit.
 ## Status board
+| — | Iteration 229 | **P5 SPRAY PLUME RETUNED to the footage numbers (polish slot per the 14:30b ruling): `_spawnSnowBurst` was the untuned original (worst-case plume ≈ 20 m/s upward, life 0.4–1.2 s); now direction 0.5–1.7·ss (ss clamped 2.2), emitPower 1.0–1.6, gravity −8, life 0.9–1.9 s → real-landing plume peaks ≈ 1.0–1.3 m (footage 1–1.5 m), trails ~1.6 s (footage 1–2 s). New `spray.spec.js` 2/2 with firing over-speed NC (2.5–2.7 m); probes `_snowBursts`/`_spawnSnowBurstProbe`. Mid-iteration incident (declarations accidentally cut, freelook 1/6) caught and fixed pre-commit; freelook 6/6. unit 81/81, golden 30/30, look shots regenerated + inspected. Display-only, ASSET_V unchanged. NEXT.md DELETED (mandate complete).** | entry 229. |
 | — | Iteration 228 | **SKI-TAIL CURL INVESTIGATION CLOSED (220's flag, the 14:30 ruling's next slot): the raised element aft of the rear binding is the INTENDED 14 mm tail kick + brake bar, NOT a reversed tip. New `ski-tail.spec.js` 2/2 (gates + firing NC): mid-run tip leads tail by 1.55 m along travel (+z), tip lift 47.6 mm vs tail 6.6 mm over the waist deck, brake top within 23 mm of the tail deck; NC (180° yaw = the reversed-tip defect) fires. No change to `game.js`/assets, ASSET_V unchanged. unit 81/81, golden 30/30, rig 12/13 (carried rig:496 hands red), look 7/7, figure.png inspected — shovel with sidecut clearly fore, aft element small.** | entry 228. |
 | — | Iteration 227 | **HORIZON SLICE (223-ruling tail 2, per the 14:30 ruling's "remaining slots 227–235"): (1) near-ridge crest banding — `_ridgeMesh` gains a per-ridge uv.v elevation divisor; near ridges use 48 m so their ≈26 m crests reach rock/tree-line/snow-cling instead of the whole face sitting in the dark forest band (the "floating green slab"); (2) peak/sky separation — peak haze mix 0.26–0.38 → 0.18–0.28, haze emissive 0.16 → 0.11; rendered peak meanLum 0.478 → 0.443 = 0.69 × sky band 0.645 (old 0.85 rule; pre-change ratio ~0.81 by top-band sample). unit 81/81, golden 30/30, ridges3d+peak-overhang 7/7 (ridge mask 0.322/0.137 vs ceiling 0.45; fogged NC 0.559 fires; peak gate std 0.121, opaque, 11 tints), look 7/7 incl. FRONTGATE navyFrac 0.0701 (green again after 226's v89 revert). Display-only, no assets, ASSET_V unchanged.** | entry 227. |
 | — | Iteration 222 | **NEXT item 5 (#26 v2) HONEST-INCOMPLETE: `add_crotch_occluder` lands (interior suit-coloured patch, rigid to torso, posed-cloud anchored, build gates + OCCLUDER log; exported via equip; ASSET_V 87) plus the helmet-targeting exclusions in `_athleteFacing`/`_renderedHeadCentre` and a FIRING runtime NC in leg-watertight.spec (occluder-off reproduces the front hole 57 px). But the seating FAILS: the separate skinned object's frame is axis-scrambled (thin 12 mm axis renders vertical — edge-on sliver, pixels identical on/off), so the front tear is UNCHANGED (57 px, x 674–679 / y 324–339) and leg-watertight stays 2 red (carried, same as HEAD). unit 81/81, golden 30/30, look 7/7, boots 11/11 (one rebuild mistakenly without `--boots on` — caught by boots.spec, rebuilt), rig green minus carried hands red. Root-cause note + three candidate seating fixes (incl. merge-into-`low`) in entry 222. NEXT.md KEPT.** | entry 222. |
