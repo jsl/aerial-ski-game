@@ -10650,13 +10650,19 @@ def add_boots(arm, joints, body):
              x=ax, y=ay - 0.005, z=sole + 0.113 + 0.045)
         # Cuff, leaning forward 12 deg about the ankle (real boot geometry;
         # the flight boot-ski sweep pins SHIN to SKI and is untouched — the
-        # cuff is display geometry skinned rigidly to the shin bone)
-        prim('cone', 'cuff', radius1=0.052, radius2=0.060, depth=0.130,
+        # cuff is display geometry skinned rigidly to the shin bone).
+        # Iter 208 (15:10-ruling redo): the cuff now rises to the strap line
+        # (an.z + 0.175) so the boot reads as a tall shell around the foot,
+        # and the power strap SEATS on the cuff top instead of floating a
+        # 3 cm gap above it (visible in the 208 measurement build's
+        # figure_front.png).
+        prim('cone', 'cuff', radius1=0.052, radius2=0.061, depth=0.175,
              rot_x=-0.21,
-             x=ax, y=ay - 0.010, z=an.z + 0.055)
-        # Power strap across the cuff top
-        prim('box', 'strap', w=0.124, d=0.030, h=0.024,
-             x=ax, y=ay - 0.010, z=cuff_top)
+             x=ax, y=ay - 0.010, z=an.z + 0.0875)
+        # Power strap across the cuff top (overlapping the cuff cone so the
+        # rendered boot is ONE connected component)
+        prim('box', 'strap', w=0.128, d=0.034, h=0.024,
+             x=ax, y=ay - 0.010, z=an.z + 0.168)
         # Buckles: 3 on the OUTER face of the cuff + 1 instep
         for k, dz in enumerate((0.030, 0.075, 0.120)):
             prim('box', f'buckle{k}', w=0.014, d=0.026, h=0.020,

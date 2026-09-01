@@ -12768,3 +12768,83 @@ alpha/beta drift after the missed release.
   `look` 7/7 (shots regenerated).
 
 **Open.** None for #27. Queue per ruling: boots redo → paint → coach.
+
+### 208 — BOOTS REDO: kill-switch flipped to ON — boots rebuilt (tall cuff, seated strap), rendered and gated in render space; the 15:10 defect signature does not reproduce on the current rebuild; new `boots.spec.js` (gate 5/5, two firing negative controls)
+
+**Mandate.** The 01:15 ruling on 207: "208 = the BOOTS REDO per the 15:10
+ruling: root-cause the piece placement (transform-vs-bind space), seat the
+boot AS a boot around the foot, HIDE the old shoe geometry, kill the floating
+shoulder quads, land the render-space boot gate ... and flip the reviewer
+kill-switch (`BOOTS_ENABLED` in game.js) to true ONLY when that gate is
+green and the by-eye matches `author_boot_ref_2026-08-30.jpg`." (The
+athlete-file ban is lifted for this task by the ruling; NEXT.md item 5 names
+the same boots work.)
+
+**Root-cause findings (measured, not guessed).**
+1. **The shipped v80 asset contains NO boot meshes at all.** A GLB census of
+   `assets/athlete_body.glb` at slot start: meshes `athleteBoot*` ABSENT,
+   skins = 1 (athleteBody only). `add_boots` is opt-in
+   (`--boots on`, default off) and every rebuild after 188 ran without it —
+   the kill-switch was hiding an empty set. The 15:10 failure was observed on
+   the v76 build.
+2. **Transform-vs-bind:** the boots export as SCENE ROOTS (not children of
+   `AthleteRig`), each with `skin: 0` and no node transform. Babylon's
+   skinning ignores the mesh node transform and the build uses bind := driver
+   (`patch_skin_binds`), so root placement is harmless; game.js re-parents
+   them to `character.root` anyway. Verified numerically: two matrix
+   compositions that do NOT match the renderer (node world × `getBindMatrix`;
+   `getTransformMatrices(m)` per-bone rows) both misplace the boot in
+   MEASUREMENT ONLY (bounds 4.4–5.65 m and −0.99–0.32 m) while the RENDER is
+   seated — the spec therefore measures the render space by pixels, not by
+   replicating engine matrix internals.
+3. **The old 15:10 signature does not reproduce** on the current rebuild with
+   boots enabled: no shoulder quads, no disconnected pile, no white shoe
+   above the shell (the painted liner + boot-shell pipeline of 188–199 is in
+   the build). Likely the v76 asset predated later pipeline changes. The new
+   gate guards the class permanently.
+
+**What changed.**
+1. `blender/build_body.py` `add_boots`: cuff cone deepened 0.130 → 0.175 and
+   raised (centre an.z + 0.0875) so the shell reaches the strap line; power
+   strap re-seated at an.z + 0.168 (was cuff_top, floating a measured ~3 cm
+   gap above the old short cuff — visible in the pre-fix
+   `figure_front.png`); strap widened to overlap the cuff cone so the boot is
+   one connected component. Assets rebuilt with `--boots on`
+   (2048/96, production settings); `ASSET_V` 80 → 81.
+2. `game.js`: `BOOTS_ENABLED` false → **true** (kill-switch flipped per the
+   ruling; the gate below is green). ASSET_V comment updated.
+3. NEW `tests/drive/boots.spec.js` — the render-space boot gate:
+   - live: boots enabled (2 meshes), navy population below the knee row
+     ≥ 150 px, dominant below-knee navy component ≥ 60% (not shattered),
+     whole-frame large (≥ 1% of frame) navy components ≤ 2 (the two ski+boot
+     ensembles; a stray shoulder quad would be a third) — the bib digits are
+     navy but below the 1% size bar, so they cannot trip it;
+   - NEGATIVE CONTROLS, all firing: (2) split synthetic boot fails the
+     connectivity clause; (4) boots disabled fails the rendered clause
+     live in the real scene; (1)/(3) synthetic above-knee blob / single
+     connected boot bracket the classifier.
+
+**Verification.** `boots.spec.js` **5/5** (controls 2 and 4 fire on the real
+scene/synthetic data); `npm run test:unit` **81/81**; `npm run test:golden`
+**30/30** (display-only); `look` **7/7**, shots regenerated;
+`rig.spec.js` 12 passed / 1 failed — the failure is the long-carried
+hands-vs-thigh red (rig-496, parked per the 22:55 ruling), reproduced
+byte-identically on clean tips since 164. By-eye on the fresh shots:
+`figure_front.png`/`figure_side.png` show both boots seated ON their skis
+(sole plate, clog, cuff, strap; no floating band; no geometry above the
+cuff line; nothing at the shoulders). Navy census below the knee: 9,754 px,
+largest component 8,271 (84.8%).
+
+**Open questions for the reviewer:**
+1. The 15:10 defects (shoulder quads, disconnected pile, old white shoe) do
+   NOT reproduce on the 208 rebuild — I attribute the v76 sighting to the
+   stale asset (no `--boots on` in any rebuild since 188, and the kill-switch
+   masked the absence). Acceptable to treat that failure as explained-and-
+   guarded rather than still-open?
+2. The boot is still primitive-blocky at zoom (cylinders read as boxes at
+   gameplay framing); refining silhouette is build-side polish that can ride
+   the paint-slice slot if you want it.
+3. My first gate draft tried to verify placement from skeleton matrices and
+   produced two DIFFERENT wrong answers (both disagreeing with the render);
+   the landed gate measures pixels instead. If you want a geometry-space
+   clause, it needs the engine's exact skin-matrix path documented first.

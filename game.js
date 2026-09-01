@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=80";   // 80: #25 crook attempt 1 — aft verts included in the knee-bridge pull (iter 201)
+    const ASSET_V = "?v=81";   // 81: boots redo — tall cuff, seated strap, render-space gate green (iter 208)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -2955,7 +2955,7 @@ void main(void) {
                     // shipped boot primitives render as misplaced blocks (old shoe
                     // still visible, stray quads at the shoulders). Hidden until the
                     // placement fix + render-space boot gate land; flip to true then.
-                    const BOOTS_ENABLED = false;
+                    const BOOTS_ENABLED = true;   // iter-208 measurement build
                     const bootParts = res.meshes.filter(m =>
                         m.name && /^athleteBoot[LR]$/.test(m.name) &&
                         m.getTotalVertices && m.getTotalVertices() > 0);
