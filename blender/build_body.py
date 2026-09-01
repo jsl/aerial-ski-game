@@ -189,7 +189,11 @@ GLOVE      = (0.13, 0.14, 0.16)
 # arms. NEGATIVE CONTROL: BODY_SABOTAGE_CROTCH=1 skips the clamp — the gate
 # below must reject that build.
 SABOTAGE_CROTCH = os.environ.get('BODY_SABOTAGE_CROTCH') == '1'
-CROTCH_AO_FLOOR = 0.60    # baked-AO floor inside the inner-thigh mask
+CROTCH_AO_FLOOR = 0.68    # baked-AO floor inside the inner-thigh mask. 0.60
+                          # under-bit once #23 v2 slimmed the thighs (iter
+                          # 221): the narrower gap bakes MORE frozen
+                          # between-thigh occlusion, so the dirt floor rises
+                          # with it.
 CROTCH_MIN_TEXELS = 400   # below this the mask is wrong, not the AO
 # OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
 # short of the binding (author/reviewer, session 4 (c)) — the boot GEOMETRY has
@@ -3249,6 +3253,150 @@ def leg_taper_gate(body):
     if bad:
         raise SystemExit('[body] leg taper gate FAILED: ' + '; '.join(bad))
     return r
+
+
+# ── NEXT #23 v2 (author, 2026-09-01): FRONT-VIEW THIGH TAPER ────────────────
+# The author's fresh-tab eye reads the front figure as ~1.5x upper-thigh/knee
+# width; the target is <= ~1.35. Fix is a garment re-blend on the shipped
+# shell: upper radius DOWN, knee radius UP, with the calf band trimmed only as
+# far as leg_taper_gate's calf/thigh <= 0.80 demands (a slimmer thigh would
+# otherwise break that band from below).
+FRONT_TAPER_GATE = {'upper_knee': 1.35}
+TAPER_TARGET = 1.30          # ship a little inside the gate
+CALTHIGH_SHIP = 0.78         # keep leg_taper_gate's calf/thigh inside 0.60-0.80
+
+
+def _clamp01(x):
+    return max(0.0, min(1.0, x))
+
+
+def _w_fade_down(z, z_full, z_zero):
+    """1 at/above z_full, linearly to 0 at z_zero (z_zero < z_full)."""
+    return 1 - _clamp01(((-z) - (-z_full)) / (-z_zero + z_full))
+
+
+def front_taper_report(body, tag):
+    """Front-view (x) breadth: widest upper-thigh row / median knee rows."""
+    prof = leg_profile(body, tag)
+    zs, ws = prof['zs'], prof['widths']
+
+    def band(lo, hi):
+        return [w for z, w in zip(zs, ws) if lo <= z <= hi]
+
+    thigh_rows = band(-0.50, -0.36)
+    knee_rows = sorted(band(-0.66, -0.60))
+    thigh = max(thigh_rows) if thigh_rows else None
+    # median: the knee-ring rows straddle the upper/lower seam and one row
+    # reads wide where both tubes still overlap; the median is the waist.
+    knee = knee_rows[len(knee_rows) // 2] if knee_rows else None
+    if not thigh or not knee:
+        raise SystemExit(f'[body] front taper: unmeasurable '
+                         f'({thigh}, {knee})')
+    r = {'thigh': thigh, 'knee': knee, 'ratio': thigh / knee}
+    log(f'{tag} front taper (left leg, x-breadth): upper-thigh '
+        f'{thigh*1000:.0f} mm / knee {knee*1000:.0f} mm = '
+        f'{r["ratio"]:.3f} (gate <= {FRONT_TAPER_GATE["upper_knee"]})')
+    return r
+
+
+def _taper_radial(body, seg, fn):
+    """Radial (x,y) scale of the seg-dominated cluster about its own bone
+    axis; fn(t) is the factor at normalised axis position t (0 = head)."""
+    c = bl(seg)
+    h = SEGMENTS[seg]['h']
+    a = c + Vector((0.0, 0.0, h / 2))
+    b = c - Vector((0.0, 0.0, h / 2))
+    ab = b - a
+    len2 = ab.length_squared
+    own = dominant_segments(body)
+    n = 0
+    for v in body.data.vertices:
+        if own[v.index] != seg:
+            continue
+        t = (v.co - a).dot(ab) / len2
+        s = fn(t)
+        if s == 1.0:
+            continue
+        axis = a + ab * t
+        v.co.x = axis.x + (v.co.x - axis.x) * s
+        v.co.y = axis.y + (v.co.y - axis.y) * s
+        n += 1
+    return n
+
+
+def thigh_taper_pass(body):
+    """Re-blend the leg garment: upper thigh down, knee up, calf trimmed to
+    keep calf/thigh inside leg_taper_gate's band. NC: BODY_SABOTAGE_TAPER."""
+    sab = os.environ.get('BODY_SABOTAGE_TAPER')
+    if sab:
+        f = float(sab)
+        n = 0
+        for seg in ('upperLegL', 'upperLegR'):
+            hip_z = bl(seg).z + SEGMENTS[seg]['h'] / 2
+            n += _taper_radial(
+                body, seg,
+                lambda t, hz=hip_z, h=SEGMENTS[seg]['h'], f=f:
+                    1 + (f - 1) * _w_fade_down(hz - h * t, -0.44, -0.56))
+        log(f'BODY_SABOTAGE_TAPER={f}: upper thigh inflated ({n} verts) — '
+            f'the shipped gate must fire')
+        return
+    r = front_taper_report(body, 'taper in')
+    t = leg_taper_report(body, 'taper in')
+    fk = 1.15                                   # knee radius UP
+    thigh_target = TAPER_TARGET * r['knee'] * fk
+    fu = min(1.0, thigh_target / r['thigh'])    # upper radius DOWN
+    fc = min(1.0, CALTHIGH_SHIP * thigh_target / t['calf'])
+    log(f'taper pass: knee x{fk:.2f}, upper x{fu:.3f}, calf x{fc:.3f}')
+
+    def apply(fu_i, fc_i, fk_i=fk):
+        for side in ('L', 'R'):
+            up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+            h_up = SEGMENTS[up]['h']
+            h_lo = SEGMENTS[lo]['h']
+            hip_z = bl(up).z + h_up / 2
+            knee_z = hip_z - h_up
+
+            def f_upper(tt, hz=hip_z, hu=h_up, fu_i=fu_i, fk=fk_i, kz=knee_z):
+                z = hz - hu * tt
+                return (1 + (fu_i - 1) * _w_fade_down(z, -0.44, -0.56)) \
+                    * (1 + (fk - 1) * _clamp01(1 - abs(z - kz) / 0.035))
+
+            def f_lower(tt, kz=knee_z, hl=h_lo, fc_i=fc_i, fk=fk_i):
+                z = kz - hl * tt
+                wc = _clamp01((-0.66 - z) / 0.05) \
+                    * _clamp01((z + 0.85) / 0.05)
+                return (1 + (fk - 1) * _clamp01(1 - abs(z - kz) / 0.035)) \
+                    * (1 + (fc_i - 1) * wc)
+
+            _taper_radial(body, up, f_upper)
+            _taper_radial(body, lo, f_lower)
+
+    apply(fu, fc)
+    # correction loop: the factors were derived from the pre-pass profile;
+    # up to two measured corrections keep the target honest.
+    for it in range(2):
+        r = front_taper_report(body, f'taper it{it}')
+        t = leg_taper_report(body, f'taper it{it}')
+        fu2 = min(1.0, TAPER_TARGET * r['knee'] / r['thigh'])
+        fc2 = min(1.0, CALTHIGH_SHIP * r['thigh'] / t['calf'])
+        if fu2 >= 0.999 and fc2 >= 0.999:
+            break
+        log(f'taper it{it}: upper x{fu2:.3f}, calf x{fc2:.3f}')
+        apply(fu2, fc2, fk_i=1.0)
+    front_taper_report(body, 'taper out')
+    leg_taper_report(body, 'taper out')
+
+
+def front_taper_gate(low):
+    """HARD gate on the shipped front taper. NC: BODY_SABOTAGE_TAPER."""
+    r = front_taper_report(low, 'shipped')
+    if r['ratio'] > FRONT_TAPER_GATE['upper_knee']:
+        raise SystemExit(f'[body] front taper gate FAILED: upper-thigh/knee '
+                         f'{r["ratio"]:.3f} > {FRONT_TAPER_GATE["upper_knee"]} '
+                         f'(thigh {r["thigh"]*1000:.0f} mm, '
+                         f'knee {r["knee"]*1000:.0f} mm)')
+    return r
+
 
 
 def leg_girth_pass(body):
@@ -12577,6 +12725,10 @@ def main():
     # leg_profile, so until now NOTHING measured the shipped leg. Measure and
     # gate the taper here, on the geometry that is actually exported.
     leg_taper_gate(body)
+    # NEXT #23 v2: the garment re-blend for the front-view taper, then the
+    # taper bands are re-checked on the re-blended leg.
+    thigh_taper_pass(body)
+    leg_taper_gate(body)
     crown_cap_last(body, lm)
     sliver_report(body, 'after crown_cap_last')
     helmet_centre_probe(body, lm, 'after crown_cap_last')
@@ -12593,6 +12745,7 @@ def main():
     # Goggles as geometry BEFORE the gate: the gate measures the final mesh.
     helmet_centre_probe(low, head_landmarks(low), 'final low-poly')
     goggle_geometry(low, head_landmarks(low))
+    front_taper_gate(low)
     if SABOTAGE_DOME_MM:
         # Negative control for the dome-seating gate: slide every shell vertex
         # fore-aft, blending to zero across the fade band so the mesh stays

@@ -308,6 +308,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 220 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, boots.spec 10/10 (NCs firing), look 7/7 — shots regenerated + inspected. 216–219 landings HOLD: boots v2 zones/buckles read in both figure framings, boot centred on ski. Still loudest: #23 v2 thigh taper (front view ~1.5 upper/knee by-eye, gate ≤ 1.35 unlanded) then #26 v2 crotch gap (visible seam in figure_front); mirrored bib digits ("0E" in figure.png) need a defect/accepted ruling; horizon grey wedge debt confirmed on scene.png. No source/asset change. NEXT 221 = item 4 thigh taper → item 5 crotch occluder.** | entry 220. |
+| — | Iteration 221 | **NEXT item 4 CLOSED — #23 v2 THIGH TAPER: garment re-blend in `build_body.py` (`thigh_taper_pass`: upper thigh ×~0.84, knee ×1.15, calf trimmed ×0.92 to keep calf/thigh in band, measured 2-iteration correction loop). Front-view upper/knee ratio 1.790 → **1.301** (gate ≤ 1.35; shipped `front_taper_gate` NEW, NC `BODY_SABOTAGE_TAPER=1.10` fires 1.969). All taper bands hold (calf/thigh 0.781, ankle/calf 0.661, boot/shin 1.178). ASSET_V 85→86. Two instrument re-baselines documented in-spec: rig suit-stand-off floors 0.176 → L 0.212 / R 0.134 (thigh slimmed on purpose), tube-smooth self-test now injects TWO bumps (single gaussian under-fired on the straighter profile). Crotch AO floor 0.60→0.68 (slimmer thighs bake more frozen between-thigh occlusion; clamp bites 181.6→199.2). unit 81/81, golden 30/30, boots/aframe/leg-shading/leg-watertight/body/inrun-crouch/athlete/rig/tube-smooth 31 pass incl. 5 re-run, look 7/7 shots regenerated + inspected (front figure tapers into the knee, side profile smooth hip→knee→boot). Carried reds NOT from 221 (verified on HEAD): leg-watertight ×2 (#26 hole, 222's fix) and rig:496 hands. NEXT 222 = item 5 crotch occluder.** | entry 221. |
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
 | — | Iteration 216 | **NEXT item 1 CLOSED — #28 "R" RESTART DRIFT: per-frame root update writes only y/z; the R reset never restored `position.x` (owned by the crash park + get-up walk-off, |x| = 6 m at the B-net), so each crash+R cycle started AND took off the next run at the stale lateral offset. Fix: reset restores the corridor centre-line (`window._restartXFixDisabled` NC hook). New `restart-drift.spec.js` 2/2: crash + full walk-off then R ×10 → start x/z byte-identical (< 1e-6), takeoff point < 0.02 m (worst 0.0081 m frame jitter), start on centre-line; NC fires (> 0.3 m offset without the fix). unit 81/81, golden 30/30, hotkeys+crash-ragdoll+look 20/20. Display-only, ASSET_V unchanged. NEXT items 2–5 remain.** | entry 216. |
 | — | Iteration 217 | **NEXT item 2 CLOSED — #29 CRASH GET-UP SWOOP: the defect was the ROLL phase's uncapped boot-sole lift — measured root rise 4.46 m/s (single, +0.83 m) and 8.01 m/s (triple, +3.20 m) during the lie→crouch blend, then the kneel sank it back. Fix (display-only): (1) the roll blend is now CONTACT-PACED — it advances only as fast as the contact lift it demands fits inside the rise cap (bisection over the blend fraction each frame); (2) a whole-chain rise governor clamps ANY upward root motion to 1.2 m/s in every phase and blend-in (descent free); (3) get-up phases moved from getT arithmetic to a roll→kneel→rise state machine with per-frame planted contact sets (knees-hands / knees / ankles) exposed via `_walkoffProbe().planted`. NC hook `_crashSwoopFixDisabled` restores the unpaced blend. New whole-chain gate in `walkoff.spec.js` (≤1.45 m/s sampled, planted on every frame) + firing NC test (triple). Post-fix peaks: roll 1.36/0.00/1.20 m/s (single/double/triple), rise ≤ 0.70, kneel only descends; walkoff 4/4 incl. both legacy NCs; unit 81/81, golden 30/30. Known pre-existing flake: baseline triple run timed out mid-walk on 200 ms janky frames — green in this run. Open: triple's roll still lifts the root +2.9 m total (knees-hands planted, ≤1.2 m/s) — see Open questions.** | entry 217. |
@@ -13506,4 +13507,46 @@ hole). Athlete body/suit remains the Opus lane except where NEXT.md explicitly a
 authorised both boots halves touching `add_boots` (entry 219's question, still
 unanswered); (b) mirrored bib digits — defect to schedule or accepted; (c) the curled
 aft element on the ski tail in `figure.png` — intended or reversed tip?
+
+
+### 221 — #23 v2 THIGH TAPER: garment re-blend, front ratio 1.79 → 1.30 (NEXT.md item 4)
+
+**What changed:**
+- `blender/build_body.py`: new `thigh_taper_pass` (runs after `leg_taper_gate`, post-suit-shell,
+  pre-decimation) — radial re-blend of the leg garment about each segment's own bone axis:
+  upper thigh ×0.835 (full above z −0.44, faded out by −0.56), knee ring ×1.15 (±35 mm band),
+  calf band trimmed (×0.926, weight zero at the knee and faded below −0.80) so
+  `leg_taper_gate`'s calf/thigh stays in [0.60, 0.80]. A 2-iteration measured correction loop
+  lands the ratio on target. New `front_taper_report` instrument (front-view x-breadth: widest
+  upper-thigh row −0.50..−0.36 / median knee rows −0.66..−0.60) and HARD `front_taper_gate` on
+  the final low-poly mesh, gate ≤ 1.35, negative control `BODY_SABOTAGE_TAPER` (1.10 fires the
+  gate at 1.969; 1.25 is caught earlier by `leg_taper_gate`).
+- `CROTCH_AO_FLOOR` 0.60 → 0.68: the slimmer thighs narrow the between-thigh gap, the AO bake
+  records MORE frozen occlusion there, and the 0.60 floor under-bit (181.6 → 191.9, needed +15).
+  At 0.68 the clamp bites 181.6 → 199.2/255. Comment in-build documents the dependency.
+- `game.js`: ASSET_V 85 → 86 (assets regenerated: athlete_body.glb + 3 webp maps + maps.json).
+- `tests/drive/rig.spec.js` (suit stand-off, instrument-following re-baseline, precedent = the
+  20:20 ruling): the shipped max-chord thigh projection now reads 0.2152 (L) / 0.1374 (R) — the
+  R reading is BELOW the old bare-skin 0.174 because the body under the shell was slimmed with
+  it (one mesh post-suit_shell). Floors: L 0.212 / R 0.134 (shipped − 3 mm). NC unchanged.
+- `tests/drive/tube-smooth.spec.js` (instrument self-test): the injected-belly control now
+  injects TWO separated gaussian bumps (each adds 2 inflections) so nSabotage ≥ 4 on any smooth
+  base — the single mid gaussian under-fired (exactly 2) once the real profile straightened.
+
+**Verification:** production build green at 2048/96 — shipped front taper 1.301 (137 mm / 105 mm,
+gate ≤ 1.35); taper bands calf/thigh 0.781, ankle/calf 0.661, boot/shin 1.178; knee-band slope
+step 29.2 mm/2 cm (shell-step gate ≤ 30 mm, unchanged from before the pass). unit 81/81;
+golden 30/30 (display-only change, 0 physics diffs); drive: boots, aframe, leg-shading, body,
+inrun-crouch, athlete, rig, tube-smooth, leg-watertight = 31 passed; `look` 7/7, shots
+regenerated and inspected: `figure_front.png` shows the upper thigh tapering INTO the knee (no
+bulge), `figure.png` a smooth hip→knee→boot side line, bib "30" and boots unchanged.
+
+**Carried reds, verified NOT from 221** (same 4 specs fail on committed HEAD): leg-watertight
+×2 (the #26 abdomen/hip see-through — 222's assigned fix) and rig:496 hands (parked, 203 ruling).
+
+**Open questions for the reviewer:** (a) accept the two instrument re-baselines above
+(rig:940 floors, tube-smooth two-bump self-test) as instrument-following? (b) the knee grew
+only 100 → 105 mm for fk 1.15 (the ring rows are seam-shared), which is what pins the final
+thigh at 137 mm; if the author wants a fuller knee instead of a slimmer thigh, that is a
+one-constant change (`fk`) away.
 

@@ -201,9 +201,17 @@ async function measureFraming(page, label, alphaOff) {
         // deadband with margin; the REAL profile gates (nThigh/nShin ≤ 2,
         // belly ≤ 2.0 px) are untouched, so the control cannot mask them.
         const sabotaged = thigh.slice();
-        const ci = Math.floor(sabotaged.length / 2), amp = Math.max(16, Math.max(...thigh) * 0.35);
+        // Iter 221: a single mid gaussian adds exactly 2 inflections, so once
+        // the real profile straightened (front-taper re-blend) the injected
+        // profile could total 2 and the self-test under-fired. Inject TWO
+        // separated bumps: each contributes its own 2, so nSabotage >= 4 on
+        // any smooth base and the instrument cannot silently go blind.
+        const amp = Math.max(16, Math.max(...thigh) * 0.35);
+        const c1 = Math.floor(sabotaged.length / 3);
+        const c2 = Math.floor(2 * sabotaged.length / 3);
         for (let i = 0; i < sabotaged.length; i++) {
-            sabotaged[i] += amp * Math.exp(-((i - ci) ** 2) / 18);
+            sabotaged[i] += amp * Math.exp(-((i - c1) ** 2) / 9)
+                + amp * Math.exp(-((i - c2) ** 2) / 9);
         }
         const nSabotage = inflections(sabotaged);
         const bellyThigh = belly(thigh), bellyShin = belly(shin);

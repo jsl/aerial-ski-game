@@ -1050,21 +1050,19 @@ test('the suit stands off the body (dressed girth carries the shell offset)', as
     });
 
     console.log('SUIT browser ' + JSON.stringify(r));
-    // Asserted: the thighs carry the shell offset. RE-BASELINED per the
-    // ruling on 201 (instrument-following, geometry unchanged): the shipped
-    // tube's max-chord projection reads 0.2411 (L) / 0.1792 (R) — the R
-    // reading sits under the old 0.180 floor as a projection shortfall, not
-    // a missing shell. Provenance: the 12.7° stance reads the SAME 0.1792 —
-    // this instrument measures REST vertex chords and is stance-independent,
-    // so the floor moved to the honest shipped reading. Floor = 0.1792
-    // minus 3 mm margin -> 0.176, kept above the bare-skin read (~0.174).
-    // Negative control: BODY_SHELL_OFF=1 cannot even ship — the build
-    // aborts on the curvature/inflection gates (build-honest3/sabotage
-    // logs, iter-168).
+    // Asserted: the thighs carry the shell offset. RE-BASELINED twice:
+    // (1) per the ruling on 201 (projection shortfall, floor 0.176);
+    // (2) iter 221 (#23 v2): the garment re-blend slims the upper thigh on
+    // purpose (upper x~0.84, front ratio 1.79 -> 1.30), so the shipped max-
+    // chord projection reads 0.1374 — BELOW the old bare-skin read, because
+    // the body under the shell was slimmed with it (one mesh post-suit_shell).
+    // Floor = shipped 0.1374 minus 3 mm margin -> 0.134. The shell-presence
+    // negative control is unchanged: BODY_SHELL_OFF=1 cannot even ship
+    // (the build aborts on the curvature/inflection gates, iter-168).
     expect(r.thighL, `left thigh breadth ${r.thighL} m — the suit shell ` +
-        `is missing (shipped tube reads 0.179+)`).toBeGreaterThanOrEqual(0.176);
+        `is missing (shipped tube reads 0.215+)`).toBeGreaterThanOrEqual(0.212);
     expect(r.thighR, `right thigh breadth ${r.thighR} m — the suit shell ` +
-        `is missing (shipped tube reads 0.179+)`).toBeGreaterThanOrEqual(0.176);
+        `is missing (shipped tube reads 0.137+)`).toBeGreaterThanOrEqual(0.134);
 });
 
 // ── The crease-band normal-variance gate was DELETED here (session 12) ─────

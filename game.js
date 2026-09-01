@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=85";   // 85: #16 v2 boot face zones — six boot materials shipped in athlete_body.glb (NEXT item 3b)
+    const ASSET_V = "?v=86";   // 86: #23 v2 thigh taper — garment re-blend (upper x0.84, knee x1.15, calf trim), crotch AO floor 0.68 (NEXT item 4)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
