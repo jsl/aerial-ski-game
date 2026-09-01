@@ -170,6 +170,11 @@ BIB_NUMBER = (0.95, 0.96, 0.97)      # white number patch on the bib
 BIB_WAIST  = (0.62, 0.14, 0.30)      # the magenta/pink sponsor band at the waist
 BIB_OLD    = (0.55, 0.72, 0.88)      # NEGATIVE CONTROL only: the flat powder-blue panel through session 29
 SABOTAGE_BIBBANDS = os.environ.get('BODY_SABOTAGE_BIBBANDS') == '1'
+# NEGATIVE CONTROL for the band BOUNDARY gate (bib_band_gate, NEXT item 7 /
+# the 150-review 17:20 ruling): paints the magenta waist band UNBOUNDED in
+# latitude — the rib wrap that put floating pink lobes at the hips in side
+# view — which the bounded-region clause must reject.
+SABOTAGE_BIBBANDWRAP = os.environ.get('BODY_SABOTAGE_BIBBANDWRAP') == '1'
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
 # OPUS ITEM 12: the ski boot. The leg used to end in a white blob that stopped
@@ -8878,9 +8883,16 @@ def paint_suit(obj, lm):
             # SESSION 30: three bands, not one panel. Teal yoke from the
             # shoulders down to the plate, the white plate itself, and the
             # magenta sponsor band at the waist — the layout of every bib in
-            # the reference still. SABOTAGE_BIBBANDS restores the flat
-            # powder-blue panel this build shipped up to session 29.
-            if along < BIB_WAIST_A1 and not SABOTAGE_BIBBANDS:
+            # The band's top edge IS the plate's bottom edge, and its lateral
+            # extent is the PLATE's own width (|lx| < NUM_W): the 150-review
+            # 17:20 ruling bounds the sponsor band's wrap to the plate's wrap
+            # width so no floating pink lobes read at the hips in side view
+            # (NEXT item 7). BODY_SABOTAGE_BIBBANDWRAP=1 restores the
+            # unbounded rib wrap — the negative control the new bib_band_gate
+            # clause rejects. SABOTAGE_BIBBANDS still restores the flat
+            # powder-blue panel of session 29.
+            if (along < BIB_WAIST_A1 and not SABOTAGE_BIBBANDS
+                    and (abs(lx) < NUM_W or SABOTAGE_BIBBANDWRAP)):
                 col, tag = BIB_WAIST, 'bibwaist'
             else:
                 col, tag = (BIB_OLD if SABOTAGE_BIBBANDS else BIB), 'bib'
@@ -9251,10 +9263,13 @@ def bib_band_gate(obj):
       yoke     >= BIB_BAND_VERTS yoke vertices sit ABOVE the plate, so the
                yoke is a band over the chest and not merely the margin
                painted either side of the plate.
-
+      boundary NO magenta vertex lies beyond the plate's own width
+               (|lat| > NUM_W + 5 mm) — the 150-review 17:20 ruling bounds
+               the sponsor band's wrap to the plate's wrap width (NEXT 7).
     NEGATIVE CONTROL: BODY_SABOTAGE_BIBBANDS=1 restores the flat powder-blue
     panel of session 29 — no magenta anywhere, and the yoke tone replaced by
-    BIB_OLD — and this gate must reject it.
+    BIB_OLD — and this gate must reject it. BODY_SABOTAGE_BIBBANDWRAP=1
+    restores the unbounded rib wrap and must fail the boundary clause.
     """
     attr = obj.data.color_attributes.get('suit')
     if attr is None:
@@ -9265,7 +9280,7 @@ def bib_band_gate(obj):
         return all(abs(c[k] - t[k]) < 1e-3 for k in range(3))
 
     yoke_z, band_z, plate_z = [], [], []
-    yoke_above, in_plate_bad = 0, 0
+    yoke_above, in_plate_bad, band_wide_bad = 0, 0, 0
     for i, v in enumerate(obj.data.vertices):
         if own[i] != 'torso':
             continue
@@ -9278,6 +9293,12 @@ def bib_band_gate(obj):
             band_z.append(v.co.z)
             if inpatch:
                 in_plate_bad += 1
+            # BOUNDARY clause (NEXT item 7, the 150-review 17:20 ruling):
+            # the band's wrap is bounded to the plate's own width. A small
+            # tolerance covers the frame's quantisation; the unbounded wrap
+            # (BODY_SABOTAGE_BIBBANDWRAP=1) blows far past it.
+            if abs(local[0]) > NUM_W + 0.005:
+                band_wide_bad += 1
         elif is_tone(c, BIB):
             yoke_z.append(v.co.z)
             if inpatch:
@@ -9293,9 +9314,13 @@ def bib_band_gate(obj):
     log(f'bib bands: yoke {len(yoke_z)} verts ({yoke_above} above the plate), '
         f'plate {len(plate_z)}, magenta {len(band_z)} spanning '
         f'{band_mm:.1f} mm | plate-minus-band gap {gap_mm:+.1f} mm | '
-        f'{in_plate_bad} band/yoke verts inside the number patch')
-
+        f'{in_plate_bad} band/yoke verts inside the number patch | '
+        f'{band_wide_bad} band verts beyond the plate width')
     bad = []
+    if band_wide_bad:
+        bad.append(f'{band_wide_bad} magenta band vertices lie beyond the '
+                   f'plate width (|lat| > {NUM_W}) — the sponsor band has '
+                   f'wrapped round the ribs (BOUNDARY clause)')
     for nm, n in (('yoke', len(yoke_z)), ('white plate', len(plate_z)),
                   ('magenta waist band', len(band_z))):
         if n < BIB_BAND_VERTS:

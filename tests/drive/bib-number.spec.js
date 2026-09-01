@@ -216,18 +216,23 @@ test('bib number 30 reads on both faces at the look camera', async ({ page }) =>
         expect(s.magFrac, `the magenta waist band does not read on the ${nm} ` +
             `face (magFrac ${s.magFrac.toFixed(4)})`).toBeGreaterThan(0.08);
     }
-    // "The bib panel does not dominate the back panel" — the front bib wraps
-    // to |lat| < 0.09 and the back only to 0.06, so the FRONT panel is the
-    // wider one. That is a width, and no fraction measured inside a box
-    // narrower than the plate can see it: measured on the wide box, front
-    // 1430 px of band against back 1361. The margin is thin (5%) because the
-    // extra wrap is nearly edge-on to the camera and contributes little
-    // projected width; it is asserted as an ordering and the ratio is
-    // reported, NOT floored at an invented number.
+    // BAND BOUNDARY (NEXT item 7, the 150-review 17:20 ruling, iteration 211):
+    // the sponsor band's wrap is BOUNDED to the plate's own width
+    // (|lat| < NUM_W = 0.075 m on BOTH faces — build_body.py paints and
+    // bib_band_gate's boundary clause gates it). The two bands are therefore
+    // the same rectangle now, and the old front-wider-than-back ordering
+    // (which measured the front's extra rib wrap) is replaced by an
+    // equality: the two wide-box counts must agree within 25%. The anti-wrap
+    // ceiling below keeps its role against a full-circumference tube.
     console.log(`BIB panel width: front ${front.magWide} px / back ` +
         `${back.magWide} px = ${(front.magWide / back.magWide).toFixed(3)}`);
-    expect(front.magWide, 'the back bib panel is WIDER than the front one')
-        .toBeGreaterThan(back.magWide);
+    const ratio = front.magWide / back.magWide;
+    expect(ratio, `the two bounded bands disagree in width ` +
+        `(front ${front.magWide} px vs back ${back.magWide} px)`)
+        .toBeGreaterThan(0.75);
+    expect(ratio, `the two bounded bands disagree in width ` +
+        `(front ${front.magWide} px vs back ${back.magWide} px)`)
+        .toBeLessThan(1.33);
     // "…wrapped around to the back" — the anti-wrap ceiling. A bib that had
     // become a tube round the ribs would run its waist band across the whole
     // torso, filling the wide box; the shipped build fills 10.5% of it. The

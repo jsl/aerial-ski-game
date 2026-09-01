@@ -2486,7 +2486,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=82";   // 82: boots rebuild — anchors from the posed mesh (209 pre-pose-frame fix)
+    const ASSET_V = "?v=83";   // 83: sponsor band bounded to the plate width (NEXT item 7)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

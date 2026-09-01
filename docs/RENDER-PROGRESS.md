@@ -12989,3 +12989,73 @@ when released) and P2 sky depth as slots allow.
    with the other polish-tail items?
 
 
+
+### 211 — NEXT item 7 PAINT SLICE: the sponsor band BOUNDED to the plate
+width (150-review 17:20 ruling) — floating pink lobes at the hips gone;
+digit orientation PROBED (both plates read correctly straight-on — the
+"rotated/mirrored" reports are grazing-angle foreshortening at the look
+framing, not a paint mirror); ASSET_V 83
+
+**Mandate.** NEXT.md item 7 (reviewer + 210's re-prioritisation): bounded
+sponsor band (`bib_band_gate` to the bounded region), mirrored bib digits,
+pink smear / crotch cleanup.
+
+**Digit diagnosis first (probe, not guesswork).** A headless probe rendered
+straight-on front/back/side plate crops (`scratch/iter-211/probe_*.png`,
+viewed by eye this session — the in-session viewer DOES rasterise PNG; 210's
+note was wrong on that point). Finding: the FRONT plate reads "30"
+left-to-right and the BACK plate reads "30" left-to-right, both upright —
+the paint's antisymmetric `number_uv` mapping is CORRECT. The "rotated/
+mirrored digit" the 180/190/205 reviews saw in `figure.png` is the plate at
+the look camera's grazing angle: the glyphs foreshorten to a sliver and the
+partial silhouette reads as a rotated glyph. A baked texture cannot mirror
+per-view; there is no paint bug left to fix on this line. The probe spec was
+temporary and deleted; the finding is recorded here instead.
+
+**The band (the real fix).** `paint_suit` painted `BIB_WAIST` wherever
+`bib_mask > 0.5` and `along < BIB_WAIST_A1` — and the bib panel wraps to
+|lat| 0.09 front / 0.06 back, so the magenta ran round the ribs and read as
+floating pink lobes at the hips (150 review; visible in this session's
+before-probe side crop). The band is now bounded to the PLATE's own width:
+`abs(lx) < NUM_W` (0.075 m) in the paint branch. After: the band is a clean
+rectangle under the plate on both faces; `figure_front.png` shows no
+hip/side smear.
+
+**Gates.**
+- `bib_band_gate` gains a BOUNDARY clause: 0 magenta vertices may lie
+  beyond |lat| > NUM_W + 5 mm. Build log: `0 band verts beyond the plate
+  width` (band 269 verts, 60.2 mm, gap +0.2 mm to the plate — all prior
+  clauses unchanged).
+- NEGATIVE CONTROL (fires): `BODY_SABOTAGE_BIBBANDWRAP=1` restores the
+  unbounded rib wrap → `BIB BAND GATE FAILED: 25 magenta band vertices lie
+  beyond the plate width`.
+- `bib-number.spec.js`: the front-wider-than-back `magWide` ORDERING
+  assertion is replaced (its cause — the front's extra rib wrap — no longer
+  exists) by a bounded-width equality, front/back wide-box counts within
+  25%: measured 1000 / 1229 px, ratio 0.814. Anti-wrap ceiling kept.
+
+**Not done from item 7 / carried.** Two-tone panels + collar/cuffs are in
+the build already (collar/cuff/ankle bands, arm stripe parked by STRIPE
+measurements); the band's lower edge on the bib bottom is slightly ragged
+in close view (bib bottom edge ramp, not the wrap) — cosmetic, parked. The
+grazing-angle digit legibility is a geometry property, not fixable in
+paint; if the reviewer wants it addressed it needs a plate flattening in
+`loosen_suit` — ruling requested before touching that.
+
+**Verification.** Build: `--boots on` rebuild (deterministic — the glb is
+byte-identical to 209's; only the baked albedo/normal/maps changed),
+ASSET_V 82 → 83 in game.js + index.html preloads. Unit 81/81 (fail 0),
+golden 30/30 (physics untouched), look 7/7 (shots regenerated after the
+final asset — figure_front shows the bounded band, "30" readable, boots
+seated), `bib-number.spec.js` 1/1, `boots.spec.js` 4/4 (re-run after an
+intermediate rebuild accidentally omitted `--boots on` and dropped the
+athleteBoot* nodes — caught by the spec's "boot mesh missing", which is the
+gate doing its job; NC1/NC2 fire).
+
+**Open questions for the reviewer.**
+1. Accept the foreshortening diagnosis for the "mirrored digit" debt? If
+   the oblique-framing legibility still bothers the author, the fix is
+   plate-geometry (flatter bib panel), not paint — say the word and it gets
+   a slot.
+2. 210's note that the viewer cannot rasterise PNG is out of date — PNG
+   inspection worked this session; review slots can by-eye the shots again.
