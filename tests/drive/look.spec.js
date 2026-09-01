@@ -859,6 +859,60 @@ test('look', async ({ page }) => {
     await page.screenshot({ path: path.join(OUT, 'inrun.png') });
 
     // ── Canonical POSE shots (FABLE-80 finding 10, iter 93) ──────────────
+
+    // ── Canonical COACH zoom shot (HUMAN TESTING #17, iter 213) ──────────
+    // Camera ~3 m from the coach, on the kicker side (the direction he
+    // faces), at chest height. Gates: red jacket pixels present in the
+    // central band, skin pixels (face) present, harness dark pixels present.
+    // Judged each pass by the author/reviewer for likeness.
+    await page.keyboard.press('p');   // pause the sim: it rewrites camera.target
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const d = window._knollCoachesDebug;
+        const s = d.stations[0];
+        const cam = scene.activeCamera;
+        cam.setTarget(new BABYLON.Vector3(s.x, s.baseY + s.h * 0.55, s.z));
+        cam.alpha = -Math.PI / 2;          // camera on the -z side (kicker side)
+        cam.beta = Math.PI / 2;            // chest height
+        cam.radius = 3;
+        cam.fov = 0.8;
+    });
+    await page.waitForTimeout(600);
+    const coachShot = await page.screenshot();
+    await page.screenshot({ path: path.join(OUT, 'coach_zoom.png') });
+    const coachPx = await page.evaluate(async (b64) => {
+        const img = new Image();
+        img.src = 'data:image/png;base64,' + b64;
+        await new Promise((res) => { img.onload = res; });
+        const cv = document.createElement('canvas');
+        cv.width = img.width; cv.height = img.height;
+        const c2 = cv.getContext('2d');
+        c2.drawImage(img, 0, 0);
+        const d = c2.getImageData(0, 0, img.width, img.height).data;
+        const W = img.width, H = img.height;
+        let red = 0, skin = 0, dark = 0, n = 0;
+        for (let y = Math.floor(H * 0.15); y < Math.floor(H * 0.85); y++) {
+            for (let x = Math.floor(W * 0.25); x < Math.floor(W * 0.75); x++) {
+                const i = (y * W + x) * 4;
+                const r = d[i], g = d[i + 1], b = d[i + 2];
+                if (r > 45 && r > g * 2.2 && r > b * 2.2) red++;
+                if (r > 90 && r > g * 1.1 && r > b * 1.1 && b > g * 0.7) skin++;
+                if (r + g + b < 180) dark++;
+            }
+        }
+        return { red: red / n, skin: skin / n, dark: dark / n };
+    }, coachShot.toString('base64'));
+    console.log('COACHZOOM', JSON.stringify(coachPx));
+    expect(coachPx.red, 'coach_zoom.png shows no maroon jacket pixels — the coach '
+        + 'is out of frame or his outfit lost the red shell (red '
+        + coachPx.red + ')').toBeGreaterThan(0.06);
+    expect(coachPx.skin, 'coach_zoom.png shows no face/skin pixels — the head is '
+        + 'out of frame or the beanie covers it (skin ' + coachPx.skin + ')')
+        .toBeGreaterThan(0.004);
+    expect(coachPx.dark, 'coach_zoom.png shows no harness/boot dark pixels (dark '
+        + coachPx.dark + ')').toBeGreaterThan(0.01);
+    await page.keyboard.press('p');
     // Reviews previously only ever saw the ready stance: the game's per-frame
     // hooks re-apply their own pose, so an external harness could not pose
     // the athlete. window._poseFreeze pins the pose + root every frame

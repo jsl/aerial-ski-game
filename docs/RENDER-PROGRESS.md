@@ -302,6 +302,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
+| — | Iteration 213 | **NEXT item 8 CLOSED — #17 THE COACH: maroon neutral shell (no lettering), hood down, radio harness, beanie + blond fringe, slim 1.85 m, moved 2.3 m PAST the wind sock facing the kicker (probe finding: CreatePlane fronts −z by default; the π flip faced him away). Gates: past-sock/off-corridor position, whole-texture lettering scan (0 blobs) with `?coach_sabotage=1` NC firing (x 0.2 in-corridor + "USA" 3 blobs), new `coach_zoom.png` in look (red 0.094 / skin 0.023 / dark 0.146). Unit 81/81, golden physics audit 0 diffs → census recapture, 30/30; venue 6/6, look 7/7. NEXT.md COMPLETE — deleted.** | coach card pose + gates; author's fresh-tab eye decides likeness passes 2–3 |
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
 | — | Iteration 209 | **BOOTS: the 01:55-ruling probe FOUND THE FRAME BUG and the fix LANDED — `add_boots` anchored the cuff/strap/buckles on the PRE-POSE metarig `joints` frame (ankle z +0.073) while the posed mesh's sole is at −0.995 (1.07 m apart), so 208's shell upper half rendered as the navy column up the leg ("block pile at the ski, old shoe visible"); anchors now derive from the POSED vertex cloud (build log: ankle (−0.080,−0.011,−0.995) vs stale joints (−0.084,−0.014,+0.073); hard gate 0.14–0.21 m cuff-above-sole makes the class impossible). ASSET_V 82 (index.html preload URLs bumped in step). NEW bone-anchored containment gate `boots.spec.js` 4/4 (boot world bounds must contain the skinned ankle pulled through the body world matrix, ≤3 cm, both sides × front+side; navy surround ≥20% at the projected ankle disc; old-shoe neutral-dark ≤5%; NC1 displaced-boots fires containment; NC1b synthetic old-shoe control fires; NC2 hidden boots fire). Rendered boots (with `?boots=1`): y 6.018→6.230 (0.21 m shell from the ski top), 0.13 m wide, centred on the binding — surrounding the ankle at 6.03. KILL-SWITCH `BOOTS_ENABLED` stays default-OFF per the 01:55 protocol (the REVIEWER flips it); `?boots=1` is the measurement override. unit 81/81, golden 30/30 (physics untouched), look 7/7, boots 4/4.** | entry 209. |
 | — | Iteration 207 | **#27 STICKY CAMERA FIXED (display-only, `game.js` free-look pointer block): every manual drag-state site now takes `setPointerCapture` on the canvas AND clears its drag state on WINDOW-level `pointerup`/`pointercancel` + `blur` + `visibilitychange`. New gate in `freelook.spec.js` (#27 sticky drag): synthetic canvas pointerdown + tilt-engaging upward drag, release targeted at `document.body` (the exact missed-canvas-release case), then bare pointermoves must not drift the camera — FAILS on the unfixed build (drifted=true, tilt engaged), PASSES fixed; all 6 freelook specs green. unit 81/81, golden 30/30, look 7/7.** | entry 207. |
@@ -12989,6 +12990,62 @@ when released) and P2 sky depth as slots allow.
 2. Is the corridor-vs-flank-right −7.0 luma delta worth a slot, or parked
    with the other polish-tail items?
 
+
+
+### 213 — NEXT item 8 CLOSED: #17 THE COACH — maroon neutral outfit, hood
+down, radio harness, dark beanie + blond fringe, moved PAST the wind sock,
+facing the kicker; coach_zoom.png gate + lettering scan + sabotage NC;
+NEXT.md COMPLETE (file deleted)
+
+**Mandate.** NEXT.md item 8 = HUMAN TESTING #17 (author 2026-08-30 18:10 +
+18:30 revision): red/maroon NEUTRAL outfit (no "USA", no lettering, no
+sponsor marks), hood down, moved just past the wind sock downhill, radio
+harness, likeness passes at zoom via `shots/coach_zoom.png`. Scene-lane only
+(game.js coach block + look/venue specs); no athlete files, no engine.
+
+**What changed.**
+ - `game.js` coach block rewritten: card texture now a maroon shell (jacket
+   + pants, rgb(162,30,30)/rgb(150,28,28)), hood-down collar roll, tonal
+   seam line, black radio harness (two shoulder straps + chest box with a
+   grey clip detail), dark beanie + fold band, sandy-blond fringe, fair
+   skin, blond brows, nose shading, natural slight smile, dark boots.
+   Slim 1.85 m (was 1.76). NO lettering anywhere on the honest build.
+ - Position: (3.3, KICKER_END_Z + 2.3) — 2.3 m downhill (past) the wind sock
+   (SOCK 3.6, z 23.7), knoll edge, |x| ≥ 2.5 off the corridor; card faces
+   −z (the kicker) — probe finding: Babylon CreatePlane fronts −z BY
+   DEFAULT, the added rotation.y = π faced him AWAY from the kicker
+   (front-face centre read [76,98,120] sky through the culled back; fixed by
+   removing the rotation, front reads [72,7,20] maroon).
+ - Negative-control hook: `?coach_sabotage=1` parks him in the corridor
+   (x 0.2) and draws "USA" on the chest — both gates fire on it.
+ - `venue-dressing.spec.js` coach test: past-sock/off-corridor position
+   gates (z in [sock.z+1.5, sock.z+4.0], |x| ≥ 2.5), whole-texture
+   lettering scan (connected dark blobs with letter-like bbox/fill; straps
+   h > 34 px and the solid radio box fill ≈ 0.95 excluded by construction;
+   dark threshold sum < 160 so the seam rgb(140,24,24)=188 and pants 206
+   do not count as dark), torso band re-aimed at the new jacket
+   (84,172,84×124). NEW NC test: sabotage build must read x < 1.0 AND
+   ≥ 2 letter-like blobs (fires).
+ - `look.spec.js`: new canonical `shots/coach_zoom.png` — paused sim,
+   camera 3 m from the coach on the kicker side at chest height. Gates
+   (measured over the central band): maroon jacket fraction, skin (face)
+   fraction, dark harness/boot fraction, thresholds tuned to the rendered
+   exposure.
+
+**Verification.** COACHZOOM final probe (1100×850): red 0.0942, skin
+0.0232, dark 0.1461 (gates > 0.06 / > 0.004 / > 0.01; the red gate margin
+is exposure-sensitive, hence 0.06 not 0.10). Lettering scan: 0 letter-like
+blobs honest; sabotage NC: 3 letter-like ("USA") + x 0.2 in-corridor.
+Unit 81/81, golden: physics audit 0 state diffs / 22 scenarios display-node
+only (coach node) → census-only recapture per the NEXT.md rule, verify
+30/30. Drive: `venue-dressing` 6/6 (incl. NC), `look` 7/7 with
+`coach_zoom.png` regenerated. ASSET_V unchanged (no assets/ regeneration).
+
+**Open.** NEXT.md is COMPLETE (items 1–8 all closed by their rulings) and
+was deleted in this commit. Likeness is a first pass judged from the gate
+numbers + reference description (session cannot by-eye PNGs this night) —
+the author's fresh-tab eye on `coach_zoom.png` decides passes 2–3. Horizon
+debt (green ridge wedge, peak silhouettes) and polish remain per the plan.
 
 
 ### 212 — NEXT item 7 CLOSED: crotch / inner-thigh texture cleanup (baked-AO

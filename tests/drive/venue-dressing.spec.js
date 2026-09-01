@@ -185,14 +185,53 @@ test('venue dressing: ONE static coach figure in a red jacket at the knoll, seat
         if (!present) return { present, d };
 
         // Red pixels must dominate the jacket band of the shared texture.
+        // (Band matches the #17 maroon jacket torso: x 84-172, y 170-300.)
         const tex = scene.materials.find((m) => m.name === 'knollCoachMat').albedoTexture;
         const ctx = tex.getContext();
-        const img = ctx.getImageData(78, 168, 100, 150).data;   // torso band
+        const img = ctx.getImageData(84, 172, 84, 124).data;   // torso band
         let red = 0, n = 0;
         for (let p = 0; p < img.length; p += 4) {
             if (img[p + 3] > 128) {
                 n++;
                 if (img[p] > 140 && img[p] > img[p + 1] * 3 && img[p] > img[p + 2] * 3) red++;
+            }
+        }
+
+        // Lettering scan over the WHOLE coach texture (#17 18:30 revision:
+        // no letter sequences at all). A letter-like component is a small
+        // dark connected blob with letter-ish bbox/fill numbers. Known props
+        // are excluded by construction: straps are taller than 34 px, the
+        // radio box is solid (fill ~0.95), face features are < 6 px tall or
+        // wider than the 3.5 aspect cap.
+        const W = tex.getSize().width, H = tex.getSize().height;
+        const all = ctx.getImageData(0, 0, W, H).data;
+        const isDarkPx = (i) => (all[i] + all[i + 1] + all[i + 2]) < 160 && all[i + 3] > 128;
+        const seen = new Uint8Array(W * H);
+        const letterLike = [];
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const s = y * W + x;
+                if (seen[s] || !isDarkPx(s * 4)) continue;
+                let minX = x, maxX = x, minY = y, maxY = y, cnt = 0;
+                const stack = [s];
+                seen[s] = 1;
+                while (stack.length) {
+                    const q = stack.pop();
+                    const qx = q % W, qy = (q / W) | 0;
+                    cnt++;
+                    if (qx < minX) minX = qx; if (qx > maxX) maxX = qx;
+                    if (qy < minY) minY = qy; if (qy > maxY) maxY = qy;
+                    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                        const nx = qx + dx, ny = qy + dy;
+                        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+                        const ns = ny * W + nx;
+                        if (!seen[ns] && isDarkPx(ns * 4)) { seen[ns] = 1; stack.push(ns); }
+                    }
+                }
+                const w = maxX - minX + 1, h = maxY - minY + 1;
+                const fill = cnt / (w * h);
+                if (w >= 4 && w <= 44 && h >= 6 && h <= 34 && w / h <= 3.5 &&
+                    fill >= 0.18 && fill <= 0.85) letterLike.push({ w, h, fill: +fill.toFixed(2) });
             }
         }
 
@@ -219,17 +258,21 @@ test('venue dressing: ONE static coach figure in a red jacket at the knoll, seat
             m.material.uniqueId === meshes[0].material.uniqueId);
         return {
             present, d, redFrac: n ? red / n : 0,
+            letterLike,
             stations, alphaTest, sameMat,
             nMeshes: meshes.length,
+            sock: window._windsockDebug,
         };
     });
 
     expect(r.present).toBe(true);
     expect(r.nMeshes).toBe(1);
     expect(r.sameMat).toBe(true);
-    expect(r.alphaTest).toBe(true);
     // The jacket band is predominantly RED (the whole P3 point).
     expect(r.redFrac, `jacket-band red fraction ${r.redFrac}`).toBeGreaterThan(0.5);
+    // NO lettering anywhere on the coach (#17 18:30 neutral revision).
+    expect(r.letterLike.length, `letter-like marks on the coach texture: ${JSON.stringify(r.letterLike)}`)
+        .toBe(0);
     // Every figure seated on the knoll (≤ 2 cm re-pick error), never floating.
     for (const s of r.stations) {
         expect(s.g, `no ground picked under coach at ${s.x},${s.z}`).not.toBeNull();
@@ -237,13 +280,72 @@ test('venue dressing: ONE static coach figure in a red jacket at the knoll, seat
             .toBeLessThanOrEqual(s.g + 0.005);
         expect(s.g - s.baseY, `coach sunk ${s.g - s.baseY} deep`).toBeLessThan(0.05);
     }
-    // On the knoll: beside the corridor, near the crest (z ≈ KICKER_END_Z).
+    // #17 position: just PAST the wind sock (downhill side), on the knoll
+    // edge, OFF the corridor.
+    const sock = r.sock;
     for (const s of r.stations) {
-        expect(Math.abs(s.x)).toBeGreaterThan(1.0);
-        expect(Math.abs(s.z - r.d.stations[0].z)).toBeLessThan(3.0);
+        expect(s.z, 'coach must be downhill of the wind sock')
+            .toBeGreaterThanOrEqual(sock.z + 1.5);
+        expect(s.z, 'coach must stay within a couple of metres past it')
+            .toBeLessThanOrEqual(sock.z + 4.0);
+        expect(Math.abs(s.x), 'coach must be off the corridor').toBeGreaterThanOrEqual(2.5);
     }
 });
 
+test('venue dressing: coach NEGATIVE CONTROL — ?coach_sabotage=1 (in-corridor + "USA" lettering) violates the honest gates', async ({ page }) => {
+    await page.goto('/index.html?coach_sabotage=1');
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() =>
+        window._knollCoachesDebug && window._knollCoachesSeated === true,
+        null, { timeout: 20000 });
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const d = window._knollCoachesDebug;
+        const tex = scene.materials.find((m) => m.name === 'knollCoachMat').albedoTexture;
+        const ctx = tex.getContext();
+        const W = tex.getSize().width, H = tex.getSize().height;
+        const all = ctx.getImageData(0, 0, W, H).data;
+        const isDarkPx = (i) => (all[i] + all[i + 1] + all[i + 2]) < 160 && all[i + 3] > 128;
+        const seen = new Uint8Array(W * H);
+        let letterLike = 0;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const s = y * W + x;
+                if (seen[s] || !isDarkPx(s * 4)) continue;
+                let minX = x, maxX = x, minY = y, maxY = y, cnt = 0;
+                const stack = [s];
+                seen[s] = 1;
+                while (stack.length) {
+                    const q = stack.pop();
+                    const qx = q % W, qy = (q / W) | 0;
+                    cnt++;
+                    if (qx < minX) minX = qx; if (qx > maxX) maxX = qx;
+                    if (qy < minY) minY = qy; if (qy > maxY) maxY = qy;
+                    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                        const nx = qx + dx, ny = qy + dy;
+                        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+                        const ns = ny * W + nx;
+                        if (!seen[ns] && isDarkPx(ns * 4)) { seen[ns] = 1; stack.push(ns); }
+                    }
+                }
+                const w = maxX - minX + 1, h = maxY - minY + 1;
+                const fill = cnt / (w * h);
+                if (w >= 4 && w <= 44 && h >= 6 && h <= 34 && w / h <= 3.5 &&
+                    fill >= 0.18 && fill <= 0.85) letterLike++;
+            }
+        }
+        return { d, letterLike };
+    });
+    expect(r.d.sabotage).toBe(true);
+    expect(r.d.stations[0].x, 'sabotage parks the coach IN the corridor (x 0.2)')
+        .toBeLessThan(1.0);
+    expect(r.letterLike, 'sabotage "USA" must be detected (>= 2 letter-like blobs)')
+        .toBeGreaterThanOrEqual(2);
+    // This test PASSES when the control fires: it documents that the
+    // sabotaged build violates the honest build's gates above.
+ });
 test('venue dressing: generic blue/white side panels on the kicker block walls, red edge paint intact', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');

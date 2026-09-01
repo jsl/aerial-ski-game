@@ -5098,17 +5098,24 @@ void main(void) {
         }
     }
 
-    // ── Venue dressing slice 4: static coach figures at the knoll ──────────
-    // Footage deltas (RENDER-PROGRESS P3, IMG_3523/3520): two or three static
-    // figures at the knoll wearing RED jackets — accent colour against the
-    // white/blue venue. Rendered as cheap upright cards (same spirit as the
-    // tree-card pipeline): one runtime-drawn canvas texture, three planes,
-    // generic panels only (no federation marks). Seeded from the physics
-    // surface and re-seated with the flag/wands contract.
+    // ── Venue dressing slice 4: the coach at the knoll (HUMAN TESTING #17) ──
+    // ONE static card figure: dark-red/maroon shell (jacket + pants), hood
+    // down, NO lettering or national/team marks (author 18:30 revision — the
+    // trademark rule stands), a black chest radio harness (two shoulder
+    // straps + a radio box), dark beanie with sandy-blond hair at the
+    // forehead, fair skin, slim ~1.85 m build. Stands just PAST the wind sock
+    // (downhill side), on the knoll edge, facing the kicker, off the corridor.
+    // Negative-control hook: ?coach_sabotage=1 parks him in the corridor and
+    // draws "USA" lettering on the chest — the gates must fire on it.
     {
-        // Author (HUMAN TESTING #7, 2026-08-29): ONE coach, not three.
+        const COACH_SABOTAGE = (() => {
+            try { return new URLSearchParams(window.location.search).get('coach_sabotage') === '1'; }
+            catch (e) { return false; }
+        })();
+        // Just past the wind sock (SOCK_X 3.6 / SOCK_Z KICKER_END_Z),
+        // downhill side, still on the knoll edge and clear of the corridor.
         const COACHES = [
-            { x: 3.1, z: KICKER_END_Z - 0.9, h: 1.76 },
+            { x: COACH_SABOTAGE ? 0.2 : 3.3, z: KICKER_END_Z + 2.3, h: 1.85 },
         ];
         const RAY_Y4 = 80;
 
@@ -5117,29 +5124,62 @@ void main(void) {
         const tc = coachTex.getContext();
         tc.fillStyle = 'rgba(0,0,0,0)';
         tc.clearRect(0, 0, 256, 512);
-        // Legs (dark trousers) + boots.
-        tc.fillStyle = 'rgb(34,38,46)';
-        tc.fillRect(96, 300, 26, 168);
-        tc.fillRect(134, 300, 26, 168);
-        tc.fillStyle = 'rgb(20,22,26)';
-        tc.fillRect(88, 462, 40, 34);
-        tc.fillRect(128, 462, 40, 34);
-        // Red jacket torso + simple arms.
-        tc.fillStyle = 'rgb(190,26,20)';
-        tc.fillRect(78, 168, 100, 150);
-        tc.fillRect(58, 172, 24, 130);
-        tc.fillRect(174, 172, 24, 130);
-        // Zip line + collar (generic panels only).
-        tc.fillStyle = 'rgb(140,18,14)';
-        tc.fillRect(124, 168, 8, 150);
-        tc.fillRect(98, 156, 60, 16);
-        // Head: face, white helmet, dark goggle band.
-        tc.fillStyle = 'rgb(214,176,148)';
-        tc.fillRect(104, 96, 48, 56);
-        tc.fillStyle = 'rgb(238,240,244)';
-        tc.fillRect(100, 62, 56, 42);
-        tc.fillStyle = 'rgb(30,34,44)';
-        tc.fillRect(102, 100, 52, 20);
+        // Boots (dark).
+        tc.fillStyle = 'rgb(24,26,30)';
+        tc.fillRect(92, 462, 30, 40);
+        tc.fillRect(134, 462, 30, 40);
+        // Pants: maroon shell (same suit colourway as the jacket).
+        tc.fillStyle = 'rgb(150,28,28)';
+        tc.fillRect(98, 300, 24, 166);
+        tc.fillRect(134, 300, 24, 166);
+        tc.fillRect(96, 292, 64, 16);
+        // Jacket torso + slim arms.
+        tc.fillStyle = 'rgb(162,30,30)';
+        tc.fillRect(84, 170, 88, 130);
+        tc.fillStyle = 'rgb(150,26,26)';
+        tc.fillRect(64, 176, 20, 116);
+        tc.fillRect(172, 176, 20, 116);
+        // Hood DOWN: bunched collar roll around the neck, no hood on the head.
+        tc.fillStyle = 'rgb(120,20,20)';
+        tc.fillRect(92, 154, 72, 20);
+        // Subtle tonal seam/panel line (allowed; no lettering).
+        tc.fillStyle = 'rgb(140,24,24)';
+        tc.fillRect(126, 176, 4, 122);
+        // Radio harness: two black shoulder straps + radio box on the chest.
+        tc.fillStyle = 'rgb(20,20,22)';
+        tc.fillRect(104, 172, 8, 68);
+        tc.fillRect(144, 172, 8, 68);
+        tc.fillRect(118, 232, 20, 20);
+        tc.fillStyle = 'rgb(120,120,124)';   // clip detail, not text
+        tc.fillRect(124, 238, 4, 6);
+        // Neck + head: fair skin, dark beanie, sandy-blond fringe at the
+        // forehead, simple features, natural slight smile.
+        tc.fillStyle = 'rgb(228,190,160)';
+        tc.fillRect(116, 144, 24, 14);
+        tc.fillRect(102, 92, 52, 56);
+        tc.fillStyle = 'rgb(214,178,110)';   // blond fringe
+        tc.fillRect(102, 88, 52, 10);
+        tc.fillStyle = 'rgb(38,40,48)';      // beanie
+        tc.fillRect(98, 58, 60, 32);
+        tc.fillStyle = 'rgb(48,50,58)';      // beanie fold band
+        tc.fillRect(98, 82, 60, 8);
+        tc.fillStyle = 'rgb(170,140,90)';    // blond brows
+        tc.fillRect(108, 106, 12, 4);
+        tc.fillRect(136, 106, 12, 4);
+        tc.fillStyle = 'rgb(40,40,48)';      // eyes
+        tc.fillRect(110, 112, 8, 5);
+        tc.fillRect(138, 112, 8, 5);
+        tc.fillStyle = 'rgb(206,164,134)';   // nose shading
+        tc.fillRect(126, 118, 6, 12);
+        tc.fillStyle = 'rgb(150,92,82)';     // natural slight smile
+        tc.fillRect(116, 138, 24, 3);
+        tc.fillRect(113, 135, 4, 4);
+        tc.fillRect(139, 135, 4, 4);
+        if (COACH_SABOTAGE) {
+            tc.fillStyle = 'rgb(17,17,17)';
+            tc.font = 'bold 28px sans-serif';
+            tc.fillText('USA', 92, 290);   // below the harness straps, clear of dark props
+        }
         coachTex.update();
         coachTex.hasAlpha = true;
         const coachMat = makePBR('knollCoachMat', scene);
@@ -5171,6 +5211,8 @@ void main(void) {
             const m = BABYLON.MeshBuilder.CreatePlane('knollCoach' + i,
                 { width: c.h * 0.5, height: c.h }, scene);
             m.material = coachMat;
+            // Default CreatePlane already faces -z (probe-measured, iter 213):
+            // the card fronts the KICKER (uphill) with no rotation.
             return m;
         });
 
@@ -5181,7 +5223,8 @@ void main(void) {
                 coachMeshes[i].position.set(c.x, y + c.h / 2, c.z);
                 return { x: c.x, z: c.z, baseY: y, h: c.h };
             });
-            window._knollCoachesDebug = { stations: seated, seated: !!picker.seated };
+            window._knollCoachesDebug = { stations: seated, seated: !!picker.seated,
+                                          sabotage: COACH_SABOTAGE };
         };
         seatCoaches((x, z) => terrainRootY(z) - FOOT_OFFSET);   // deterministic seed
 
