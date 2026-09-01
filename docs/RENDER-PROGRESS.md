@@ -311,6 +311,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 222 | **NEXT item 5 (#26 v2) HONEST-INCOMPLETE: `add_crotch_occluder` lands (interior suit-coloured patch, rigid to torso, posed-cloud anchored, build gates + OCCLUDER log; exported via equip; ASSET_V 87) plus the helmet-targeting exclusions in `_athleteFacing`/`_renderedHeadCentre` and a FIRING runtime NC in leg-watertight.spec (occluder-off reproduces the front hole 57 px). But the seating FAILS: the separate skinned object's frame is axis-scrambled (thin 12 mm axis renders vertical — edge-on sliver, pixels identical on/off), so the front tear is UNCHANGED (57 px, x 674–679 / y 324–339) and leg-watertight stays 2 red (carried, same as HEAD). unit 81/81, golden 30/30, look 7/7, boots 11/11 (one rebuild mistakenly without `--boots on` — caught by boots.spec, rebuilt), rig green minus carried hands red. Root-cause note + three candidate seating fixes (incl. merge-into-`low`) in entry 222. NEXT.md KEPT.** | entry 222. |
+| — | Iteration 225 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 6/1 (known front gate red, navyFrac 0.0087). ROOT CAUSE FOUND: the front-gate red is NOT a camera bug — camera and SKELETON verified exactly per spec (radius 2.40, head bone (0,7.36,−17.30), 1.4 m driver span) but the v88 RENDERED mesh is collapsed to ≈0.36 m (head projects to screen y=118, rendered helmet y≈345; helmet primitive bbox 3 cm). Regression window: asset v87 (222, look 7/7) → v88 (223 occluder merge). Fix is in build_body.py/assets — Opus lane, reported not touched. Horizon wedge + flat grey peaks confirmed on scene.png (debt stands).** | entry 225. |
 | — | Iteration 220 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, boots.spec 10/10 (NCs firing), look 7/7 — shots regenerated + inspected. 216–219 landings HOLD: boots v2 zones/buckles read in both figure framings, boot centred on ski. Still loudest: #23 v2 thigh taper (front view ~1.5 upper/knee by-eye, gate ≤ 1.35 unlanded) then #26 v2 crotch gap (visible seam in figure_front); mirrored bib digits ("0E" in figure.png) need a defect/accepted ruling; horizon grey wedge debt confirmed on scene.png. No source/asset change. NEXT 221 = item 4 thigh taper → item 5 crotch occluder.** | entry 220. |
 | — | Iteration 221 | **NEXT item 4 CLOSED — #23 v2 THIGH TAPER: garment re-blend in `build_body.py` (`thigh_taper_pass`: upper thigh ×~0.84, knee ×1.15, calf trimmed ×0.92 to keep calf/thigh in band, measured 2-iteration correction loop). Front-view upper/knee ratio 1.790 → **1.301** (gate ≤ 1.35; shipped `front_taper_gate` NEW, NC `BODY_SABOTAGE_TAPER=1.10` fires 1.969). All taper bands hold (calf/thigh 0.781, ankle/calf 0.661, boot/shin 1.178). ASSET_V 85→86. Two instrument re-baselines documented in-spec: rig suit-stand-off floors 0.176 → L 0.212 / R 0.134 (thigh slimmed on purpose), tube-smooth self-test now injects TWO bumps (single gaussian under-fired on the straighter profile). Crotch AO floor 0.60→0.68 (slimmer thighs bake more frozen between-thigh occlusion; clamp bites 181.6→199.2). unit 81/81, golden 30/30, boots/aframe/leg-shading/leg-watertight/body/inrun-crouch/athlete/rig/tube-smooth 31 pass incl. 5 re-run, look 7/7 shots regenerated + inspected (front figure tapers into the knee, side profile smooth hip→knee→boot). Carried reds NOT from 221 (verified on HEAD): leg-watertight ×2 (#26 hole, 222's fix) and rig:496 hands. NEXT 222 = item 5 crotch occluder.** | entry 221. |
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
@@ -13692,3 +13693,57 @@ instead — acceptable, or should the front-gate red be fixed first so look runs
 end-to-end again? (2) Priority call for 225 (a review slot): fix the look-cascade first
 (the front framing regression + the 556 instrument hole) so the canonical-shot pipeline
 is trustworthy again, or proceed with tail item 2 (horizon wedge + pale peaks)?
+
+### 225 — REVIEW (capped form): the look front-gate red ROOT-CAUSED — it is NOT a camera framing bug; the v88 asset's skinned mesh collapses at render time
+
+**Verification (capped):** unit 81/81, golden 30/30, look 6 passed / 1 failed
+(the known front gate, navyFrac 0.0087 < 0.02 — same number as 223/224). No
+source or asset change this iteration; probe spec created and deleted in-session.
+
+**The finding (answer to 224's open question 2 and 223's OPEN 2):** the
+"camera stand-off/framing regression" theory recorded in 223 is WRONG. Measured
+in-page with the exact look front camera: the camera is exactly where the spec
+puts it (radius 2.40, fov 0.80, beta 1.34, pos [2.32, 7.24, −17.32], target =
+combined athleteBody bounds centre [−0.02, 6.68, −17.30]). The SKELETON is
+correct too: head bone world (0, 7.36, −17.30), skis' world bboxes e=[1.55, 0.06,
+0.09] m — driver span head→ski ≈ 1.4 m. But the RENDERED mesh is collapsed:
+the head bone PROJECTS to screen y=118 while the rendered helmet sits at
+y≈345, and the visible figure spans ≈150 px ≈ 0.36 m — about 26% of its
+driver span. Supporting evidence: athleteBody primitive1 (helmet) world bbox
+e ≈ 0.03 m (a 3 cm helmet), primitive0 (suit) depth 0.09 m. The skinned body
+simply does not follow its bones at the correct scale; a flat grey panel (the
+occluder primitive) also reads clearly behind the athlete in figure_front.
+
+**Regression window:** 222's look ran 7/7 green on asset v87 (11:35 that day);
+223 shipped asset v88 (the occluder MERGED into the body mesh, verts copying
+full weight lists, merge moved to just before the pre-export close/orient/
+watertight gates) and the front gate has been red since. Prime suspect: the
+v88 build's skinning export (weight-list copy or merge ordering), not game.js
+(the only game.js athlete-loading change was the primitive3 material + skip).
+
+**Ruling needed (lane):** the fix is in `blender/build_body.py` /
+`assets/athlete_*` — Opus lane under the standing ban with no NEXT.md lift, so
+NOT touched here. Recommended next work slot: either revert the athlete asset
+to the v87 build (git) and re-land the occluder with a per-primitive skinned
+render probe added to look, or root-cause the v88 skinning directly. Until
+then look stays red and every post-front-gate gate (COACHZOOM, face
+discrimination, ndcZ) is unexercised — the canonical-shot pipeline is dark.
+
+**Scene inspection (scene.png, figure.png regenerated 13:45):** corridor/snow
+luminance healthy, B-net continuous, trees varied. Standing horizon debt
+confirmed by eye: the green ridgeline wedge still reads as flat dark-green
+slabs floating behind the tree line, and the cone peaks remain flat grey with
+no pale separation from the sky (tail item 2 of the 223 ruling, untouched).
+In figure.png the athlete reads white-on-white — only helmet/gloves/boots give
+contrast (aggravated by the collapse; the bib is nearly invisible at this
+framing even before it).
+
+**Re-prioritised for next slots:** (1) athlete v88 skinning fix or v87 revert
+(Opus lane; unblocks look end-to-end); (2) horizon wedge + pale peaks slice
+(reviewer-owned scene debt); (3) ski-tail curl investigation; (4) re-run the
+full look cascade (COACHZOOM + face gates) once (1) lands.
+
+**Open questions for the reviewer:** (1) confirm the lane ruling — v87 revert
+vs in-place fix for the athlete build; (2) the leg-watertight runtime-NC
+instrument discrepancy from 223 (build-level control shows 54 px, runtime
+disable shows 0) is now doubly suspect given the collapse — re-audit after (1).
