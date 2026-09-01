@@ -13911,3 +13911,32 @@ inspected.
 equipment; if the aft element still bothers the eye at the figure framing,
 the lever is TAIL_LIFT (14 mm) / the brake bar's proud height, one-line
 display-side tweaks, on your call.
+
+### 231 — sky-colour slice: day dome deepened to the r−b ≤ −0.25 gate (parameter-only)
+
+Queue item 1 of the 230 review (the "15-minute sky-colour slice"). Three
+parameter-only steps in the day branch of the sky ShaderMaterial setup
+(`game.js` ~2247–2256; the `_snowingMode` branch untouched): zenith
+0.13/0.29/0.58 → 0.045/0.17/0.55, horizon haze 0.60/0.72/0.88 →
+0.34/0.54/0.93, day `cloudAmount` 1.0 → 0.78. The binding lever was the
+horizon haze, not the zenith: the scene framing's top band dilutes toward
+snow/ridge pixels (r−b ≈ −0.04), so the pure-zenith colour alone could not
+move the framing number past −0.25.
+
+Verification (`tests/drive/sky.spec.js` SKY_MEASURE, three tuning runs):
+scene top-third r−b **−0.123 → −0.251** (the review's gate ≤ −0.25 met);
+pure-sky band r−b −0.319 → **−0.486** (gate ≤ −0.25, was already passing);
+zenith lum 0.574 → 0.436 (inside [0.10, 0.60]); sun-patch margin over
+zenith unchanged (0.978 vs 0.436); snow-vs-sky margin 0.184 → **0.292**
+(gate ≥ 0.05); sky-band cloud whiteFrac 0.047 (> 0.02 gate). sky.spec 1/1;
+**unit 81/81, golden 30/30, look + grey-attr + snowing 10/10** (snowing
+mode's grey zenith and 0.35 cloudAmount untouched). `index.html` ?v=
+bumped 89 → 90 for the game.js change. By-eye on the fresh `shots/scene.png`:
+the zenith reads as a deep saturated blue strip above the ridgelines, haze
+above the peaks strictly bluer than before; snow clearly the brightest
+surface.
+
+Open: the kicker dark wall/face edge line (queue item 2) is next; the
+top-third region is ~50% terrain pixels, so if the reviewer ever wants the
+framing number meaningfully below −0.25 the lever moves to the
+ridge/peak haze colours (reviewer-owned per the 137 ruling), not the dome.
