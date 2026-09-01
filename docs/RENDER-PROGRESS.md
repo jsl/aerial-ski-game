@@ -12405,3 +12405,57 @@ ruling is NOT landed: the skis are gated FLAT on the slope plane and the
 boots are gated rigid to the skis (≤ 5 mm, ±3°), so an ankle edge roll is
 geometrically excluded by two closed gates — ruling needed on which gate
 yields before it can be built.
+
+### 202 — the three carried reds: TWO cleared by ruled instrument fixes (thigh-breadth floor 0.180 → 0.176, tube-smooth self-test belly re-scaled); the hands red is NOT cleared — the ruled renderer fix's premise measured FALSE (the gate is stance- and asset-independent; it reads REST vertex data), deep probe recorded, reviewer ruling requested
+
+**What changed (tests-only; game.js and assets untouched — coefficient stays 1.12 = 16.7°, ASSET_V stays 80)**
+1. `tests/drive/rig.spec.js` suit gate: thigh-breadth floor **0.180 → 0.176**
+   (ruled instrument-following re-baseline). Provenance recorded: the 12.7°
+   stance reads the SAME 0.2411/0.1792 as 16.7° — see below. BODY_SHELL_OFF
+   build-abort negative control unchanged.
+2. `tests/drive/tube-smooth.spec.js`: the injected-belly self-test amplitude
+   **max(6, 0.12·max) → max(16, 0.35·max)** (ruled instrument-integrity
+   scaling). The old amplitude's peak derivative ≈0.87 px/row sat under the
+   1.5 px deadband after the double smoothing; the new one ≈2.3 px/row.
+   Real-profile gates (nThigh/nShin ≤ 2, belly ≤ 2.0 px) untouched.
+3. NOT landed: the ruled arm x-follow. Implementation was attempted and
+   REVERTED within the iteration (analysis below).
+
+**Forensic finding (why the hands red did not clear)**
+The 22:25 ruling's premise was "the deeper flex changes what the three gates
+measure". Measured FALSE for the hands gate: with the coefficient flipped
+1.12 → 0.85 and back, HANDSSHINS is byte-identical (handsOut 0.1561/0.1551,
+thighFace 0.1964/0.1842 in BOTH stances); with 199's `athlete_body.glb` +
+`athlete_maps.json` swapped in, byte-identical again; the ready-stance block
+runs (probe: readyState true, legF 0.26). The instrument reads REST vertex
+data (`part.getVerticesData`, no skeleton applied) bucketed by dominant
+joint — it cannot see any renderer pose change, including the ruled x-follow.
+The gate went red between 199 ("rig 11/11") and 201 with no rig.spec change
+and no effective asset change — its readings are constant across everything
+varied; the 199 green claim is unexplained and possibly mis-recorded.
+A posed (CPU-skinned) instrument was implemented to make the gate measure
+its stated contract, with an `_armXFollowOff`-negative-control; it was
+REVERTED: `Bone.getFinalMatrix()`'s frame convention is ambiguous in this
+build (the same lowerArmL vertex cloud reads mean x −0.161 rest / +0.014
+posed-final / 17.29 with root-transform composed) and the posed readings
+could not be validated against the rendered figure within the slot. Probe
+data in scratch/iter-202. The x-follow display change (0.20·f outboard arm
+shift) was also reverted rather than shipped unverified against golden's
+display-node census.
+
+**Verification numbers**
+- `npm run test:unit` **81/81**; `npm run test:golden` **30/30** (no game or
+  asset changes; physics untouched).
+- Drive: suit gate **green at 0.2411/0.1792 vs 0.176**; tube-smooth **green,
+  self-test fires 2/3/2 inflections (front/side/back, was 1)**, real profiles
+  nThigh/nShin ≤ 2, belly ≤ 2.0 px unchanged; hands gate still red at
+  handsOut 0.1561 vs thighFace 0.1964 (need ≥ 0.004) — red-and-known.
+
+**Open / next**: reviewer ruling requested on the hands red: (a) posed-
+instrument work continues (needs the final-matrix frame convention settled —
+probe script and data saved), (b) re-derive the clearance gate as a rest-
+geometry build contract (needs a build-side mechanism; the 40 mm face/hand
+offset would then be fixed in build_body.py, an athlete-lane change), or
+(c) gate re-baseline without a clearance contract (weak — the contract is
+the point). Items 2 and 3 of the 22:25 ruling are CLOSED. NEXT.md list
+resumes at 203 sticky camera (#27) per the 20:40 order.

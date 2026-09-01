@@ -192,8 +192,16 @@ async function measureFraming(page, label, alphaOff) {
         const nShin = inflections(shin);
         // NEGATIVE CONTROL 1 (instrument self-test): inject a synthetic
         // muscle belly into the measured profile; the counter MUST fire.
+        // SCALED per the ruling on 201 (instrument integrity, geometry
+        // unchanged): the 16.7° stance's smoother side profile (shoulder
+        // silhouette, double 3-tap smoothing, deadband 1.5) absorbed the old
+        // amp max(6, 0.12·max) — its peak derivative ~0.87 px/row sat UNDER
+        // the deadband and the self-test under-fired (read 1 inflection).
+        // The new amplitude's peak derivative ≈2.3 px/row clears the
+        // deadband with margin; the REAL profile gates (nThigh/nShin ≤ 2,
+        // belly ≤ 2.0 px) are untouched, so the control cannot mask them.
         const sabotaged = thigh.slice();
-        const ci = Math.floor(sabotaged.length / 2), amp = Math.max(6, Math.max(...thigh) * 0.12);
+        const ci = Math.floor(sabotaged.length / 2), amp = Math.max(16, Math.max(...thigh) * 0.35);
         for (let i = 0; i < sabotaged.length; i++) {
             sabotaged[i] += amp * Math.exp(-((i - ci) ** 2) / 18);
         }
