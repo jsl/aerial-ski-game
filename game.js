@@ -3298,6 +3298,17 @@ void main(void) {
                      elbL: ang(B.elbowL, B.shL, B.wristL),
                      elbR: ang(B.elbowR, B.shR, B.wristR),
                  },
+                 // 236 #24(a): the slide-phase terrain-conform gate needs the
+                 // TRUE lowest rendered body point — the min clearance over
+                 // every ragdoll segment cap against the crash floor.
+                 lowestClear: (function () {
+                     let _lc = Infinity;
+                     for (const _pt of ragdoll.parts) {
+                         const _c = _pt.p.y - (_crashFloorY(_pt.p.z) + _pt.r);
+                         if (_c < _lc) _lc = _c;
+                     }
+                     return _lc === Infinity ? null : +_lc.toFixed(4);
+                 })(),
                  // HT#13 (2026-08-30): ski rest offsets from the eject point.
                  skis: (ragdoll.skis || []).map((s) => ({
                      dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),
@@ -7050,6 +7061,15 @@ void main(void) {
                 }
             } else {
                 const _dx = R.slideV.x * dt, _dz = R.slideV.z * dt;
+                // 236 #24(a): slope-following dy stays. The 235 oscillation
+                // was NOT this term — it was the engine root's ballistic dive
+                // being dragged into the particles by the lag-comp
+                // translation. With the root terrain-conformed (236 block
+                // above), root delta + this term sum to consistent
+                // slope-following motion for the frozen body; dropping the
+                // term instead left the horizontal slide outrunning the
+                // vertical and the body went airborne (measured lowClear
+                // 0.23 → 1.62 m within 5 roll frames).
                 const _dy = _slope * R.slideV.z * dt;
                 let _lift = 0;
                 for (const pt of R.parts) {
@@ -7559,6 +7579,39 @@ void main(void) {
             }
         }
         const _rp = character.root.position;
+        // 236 #24(a) GROUNDED SLIDE: the rendered body follows this root
+        // (drivers are written root-relative), and the engine's crashed-root
+        // physics dives BALLISTICALLY under the terrain during the rigid
+        // slide — iter-235 measured clearance swinging +1.25 ↔ −9.38 m and
+        // single-frame root drops of 1.63 m. During 'roll' the root is
+        // terrain-conformed EVERY frame: it rides at the frozen crumple's own
+        // lie height above the crash floor, captured at the tumble→roll
+        // handoff (the tumble's contact projection already holds the body on
+        // the snow there, so the capture is pop-free). The lag-comp
+        // translation below then carries the conformed motion to the frozen
+        // particles, so the whole slide reads grounded. 'settling' keeps its
+        // own contact-driven lowering (a clamp here would fight it) and past
+        // OUTRUN_Z the ride is cut by design.
+        if (R.phase === 'roll' && R.torso.z < OUTRUN_Z) {
+            if (R._rootLie === undefined) {
+                R._rootLie = _rp.y - _crashFloorY(_rp.z);
+            }
+            _rp.y = _crashFloorY(_rp.z) + R._rootLie;
+        }
+        // The engine can write the root AGAIN after this step (the same
+        // late-write hazard the rest park solves with _parkObs), which would
+        // reach the render as the ballistic dive one frame later — iter-236
+        // measured the rendered body 1.8–2.7 m under the floor while the
+        // ragdoll particles sat exactly on it. Re-pin before every render.
+        if (scene && scene.onBeforeRenderObservable && !R._slideConformObs) {
+            R._slideConformObs = scene.onBeforeRenderObservable.add(function () {
+                if (!ragdoll || ragdoll.resting || ragdoll.walkoff) return;
+                if (ragdoll.phase !== 'roll' || ragdoll.torso.z >= OUTRUN_Z) return;
+                if (ragdoll._rootLie === undefined) return;
+                const _crt = character.root.position;
+                _crt.y = _crashFloorY(_crt.z) + ragdoll._rootLie;
+            });
+        }
         const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
         const _rq = character.root.rotationQuaternion || R.qRoot;
         const qRootInv = _crashQConj(_rq);

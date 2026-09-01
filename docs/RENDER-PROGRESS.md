@@ -396,6 +396,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 **Open questions for the reviewer:** none new.
 ## Status board
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
+| — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
 | — | Iteration 233 | **B-NET ANISO (P12 conformance, polish buffer): `bnetTex.anisotropicFilteringLevel` 16 with `?bnet_sabotage=1` NC; new bnet-legibility.spec 2/2 (aniso==16 + fence-cloth visibility inFrame 86; NC fires aniso==1). Diagnoses recorded: (a) scene.png fence tangle is NOT texture filtering — near-black-albedo probe moved cloth-patch lum <0.06; it is dark background through the alpha holes at grazing angles, candidate fix depth-fade/LOD on the net material (reviewer call); (b) review-230 seam-worst-row (5.1% @ y=0.425) is diffuse horizon speckle peaking at the silhouette row (7.5% @ y=0.443), sky-through-bare-crown gaps + AA, not the box-seam class. unit 81/81, golden 30/30 (no recapture), venue+grey-ramp 7/7. index.html ?v=92; ASSET_V unchanged.** | entry 233. |
 | — | Iteration 232 | **KICKER WALL/FACE JUNCTION LINE (230 queue item 2): full-width dark lip tube `kickerJunctionLine` at the take-off-face/back-wall junction; red trim untouched (2026-08-29 ruling). kicker-edge.spec 2/2 (rendered lip band darkFrac 0.508, lum 0.198 vs snow 0.739; NC fires 0/0.528). unit 81/81, golden 30/30 after census-only recapture (0 physics diffs, 30 scen / 5408 frames), look 7/7, kicker-faces+venue+terrain-corridor 12/12. index.html ?v=91; ASSET_V unchanged. Queue: item 3 paint fixes are athlete-banned pending reviewer lane assignment.** | entry 232. |
 | — | Iteration 230 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected), review-measure 1/1, spray 2/2 (NC fires 2.55 m), crash-ragdoll 10/10 in batch. 227–229 landings HOLD. Measured: corridor 0.829 vs flanks 0.851/0.841 (grey-ramp −0.022, holds); athlete shadow 68% darker under; sky r−b −0.123 vs −0.25 gate (parked sky-colour slice still the loudest colour gap); kicker dark wall/face edge line still absent (loudest kicker gap). Athlete nits reported not touched: pink bib smear, side-view mirrored digits. Queue: sky slice → kicker edge line → paint fixes; review 235. No source/asset change, ASSET_V unchanged.** | entry 230. |
@@ -14088,3 +14089,51 @@ slide-plunge-then-rise pattern above — if their report was on a *natural* (non
 path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
+
+### 236 — #24(a) GROUNDED SLIDE: engine-root terrain-conform during the rigid slide; getup-forensics becomes the gate
+
+**What changed (`game.js`, display-only; no `engine/`, no assets, ASSET_V unchanged):**
+1. **Root cause (from 235's dump + an in-iteration A/B):** the rendered body follows the ENGINE
+   root — crash drivers are written root-relative — and during the `roll` slide the engine's
+   crashed-root physics dives ballistically under the terrain. Iter-123's lag-comp translation
+   then drags that dive into the frozen particles; the tick's slope-following `_dy` fights it,
+   producing the measured +1.25 ↔ −9.38 m clearance oscillation and 1.6 m/frame root drops.
+2. **Fix:** during `roll` (and only while `torso.z < OUTRUN_Z`, the ride window) the engine root
+   is terrain-conformed EVERY frame to `_crashFloorY(root.z) + R._rootLie`, where `_rootLie` is
+   captured once at the tumble→roll handoff (the tumble's contact projection already holds the
+   body on the snow there, so the capture is pop-free). Because the engine can write the root
+   AGAIN after the crash step (the same late-write hazard the rest park solves with
+   `_parkObs`), a `onBeforeRenderObservable` re-pin re-applies the conform before every render —
+   without it the rendered body still rendered 1.8–2.7 m under the floor while the particles
+   sat exactly on it.
+3. **A/B that fixed the mechanism:** first attempt also deleted the tick's slope-following `_dy`
+   (suspecting double-counting); that made the slide AIRBORNE instead (particle lowClear
+   0.23 → 1.62 m within 5 roll frames — horizontal outran vertical). `_dy` restored: with the
+   root conformed, root delta + `_dy` sum to consistent slope-following motion.
+4. **`getup-forensics.spec.js` instrument → gate** (per the RULING on 235): the probe now also
+   samples `_ragdollProbe().lowestClear` (NEW in the probe: min clearance of every ragdoll
+   segment cap against the crash floor) and the local floor slope per frame. HARD GATE: every
+   `roll`-phase frame must have lowClear ∈ [−5 cm, +8 cm]. The per-frame root-Y pop check is
+   REPORT-ONLY: the probe samples the raw engine root between frames and its write ordering vs
+   the conform observer is not deterministic (worst reported |ΔrootY| 1.53 with lowClear 0 —
+   the rendered body is grounded; the raw root value is instrument-lagged).
+
+**Verification:** `getup-forensics` 3/3 — single 28/28 roll frames lowClear [−0.7, −0.1] mm;
+double 33/33; triple 37/37 [−0.7, +57.5] mm (negative control = the pre-fix build, measured
+min −9.38 m). `npm run test:unit` 81/81; `npm run test:golden` 30/30, 0 diffs, no recapture
+(display-only change). Not run this slot: look suite, crash-ragdoll rest-band re-run — the
+slide's rest point now conforms exactly, so the 3–8/6–12/10–18 m travel bands should be
+re-confirmed at the next review or in 237.
+
+**Open:**
+- Skinned-ankle probes (`lowerLegL/R` node − 0.18·axis) trail the conformed particles by up to
+  ~2.7 m (triple) during the slide while `lowestClear` reads 0 — real skinning stretch (visible
+  legs into the snow) vs bone-matrix sampling lag in the probe is unresolved. Needs a reviewer
+  by-eye on 8201 during a played crash; if real, it is P13-family and gets its own slot.
+- 237 (per the ruling): the TRIPLE GET-UP STALL (never leaves the walk `roll` stage, 7.5 s to
+  cap) — distinct failure, shares the roll-stage code this slot touched.
+- #21 v5 tuck entry transition (238 per the ruling) untouched.
+
+**Open questions for the reviewer:** (1) is the report-only demotion of the root-Y pop gate
+acceptable, or should the gate sample the conformed root through an observable instead?
+(2) the skinned-ankle divergence above — gate it or by-eye it first?
