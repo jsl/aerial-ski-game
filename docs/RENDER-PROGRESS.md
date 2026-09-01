@@ -303,6 +303,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
+| — | Iteration 215 (review) | **CLOSING REVIEW (capped form): unit 81/81, golden 30/30, look 7/7, venue-dressing 6/6 incl. NC. INSTRUMENT FIX: the COACHZOOM pixel counter in `look.spec.js` never incremented its sample count `n` — red/skin/dark were x/0 = NaN, printed `null`, yet `toBeGreaterThan` silently passed → the gate measured nothing since 213. Fixed (`n++`); honest re-measure red 0.0795 / skin 0.0200 / dark 0.1441 (matches 214's recorded values, gates green with margins). Grey ramp: scene corridor 202.9 vs flankL 206.0 / flankR 214.5 (holds). By-eye: coach pass-2 reads rounded head/fringe/tapered sleeves/straps; blocky slab shoulders remain the likeliest "one more pass" target. No scene content, no assets, ASSET_V unchanged.** | entry 215. |
 | — | Iteration 213 | **NEXT item 8 CLOSED — #17 THE COACH: maroon neutral shell (no lettering), hood down, radio harness, beanie + blond fringe, slim 1.85 m, moved 2.3 m PAST the wind sock facing the kicker (probe finding: CreatePlane fronts −z by default; the π flip faced him away). Gates: past-sock/off-corridor position, whole-texture lettering scan (0 blobs) with `?coach_sabotage=1` NC firing (x 0.2 in-corridor + "USA" 3 blobs), new `coach_zoom.png` in look (red 0.094 / skin 0.023 / dark 0.146). Unit 81/81, golden physics audit 0 diffs → census recapture, 30/30; venue 6/6, look 7/7. NEXT.md COMPLETE — deleted.** | coach card pose + gates; author's fresh-tab eye decides likeness passes 2–3 |
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
 | — | Iteration 209 | **BOOTS: the 01:55-ruling probe FOUND THE FRAME BUG and the fix LANDED — `add_boots` anchored the cuff/strap/buckles on the PRE-POSE metarig `joints` frame (ankle z +0.073) while the posed mesh's sole is at −0.995 (1.07 m apart), so 208's shell upper half rendered as the navy column up the leg ("block pile at the ski, old shoe visible"); anchors now derive from the POSED vertex cloud (build log: ankle (−0.080,−0.011,−0.995) vs stale joints (−0.084,−0.014,+0.073); hard gate 0.14–0.21 m cuff-above-sole makes the class impossible). ASSET_V 82 (index.html preload URLs bumped in step). NEW bone-anchored containment gate `boots.spec.js` 4/4 (boot world bounds must contain the skinned ankle pulled through the body world matrix, ≤3 cm, both sides × front+side; navy surround ≥20% at the projected ankle disc; old-shoe neutral-dark ≤5%; NC1 displaced-boots fires containment; NC1b synthetic old-shoe control fires; NC2 hidden boots fire). Rendered boots (with `?boots=1`): y 6.018→6.230 (0.21 m shell from the ski top), 0.13 m wide, centred on the binding — surrounding the ankle at 6.03. KILL-SWITCH `BOOTS_ENABLED` stays default-OFF per the 01:55 protocol (the REVIEWER flips it); `?boots=1` is the measurement override. unit 81/81, golden 30/30 (physics untouched), look 7/7, boots 4/4.** | entry 209. |
@@ -13207,3 +13208,82 @@ ASSET_V unchanged (no assets/ regeneration).
 
 **Open.** Author judges pass 1 vs pass 2 by eye in the morning — done or
 one more pass. 215 = closing review (capped form).
+
+### 215 — Closing review (capped form, per the 04:50 ruling "the mandate is
+complete; 215 closes the batch"): full capped verification pass, one
+instrument-integrity fix, by-eye inspection of all four canonical shots,
+re-prioritised hand-back list.
+
+**Self-review of 214.** Commit ce3c0bf (game.js coach texture + one
+venue-dressing gate re-aim) verified green on re-run: unit 81/81, golden
+30/30, venue-dressing 6/6 (incl. `?coach_sabotage=1` NC), look 7/7 with
+fresh shots (figure 05:06, figure_front 05:07, scene 05:07, coach_zoom
+05:08). No half-done work found — with ONE exception, the instrument defect
+below.
+
+**Instrument fix (the one code change this iteration).** The COACHZOOM
+block in `tests/drive/look.spec.js` (added 213) declares `let red = 0,
+skin = 0, dark = 0, n = 0` but NEVER increments `n`: every metric was
+`x/0` = NaN, console-printed as `COACHZOOM {"red":null,...}`, and the three
+`toBeGreaterThan` gates passed on the NaN anyway (reproduced twice this
+session before the fix — the gate has measured nothing since it landed).
+Fixed with a single `n++` in the sampling loop. Re-ran look: 7/7, honest
+COACHZOOM red 0.0795 (gate > 0.06), skin 0.0200 (> 0.004), dark 0.1441
+(> 0.01) — byte-consistent with 214's recorded values, so the gate's
+thresholds are confirmed against the shipped colourway with real
+denominators. (The identical 214 numbers are explained: they were measured
+offline over the same deterministic frame, not by the broken in-spec
+counter.)
+
+**Verification numbers.**
+- unit 81/81, golden 30/30 (no physics change anywhere in the batch).
+- look 7/7; venue-dressing 6/6 incl. NC firing.
+- Grey ramp (scene.png, mid-lower frame): corridor centre 202.9 vs flank
+  left 206.0 / flank right 214.5 — corridor −1.5% vs L, −5.4% vs R. Holds
+  (the run is no longer the dark surface; residual gap is the right
+  flank's sun exposure, not a material mismatch).
+- figure.png centre 185.2 vs flanks 213.2/215.6; figure_front centre
+  169.0 vs 214.8/214.9 (the athlete's dark boots/goggles pull the crop
+  mean down; not a terrain issue).
+
+**By-eye (all four shots inspected this session).**
+- `figure.png` / `figure_front.png`: athlete reads as a fitted white suit
+  with blue panels; bib "30" plainly legible front-on; the sponsor band is
+  a bounded rectangle under the plate (no hip lobes — 211's fix holds);
+  boots seated on the skis with bindings contacting (208/209 class gone);
+  helmet dome correct with goggle band; hands at the sides, no crossing.
+  Remaining nits: the band's lower edge slightly ragged in close view
+  (known, parked 211); grazing-angle digit legibility unchanged (ruled
+  not-a-bug, 211).
+- `scene.png`: corridor/gates/net/trees/peaks coherent; B-net strip reads
+  at the grazing view; no floating geometry, no cyan seam; coach visible
+  past the wind sock facing the kicker.
+- `coach_zoom.png` (pass 2): head/beanie rounded, blond fringe reads,
+  sleeves taper to skin hands, harness straps visible against the shell
+  with the radio box, maroon reads desaturated rose (matches the author's
+  reference swatch). Residual: the torso is still a flat slab with
+  right-angle shoulders — the single most "blocky" remaining feature; if
+  the author orders a pass 3, that is where the pixels are.
+
+**Re-prioritised list / gaps for the next phase (recommend-only; the
+mandate is complete, so this is the hand-back).**
+1. Author's eye on coach pass 1 vs pass 2 (pending) — if "one more", the
+   pass-3 scope is shoulder/torso rounding on the coach card only.
+2. P2 sky gate still unmet: top-third r−b −0.098 vs target ≤ −0.25
+   (measured 210; unchanged this session). Cheapest remaining
+   footage-realism win.
+3. Tracked cosmetics ledger: band lower-edge raggedness; the 52-px
+   front-hole park (195 ruling, gate stays red-and-known); hands red park
+   (203) — all with named mechanisms, none author-visible at gameplay
+   camera distance.
+4. #24(a) grounded slide still queued pending the author's fresh-tab
+   retest on v78+ (204 cache-suspect note).
+
+**Open questions for the reviewer.**
+1. The NaN-passing `toBeGreaterThan` is a Playwright matcher behaviour
+   worth knowing about lane-wide: `expect(NaN).toBeGreaterThan(x)` does
+   NOT throw, so any gate that can produce NaN silently passes. I fixed
+   the one instance I found (COACHZOOM); an audit of other
+   division-derived gate metrics for a possible NaN guard is cheap and
+   could be a review-slot task if wanted.
+2. Confirm the coach is DONE or fund pass 3 (shoulders only).

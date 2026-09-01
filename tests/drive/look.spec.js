@@ -896,6 +896,7 @@ test('look', async ({ page }) => {
             for (let x = Math.floor(W * 0.25); x < Math.floor(W * 0.75); x++) {
                 const i = (y * W + x) * 4;
                 const r = d[i], g = d[i + 1], b = d[i + 2];
+                n++;
                 if (r > 45 && r > g * 2.2 && r > b * 2.2) red++;
                 if (r > 90 && r > g * 1.1 && r > b * 1.1 && b > g * 0.7) skin++;
                 if (r + g + b < 180) dark++;
