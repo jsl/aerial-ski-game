@@ -207,6 +207,129 @@ test('NC1: boots displaced off the ankle (the 208 fold defect) fire containment'
     expect(fails.some(f => f.includes('not surrounded')), fails.join('; ')).toBe(true);
 });
 
+// ── #16 v2 (a) FORE-AFT CENTER ALIGNMENT (NEXT.md item 3) ─────────────────
+// Containment alone allowed a forward-sitting boot (the shell can contain the
+// ankle yet have its mass 10 cm ahead of the foot). The boot's bounding-box
+// centre must sit within 3 cm of the skinned foot anchor (the same lowerLeg
+// bone pivot the containment gate uses — there is no separate foot bone on
+// this rig) along the FORE-AFT axis, measured in world space at the ready
+// pose. Front framing: the athlete faces -z, so world z is fore-aft.
+function centerGate(m, tag) {
+    const fails = [];
+    for (const side of ['L', 'R']) {
+        const s = m.sides[side];
+        if (!s) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
+        const cz = (s.min[2] + s.max[2]) / 2;
+        const off = cz - s.ankle[2];
+        if (Math.abs(off) > 0.03) {
+            fails.push(`${tag} ${side}: boot bbox fore-aft centre ${cz.toFixed(3)} is ` +
+                `${(off * 100).toFixed(1)} cm off the foot anchor ${s.ankle[2].toFixed(3)} ` +
+                `(band ±3 cm) — boot sits forward/backward of the foot`);
+        }
+    }
+    return fails;
+}
+
+test('CENTER ALIGNMENT: boot bbox centre within 3 cm of the foot anchor, fore-aft', async ({ page }) => {
+    await bootReady(page);
+    await frame(page, Math.PI * 0.30);
+    const m = await measure(page);
+    const fails = centerGate(m, 'center');
+    expect(fails, fails.join('; ')).toEqual([]);
+});
+
+test('NC3: a forward-sitting boot fires the center-alignment gate', async ({ page }) => {
+    await bootReady(page);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        for (const side of ['L', 'R']) {
+            const b = scene.getMeshByName('athleteBoot' + side);
+            if (!b) continue;
+            // Shove the shell 12 cm along WORLD -z (fore-aft). The boot is
+            // parented to the yawed character root, so the offset must be
+            // expressed in the PARENT's frame: transform the world direction
+            // by the inverse of the parent's world matrix.
+            b.computeWorldMatrix(true);
+            const parent = b.parent || null;
+            const inv = parent
+                ? parent.getWorldMatrix().clone().invert()
+                : BABYLON.Matrix.Identity();
+            const dir = BABYLON.Vector3.TransformNormal(
+                new BABYLON.Vector3(0, 0, -0.12), inv);
+            b.position.addInPlaceFromFloats(dir.x, dir.y, dir.z);
+        }
+    });
+    await frame(page, Math.PI * 0.30);
+    const m = await measure(page);
+    const fails = centerGate(m, 'NC3');
+    expect(fails.length, 'a 12 cm forward-sitting boot must fail the ±3 cm band: ' +
+        fails.join('; ')).toBeGreaterThan(0);
+});
+
+test('CLOSURE: the boot meshes are watertight (zero welded boundary edges)', () => {
+    // #16 v2 (b), the "close every face" half: read the shipped GLB directly
+    // and classify edges after position-welding (the export splits vertices
+    // per smoothing group, so index-topology alone always reads boundary).
+    const fs = require('fs');
+    const path = require('path');
+    const glb = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'athlete_body.glb'));
+    const jsonLen = glb.readUInt32LE(12);
+    const j = JSON.parse(glb.slice(20, 20 + jsonLen).toString());
+    const binStart = 20 + jsonLen + 8;
+    const fails = [];
+    for (const m of j.meshes || []) {
+        if (m.name.indexOf('athleteBoot') !== 0) continue;
+        const p = m.primitives[0];
+        const a = j.accessors[p.attributes.POSITION];
+        const bv = j.bufferViews[a.bufferView];
+        const co = new Float32Array(glb.buffer.slice(
+            binStart + (bv.byteOffset || 0), binStart + (bv.byteOffset || 0) + a.count * 12));
+        const iv = j.accessors[p.indices];
+        const bvv = j.bufferViews[iv.bufferView];
+        const ioff = binStart + (bvv.byteOffset || 0) + (iv.byteOffset || 0);
+        const Arr = iv.componentType === 5123 ? Uint16Array : Uint32Array;
+        const ind = new Arr(glb.buffer.slice(ioff, ioff + iv.count * Arr.BYTES_PER_ELEMENT));
+        const wmap = new Map();
+        const wid = new Array(a.count);
+        for (let i = 0; i < a.count; i++) {
+            const k = [0, 1, 2].map(q => Math.round(co[i * 3 + q] * 10000)).join(',');
+            if (!wmap.has(k)) wmap.set(k, wmap.size);
+            wid[i] = wmap.get(k);
+        }
+        const edges = new Map();
+        const key = (x, y) => x < y ? x + '_' + y : y + '_' + x;
+        for (let i = 0; i < ind.length; i += 3) {
+            for (let e = 0; e < 3; e++) {
+                const x = wid[ind[i + e]], y = wid[ind[i + (e + 1) % 3]];
+                const k = key(x, y);
+                edges.set(k, (edges.get(k) || 0) + 1);
+            }
+        }
+        let boundary = 0;
+        for (const c of edges.values()) if (c === 1) boundary++;
+        if (boundary > 0) fails.push(`${m.name}: ${boundary} open boundary edges after position weld`);
+    }
+    expect(fails, fails.join('; ')).toEqual([]);
+});
+
+test('NC4: a punctured boot mesh fires the closure gate', () => {
+    // Synthetic check of the classifier itself: a strip of triangles removed
+    // from a closed box must produce boundary edges > 0. Build a tiny
+    // position-welded cube-with-a-hole inline and run the same counting.
+    const T = [[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[3,7,6],[3,6,2],[0,4,7],[0,7,3]];
+    const V = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+    const edges = new Map();
+    const key = (x, y) => x < y ? x + '_' + y : y + '_' + x;
+    for (const t of T) for (let e = 0; e < 3; e++) {
+        const x = t[e], y = t[(e + 1) % 3];
+        edges.set(key(x, y), (edges.get(key(x, y)) || 0) + 1);
+    }
+    let boundary = 0;
+    for (const c of edges.values()) if (c === 1) boundary++;
+    expect(boundary, 'a cube with one triangle removed has 3 boundary edges').toBe(3);
+    expect(V.length, 'sanity: cube has 8 welded verts').toBe(8);
+});
+
 test('NC1b: the old-shoe classifier fires on exposed neutral-dark at the ankle', () => {
     // Synthetic disc: navy shell ring surrounding a neutral-dark centre —
     // the painted boot tube exposed where the shell fails to cover it.

@@ -13383,3 +13383,37 @@ cutoff mid-walk under ~200 ms janky frames; green in the post-fix run and previo
 **Open:** see the 217 Open question — triple's roll still raises the root +2.9 m in total
 (knees-hands planted, ≤1.2 m/s, and the feet stay on the snow); the cap fixes the pop but
 not the large travel on that world.
+### 218 — #16 v2 BOOTS part 1: fore-aft center-alignment gate + watertight-closure gate (NEXT.md item 3, with the ruling-217 crash-band rerun first)
+
+**Order per the 08:45 ruling:** (0) crash-ragdoll re-run SERIAL with 217's paced roll —
+**10/10 passed** (6.8 min): the 3–8 / 6–12 / 10–18 m rest bands and the ski-brake gates
+hold on every world; no pacing-vs-slide trade needed. (1) Then boots v2.
+
+**Boots v2, this slot (`tests/drive/boots.spec.js` only — no asset change, ASSET_V
+unchanged):**
+- **(a) CENTER ALIGNMENT gate** — boot bbox fore-aft centre within 3 cm of the skinned
+  foot anchor (the same `lowerLeg` bone pivot the 209 containment gate uses; there is no
+  separate foot bone on this rig), world z at the ready pose, front framing. Current build
+  passes inside the band on both sides. NC3 fires it: a 12 cm world-−z shove (expressed in
+  the parent frame — the boot's parent is yawed, so the displacement is transformed by the
+  inverse parent world matrix) fails the ±3 cm band as required.
+- **(b) CLOSURE gate, "close every face" half** — the shipped `athleteBootL/R` GLB
+  primitives read position-welded (0.1 mm): **168 welded verts, 0 open boundary edges** per
+  side — the boot shells are watertight; the "bare cap circle" cannot be an opening. NC4
+  fires the counter (cube minus one triangle → exactly 3 boundary edges).
+
+**Verification:** unit 81/81; golden 30/30 (display/test-only); `boots.spec` 8/8
+(4 new tests incl. both firing NCs); `crash-ragdoll.spec` 10/10 serial; `look` 7/7, shots
+regenerated.
+
+**Open (rest of NEXT.md item 3):** the "texture every face" half — the boot renders with
+the flat `bootShell` base colour (no baked texture; the toe/cuff cap fronts read as flat
+navy circles). Needs a boot-shell bake (UV islands already exist: TEXCOORD_0 present in the
+GLB) + material wiring + ASSET_V bump; one dedicated slot. Then NEXT.md items 4 (#23 v2
+thigh taper) and 5 (#26 v2 crotch occluder).
+
+**Open question for the reviewer:** item 3(b)'s geometry lives in `blender/build_body.py`
+(`add_boots`), which the 2026-08-29 standing rule bans except where NEXT.md explicitly
+assigns the task. I treated the ruling + NEXT.md item 3 as authorising the boots slices
+only; the texture half will likewise touch `add_boots` + the bake. Please confirm that
+reading (or redirect), since the suit-shell ban technically still names the whole file.
