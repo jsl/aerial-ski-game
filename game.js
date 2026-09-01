@@ -2246,14 +2246,14 @@ void main(void) {
             skyMat.setVector3('sunDir', sd);
             skyMat.setColor3('zenithColor', _snowingMode
                 ? new BABYLON.Color3(0.42, 0.47, 0.54)   // snowing: grey overcast zenith
-                : new BABYLON.Color3(0.13, 0.29, 0.58));
+                : new BABYLON.Color3(0.045, 0.17, 0.55));  // day: deep saturated blue (raw r−b −0.505)
             skyMat.setColor3('horizonColor', _snowingMode
                 ? new BABYLON.Color3(0.70, 0.74, 0.80)   // matches the snowing fog colour
-                : new BABYLON.Color3(0.60, 0.72, 0.88));
+                : new BABYLON.Color3(0.34, 0.54, 0.93));  // day horizon: bluer haze (raw r−b −0.59)
             window._skyMat = skyMat;   // probe hook
             window._skySunAmount = _snowingMode ? 0.0 : 1.0;   // probe hook (snowing.spec sunDisc gate)
             // Reviewer ruling on 129: the cumulus layer fades out under overcast.
-            skyMat.setFloat('cloudAmount', _snowingMode ? 0.35 : 1.0);
+            skyMat.setFloat('cloudAmount', _snowingMode ? 0.35 : 0.78);
             // Snowing: the reviewer's ruling on 129 — the sun disc fades out
             // entirely under overcast (day keeps the disc + halo at full).
             skyMat.setFloat('sunAmount', _snowingMode ? 0.0 : 1.0);
