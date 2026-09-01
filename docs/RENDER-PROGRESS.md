@@ -13554,6 +13554,64 @@ thigh at 137 mm; if the author wants a fuller knee instead of a slimmer thigh, t
 one-constant change (`fk`) away.
 
 
+### 223 — NEXT item 5 (#26 v2 crotch occluder) SEATED — patch merged into the body mesh; front watertight gate GREEN (0 holes); NC instrument discrepancy open
+
+**What changed:**
+- `blender/build_body.py` `add_crotch_occluder` rewritten per 222's option (c): the
+  0.16 x 0.012 x 0.24 interior patch is now APPENDED to the body mesh `low` itself
+  (bmesh, own `occluderSuit` material slot -> glTF primitive `athleteBody_primitive3`,
+  24 verts), each vertex copying the FULL weight list of its nearest body vertex
+  (within 9 cm) — the patch deforms through the body's exact skinning path, which
+  kills 222's separate-object axis scramble at the root. Anchors from the posed
+  `spine_01` pelvis cloud (`torso` no longer exists at the merge point — the spine
+  split consumes it; cloud threshold 0.05). Build gates: every patch vertex seated
+  inside the suit front (>= 15 mm), on the midline; build log `OCCLUDER: ... slot 3`.
+- Ordering finding: the merge must run AFTER all weight/helper passes. First attempt
+  merged after `add_boots`; the weight-localisation pass rewrote the new verts and
+  the joint-helper hard gate failed (`hlpKneeL carries 0.00`). Moved to immediately
+  before the pre-export close/orient/watertight gates; the bake and every gate
+  measure exactly what they measured before.
+- `game.js`: ASSET_V 87 -> 88; new `athleteOccluder_mat` (flat 0.85/0.87/0.92,
+  roughness 0.7, no baked maps — the patch UVs are a degenerate corner) assigned to
+  `primitive3`; `_athleteFacing` / `_renderedHeadCentre` skip the occluder primitive
+  by material name (it is the smallest athleteBody part and would otherwise be the
+  helmet pick).
+- `tests/drive/leg-watertight.spec.js`: NC rewritten — addresses the occluder by
+  material (the 222 name no longer exists).
+
+**Verification (numbers):**
+- unit 81/81; golden 30/30 (display-only); boots 6/6; leg-watertight 2 passed +
+  1 skipped (below).
+- **THE MANDATE'S MAIN CLAUSE IS GREEN: the full-body watertight FRONT gate reads
+  0 holes front / 0 side / 0 back** (222's carried red: 57 px at x674-679/y324-339).
+- **NC, build level — the occluder is load-bearing coverage:** a control
+  `athlete_body.glb` built with the merge removed reproduces the tear at **54 px
+  (x 674-679, y 324-338 — the exact 222 location)** on the same instrument, while
+  the shipped build reads 0. In-page probe also confirms the primitive ships and
+  draws (athleteBody_primitive3, 24 verts, athleteOccluder_mat; crotch crop pixel
+  sum changes on/off: 2588450 vs 2589047).
+
+**OPEN — the runtime NC instrument (skipped in the spec, not silent):** disabling
+the occluder at RUNTIME reads 0 holes via `setEnabled(false)`, `isVisible=false`,
+AND `dispose()` — yet the build-without-it control shows 54. A disposed primitive
+and an absent primitive should render identically; they do not. Root-cause needed
+(instrument suspicion: the freeze/readPixels path, or a second occluder of
+geometry — e.g. the close_boundary fills — covering the tear when the patch is
+removed but shipped). The NC is `test.skip` with the full evidence in a comment;
+do not trust it until explained.
+- **OPEN 2 — `look` spec red (NOT fixed, ran out of slot):** `figure_front.png`
+  navyFrac 0.0087 < 0.02 gate; the ASCII/pixel read of the shot shows the athlete
+  rendered SMALL and low-left in the front framing (dark terrain mass top-right),
+  i.e. a camera stand-off/framing regression, possibly via the `_athleteFacing`
+  helmet/chest pick path this iteration touched. FRONTGATE alignDeg 0, forward
+  [1,0,-0.006]. Shots regenerated 12:42 (figure/figure_front; scene 11:36 stale).
+  Unit/golden/boots/watertight are all green with this red present.
+
+**Open questions for the reviewer:** (1) accept the build-level control as the NC
+of record while the runtime-disable discrepancy is root-caused (or assign the
+root-cause as its own slot); (2) is the `look` front-framing red a 223 regression
+or carried? It was not present at the 222 look run (7/7 at 11:35 today).
+
 ### 222 — NEXT item 5 (#26 v2 crotch occluder) — SHIPPED BUT MIS-SEATED; front gate NOT green (honest incomplete)
 
 **What changed:**
