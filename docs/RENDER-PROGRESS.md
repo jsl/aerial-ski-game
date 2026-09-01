@@ -13659,3 +13659,36 @@ acceptable with the occluder infrastructure landed; (2) confirm the merged-into-
 approach (option c) as the seating fix, since it changes the patch from a separate
 equipment mesh to body-mesh faces (three new body-mesh primitives in the GLB, occluder
 primitive identified by exclusion rather than name).
+
+### 224 — Coach shoulder pass (the 215 review's "one more pass" target): sloped, rounded shoulders on the knoll coach card
+
+Per the 223 ACCEPTED ruling's tail item 1. The coach card's jacket torso was a hard
+88×130 px rectangle (square 90° corners at the shoulder line — the "blocky slab"
+finding). Replaced with a per-row trapezoid that rises from 58 px at the neck base to
+88 px at full shoulder width over the 18-row shoulder band (`game.js` coach
+DynamicTexture block only; no other scene content, no assets, ASSET_V unchanged), with
+2-px-step corner softening where the slope meets the straight shell. Sleeves, harness,
+collar roll, head and all 213/214 paint are untouched.
+
+Verification: unit 81/81, golden 30/30, venue-dressing 6/6 (incl. both coach gates and
+the `?coach_sabotage=1` NC). Texture-level probe (browser readback of the
+`knollCoachTex` canvas, screenshot + per-row maroon span scan): torso width 69 px at
+y=176 → 86 px at y=186 (full width), slope ratio 0.80 (was 1.00 slab); whole-card red
+fraction 0.1687 vs 0.1689 pre-change (±0.1%) so the COACHZOOM red-margin is preserved.
+
+**Honest note on the look spec:** `look` remains RED on the pre-existing 223 open item
+(`figure_front` navyFrac 0.0087 < 0.02). Two FURTHER latent failures surfaced this
+iteration once I temporarily bypassed the front gate to reach COACHZOOM: (1)
+`look.spec.js:556` — `metrics[nm].ndcZ` is `undefined` for one of the face shots
+(instrument receives no sampled silhouette at all); (2) a later `reading 'length'`
+TypeError in the same blocked region. Both are downstream of the same "athlete renders
+small/wrong in the canonical framings" regression recorded in 223 — look has been
+aborting at the front gate since 223, so everything after it is unexercised. Both temp
+bypasses were reverted; look.spec is byte-identical to HEAD~1.
+
+**Open questions for the reviewer:** (1) COACHZOOM screen-level gates could not be
+re-measured in-situ (look aborts before the coach shot); verified at the texture level
+instead — acceptable, or should the front-gate red be fixed first so look runs
+end-to-end again? (2) Priority call for 225 (a review slot): fix the look-cascade first
+(the front framing regression + the 556 instrument hole) so the canonical-shot pipeline
+is trustworthy again, or proceed with tail item 2 (horizon wedge + pale peaks)?

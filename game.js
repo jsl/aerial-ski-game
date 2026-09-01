@@ -5153,11 +5153,23 @@ void main(void) {
         tc.fillRect(98, 300, 24, 166);
         tc.fillRect(134, 300, 24, 166);
         tc.fillRect(96, 292, 64, 16);
-        // Jacket torso + PROPORTIONED arms: tapered sleeves (wider at the
-        // shoulder, narrower at the wrist) with skin hands at the cuffs —
-        // the pass-1 straight slabs read blocky. Shoulder line 6 px higher.
+        // Jacket torso: SLOPED, ROUNDED shoulders (the pass-2 "blocky slab
+        // shoulders" reviewer target) — a per-row trapezoid rises from the
+        // collar roll out to full shoulder width, then the shell runs down
+        // as a rectangle; no hard 90° corners at the shoulder line.
         tc.fillStyle = 'rgb(160,66,68)';
-        tc.fillRect(84, 170, 88, 130);
+        for (let y = 0; y < 18; y++) {
+            const w = 58 + Math.round(30 * y / 17);   // 58 px at the neck base → 88 px at full width
+            tc.fillRect(128 - w / 2, 170 + y, w, 1);
+        }
+        tc.fillRect(84, 188, 88, 112);
+        // Rounded shoulder caps: soften the corner where the slope meets the
+        // straight side (2 px step per row over 4 rows, both sides).
+        for (let y = 0; y < 4; y++) {
+            const inset = (3 - y) * 2;
+            tc.fillRect(84 + inset, 188 + y, 1, 1);
+            tc.fillRect(171 - inset, 188 + y, 1, 1);
+        }
         // Sleeves as quads drawn per-row so they taper: 22 px at the
         // shoulder → 14 px at the wrist, hanging close to the body.
         tc.fillStyle = 'rgb(148,54,58)';
