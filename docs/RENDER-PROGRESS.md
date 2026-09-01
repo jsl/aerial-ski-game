@@ -13169,3 +13169,41 @@ gate doing its job; NC1/NC2 fire).
    a slot.
 2. 210's note that the viewer cannot rasterise PNG is out of date — PNG
    inspection worked this session; review slots can by-eye the shots again.
+
+### 214 — Coach likeness pass 2 (per the 213 ACCEPTED ruling): rounded
+head/beanie, tapered sleeves with hands, high-contrast straps, maroon tuned
+to the author reference; red gate re-aimed to the pass-2 colourway
+
+**Mandate.** RULING on 213 (Fable 04:50): one likeness refinement pass —
+smooth/round the head, proportion the arms, make the harness STRAPS visible,
+tune the maroon toward `author_coach_jack_2026-08-31.png` (file on disk is
+the `-08-30` one; used that), regenerate `coach_zoom.png`, keep every 213
+gate green. Scene-lane only (game.js coach texture block + the one gate).
+
+**What changed.**
+ - `game.js` coach texture: head/beanie/fringe drawn as ellipses and arc
+   caps instead of rects (pass-1 voxel read); sleeves now TAPER per-row
+   22→14 px shoulder→wrist with fair-skin hands at the cuffs (pass-1 was
+   two straight slabs, no hands); shoulder straps widened 8→13 px with a
+   2 px rgb(66,66,72) edge highlight so they read against the lighter
+   shell; radio box 24×22.
+ - Maroon tuned to the measured reference dominant ≈ rgb(130,70,78) — a
+   desaturated rose-maroon, NOT pure red. Shipped: jacket rgb(160,66,68),
+   pants rgb(148,58,60), sleeves rgb(148,54,58), collar rgb(118,30,34),
+   seam rgb(136,48,52) (blue channel kept ≤ 68 so the look.spec 2.2× blue
+   test keeps margin).
+ - `venue-dressing.spec.js`: the jacket-band red test re-aimed from the
+   pure-red `r>g*3 && r>b*3` (fired 0 on the tuned colour, correctly) to
+   `r>120 && r>g*2 && r>b*2` — same class of instrument-following re-aim
+   as 213's torso band. Lettering scan, position gates and the sabotage NC
+   untouched.
+
+**Verification.** Unit 81/81. Golden 30/30 (no physics change, no
+recapture). venue-dressing 6/6 incl. NC. look 7/7 with a fresh
+`coach_zoom.png` (04:59): red 0.0795 (gate > 0.06; was 0.0942 — lighter,
+less saturated shell, expected), skin 0.0200 (> 0.004), dark 0.1441
+ (> 0.01). Lettering scan honest build: 0 letter-like blobs; NC fires.
+ASSET_V unchanged (no assets/ regeneration).
+
+**Open.** Author judges pass 1 vs pass 2 by eye in the morning — done or
+one more pass. 215 = closing review (capped form).

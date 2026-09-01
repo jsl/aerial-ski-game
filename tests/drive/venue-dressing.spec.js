@@ -193,7 +193,10 @@ test('venue dressing: ONE static coach figure in a red jacket at the knoll, seat
         for (let p = 0; p < img.length; p += 4) {
             if (img[p + 3] > 128) {
                 n++;
-                if (img[p] > 140 && img[p] > img[p + 1] * 3 && img[p] > img[p + 2] * 3) red++;
+                // Pass-2 colourway (iter 214): maroon tuned to the author's
+                // reference ≈ rgb(130,70,78), shipped as rgb(160,66,68) —
+                // r > 2× g and b, not the pass-1 pure-red 3× test.
+                if (img[p] > 120 && img[p] > img[p + 1] * 2 && img[p] > img[p + 2] * 2) red++;
             }
         }
 

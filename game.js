@@ -5128,49 +5128,77 @@ void main(void) {
         tc.fillStyle = 'rgb(24,26,30)';
         tc.fillRect(92, 462, 30, 40);
         tc.fillRect(134, 462, 30, 40);
-        // Pants: maroon shell (same suit colourway as the jacket).
-        tc.fillStyle = 'rgb(150,28,28)';
+        // Pants: maroon shell (same suit colourway as the jacket); tuned
+        // toward reference/shots/author_coach_jack_2026-08-30.png (measured
+        // dominant ≈ rgb(130,70,78) — a desaturated rose-maroon, not pure red).
+        tc.fillStyle = 'rgb(148,58,60)';
         tc.fillRect(98, 300, 24, 166);
         tc.fillRect(134, 300, 24, 166);
         tc.fillRect(96, 292, 64, 16);
-        // Jacket torso + slim arms.
-        tc.fillStyle = 'rgb(162,30,30)';
+        // Jacket torso + PROPORTIONED arms: tapered sleeves (wider at the
+        // shoulder, narrower at the wrist) with skin hands at the cuffs —
+        // the pass-1 straight slabs read blocky. Shoulder line 6 px higher.
+        tc.fillStyle = 'rgb(160,66,68)';
         tc.fillRect(84, 170, 88, 130);
-        tc.fillStyle = 'rgb(150,26,26)';
-        tc.fillRect(64, 176, 20, 116);
-        tc.fillRect(172, 176, 20, 116);
+        // Sleeves as quads drawn per-row so they taper: 22 px at the
+        // shoulder → 14 px at the wrist, hanging close to the body.
+        tc.fillStyle = 'rgb(148,54,58)';
+        for (let y = 0; y < 114; y++) {
+            const w = 22 - Math.round(8 * y / 113);
+            const dx = w / 2;
+            tc.fillRect(74 - dx, 176 + y, w, 1);
+            tc.fillRect(182 - dx, 176 + y, w, 1);
+        }
+        // Hands at the cuffs (fair skin).
+        tc.fillStyle = 'rgb(228,190,160)';
+        tc.fillRect(66, 288, 16, 14);
+        tc.fillRect(174, 288, 16, 14);
         // Hood DOWN: bunched collar roll around the neck, no hood on the head.
-        tc.fillStyle = 'rgb(120,20,20)';
+        tc.fillStyle = 'rgb(118,30,34)';
         tc.fillRect(92, 154, 72, 20);
         // Subtle tonal seam/panel line (allowed; no lettering).
-        tc.fillStyle = 'rgb(140,24,24)';
+        tc.fillStyle = 'rgb(136,48,52)';
         tc.fillRect(126, 176, 4, 122);
-        // Radio harness: two black shoulder straps + radio box on the chest.
+        // Radio harness: VISIBLY contrasting shoulder straps (13 px wide with
+        // a lighter edge so they read against the lighter shell) + radio box.
+        tc.fillStyle = 'rgb(18,18,20)';
+        tc.fillRect(100, 170, 13, 72);
+        tc.fillRect(143, 170, 13, 72);
+        tc.fillStyle = 'rgb(66,66,72)';      // strap edge highlight
+        tc.fillRect(100, 170, 2, 72);
+        tc.fillRect(143, 170, 2, 72);
         tc.fillStyle = 'rgb(20,20,22)';
-        tc.fillRect(104, 172, 8, 68);
-        tc.fillRect(144, 172, 8, 68);
-        tc.fillRect(118, 232, 20, 20);
+        tc.fillRect(116, 232, 24, 22);
         tc.fillStyle = 'rgb(120,120,124)';   // clip detail, not text
         tc.fillRect(124, 238, 4, 6);
         // Neck + head: fair skin, dark beanie, sandy-blond fringe at the
-        // forehead, simple features, natural slight smile.
+        // forehead, simple features, natural slight smile. Head and beanie
+        // are ROUNDED (ellipses/arc caps) — pass 1's rects read voxel.
         tc.fillStyle = 'rgb(228,190,160)';
         tc.fillRect(116, 144, 24, 14);
-        tc.fillRect(102, 92, 52, 56);
-        tc.fillStyle = 'rgb(214,178,110)';   // blond fringe
-        tc.fillRect(102, 88, 52, 10);
-        tc.fillStyle = 'rgb(38,40,48)';      // beanie
-        tc.fillRect(98, 58, 60, 32);
+        tc.beginPath();
+        tc.ellipse(128, 122, 26, 29, 0, 0, Math.PI * 2);
+        tc.fill();
+        // Blond fringe: arc band hugging the beanie edge.
+        tc.fillStyle = 'rgb(214,178,110)';
+        tc.beginPath();
+        tc.ellipse(128, 98, 27, 13, 0, 0, Math.PI * 2);
+        tc.fill();
+        tc.fillStyle = 'rgb(38,40,48)';      // beanie dome
+        tc.beginPath();
+        tc.ellipse(128, 72, 30, 22, 0, Math.PI, Math.PI * 2);
+        tc.fill();
+        tc.fillRect(98, 72, 60, 10);
         tc.fillStyle = 'rgb(48,50,58)';      // beanie fold band
-        tc.fillRect(98, 82, 60, 8);
+        tc.fillRect(96, 80, 64, 10);
         tc.fillStyle = 'rgb(170,140,90)';    // blond brows
-        tc.fillRect(108, 106, 12, 4);
-        tc.fillRect(136, 106, 12, 4);
+        tc.fillRect(108, 108, 12, 4);
+        tc.fillRect(136, 108, 12, 4);
         tc.fillStyle = 'rgb(40,40,48)';      // eyes
-        tc.fillRect(110, 112, 8, 5);
-        tc.fillRect(138, 112, 8, 5);
+        tc.fillRect(110, 114, 8, 5);
+        tc.fillRect(138, 114, 8, 5);
         tc.fillStyle = 'rgb(206,164,134)';   // nose shading
-        tc.fillRect(126, 118, 6, 12);
+        tc.fillRect(126, 120, 6, 12);
         tc.fillStyle = 'rgb(150,92,82)';     // natural slight smile
         tc.fillRect(116, 138, 24, 3);
         tc.fillRect(113, 135, 4, 4);
