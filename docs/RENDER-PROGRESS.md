@@ -306,6 +306,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 ## Status board
 | — | Iteration 210 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7, boots.spec 4/4 (all negative controls firing) on the reviewer's boots-default-ON HEAD — 209's containment fix HOLDS under the default-on build. Measured: scene corridor 209.2 vs flankL 205.0 / flankR 216.2 (grey-ramp holds); sky top-third luma 133.5, r-b −0.098 (still short of the −0.25 P2 sky gate); figure/front/side mean luma 178.7/192.6/186.0. In-session PNG inspection unavailable (SVG-only viewer) — numbers recorded instead; boots by-eye vs `author_boot_ref` remains the reviewer's acceptance. No source/asset change. NEXT: 211 = NEXT.md item 7 PAINT SLICE → item 8 coach.** | entry 210. |
 | — | Iteration 216 | **NEXT item 1 CLOSED — #28 "R" RESTART DRIFT: per-frame root update writes only y/z; the R reset never restored `position.x` (owned by the crash park + get-up walk-off, |x| = 6 m at the B-net), so each crash+R cycle started AND took off the next run at the stale lateral offset. Fix: reset restores the corridor centre-line (`window._restartXFixDisabled` NC hook). New `restart-drift.spec.js` 2/2: crash + full walk-off then R ×10 → start x/z byte-identical (< 1e-6), takeoff point < 0.02 m (worst 0.0081 m frame jitter), start on centre-line; NC fires (> 0.3 m offset without the fix). unit 81/81, golden 30/30, hotkeys+crash-ragdoll+look 20/20. Display-only, ASSET_V unchanged. NEXT items 2–5 remain.** | entry 216. |
+| — | Iteration 217 | **NEXT item 2 CLOSED — #29 CRASH GET-UP SWOOP: the defect was the ROLL phase's uncapped boot-sole lift — measured root rise 4.46 m/s (single, +0.83 m) and 8.01 m/s (triple, +3.20 m) during the lie→crouch blend, then the kneel sank it back. Fix (display-only): (1) the roll blend is now CONTACT-PACED — it advances only as fast as the contact lift it demands fits inside the rise cap (bisection over the blend fraction each frame); (2) a whole-chain rise governor clamps ANY upward root motion to 1.2 m/s in every phase and blend-in (descent free); (3) get-up phases moved from getT arithmetic to a roll→kneel→rise state machine with per-frame planted contact sets (knees-hands / knees / ankles) exposed via `_walkoffProbe().planted`. NC hook `_crashSwoopFixDisabled` restores the unpaced blend. New whole-chain gate in `walkoff.spec.js` (≤1.45 m/s sampled, planted on every frame) + firing NC test (triple). Post-fix peaks: roll 1.36/0.00/1.20 m/s (single/double/triple), rise ≤ 0.70, kneel only descends; walkoff 4/4 incl. both legacy NCs; unit 81/81, golden 30/30. Known pre-existing flake: baseline triple run timed out mid-walk on 200 ms janky frames — green in this run. Open: triple's roll still lifts the root +2.9 m total (knees-hands planted, ≤1.2 m/s) — see Open questions.** | entry 217. |
 | — | Iteration 215 (review) | **CLOSING REVIEW (capped form): unit 81/81, golden 30/30, look 7/7, venue-dressing 6/6 incl. NC. INSTRUMENT FIX: the COACHZOOM pixel counter in `look.spec.js` never incremented its sample count `n` — red/skin/dark were x/0 = NaN, printed `null`, yet `toBeGreaterThan` silently passed → the gate measured nothing since 213. Fixed (`n++`); honest re-measure red 0.0795 / skin 0.0200 / dark 0.1441 (matches 214's recorded values, gates green with margins). Grey ramp: scene corridor 202.9 vs flankL 206.0 / flankR 214.5 (holds). By-eye: coach pass-2 reads rounded head/fringe/tapered sleeves/straps; blocky slab shoulders remain the likeliest "one more pass" target. No scene content, no assets, ASSET_V unchanged.** | entry 215. |
 | — | Iteration 213 | **NEXT item 8 CLOSED — #17 THE COACH: maroon neutral shell (no lettering), hood down, radio harness, beanie + blond fringe, slim 1.85 m, moved 2.3 m PAST the wind sock facing the kicker (probe finding: CreatePlane fronts −z by default; the π flip faced him away). Gates: past-sock/off-corridor position, whole-texture lettering scan (0 blobs) with `?coach_sabotage=1` NC firing (x 0.2 in-corridor + "USA" 3 blobs), new `coach_zoom.png` in look (red 0.094 / skin 0.023 / dark 0.146). Unit 81/81, golden physics audit 0 diffs → census recapture, 30/30; venue 6/6, look 7/7. NEXT.md COMPLETE — deleted.** | coach card pose + gates; author's fresh-tab eye decides likeness passes 2–3 |
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
@@ -1130,6 +1131,16 @@ forest.
   Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
+- **Entry 217 (get-up roll travel):** the whole-chain rise cap fixed the pop
+  (peaks 8.01 → 1.20 m/s), but in world `triple` the contact-paced roll still
+  raises the root +2.9 m IN TOTAL — the tuck-crouch pose's feet land far
+  up-slope in world space, so the boot-sole contact lift (knees-hands planted,
+  feet never under the snow, ≤1.2 m/s) walks the body up the hill before the
+  kneel slides it back down 0.43 m. Options: (a) accept it (slow, contact-true),
+  (b) anchor the roll blend to the local floor station instead of the parked
+  root so the lift demand stays ~0 (a deeper pose-station change, needs a new
+  gate), or (c) pivot the roll in place (rotate the crumple about its ankle
+  set). Which does the author prefer?
 - **Entry 158 / HUMAN #15:** the inner thighs are one connected inherited skin sheet across the
   ownership boundary. Moving the 194 crossing vertices far enough to expose daylight either leaves
   the rendered gap closed or pushes the fitted thigh curvature above the unchanged 0.35 gate
@@ -13291,6 +13302,7 @@ mandate is complete, so this is the hand-back).**
    could be a review-slot task if wanted.
 2. Confirm the coach is DONE or fund pass 3 (shoulders only).
 
+
 ### 216 — HT#28 "R" restart drift: root-caused and fixed (NEXT.md item 1 of 5)
 
 **NEXT.md item 1 (#28, gameplay-breaking) — COMPLETE.** The author's report: repeated
@@ -13329,3 +13341,44 @@ neighbours) + look 7/7 all green in one run (20 passed); shots regenerated. No
 
 **Open.** NEXT.md items 2–5 remain (#29 crash get-up swoop, #16 v2 boots, #23 v2 thigh
 taper, #26 v2 crotch occluder). NEXT.md kept (deleted only when the list completes).
+### 217 — HT#29 crash get-up swoop: contact-paced roll + whole-chain rise governor (NEXT.md item 2 of 5)
+
+**Defect (measured before the fix, per-frame getup trace from `walkoff.spec.js`):** the
+author's "swoops up in the air and then comes down" is the ROLL phase's boot-sole lift
+applied uncapped, frame-quantum: peak upward root speed **4.46 m/s (single, +0.83 m)** and
+**8.01 m/s (triple, +3.20 m)** during the lie→crouch blend; the kneel then sank the root
+back 0.43 m. The 204 gates only covered `rise` (≤1.2 m/s there — honest but the wrong
+phase).
+
+**Fix (`game.js`, display-only; `_crashWalkoffStep`):**
+1. **Contact-paced roll** — the lie→crouch blend fraction is bisected each frame; a
+   candidate blend is accepted only if the contact lift it demands
+   (`_ankleFloorLift`, the factored-out boot-sole projection) fits inside the frame's
+   rise budget (`_RISE_CAP · dt` above `W.govY`). The blend can therefore no longer
+   outrun the cap, and the un-blended remainder keeps the parked (zero-lift) pose, so
+   no ankle ever goes under the snow while catching up.
+2. **Whole-chain rise governor** — after the boot-sole lift is folded into the root
+   height, any upward motion is clamped to `_RISE_CAP = 1.2 m/s` in EVERY phase and
+   blend-in (roll/kneel/rise/walk); descent is free. Kneel/rise phases become a
+   roll→kneel→rise state machine with per-frame planted contact sets
+   (knees-hands → knees → ankles), exposed as `_walkoffProbe().planted` — no frame
+   raises the root without a planted set. Walk start uses an accumulated `W.walkT`
+   instead of getT arithmetic so a paced (longer) roll shifts the walk, not teleports it.
+3. Negative-control hook `window._crashSwoopFixDisabled` restores the unpaced blend and
+   disables the governor (legacy `_crashGetupWeightDisabled` path also bypasses both, so
+   the 204 NC still fires).
+
+**Verification:** unit 81/81; golden 30/30 (no engine/physics change); `walkoff.spec.js`
+4/4 — 3 worlds pass `walkoffGatePasses` + `getupGatePasses` (24b) + the NEW
+`wholeChainGatePasses` (no sampled frame pair exceeds 1.45 m/s upward — jitter allowance
+over the 1.2 engine cap — and every frame carries a planted set); NEW NC test
+(swoop-fix disabled, triple) FAILS the whole-chain gate as required. Post-fix per-phase
+peaks: roll **1.36 / 0.00 / 1.20 m/s**, rise **0.70 / 0.68 / 0.66**, kneel only descends
+(single/double/triple). Baseline comparison: 4.46 / 0.00 / 8.01. Known pre-existing flake
+(this run's baseline, not introduced here): the triple walk-off once hit the 12.2 s sample
+cutoff mid-walk under ~200 ms janky frames; green in the post-fix run and previously
+(204/205). Display-only; ASSET_V unchanged.
+
+**Open:** see the 217 Open question — triple's roll still raises the root +2.9 m in total
+(knees-hands planted, ≤1.2 m/s, and the feet stay on the snow); the cap fixes the pop but
+not the large travel on that world.

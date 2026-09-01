@@ -8,13 +8,14 @@ const { test, expect } = require('@playwright/test');
 const path = require('path');
 const OUT = path.join(__dirname, '..', '..', 'shots');
 
-async function measureWalkoff(page, world, disabled, getupLegacy) {
+async function measureWalkoff(page, world, disabled, getupLegacy, swoopLegacy) {
     await page.goto('/index.html?world=' + world);
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
     if (disabled) await page.evaluate(() => { window._crashWalkoffDisabled = true; });
     if (getupLegacy) await page.evaluate(() => { window._crashGetupWeightDisabled = true; });
+    if (swoopLegacy) await page.evaluate(() => { window._crashSwoopFixDisabled = true; });
     await page.waitForTimeout(400);
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window._getGameState().readyState === false,
@@ -94,6 +95,7 @@ async function measureWalkoff(page, world, disabled, getupLegacy) {
                     return [p.x - d.x * 0.18, p.y - d.y * 0.18, p.z - d.z * 0.18];
                 };
                 W.getup.push({ t: now, phase: wp.phase, rootY: rp.y,
+                    planted: wp.planted || null,
                     aL: ank('lowerLegL'), aR: ank('lowerLegR') });
             }
             for (const name of ['lowerLegL', 'lowerLegR']) {
@@ -153,6 +155,7 @@ async function measureWalkoff(page, world, disabled, getupLegacy) {
             disabled,
             flagAtSample: !!window._crashWalkoffDisabled,
             getupLegacy: !!window._crashGetupWeightDisabled,
+            swoopLegacy: !!window._crashSwoopFixDisabled,
             phase: probe ? probe.phase : 'stayed-down',
             sinceRest: probe ? probe.sinceRest : (performance.now() - W.start) / 1000,
             lateral: Math.abs(root.x),
@@ -203,7 +206,23 @@ function getupGatePasses(m) {
         const mm = meanXZ(r);
         footDrift = Math.max(footDrift, Math.hypot(mm[0] - m0[0], mm[1] - m0[1]));
     }
+
     return maxRiseSpd <= 1.2 && footDrift <= 0.02;
+}
+// HT#29 whole-chain gate, over the same per-frame get-up trace: NO frame —
+// roll, kneel, rise, any blend-in — may raise the root faster than the
+// 1.2 m/s rise cap (small jitter tolerance for rAF sampling), and every
+// sampled frame must carry a planted contact set.
+function wholeChainGatePasses(m) {
+    const g = m.getup || [];
+    if (g.length < 2) return false;
+    for (const r of g) if (!r.planted) return false;
+    for (let i = 1; i < g.length; i++) {
+        const a = g[i - 1], b = g[i];
+        const dt = Math.max(1e-3, (b.t - a.t) / 1000);
+        if ((b.rootY - a.rootY) / dt > 1.45) return false;
+    }
+    return true;
 }
 
 test('crash #14: get up and walk clear of the corridor in every world', async ({ page }) => {
@@ -222,11 +241,27 @@ test('crash #14: get up and walk clear of the corridor in every world', async ({
             if (cam && cam.target) cam.target.set(root.x, root.y - 0.15, root.z);
             scene.render();
         });
+        expect(wholeChainGatePasses(m),
+            `${world} whole-chain: peak rise frames ${JSON.stringify(
+                (m.getup || []).length)}`).toBe(true);
         await page.screenshot({ path: path.join(OUT, `walkoff_${world}.png`) });
     }
 });
 
+
+test('crash #29 negative control: the unpaced roll blend (swoop fix disabled) fails the whole-chain gate', async ({ page }) => {
+    test.setTimeout(240_000);
+    const m = await measureWalkoff(page, 'triple', false, false, true);
+    console.log('WALKOFF SWOOP-NEGCONTROL ' + JSON.stringify(
+        { swoopLegacy: m.swoopLegacy, phase: m.phase,
+          getupRows: (m.getup || []).length }));
+    expect(m.swoopLegacy, 'swoop-fix disable flag was active').toBe(true);
+    expect(wholeChainGatePasses(m),
+        'negative control: the unpaced roll blend must FAIL the whole-chain gate')
+        .toBe(false);
+});
 test('crash #14 negative control: the previous stay-down ending fails', async ({ page }) => {
+
     test.setTimeout(240_000);
     const m = await measureWalkoff(page, 'double', true);
     console.log('WALKOFF NEGCONTROL ' + JSON.stringify(m));

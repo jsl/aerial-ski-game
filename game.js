@@ -3306,6 +3306,7 @@ void main(void) {
             sinceRest,
             speed: W ? W.speed : 0,
             targetX: W ? W.targetX : null,
+            planted: W ? (W.planted || null) : null,
         };
     };
 
@@ -7096,6 +7097,8 @@ void main(void) {
     // athlete root cannot drag them along.
     const _WALKOFF_BEAT = 0.75;
     const _WALKOFF_GETUP = 2.10;
+    const _RISE_CAP = 1.2; // HT#29: max root rise speed for the WHOLE
+    // get-up chain (m/s) — every phase, every blend-in, no exceptions.
     const _WALKOFF_SPEED = 1.35;
     const _WALKOFF_X = 6.00; // corridor half-width 5 m + 1 m; B-net is at 6.2 m
     const _walkoffSmooth = function (x) {
@@ -7160,7 +7163,12 @@ void main(void) {
         if (!W) return;
         const M = character.meshes;
         const getT = since - _WALKOFF_BEAT;
-        const onGetup = getT < _WALKOFF_GETUP;
+        const dtS = Math.min(0.1, Math.max(1e-3,
+            ((scene.getEngine() && scene.getEngine().getDeltaTime()) || 16.7) / 1000));
+        const legacyGetup = typeof window !== 'undefined' && window._crashGetupWeightDisabled;
+        const onGetup = legacyGetup ? (getT < _WALKOFF_GETUP)
+            : !(W && W.getupDone);
+        const swoopOff = typeof window !== 'undefined' && window._crashSwoopFixDisabled;
         const root = character.root;
         let rootX = W.standX, rootZ = W.standZ;
         let rootY = terrainRootY(rootZ);
@@ -7184,6 +7192,23 @@ void main(void) {
                     n.rotation.x = p.rx; n.rotation.z = p.rz;
                 }
             }
+        };
+        // HT#29: contact lift required to put both ankle/boot-sole points
+        // on the local snow — the existing display-root lift, factored out
+        // so the roll blend can pace against it.
+        const _ankleFloorLift = function (qq, rx, ry, rz) {
+            let lift = 0;
+            for (const sideName of ['L', 'R']) {
+                const ll = M['lowerLeg' + sideName];
+                if (!ll) continue;
+                const d = _crashSegAxis(ll);
+                const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
+                    ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
+                const ankle = _crashQRotV(qq, ankleLocal);
+                lift = Math.max(lift,
+                    _crashFloorY(ankle.z + rz) + 0.005 - (ankle.y + ry));
+            }
+            return lift;
         };
 
         if (onGetup) {
@@ -7215,73 +7240,109 @@ void main(void) {
                     rootY = terrainRootY(rootZ) - 0.35 * tuck;
                     q = W.qWalk;
                 }
-            } else if (getT < 0.65) {
-                // ROLL (knees/hands planted): pose blends from the parked
-                // crumple to the kneel; the root stays DOWN where the
-                // ragdoll parked it — no rise while the mass is on the snow.
-                W.phase = 'roll';
-                const b = _walkoffSmooth(getT / 0.65);
+            } else {
+                // HT#29 contact-paced get-up machine: ROLL (contact-paced
+                // lie→crouch blend; knees/hands planted) → KNEEL (0.7 s;
+                // knees planted) → RISE (0.75 s; ankle pair planted).  The
+                // root never rises without a planted contact set, and no
+                // phase or blend-in may exceed _RISE_CAP.
+                if (!W.st) { W.st = 'roll'; W.stT = 0; }
                 const crouch = AerialEngine.pose.computePose({ tuck: 1,
                     armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
                     armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
-                writeSolved(crouch, b);
-                rootX = W.root0.x; rootZ = W.root0.z; rootY = W.root0.y;
-                q = _walkoffSlerp(W.q0, W.qWalk, b);
-            } else if (getT < 1.35) {
-                // KNEEL: slide the root ALONG the ground to the stand
-                // station; the body stays at kneel height (knees planted).
-                W.phase = 'kneel';
-                const b = _walkoffSmooth((getT - 0.65) / 0.70);
-                const pose = AerialEngine.pose.computePose({ tuck: 1,
-                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
-                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
-                writeSolved(pose, null);
-                rootX = W.root0.x + (W.standX - W.root0.x) * b;
-                rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
-                rootY = W.root0.y + ((terrainRootY(W.standZ) - 0.35) - W.root0.y) * b;
-                q = W.qWalk;
-            } else {
-                // RISE (both feet planted): the root rises ONLY now, driven
-                // by the tuck release (the legs extend under the hips),
-                // peak speed 1.5·0.35/0.75 = 0.7 m/s < the 1.2 m/s cap, and
-                // the ankle pair is tracked to its kneel-end planted pose
-                // (horizontal correction full; vertical correction blends
-                // out so the rise ends standing exactly on the snow).
-                W.phase = 'rise';
-                const u = _walkoffSmooth(Math.min(1, (getT - 1.35) / 0.75));
-                const tuck = 1 - u;
-                const pose = AerialEngine.pose.computePose({ tuck,
-                    armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
-                    armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
-                writeSolved(pose, null);
-                rootX = W.standX; rootZ = W.standZ;
-                rootY = terrainRootY(rootZ) - 0.35 * tuck;
-                q = W.qWalk;
-                let ax = 0, ay = 0, az = 0, nA = 0;
-                for (const sideName of ['L', 'R']) {
-                    const ll = M['lowerLeg' + sideName];
-                    if (!ll) continue;
-                    const d = _crashSegAxis(ll);
-                    const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
-                        ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
-                    const ankle = _crashQRotV(q, ankleLocal);
-                    ax += ankle.x + rootX; ay += ankle.y + rootY; az += ankle.z + rootZ;
-                    nA++;
-                }
-                if (nA > 0) {
-                    ax /= nA; ay /= nA; az /= nA;
-                    if (!W.plantedAnkles) {
-                        W.plantedAnkles = { x: ax, y: ay, z: az };
+                if (W.st === 'roll') {
+                    W.phase = 'roll';
+                    W.planted = 'knees-hands';
+                    const bRaw = _walkoffSmooth(Math.min(1, getT / 0.65));
+                    const prevRootY = W.govY !== undefined ? W.govY : W.root0.y;
+                    const allowance = _RISE_CAP * dtS;
+                    const liftAt = function (b) {
+                        writeSolved(crouch, b);
+                        const qq = _walkoffSlerp(W.q0, W.qWalk, b);
+                        return _ankleFloorLift(qq, W.root0.x, W.root0.y, W.root0.z);
+                    };
+                    let b;
+                    if (swoopOff) {
+                        b = bRaw; // NC: the unpaced blend — this is the swoop
+                        liftAt(b);
                     } else {
-                        const P = W.plantedAnkles;
-                        rootX += P.x - ax;
-                        rootZ += P.z - az;
-                        rootY += (P.y - ay) * (1 - u);
+                        let lo = W.rollB || 0, hi = Math.max(lo, bRaw), ok = lo;
+                        for (let it = 0; it < 7 && hi > lo + 1e-4; it++) {
+                            const mid = (lo + hi) / 2;
+                            if (W.root0.y + liftAt(mid) <= prevRootY + allowance) {
+                                ok = mid; lo = mid;
+                            } else hi = mid;
+                        }
+                        b = Math.max(W.rollB || 0, ok);
+                        W.rollB = b;
+                        liftAt(b); // leave the rig written at the accepted blend
                     }
+                    rootX = W.root0.x; rootZ = W.root0.z; rootY = W.root0.y;
+                    q = _walkoffSlerp(W.q0, W.qWalk, b);
+                    if ((W.rollB || 0) >= 0.999 && getT >= 0.65) {
+                        W.st = 'kneel'; W.stT = 0; W.plantedAnkles = null;
+                    }
+                } else if (W.st === 'kneel') {
+                    // KNEEL: slide the root ALONG the ground to the stand
+                    // station; the body stays at kneel height (knees planted).
+                    W.phase = 'kneel';
+                    W.planted = 'knees';
+                    W.stT += dtS;
+                    const b = _walkoffSmooth(Math.min(1, W.stT / 0.70));
+                    writeSolved(crouch, null);
+                    rootX = W.root0.x + (W.standX - W.root0.x) * b;
+                    rootZ = W.root0.z + (W.standZ - W.root0.z) * b;
+                    rootY = W.root0.y + ((terrainRootY(W.standZ) - 0.35) - W.root0.y) * b;
+                    q = W.qWalk;
+                    if (W.stT >= 0.70) { W.st = 'rise'; W.stT = 0; W.plantedAnkles = null; }
+                } else {
+                    // RISE (both feet planted): the root rises ONLY now, driven
+                    // by the tuck release (the legs extend under the hips),
+                    // peak speed 1.5·0.35/0.75 = 0.7 m/s < the 1.2 m/s cap, and
+                    // the ankle pair is tracked to its kneel-end planted pose
+                    // (horizontal correction full; vertical correction blends
+                    // out so the rise ends standing exactly on the snow).
+                    W.phase = 'rise';
+                    W.planted = 'ankles';
+                    W.stT += dtS;
+                    const u = _walkoffSmooth(Math.min(1, W.stT / 0.75));
+                    const tuck = 1 - u;
+                    const pose = AerialEngine.pose.computePose({ tuck,
+                        armDropL: 1, armDropR: 1, armSnap: 0, layArmT: 0,
+                        armRaise: 0, grounded: true, pikeAmount: 0, pikeArmDrop: 0 });
+                    writeSolved(pose, null);
+                    rootX = W.standX; rootZ = W.standZ;
+                    rootY = terrainRootY(rootZ) - 0.35 * tuck;
+                    q = W.qWalk;
+                    let ax = 0, ay = 0, az = 0, nA = 0;
+                    for (const sideName of ['L', 'R']) {
+                        const ll = M['lowerLeg' + sideName];
+                        if (!ll) continue;
+                        const d = _crashSegAxis(ll);
+                        const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
+                            ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
+                        const ankle = _crashQRotV(q, ankleLocal);
+                        ax += ankle.x + rootX; ay += ankle.y + rootY; az += ankle.z + rootZ;
+                        nA++;
+                    }
+                    if (nA > 0) {
+                        ax /= nA; ay /= nA; az /= nA;
+                        if (!W.plantedAnkles) {
+                            W.plantedAnkles = { x: ax, y: ay, z: az };
+                        } else {
+                            const P = W.plantedAnkles;
+                            rootX += P.x - ax;
+                            rootZ += P.z - az;
+                            rootY += (P.y - ay) * (1 - u);
+                        }
+                    }
+                    if (W.stT >= 0.75) W.getupDone = true;
                 }
             }
         } else {
-            const walkT = getT - _WALKOFF_GETUP;
+            if (W.walkT === undefined) W.walkT = 0;
+            W.walkT += dtS;
+            const walkT = W.walkT;
             const dx = W.targetX - W.standX;
             const dist = Math.min(Math.abs(dx), walkT * _WALKOFF_SPEED);
             const dir = dx < 0 ? -1 : 1;
@@ -7325,25 +7386,27 @@ void main(void) {
                 rootY += 0.012 * (1 - Math.cos(ph * 2));
             }
         }
+        // Keep both boot/ankle endpoints on or above the local snow while the
+        // lying rig blends into the kneel.  This is a display-root lift only;
+        // it never writes state.rootY or any engine value.  (HT#29: the lift
+        // is folded into the root height BEFORE the governor so the roll
+        // blend's pacing budget and the cap see the same number.)
+        const lift = _ankleFloorLift(q, rootX, rootY, rootZ);
+        if (lift > 0) rootY += lift;
+        // HT#29 whole-chain rise governor: no frame raises the root faster
+        // than _RISE_CAP, in ANY phase or blend-in (descent is free — the
+        // root follows the terrain down unclamped).  Off in the legacy
+        // get-up and swoop negative controls, which must keep the swoop.
+        if (!legacyGetup && !swoopOff) {
+            if (W.govY === undefined) W.govY = W.root0.y;
+            const allow = W.govY + _RISE_CAP * dtS;
+            if (rootY > allow) rootY = allow;
+            W.govY = rootY;
+        }
         root.position.x = rootX; root.position.y = rootY; root.position.z = rootZ;
         if (!root.rotationQuaternion) root.rotationQuaternion = new BABYLON.Quaternion(q.x, q.y, q.z, q.w);
         else root.rotationQuaternion.set(q.x, q.y, q.z, q.w);
 
-        // Keep both boot/ankle endpoints on or above the local snow while the
-        // lying rig blends into the kneel.  This is a display-root lift only;
-        // it never writes state.rootY or any engine value.
-        let lift = 0;
-        for (const sideName of ['L', 'R']) {
-            const ll = M['lowerLeg' + sideName];
-            if (!ll) continue;
-            const d = _crashSegAxis(ll);
-            const ankleLocal = _crashV(ll.position.x - d.x * 0.18,
-                ll.position.y - d.y * 0.18, ll.position.z - d.z * 0.18);
-            const ankle = _crashQRotV(q, ankleLocal);
-            ankle.x += rootX; ankle.y += rootY; ankle.z += rootZ;
-            lift = Math.max(lift, _crashFloorY(ankle.z) + 0.005 - ankle.y);
-        }
-        if (lift > 0) root.position.y += lift;
         root.computeWorldMatrix(true);
         // Preserve the ejected skis in WORLD space while the root walks away.
         // This repeats the ragdoll write-back with the final walk root rather
