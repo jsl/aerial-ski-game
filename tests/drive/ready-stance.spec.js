@@ -131,8 +131,12 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
             .toBeLessThanOrEqual(8);
     }
     expect(ready.torsoTiltDeg, 'torso vertical in world while waiting').toBeLessThanOrEqual(3);
-    expect(ready.flexL - ready.flexR, 'uphill knee flexes ≥ 10° more than downhill')
-        .toBeGreaterThanOrEqual(10 * Math.PI / 180);
+    // Ruling on 198 (19:55): the uphill knee bends ~15–20° in the on-slope
+    // ready stance (was ≥ 10°); negative control = the old stiff 12.7° stance.
+    expect(ready.flexL - ready.flexR, 'uphill knee flexes in the ruled 15–20° band')
+        .toBeGreaterThanOrEqual(15 * Math.PI / 180);
+    expect(ready.flexL - ready.flexR, 'uphill knee flexion stays ≤ 20°')
+        .toBeLessThanOrEqual(20 * Math.PI / 180);
     expect(ready.handHipZL, 'left hand beside the thigh (|Δz| ≤ 3 cm)').toBeLessThanOrEqual(0.03);
     expect(ready.handHipZR, 'right hand beside the thigh (|Δz| ≤ 3 cm)').toBeLessThanOrEqual(0.03);
 

@@ -1948,6 +1948,9 @@ def weld_abdomen_hip_seam(low, arm):
                          'across the junction — skinning can separate them '
                          'under pose (the #26 abdomen/hip see-through).')
     return n_seam
+
+
+
 def weight_seam_gate(obj, tag):
     r = weight_seam_report(obj, tag)
     if r['max'] > WEIGHT_SEAM_MAX or r['hot'] > WEIGHT_SEAM_HOT_MAX:
@@ -6656,6 +6659,12 @@ def suit_shell(body, joints):
                     # where the thigh silhouette hands over to the shin;
                     # pulling it in encloses background there (leg-watertight
                     # side). The crumple the author flagged is front/side.
+                    # Iter 201 attempt 1 INCLUDED the aft verts here: the pocket
+                    # stayed 125 px (it is a POSED deep-flexion separation, not
+                    # a rest gap) and the ironing flipped the tube-smooth
+                    # sabotage self-test plus two rig gates — REVERTED; the
+                    # crook is PARKED as tracked per the ruling on 199
+                    # (two attempts spent).
                     r0k[i] = r
                     continue
                 zc = v.co.z

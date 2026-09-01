@@ -2432,7 +2432,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=79";   // 79: #25 knee bridge — continuous garment across the knee band (iter 199)
+    const ASSET_V = "?v=80";   // 80: #25 crook attempt 1 — aft verts included in the knee-bridge pull (iter 201)
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -9803,7 +9803,7 @@ void main(void) {
                 const _ulL = character.meshes.upperLegL;
                 const _llL = character.meshes.lowerLegL;
                 if (_ulL && _llL) {
-                    const _f = 0.85 * _readyStance.last.legF; // 0.221 rad = 12.7° ≥ 10° gate
+                    const _f = 1.12 * _readyStance.last.legF; // 0.291 rad = 16.7°, in the ruling's 15–20° band
                     _ulL.rotation.x = _llL.rotation.x + _f;
                     _ulL.position.y = _llL.position.y + 0.18 * Math.cos(_llL.rotation.x)
                                     + 0.18 * Math.cos(_ulL.rotation.x);
