@@ -313,6 +313,44 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 
 
+### 230 — REVIEW (capped form, per the 220/225/230/235 review schedule): 227–229 landings hold; sky-chroma and kick-lip debts re-measured; re-prioritised queue
+
+Review-only, no source/asset change. Verification: **unit 81/81, golden 30/30,
+look 7/7** (shots regenerated + inspected), **review-measure 1/1**,
+**spray.spec 2/2** (NC peak 2.55 m > 1.7 band — fires), **crash-ragdoll 10/10**
+in one batch (the 204-era load flake did not recur; #13 bands, #20 rest
+contacts, roll/limp negative controls all green).
+
+**Measured on the fresh shots (review-measure + PNG pass):** scene corridor
+lum 0.829 vs flankNear 0.851 / flankFar 0.841 (grey-ramp delta −0.022/−0.012 —
+holds, corridor within 2% of flanks); worst sky-seam row 5.1% background at
+y=0.425 (small, unchanged); athlete shadow present (lum 0.272 under vs
+0.793–0.860 ring — 68% drop, far above the 15% gate); face skin reads
+(lum 0.739, darkFrac 0). Sky top-third r−b **−0.123** vs the P2 gate ≤ −0.25 —
+the long-parked sky-colour debt is unchanged and now the loudest colour gap.
+**Kick-lip edge line** (kicker.png): the thin dark wall/face junction from the
+footage is still absent — the block reads as a clean white slab with only the
+red trim marks; this is the loudest remaining kicker gap.
+
+**By-eye (scene/figure/figure_front/kicker/inrun):** figure and figure_front
+read well — bib "30" legible front, boots seated, skis bound toe+heel, suit
+blue as broad panels; in-run shows continuous corridor, both B-net lines and
+the kick-lip gate posts; the horizon ridgelines no longer float (227 holds).
+Remaining athlete nits (Opus-lane / author-eye items, reported not touched):
+the pink paint smear at the bib base persists in figure_front; the side-view
+bib digits still read rotated ("0E"-ish) in figure.png; coach silhouette fine.
+
+**Re-prioritised queue for 231+:** (1) the 15-minute sky-colour slice — deepen
+zenith blue to reach the −0.25 r−b gate (parameter-only, per the standing
+03:15 instruction); (2) the kicker dark edge line + any residual panel work
+(P3/P12 finish); (3) the author-eye pink-bib-smear + mirrored-digit paint fix
+(build-side, needs the athlete rebuild lane or explicit assignment); (4)
+polish buffer / author findings through 235 (next review 235).
+
+**Open questions for the reviewer:** none new — the sky-colour slice
+instruction already stands; confirm it may spend 231's slot before the
+kicker edge line if the reviewer prefers colour first.
+
 ### 229 — P5 landing-spray plume retuned to the footage numbers + spray.spec gate; NEXT.md deleted (mandate complete)
 
 The 14:30b ruling's polish slot. `_spawnSnowBurst` (game.js) was still the
@@ -352,6 +390,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 230 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected), review-measure 1/1, spray 2/2 (NC fires 2.55 m), crash-ragdoll 10/10 in batch. 227–229 landings HOLD. Measured: corridor 0.829 vs flanks 0.851/0.841 (grey-ramp −0.022, holds); athlete shadow 68% darker under; sky r−b −0.123 vs −0.25 gate (parked sky-colour slice still the loudest colour gap); kicker dark wall/face edge line still absent (loudest kicker gap). Athlete nits reported not touched: pink bib smear, side-view mirrored digits. Queue: sky slice → kicker edge line → paint fixes; review 235. No source/asset change, ASSET_V unchanged.** | entry 230. |
 | — | Iteration 229 | **P5 SPRAY PLUME RETUNED to the footage numbers (polish slot per the 14:30b ruling): `_spawnSnowBurst` was the untuned original (worst-case plume ≈ 20 m/s upward, life 0.4–1.2 s); now direction 0.5–1.7·ss (ss clamped 2.2), emitPower 1.0–1.6, gravity −8, life 0.9–1.9 s → real-landing plume peaks ≈ 1.0–1.3 m (footage 1–1.5 m), trails ~1.6 s (footage 1–2 s). New `spray.spec.js` 2/2 with firing over-speed NC (2.5–2.7 m); probes `_snowBursts`/`_spawnSnowBurstProbe`. Mid-iteration incident (declarations accidentally cut, freelook 1/6) caught and fixed pre-commit; freelook 6/6. unit 81/81, golden 30/30, look shots regenerated + inspected. Display-only, ASSET_V unchanged. NEXT.md DELETED (mandate complete).** | entry 229. |
 | — | Iteration 228 | **SKI-TAIL CURL INVESTIGATION CLOSED (220's flag, the 14:30 ruling's next slot): the raised element aft of the rear binding is the INTENDED 14 mm tail kick + brake bar, NOT a reversed tip. New `ski-tail.spec.js` 2/2 (gates + firing NC): mid-run tip leads tail by 1.55 m along travel (+z), tip lift 47.6 mm vs tail 6.6 mm over the waist deck, brake top within 23 mm of the tail deck; NC (180° yaw = the reversed-tip defect) fires. No change to `game.js`/assets, ASSET_V unchanged. unit 81/81, golden 30/30, rig 12/13 (carried rig:496 hands red), look 7/7, figure.png inspected — shovel with sidecut clearly fore, aft element small.** | entry 228. |
 | — | Iteration 227 | **HORIZON SLICE (223-ruling tail 2, per the 14:30 ruling's "remaining slots 227–235"): (1) near-ridge crest banding — `_ridgeMesh` gains a per-ridge uv.v elevation divisor; near ridges use 48 m so their ≈26 m crests reach rock/tree-line/snow-cling instead of the whole face sitting in the dark forest band (the "floating green slab"); (2) peak/sky separation — peak haze mix 0.26–0.38 → 0.18–0.28, haze emissive 0.16 → 0.11; rendered peak meanLum 0.478 → 0.443 = 0.69 × sky band 0.645 (old 0.85 rule; pre-change ratio ~0.81 by top-band sample). unit 81/81, golden 30/30, ridges3d+peak-overhang 7/7 (ridge mask 0.322/0.137 vs ceiling 0.45; fogged NC 0.559 fires; peak gate std 0.121, opaque, 11 tints), look 7/7 incl. FRONTGATE navyFrac 0.0701 (green again after 226's v89 revert). Display-only, no assets, ASSET_V unchanged.** | entry 227. |
