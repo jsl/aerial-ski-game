@@ -7794,9 +7794,28 @@ void main(void) {
     // Babylon's exact behavior.  Pulling back down spends target tilt first,
     // then returns control to beta on subsequent movement.
     let _freeLookPointerY = null;
-    canvas.addEventListener('pointerdown', e => { _freeLookPointerY = e.clientY; }, true);
-    canvas.addEventListener('pointerup', () => { _freeLookPointerY = null; }, true);
-    canvas.addEventListener('pointercancel', () => { _freeLookPointerY = null; }, true);
+    // HUMAN TESTING #27 (author, 2026-08-31 20:55): a drag whose pointerup
+    // happens OUTSIDE the canvas was never seen by canvas-level listeners, so
+    // bare cursor moves kept steering the camera ("sticks in panning mode").
+    // Two-layer fix:
+    //   1. setPointerCapture on pointerdown — the browser retargets every
+    //      subsequent event of that pointer (including the release) to the
+    //      canvas, so Babylon's own ArcRotate pointer input and our tilt
+    //      tracker both see pointerup even when it lands on other DOM/outside
+    //      the window.
+    //   2. A window-level safety net: pointerup/pointercancel/blur/
+    //      visibilitychange clear the tilt tracker's drag state unconditionally.
+    canvas.addEventListener('pointerdown', e => {
+        _freeLookPointerY = e.clientY;
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    }, true);
+    const _clearFreeLookDrag = () => { _freeLookPointerY = null; _freeLookTiltBaseY = null; };
+    canvas.addEventListener('pointerup', _clearFreeLookDrag, true);
+    canvas.addEventListener('pointercancel', _clearFreeLookDrag, true);
+    window.addEventListener('pointerup', _clearFreeLookDrag, true);
+    window.addEventListener('pointercancel', _clearFreeLookDrag, true);
+    window.addEventListener('blur', _clearFreeLookDrag);
+    document.addEventListener('visibilitychange', _clearFreeLookDrag);
     canvas.addEventListener('pointermove', e => {
         const prevY = _freeLookPointerY;
         _freeLookPointerY = e.clientY;

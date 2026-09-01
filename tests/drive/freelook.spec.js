@@ -70,6 +70,56 @@ test('free-look: active in ready state, drag orbits and persists, terrain clamp 
     expect(p.active).toBe(false);
 });
 
+test('#27 sticky drag: a release that misses the canvas must end the drag', async ({ page }) => {
+    await loadGame(page);
+    await page.waitForTimeout(800);
+
+    const p0 = await page.evaluate(() => window._freeLookProbe());
+    expect(p0.active).toBe(true);
+
+    // Synthetic pointer sequence that reproduces the author's sticky-pan:
+    // pointerdown on the canvas, an upward drag hard enough to engage the
+    // terrain-tilt intercept, then a pointerup targeted at document.body —
+    // i.e. a release that happened OFF the canvas, so canvas-level listeners
+    // never see it (the pre-capture bug). Finally bare canvas pointermoves.
+    const sticky = await page.evaluate(async () => {
+        const canvas = document.getElementById('renderCanvas');
+        const fire = (target, type, y, buttons) => target.dispatchEvent(new PointerEvent(type, {
+            pointerId: 7, pointerType: 'mouse', clientY: y, buttons, bubbles: true,
+        }));
+        const box = canvas.getBoundingClientRect();
+        const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+        const cam = window._freeLookCam();
+        const beta0 = cam.beta, alpha0 = cam.alpha;
+        // Put the orbit at the terrain clamp so the next upward synthetic
+        // demand crosses the intercept (synthetic pointermoves do not drive
+        // Babylon's own input, so the real drag can't be replayed verbatim).
+        const r = Math.max(0.01, cam.radius || 10);
+        const minY = window._camGroundUnder().ground + 1.0;
+        cam.beta = Math.max(0.05, Math.acos(Math.max(-1, Math.min(1, (minY - cam.target.y) / r))));
+        fire(canvas, 'pointerdown', cy, 1);
+        for (let i = 1; i <= 6; i++) fire(canvas, 'pointermove', cy - i * 80, 1); // drag up hard
+        await new Promise(r2 => setTimeout(r2, 300));
+        const tilted = window._freeLookProbe();
+        // Release OFF the canvas: target the body, so the canvas never sees the up.
+        fire(document.body, 'pointerup', cy - 1200, 0);
+        await new Promise(r => setTimeout(r, 100));
+        // Bare cursor moves (buttons = 0) over the canvas.
+        for (let i = 0; i < 12; i++) fire(canvas, 'pointermove', cy - 1200 + i * 25, 0);
+        await new Promise(r => setTimeout(r, 400));
+        const end = window._freeLookProbe();
+        return {
+            tiltEngaged: tilted.tiltGoal > 1e-5 || tilted.tiltRise > 1e-5,
+            drifted: Math.abs(end.beta - beta0 - (tilted.beta - beta0)) +
+                     Math.abs(end.alpha - alpha0 - (tilted.alpha - alpha0)) > 1e-4,
+        };
+    });
+    // The upward drag must actually have engaged the tilt tracker, and after
+    // the missed release the bare moves must not have drifted the camera.
+    expect(sticky.tiltEngaged).toBe(true);
+    expect(sticky.drifted).toBe(false);
+});
+
 test('free-look: after a forced crash settles, orbit works and the follow stays parked', async ({ page }) => {
     test.setTimeout(240_000);
     await loadGame(page);
@@ -126,7 +176,6 @@ test('free-look: after a forced crash settles, orbit works and the follow stays 
     const p = await page.evaluate(() => window._freeLookProbe());
     expect(p.gap).toBeGreaterThanOrEqual(0.99);
 });
-
 // HUMAN TESTING #7 (author, 2026-08-29): "the scene starts in front of the
 // aerialist when the page loads … it was fine before when camera started
 // behind". Root cause: free-look took over on frame 1 before the follow block

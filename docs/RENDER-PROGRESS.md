@@ -299,6 +299,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
+| — | Iteration 207 | **#27 STICKY CAMERA FIXED (display-only, `game.js` free-look pointer block): every manual drag-state site now takes `setPointerCapture` on the canvas AND clears its drag state on WINDOW-level `pointerup`/`pointercancel` + `blur` + `visibilitychange`. New gate in `freelook.spec.js` (#27 sticky drag): synthetic canvas pointerdown + tilt-engaging upward drag, release targeted at `document.body` (the exact missed-canvas-release case), then bare pointermoves must not drift the camera — FAILS on the unfixed build (drifted=true, tilt engaged), PASSES fixed; all 6 freelook specs green. unit 81/81, golden 30/30, look 7/7.** | entry 207. |
 | — | Iteration 206 | **#21 v4 STATIONARY GROUNDED TUCK LANDED (display-only): holding tuck while STOPPED now renders a deep squat (renderer-local `_STILL_SQUAT` table blended in `applyPose`, speed-gated 0.8 m/s fade to the downhill crouch) — torso 20.0° from upright, hand-to-knee 15.0 cm, knee interior 90.7°, chain ≤ 8.2 mm, ankle-on-ski 7.2 mm; boot pin/shin rows pin-compatible so heels stay planted. New gate `tuck-grounded.spec.js` 2/2 (keyboard-driven live game; negative control = the downhill crouch fires at ~44°). unit 81/81, golden 30/30 (0 physics change), look 6/6, affected drive specs (inrun-crouch, tuck-sitting, tuck-coverage, flight-sweep, ready-stance, chain, inrun-contact) all green.** | entry 206. |
 | — | Iteration 205 (review) | **REVIEW-ONLY (capped form per the 200 ruling): unit 81/81, golden 30/30, look 6/6, walkoff 3/3 (get-up gate green), crash-ragdoll 10/10 (the 204 flake green in batch — no recurrence). Scene luminance: corridor 212.9 vs flank-right 216.0 / flank-left 205.1 (grey-ramp holds); midground green ridge band 115.6 vs horizon 87.5. By-eye: bib digits still mirrored, pink smear at bib base persists (item 7 debts); boots read as gray slab blocks, not boots (redo queued); tuck reads compact in pose_tuck_side; no visible watertight holes in front/side framings. No source/asset change.** | entry 205. |
 | — | Iteration 198 | **NEXT.md 5a-NEW(ii) #21 v3 PART 2 — the SITTING tuck LANDED under `APPROVED: POSE_TUCKED display-table adjustment` (ruling on 197): torso −25°→−14.3°→**10.03° from upright**, hip flexion/knee fold kept (kneeToChest 0.193 ≤ 0.22), arms 2-link-IK'd to the KNEECAP — hand-to-knee **24.9 mm** (was 59 mm proximity; limit ≤ 50 mm, contact), elbows in (rz 0.12), elbow interior ~40°; chain-closed by FK, max gap 0.05 mm; POSE_TUCKED_INERTIA byte-frozen. New gate `tuck-sitting.spec.js` (torso ≤ 10.5°, grasp ≤ 5 cm, ≥ 1 cm floor, chain ≤ 3 cm) with the OLD grasp as the FAILING negative control. Audit 0 physics-state diffs ×30/5408 frames, census-only recapture → golden 30/30; unit 81/81; chain+flight-sweep+tuck-coverage+inrun-contact 24/24; look 6/6 + pose-shots inspected (reads as sitting, gloves on the kneecaps). ASSET_V 78.** | entry 198. |
@@ -12645,8 +12646,8 @@ ruling; confirmed by this review):
 **Open questions for the reviewer.** None new; the standing asks (ankle-edging vs the
 two closed flat-ski gates, entry 201; the cache-suspect slide verdict) await the author.
 
-### 206 — #21 v4: the STATIONARY grounded tuck lands — holding tuck while STOPPED renders a deep squat (torso 20.0° upright, hands to the knees at 15.0 cm, knee interior 90.7°, heels planted); display-only, speed-gated back to the downhill crouch; new gate + firing negative control
 
+### 206 — #21 v4: the STATIONARY grounded tuck lands — holding tuck while STOPPED renders a deep squat (torso 20.0° upright, hands to the knees at 15.0 cm, knee interior 90.7°, heels planted); display-only, speed-gated back to the downhill crouch; new gate + firing negative control
 **Mandate.** The 00:05 ruling re-queue: 206 = grounded tuck (#21 v4, author
 2026-08-31 20:30: "when stationary at top of run tuck doesn't seem right").
 The grounded tuck path rendered `POSE_INRUN_TUCK` — the DOWNHILL crouch (back
@@ -12720,3 +12721,49 @@ tighter requires a deeper forward lean, which the ~20° ruling forbids.
 2. The squat weight keys on |(vz, vy)| < 0.8 m/s. If the author holds tuck
    while edging down the plateau slowly, the pose blends mid-way; acceptable,
    or should the blend hold until an explicit run start?
+
+### 207 — #27 sticky camera: pointer capture + window-level release net on every manual drag-state site
+
+**Mandate.** The 00:55 ruling: "207 = #27 sticky camera per the queue." Author
+(2026-08-31 20:55): "sometimes after panning with the camera, it seems like it
+'sticks' in camera panning mode on the web display. without clicking, if I move
+cursor up and down the camera tracks."
+
+**Audit.** `game.js` has exactly one manual drag-state site in the camera code:
+the free-look tilt tracker's `_freeLookPointerY` (the #18 terrain-tilt
+intercept), cleared only by CANVAS-level `pointerup`/`pointercancel`. The same
+missed-release class also hits Babylon's own ArcRotate pointer input (it
+listens for the release on the canvas). With `_freeLookTiltGoal > 0` from a
+terrain-limited upward drag and the pointer released off-canvas, every bare
+downward cursor move spent tilt goal — the camera tracked the cursor with no
+button held. No other drag-state flags exist (WASD nudge is key-only; gamepad
+polled).
+
+**Fix (display-only, `game.js` free-look pointer block; no DoF, no athlete
+files, no `engine/`).** Two layers, per the ruling's audit requirement:
+1. `canvas.setPointerCapture(e.pointerId)` on `pointerdown` — the browser
+   retargets the whole gesture (including the release) to the canvas, so
+   Babylon's input and the tilt tracker both see the up even when it lands
+   outside the canvas/window.
+2. A window-level safety net: `pointerup` + `pointercancel` (capture) +
+   `blur` + `visibilitychange` clear `_freeLookPointerY` and
+   `_freeLookTiltBaseY` unconditionally (`_clearFreeLookDrag`).
+
+**Gate.** New `freelook.spec.js` test "#27 sticky drag: a release that misses
+the canvas must end the drag": synthetic `pointerdown` on the canvas, beta
+pre-positioned at the terrain clamp, synthetic upward `pointermove`s until the
+tilt intercept engages (`tiltGoal > 0` asserted), then a `pointerup` targeted
+at `document.body` — the exact event shape a real off-canvas release produces
+(canvas listeners never fire) — then bare `pointermove`s. Assert zero
+alpha/beta drift after the missed release.
+
+**Verification.**
+- Negative control: the gate FAILS on the unfixed build
+  (`git stash` of the `game.js` hunk; `tiltEngaged=true`, `drifted=true`) —
+  the sticky state is reproduced, not assumed. PASSES with the fix.
+- `freelook.spec.js` 6/6 green (orbits persist, crash-settle orbit, on-load
+  framing, R re-frame, hard terrain lock, sticky gate).
+- `npm run test:unit` 81/81; `npm run test:golden` 30/30 (0 physics change);
+  `look` 7/7 (shots regenerated).
+
+**Open.** None for #27. Queue per ruling: boots redo → paint → coach.
