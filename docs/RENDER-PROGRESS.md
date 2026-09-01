@@ -394,6 +394,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
 | — | Iteration 233 | **B-NET ANISO (P12 conformance, polish buffer): `bnetTex.anisotropicFilteringLevel` 16 with `?bnet_sabotage=1` NC; new bnet-legibility.spec 2/2 (aniso==16 + fence-cloth visibility inFrame 86; NC fires aniso==1). Diagnoses recorded: (a) scene.png fence tangle is NOT texture filtering — near-black-albedo probe moved cloth-patch lum <0.06; it is dark background through the alpha holes at grazing angles, candidate fix depth-fade/LOD on the net material (reviewer call); (b) review-230 seam-worst-row (5.1% @ y=0.425) is diffuse horizon speckle peaking at the silhouette row (7.5% @ y=0.443), sky-through-bare-crown gaps + AA, not the box-seam class. unit 81/81, golden 30/30 (no recapture), venue+grey-ramp 7/7. index.html ?v=92; ASSET_V unchanged.** | entry 233. |
 | — | Iteration 232 | **KICKER WALL/FACE JUNCTION LINE (230 queue item 2): full-width dark lip tube `kickerJunctionLine` at the take-off-face/back-wall junction; red trim untouched (2026-08-29 ruling). kicker-edge.spec 2/2 (rendered lip band darkFrac 0.508, lum 0.198 vs snow 0.739; NC fires 0/0.528). unit 81/81, golden 30/30 after census-only recapture (0 physics diffs, 30 scen / 5408 frames), look 7/7, kicker-faces+venue+terrain-corridor 12/12. index.html ?v=91; ASSET_V unchanged. Queue: item 3 paint fixes are athlete-banned pending reviewer lane assignment.** | entry 232. |
 | — | Iteration 230 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected), review-measure 1/1, spray 2/2 (NC fires 2.55 m), crash-ragdoll 10/10 in batch. 227–229 landings HOLD. Measured: corridor 0.829 vs flanks 0.851/0.841 (grey-ramp −0.022, holds); athlete shadow 68% darker under; sky r−b −0.123 vs −0.25 gate (parked sky-colour slice still the loudest colour gap); kicker dark wall/face edge line still absent (loudest kicker gap). Athlete nits reported not touched: pink bib smear, side-view mirrored digits. Queue: sky slice → kicker edge line → paint fixes; review 235. No source/asset change, ASSET_V unchanged.** | entry 230. |
@@ -14022,3 +14023,67 @@ call; (2) queue item 3 (bib smear/mirrored digits) still awaits the athlete
 lane assignment; (3) if the seam-row metric should stop flagging legitimate
 horizon sky, the row scan could clamp to y ≥ 0.46 or restrict to below-silhouette
 rows — your call whether the gate or the scene changes.
+
+### 235 — FORENSICS (review-only): crash→get-up root-Y + clearance dump, 3 worlds + no-tuck variant; slide penetration quantified, handoff snap exonerated, triple get-up stall found
+
+Per the #29 v2 / #24(a) entries and HANDOFF-2026-09-01 §3 item 1, this slot reproduced played
+crashes (keyboard path: ArrowUp start, ArrowDown rotation, Space tuck, the entry-109-sanctioned
+`_debugTriggerCrash` once airborne past the kicker) and dumped **every rendered frame** from impact
+through walk-start: `skierRoot` absolute Y/Z, the lowest tracked point (root + both lower-leg −Y
+ankle caps, the boot-sole reference), clearance vs `_crashFloorY(z)`, and the ragdoll/walk phases.
+Instrument: `tests/drive/getup-forensics.spec.js` (new, instrument-only — no behaviour gates);
+full dumps in `shots/forensics_{single,double,triple}.json` (gitignored), plus a no-tuck variant
+in the scratch directory.
+
+**Numbers (all values per rendered frame, SwiftShader timings — frame indices, not ms):**
+
+| world | impact m/s | frames | max single-frame Δroot.y | slide (`roll`) clearance min / mean / max | airborne frames (>8 cm) |
+|---|---|---|---|---|---|
+| single | 4.42 | 143 | **−0.996** @ i18 `roll` | −2.74 / −0.35 / +1.25 m | 16 / 29 |
+| double | 5.04 | 114 | **−1.384** @ i18 `roll` | −6.36 / −1.66 / +1.25 m | 5 / 34 |
+| triple | 5.27 | 196 | **−1.564** @ i27 `roll` | −9.31 / −2.55 / +1.25 m | 15 / 37 |
+| single no-tuck | 4.37 | 140 | −1.197 @ i19 `roll` | −3.06 / −0.60 / +1.25 m | 7 / 27 |
+
+Findings, mapped to the fix queue:
+
+1. **#29 v2 suspect (b) is CLEAR on this path — there is no single-frame upward root jump
+   anywhere.** The largest *upward* Δroot.y in any world/variant is **0.05–0.09 m/frame**, inside
+   the `rise` phase (contact-paced, the 217 governor working). The get-up handoff
+   (settling→beat→roll→kneel→rise→walk) is smooth everywhere: kneel ≤ 0.072, rise ≤ 0.051,
+   walk ≤ 0.012 m/frame. **What the author sees as the "huge jump up" is almost certainly the
+   slide**: during `roll` the root *drops* up to 1.0–1.6 m in a single rendered frame while the
+   body plunges metres under the visual floor — then the get-up lifts it back out of that sunken
+   pose. A multi-metre rise spread over the get-up blend, starting from a body buried 2–9 m deep,
+   reads as a jump especially with the camera following. 236 should fix the SLIDE, not the
+   handoff.
+2. **#24(a) confirmed and worse than "airborne": the slide oscillates between airborne and deep
+   underground.** Within the `roll` phase clearance swings +1.25 m → −2.7 m (single) / −6.4 m
+   (double) / −9.3 m (triple) across consecutive frames; mean clearance is negative in every world
+   (−0.35 / −1.66 / −2.55 m). The body is neither terrain-locked nor cleanly airborne — it is
+   tunnelling through `_crashFloorY` while travelling down the landing. The 08-31 12:05 grounded-
+   slide spec (segment clearance ≤ 8 cm, penetration ≤ 5 cm every slide frame) is the right fix
+   shape; the dumps give 238 its per-world baselines.
+3. **NEW defect: the triple get-up STALLS.** In triple the walk sequence never leaves the walk
+   `roll` stage: from ~7.5 s to the 15 s cap the root is frozen at clearance 0.005 with no
+   kneel/rise/walk frames at all (single/double complete the full sequence). The author's crash
+   experience in the marquee world is "athlete lies there forever" on this path. Root cause is
+   236-adjacent — suspect the roll-stage advance condition never fires for the triple's longer
+   slide/rest geometry.
+
+Verification: `getup-forensics` 3/3 (single/double/triple), unit 81/81, golden 30/30, look 7/7;
+shots regenerated and inspected — bib "30" legible front-on, figure/side reads unchanged from 233,
+scene composition unchanged (B-net both edges, kicker lip line, wind sock, coach, horizon banding
+as accepted at 227/230). No `game.js`/`engine/`/asset change; ASSET_V unchanged.
+
+Re-prioritised queue (unchanged order, sharpened targets): **236** = fix the slide-phase
+motion first (it is both #24(a) and the real source of the author's #29 report) — terrain- or
+surface-locked slide per the 08-31 spec, with the forensics clearance bands as gates; fold the
+triple walk-stall root-cause into the same slot since it shares the roll-stage code. **237** =
+#21 v5 tuck entry blend (unchanged). **238** = remaining #24(a) gates/NC if not fully covered by
+236.
+
+**Open questions for the reviewer:** (1) the author's "jump up" reproduced only as the
+slide-plunge-then-rise pattern above — if their report was on a *natural* (non-triggered) crash
+path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
+before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
+owns it (it is a distinct failure from the slide, but shares the roll-stage code).
