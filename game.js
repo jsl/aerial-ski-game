@@ -1121,6 +1121,42 @@ window._spineProbe = function (meshes) {
     return updateSpineChain(meshes || window._characterMeshes);
 };
 
+// ── #21 v4: the STATIONARY grounded tuck (author, 2026-08-31 20:30: "when
+// stationary at top of run tuck doesn't seem right"). The grounded tuck path
+// renders POSE_INRUN_TUCK — the DOWNHILL crouch (back 44 deg above horizontal)
+// — which at zero speed reads as a permanent forward collapse. While grounded
+// and STOPPED with tuck held the author wants a DEEP SQUAT: heels planted,
+// deep knee flexion, torso within ~20 deg of upright, hands reaching to the
+// knees. Renderer-side table (ADR-0002): body-model.json untouched.
+//
+// Built pin-compatible with _pinBootsToSkis, which OWNS the shins in every
+// grounded tuck (shin = ski pitch − 28.6 deg cuff lean, ankle on the binding
+// station): lowerLeg/ski rows are copied verbatim from POSE_INRUN_TUCK so the
+// pin reproduces them exactly, and only the THIGH flexion (rx 1.0822 vs the
+// shin's −0.5 → 90.6 deg interior knee angle, deep flexion) is new. The pin
+// then lands the hip at (−0.160, +0.145); the torso leans 20 deg forward from
+// there (rx −0.3491) with its −Y end ON that hip (chain closed), and the arms
+// run straight down from the shoulder toward the knee. With the shoulder at
+// (0.357, −0.042) and the knee at (−0.329, −0.172) the 0.55 m arm falls
+// 0.15 m short of the kneecap — the geometric limit for this figure: shorter
+// would need a deeper forward lean, which the ~20 deg ruling forbids.
+// Heels planted: ski rows are rest-pitched (rx 0, dz 0), same as the in-run
+// table, so the root's 0.35·tuck seating and the boot–ski pin are untouched.
+const _STILL_SQUAT = {
+    torso:     { x:  0.000, y:  0.0984, rx: -0.3491, rz:  0.00, dz:  0.0520 },  // 20.0 deg from upright, seated on the squat hip
+    head:      { x:  0.000, y:  0.4813, rx: -0.0873, rz:  0.00, dz: -0.0530 },  // level gaze above the upright torso
+    upperArmL: { x: -0.130, y:  0.2068, rx: -3.1356, rz: -0.12, dz: -0.0430 },  // straight arms down toward the knees (elbows in)
+    upperArmR: { x:  0.130, y:  0.2068, rx: -3.1356, rz:  0.12, dz: -0.0430 },
+    lowerArmL: { x: -0.075, y: -0.0682, rx: -3.1356, rz: -0.12, dz: -0.0447 },
+    lowerArmR: { x:  0.075, y: -0.0682, rx: -3.1356, rz:  0.12, dz: -0.0447 },
+    upperLegL: { x: -0.075, y: -0.2445, rx:  1.0822, rz:  0.00, dz: -0.0130 },  // thigh 1.582 rad off the pinned shin: 90.6 deg knee
+    upperLegR: { x:  0.075, y: -0.2445, rx:  1.0822, rz:  0.00, dz: -0.0130 },
+    lowerLegL: { x: -0.075, y: -0.4870, rx: -0.5000, rz:  0.00, dz: -0.0863 },  // pin-owned (copied from POSE_INRUN_TUCK)
+    lowerLegR: { x:  0.075, y: -0.4870, rx: -0.5000, rz:  0.00, dz: -0.0863 },
+    skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },      // heels planted (copied from POSE_INRUN_TUCK)
+    skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
+};
+
 // ── Pose applicator ────────────────────────────────────────────────────────
 // tuck:       0 = fully extended, 1 = fully tucked
 // armDropL:   0 = left arm raised, 1 = left arm dropped to side
@@ -1131,20 +1167,34 @@ window._spineProbe = function (meshes) {
 // grounded:   true → use POSE_INRUN_TUCK, false → use POSE_TUCKED
 // pikeAmount: 0-1, blends toward POSE_PIKED
 // pikeArmDrop:0-1, drops arms during pike release
-function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise, grounded, pikeAmount, pikeArmDrop) {
+// squat:      0-1 (#21 v4), STATIONARY grounded tuck — blends the grounded
+//             tuck target toward _STILL_SQUAT (deep squat) below
+function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise, grounded, pikeAmount, pikeArmDrop, squat) {
     pikeAmount  = pikeAmount  || 0;
     pikeArmDrop = pikeArmDrop || 0;
+    squat       = Math.min(1, Math.max(0, squat || 0));
 
     // ── Solve, then apply ──────────────────────────────────────────────────
     // The pose maths lives in the shared engine core (engine/core/pose.js) and
     // is pure: it returns transforms and touches nothing. This function keeps
     // only the RENDERING half — writing those transforms onto meshes, plus the
     // IK fix-up and glove placement below, which are display concerns that read
-    // mesh state. See ADR-0002.
     const solved = AerialEngine.pose.computePose({
         tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
         grounded, pikeAmount, pikeArmDrop,
     });
+    // #21 v4: blend the solved pose toward the stationary squat. Only the
+    // in-plane fields (y, z, rx) — x/rz stay with the solver because the
+    // A-frame stance pass and the boot–ski pin own them afterwards.
+    if (squat > 0.001) {
+        for (const seg of SEGMENTS) {
+            const p = solved[seg.name], q = _STILL_SQUAT[seg.name];
+            if (!p || !q) continue;
+            p.y  += (q.y  - p.y)  * squat;
+            p.z  += (q.dz  - (p.z - (BASE_Z[seg.name] || 0))) * squat;
+            p.rx += (q.rx - p.rx) * squat;
+        }
+    }
 
     // P13 (Sol blocker 1): the engine stub ran reconciliation BEFORE the pose
     // was written — a no-op. The real chain solve runs below, AFTER the solved
@@ -1405,7 +1455,8 @@ function _seatTorsoOnHips(meshes, tuck, armRaise) {
 // Renderer-side only (ADR-0002): lives OUTSIDE applyPose so the solver stays
 // byte-identical to computePose (the pose-solver differential unit test).
 const _INRUN_HAND_AHEAD = 0.20;
-function _inrunArmForward(meshes, tuck, armRaise) {
+const _SQUAT_HAND_AHEAD = 0.03;   // #21 v4: hands ON the knees when stopped
+function _inrunArmForward(meshes, tuck, armRaise, squatDamp) {
     const w = (tuck || 0) * (1 - (armRaise || 0));
     if (w <= 0.001) return;
     const t = meshes.torso;
@@ -1424,7 +1475,10 @@ function _inrunArmForward(meshes, tuck, armRaise) {
     }
     if (!n) return;
     ky /= n; kz /= n;
-    let dy = ky - shY, dz = (kz - _INRUN_HAND_AHEAD) - shZ;
+    const ahead = _INRUN_HAND_AHEAD +
+        (_SQUAT_HAND_AHEAD - _INRUN_HAND_AHEAD) *
+        Math.min(1, Math.max(0, squatDamp || 0));
+    let dy = ky - shY, dz = (kz - ahead) - shZ;
     const len = Math.hypot(dy, dz);
     if (len < 1e-6) return;
     dy /= len; dz /= len;
@@ -3850,13 +3904,14 @@ void main(void) {
     // measure the composition, not the table. Same maths as the frame loop
     // because it IS the frame loop's calls; the next rendered frame overwrites
     // the meshes, so no game state is touched.
-    window._inrunHold = function (tuck) {
+    window._inrunHold = function (tuck, squat) {
         const M = character.meshes;
         const t = (tuck === undefined) ? 1 : tuck;
-        applyPose(M, t, 1, 1, 0, 0, 0, true, 0, 0);
+        const s = Math.min(1, Math.max(0, (squat === undefined) ? 0 : squat));
+        applyPose(M, t, 1, 1, 0, 0, 0, true, 0, 0, s * t);
         _pinBootsToSkis(M, t, 0);
         _seatTorsoOnHips(M, t, 0);
-        _inrunArmForward(M, t, 0);
+        _inrunArmForward(M, t, 0, s);
         const seg = (n) => {
             const m = M[n];
             return { y: m.position.y, z: m.position.z, rx: m.rotation.x };
@@ -9624,7 +9679,17 @@ void main(void) {
         // ── Apply body pose ────────────────────────────────────────────────
         if (!crashActive) {
             const offAxisVisualTuck = Math.abs(state.offAxis) * (0.25 / 0.28);
-            applyPose(character.meshes, Math.max(state.tuckAmount, offAxisVisualTuck), state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
+            // ── #21 v4 stationary-squat weight ─────────────────────────────
+            // Full squat only when grounded, tucked and STOPPED; fades out with
+            // ground speed (0.8 m/s ≈ walking pace) so the downhill crouch takes
+            // over as the run starts. Display-only (ADR-0002); no physics state.
+            const _groundSpeed = Math.hypot(state.vz || 0, state.vy || 0);
+            const _squat = (state.grounded && !state.crashed && !_poolDiveMode &&
+                            !_trampolineMode && !_trampolineMatMode)
+                ? Math.max(0, Math.min(1, 1 - _groundSpeed / 0.8)) : 0;
+            window._lastSquat = _squat;
+            applyPose(character.meshes, Math.max(state.tuckAmount, offAxisVisualTuck), state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop,
+                _squat * Math.max(state.tuckAmount, offAxisVisualTuck));
             if (_lsGet('setting_gamepad') === '1' && state.armSnap < 0.01 && state.armRaise < 0.01) {
                 applyGamepadLateral(character.meshes, _gpArmLX, _gpArmRX, state.armDropL, state.armDropR);
             }
@@ -9884,7 +9949,8 @@ void main(void) {
             _seatTorsoOnHips(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1);
             _inrunArmForward(character.meshes, state.tuckAmount,
-                             state.grounded ? state.armRaise : 1);
+                             state.grounded ? state.armRaise : 1,
+                             window._lastSquat || 0);
             if (readyState && state.tuckAmount < 0.05) {
                 for (const [side, preZ] of [['L', preZL], ['R', preZR]]) {
                     if (preZ === null || preZ === undefined) continue;

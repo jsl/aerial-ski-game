@@ -298,6 +298,7 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Status board
 | — | Iteration 204 | **NEXT.md 5b #24(b) WEIGHTY GET-UP: contact-driven roll→kneel→rise (root rises only over the planted ankle set, ≤ 1.2 m/s cap, feet drift ≤ 2 cm) replaces the float-up root interpolation; legacy path kept behind `_crashGetupWeightDisabled` as the FIRING negative control; per-frame get-up gate in `walkoff.spec.js` green in 3/3 worlds; unit 81/81, golden 30/30, look 6/6, crash-ragdoll 9/10 (one known load flake, green solo). Open: #24(a) slide gate + negative control.** | entry 204. |
+| — | Iteration 206 | **#21 v4 STATIONARY GROUNDED TUCK LANDED (display-only): holding tuck while STOPPED now renders a deep squat (renderer-local `_STILL_SQUAT` table blended in `applyPose`, speed-gated 0.8 m/s fade to the downhill crouch) — torso 20.0° from upright, hand-to-knee 15.0 cm, knee interior 90.7°, chain ≤ 8.2 mm, ankle-on-ski 7.2 mm; boot pin/shin rows pin-compatible so heels stay planted. New gate `tuck-grounded.spec.js` 2/2 (keyboard-driven live game; negative control = the downhill crouch fires at ~44°). unit 81/81, golden 30/30 (0 physics change), look 6/6, affected drive specs (inrun-crouch, tuck-sitting, tuck-coverage, flight-sweep, ready-stance, chain, inrun-contact) all green.** | entry 206. |
 | — | Iteration 205 (review) | **REVIEW-ONLY (capped form per the 200 ruling): unit 81/81, golden 30/30, look 6/6, walkoff 3/3 (get-up gate green), crash-ragdoll 10/10 (the 204 flake green in batch — no recurrence). Scene luminance: corridor 212.9 vs flank-right 216.0 / flank-left 205.1 (grey-ramp holds); midground green ridge band 115.6 vs horizon 87.5. By-eye: bib digits still mirrored, pink smear at bib base persists (item 7 debts); boots read as gray slab blocks, not boots (redo queued); tuck reads compact in pose_tuck_side; no visible watertight holes in front/side framings. No source/asset change.** | entry 205. |
 | — | Iteration 198 | **NEXT.md 5a-NEW(ii) #21 v3 PART 2 — the SITTING tuck LANDED under `APPROVED: POSE_TUCKED display-table adjustment` (ruling on 197): torso −25°→−14.3°→**10.03° from upright**, hip flexion/knee fold kept (kneeToChest 0.193 ≤ 0.22), arms 2-link-IK'd to the KNEECAP — hand-to-knee **24.9 mm** (was 59 mm proximity; limit ≤ 50 mm, contact), elbows in (rz 0.12), elbow interior ~40°; chain-closed by FK, max gap 0.05 mm; POSE_TUCKED_INERTIA byte-frozen. New gate `tuck-sitting.spec.js` (torso ≤ 10.5°, grasp ≤ 5 cm, ≥ 1 cm floor, chain ≤ 3 cm) with the OLD grasp as the FAILING negative control. Audit 0 physics-state diffs ×30/5408 frames, census-only recapture → golden 30/30; unit 81/81; chain+flight-sweep+tuck-coverage+inrun-contact 24/24; look 6/6 + pose-shots inspected (reads as sitting, gloves on the kneecaps). ASSET_V 78.** | entry 198. |
 | — | Iteration 195 (review) | **REVIEW-ONLY: unit 81/81, golden 30/30, look 6/6 (shots regenerated + inspected; scene 0.721 / figure 0.702 / front 0.756 mean luma). `./tests/run-all.sh` — unit/golden/browser/mutation/coverage PASS, drive leg FAIL 107/1/2 (45.1 m): the walkoff #14 NEGATIVE CONTROL now PASSES on the stay-down path it must reject — carried red for the next work slot (solo-reproduce first; mechanism fix, not gate). By-eye: bib pink smear + mirrored digits remain the loudest athlete debts (item 7); peaks still pale vs sky; tuck pose holds. No source/asset change.** | entry 195. |
@@ -12642,3 +12643,79 @@ ruling; confirmed by this review):
 
 **Open questions for the reviewer.** None new; the standing asks (ankle-edging vs the
 two closed flat-ski gates, entry 201; the cache-suspect slide verdict) await the author.
+
+### 206 — #21 v4: the STATIONARY grounded tuck lands — holding tuck while STOPPED renders a deep squat (torso 20.0° upright, hands to the knees at 15.0 cm, knee interior 90.7°, heels planted); display-only, speed-gated back to the downhill crouch; new gate + firing negative control
+
+**Mandate.** The 00:05 ruling re-queue: 206 = grounded tuck (#21 v4, author
+2026-08-31 20:30: "when stationary at top of run tuck doesn't seem right").
+The grounded tuck path rendered `POSE_INRUN_TUCK` — the DOWNHILL crouch (back
+44° above horizontal, hands ahead of the knees) — so holding tuck at the start
+plateau read as a frozen forward collapse. The spec: a DEEP SQUAT with heels
+planted, deep knee flexion, torso within ~20° of upright, hands reaching to
+the knees; the flight tuck (198) untouched.
+
+**What changed (display-only, `game.js`, ADR-0002; `engine/` and
+`blender/body-model.json` untouched).**
+1. `_STILL_SQUAT` — a renderer-local pose table built by the same
+   forward-kinematics construction as 186/198, but PIN-COMPATIBLE: the boot
+   pin (`_pinBootsToSkis`) owns the shins in every grounded tuck (shin = ski
+   pitch − 28.6° cuff lean, ankle on the binding station), so the squat's
+   `lowerLeg`/`ski` rows are copied verbatim from `POSE_INRUN_TUCK` and only
+   the THIGH flexion is new (rx 1.0822 vs the shin's −0.5 → 90.7° interior
+   knee). The pin then lands the hip at (−0.160, +0.145); the torso leans
+   exactly 20° forward from there with its −Y end ON that hip (chain closed
+   by construction); the arms run straight down toward the knee. Ski rows are
+   rest-pitched, so the root's 0.35·tuck seating and the boot–ski invariant
+   are untouched — heels planted by construction.
+2. `applyPose(..., squat)` — an 11th, optional weight blends the solved pose
+   toward `_STILL_SQUAT` (y/z/rx only; x/rz stay with the A-frame pass and
+   the pin). Defaults 0, so the pose-solver differential unit test's 10-arg
+   calls are unaffected.
+3. Frame loop: `_squat = clamp01(1 − |v| / 0.8)` when grounded, not crashed,
+   not pool/trampoline — full squat only when STOPPED, fading to the downhill
+   crouch as the run starts (0.8 m/s ≈ walking pace). Multiplied by the tuck
+   blend so it only reshapes the tucked pose.
+4. `_inrunArmForward` gains an optional `squatDamp`: the hand target's
+   `_INRUN_HAND_AHEAD` (0.20 m, the downhill ruling's band) biases to 0.03 m
+   at full squat so the hands aim AT the knees, not past them. The frame
+   loop passes `window._lastSquat` (set just before the pose write each
+   frame); `_inrunHold(tuck, squat)` mirrors the whole composition for
+   probing.
+5. NEW GATE `tests/drive/tuck-grounded.spec.js`: boots the real game, holds
+   SPACE in the ready state, waits for `_lastSquat > 0.99`, then measures the
+   frame-loop composition: torso ≤ 22° from upright; hand-to-knee ≤ 0.20 m
+   both sides; interior knee ≤ 100°; chain gaps ≤ 3 cm; ankle-on-ski ≤ 3 cm;
+   screenshot saved to `shots/tuck_grounded.png`. NEGATIVE CONTROL:
+   `_inrunHold(1, 0)` — the shipped downhill crouch — must FAIL the torso
+   gate (fires at ~44°).
+6. ASSET_V stays 80 (no asset change); the golden traces moved 0.
+
+**Geometric note (honest limit, not a gate loosening).** With this figure's
+segments (leg 0.72 m, torso 0.55 m, arm 0.55 m) and heels planted + torso
+within ~20° of vertical, the shoulder sits 0.708 m from the knee — beyond the
+0.55 m straight-arm reach. The minimum hand-to-kneecap distance is therefore
+~0.15 m, reached by the straight arm aimed at the knee; the spec's "hands
+REACHING to the knees" (vs 198's ≤ 5 cm GRASP) is gated at ≤ 0.20 m. Anything
+tighter requires a deeper forward lean, which the ~20° ruling forbids.
+
+**Verification numbers.**
+- `npm run test:unit` **81/81**; `npm run test:golden` **30/30** (no physics
+  or asset change; no recapture needed).
+- `tuck-grounded` **2/2** — live-game gate: torso **20.0°**, handToKnee
+  **0.1501 m** both sides, knee interior **90.65°**, hip 7.8 mm /
+  shoulder 8.0 mm / knee 0.2 mm / ankle 7.2 mm chain gaps; negative control
+  fires. Numbers logged by the spec as `TUCK4 {...}` in its output.
+- Affected drive specs, serially: inrun-crouch 3/3, tuck-sitting 3/3,
+  tuck-coverage 6/6, flight-sweep 2/2, ready-stance 1/1, chain 10/10,
+  inrun-contact 1/1.
+- `look` **6/6**, shots regenerated; `figure.png`/`figure_front.png`
+  inspected (standing ready figure — unaffected by the tuck-only change;
+  tuck_grounded.png captured by the new gate).
+
+**Open questions for the reviewer.**
+1. Is 0.20 m the right hand-to-knee contract for v4's "reaching" wording
+   (the geometric limit is 0.15 m), or should the squat drop the torso-lean
+   band to ~30° to buy a real knee touch?
+2. The squat weight keys on |(vz, vy)| < 0.8 m/s. If the author holds tuck
+   while edging down the plateau slowly, the pose blends mid-way; acceptable,
+   or should the blend hold until an explicit run start?
