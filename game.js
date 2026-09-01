@@ -2955,7 +2955,7 @@ void main(void) {
                     // shipped boot primitives render as misplaced blocks (old shoe
                     // still visible, stray quads at the shoulders). Hidden until the
                     // placement fix + render-space boot gate land; flip to true then.
-                    const BOOTS_ENABLED = true;   // iter-208 measurement build
+                    const BOOTS_ENABLED = false;  // reviewer 01:55: 208's render STILL a block pile at the ski (not the foot), old shoe visible — the 5/5 gate passed on it, so the gate is insufficient; see the 01:55 ruling
                     const bootParts = res.meshes.filter(m =>
                         m.name && /^athleteBoot[LR]$/.test(m.name) &&
                         m.getTotalVertices && m.getTotalVertices() > 0);
