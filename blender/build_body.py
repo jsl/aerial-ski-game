@@ -7145,6 +7145,35 @@ def close_boundary(mesh, tag):
                     v.co += _navg * (_amp * _w)
             for f in _patch:
                 f.smooth = True
+            # Fable F7 (2026-09-02): the membrane's new verts were given skin
+            # weights INTERPOLATED across the hem (torso above, thigh below), so
+            # in the in-run crouch — torso pitched 34 deg on seated hips — the
+            # patch sheared into streaks behind the bib (the auto-crouch made
+            # it visible on every run). The seat belongs to the pelvis: every
+            # inner membrane vert takes the deform weights of its nearest rim
+            # vert that is torso/hip-dominant, so the patch moves as one with
+            # the torso's bottom.
+            _dl = bm.verts.layers.deform.active
+            if _dl is not None and _dome_inner:
+                _gnames = {g.index: g.name for g in mesh.vertex_groups}
+                def _dom(v):
+                    d = v[_dl]
+                    return max(d.keys(), key=lambda k: d[k]) if len(d) else None
+                _src = [r for r in _rim if r.is_valid and str(_gnames.get(_dom(r), '')).startswith(('torso', 'spine', 'hlpHip'))]
+                if not _src:
+                    _src = [r for r in _rim if r.is_valid]
+                _copied = 0
+                for v in _dome_inner:
+                    if not v.is_valid:
+                        continue
+                    r = min(_src, key=lambda q: (q.co - v.co).length_squared)
+                    dv = v[_dl]
+                    for k in list(dv.keys()):
+                        del dv[k]
+                    for k, w in r[_dl].items():
+                        dv[k] = w
+                    _copied += 1
+                log(f'  membrane weights: {_copied} inner verts take the nearest torso/hip rim weights ({len(_src)} sources)')
         _shapes = [max((e.verts[0].co - e.verts[1].co).length for e in f.edges) for f in _patch]
         log(f'AFRAME WATERTIGHT: close_boundary[{tag}] pelvis loop span {_span:.3f} closed with a '
             f'{len(_patch)}-face membrane (longest edge {max(_shapes)*1000:.0f} mm); '

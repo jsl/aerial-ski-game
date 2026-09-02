@@ -2498,7 +2498,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=93";   // 93: Fable athlete fixes (gusset, leg tubes, hand-abducted bake) — the maps changed; 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
+    const ASSET_V = "?v=95";   // 95: Fable F7 (seat membrane weights) ; 93: Fable athlete fixes (gusset, leg tubes, hand-abducted bake) — the maps changed; 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -10392,6 +10392,14 @@ void main(void) {
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1,
                              window._lastSquat || 0);
+            // Fable F7 (2026-09-02): the spine chain (spine_01..03 bones) is
+            // solved inside applyPose from the torso BEFORE the hip seat moves
+            // the torso; in the sustained in-run crouch (torso pitched 34 deg,
+            // seated on the hips) the lower back — weighted to spine_01/02 —
+            // stayed where the un-seated torso was and tore away from the bib
+            // as streaks (117 verts > 0.42 m from every driver). Re-solve the
+            // chain from the SEATED torso.
+            updateSpineChain(character.meshes);
             // F3 item 4: in the crouch the head looks ALONG the in-run, not
             // at the snow — counter-pitch to 40 % of the torso's forward
             // pitch (i.e. −0.6 × torso pitch relative), the counter capped at
