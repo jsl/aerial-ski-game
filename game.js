@@ -10499,39 +10499,14 @@ void main(void) {
         // (crashActive stays true through the rest and the walk-off, so the
         // condition is: free-look has taken the follow block out, or the
         // ragdoll branch below is not the one framing the body.)
-        if (state.crashed && character && character.root &&
-            (_freeLookActive || !(crashActive && ragdoll))) {
-            const _ck = Math.min(1, 3.0 * dt);
-            const _rp = character.root.position;
-            camera.target.x += (_rp.x - camera.target.x) * _ck;
-            camera.target.z += (_rp.z - camera.target.z) * _ck;
-            if (_freeLookTiltBaseY === null) {
-                camera.target.y += (_rp.y + 0.5 - camera.target.y) * _ck;
-            }
-        }
-        _clampCameraAboveTerrain();
-        if (!_freeLookActive) {
-        if (crashActive && ragdoll) {
-            // Camera eases to the tumbling body, then rests on it (P11): lerp
-            // the follow target toward the ragdoll torso instead of the frozen
-            // root, so the athlete stays framed while sliding to rest.
+        if (state.crashed && character && character.root) {
+            // Track ragdoll torso if available, otherwise fallback to root
             const _ck = Math.min(1, 2.5 * dt);
-            camera.target.y += (ragdoll.torso.y - 0.3 - camera.target.y) * _ck;
-            camera.target.z += (ragdoll.torso.z - camera.target.z) * _ck;
-        } else if (state.crashed && character && character.root) {
-            // Fable (2026-09-02, author: "the athlete seemed to disappear after
-            // coming to rest"): once the ragdoll hands over, the physics state is
-            // parked at the impact rest point while the RENDERED body keeps going —
-            // the rigid slide carries it another 10+ m and the walk-off then moves
-            // it sideways to the B-net — so the camera, still glued to state.posZ,
-            // framed empty snow (measured: target z 70.7 vs root z 81.5, root x
-            // drifting 0 -> 4.5 m). Follow the rendered root on all three axes
-            // through the slide and the walk-off.
-            const _ck = Math.min(1, 3.0 * dt);
-            const _rp = character.root.position;
-            camera.target.x += (_rp.x - camera.target.x) * _ck;
-            camera.target.y += (_rp.y + 0.5 - camera.target.y) * _ck;
-            camera.target.z += (_rp.z - camera.target.z) * _ck;
+            const _target = (ragdoll && ragdoll.torso) ? ragdoll.torso : character.root.position;
+            const _offY = (ragdoll && ragdoll.torso) ? -0.3 : 0.5;
+            camera.target.x += (_target.x - camera.target.x) * _ck;
+            camera.target.y += (_target.y + _offY - camera.target.y) * _ck;
+            camera.target.z += (_target.z - camera.target.z) * _ck;
         } else {
             camera.target.y = _visRootY;
             camera.target.z = state.posZ;
@@ -10555,7 +10530,7 @@ void main(void) {
                 camera.beta += (CAM_BETA_LAND - camera.beta) * Math.min(1, 2.5 * dt);
             }
         }
-        }
+
 
         // ── Pool water wave animation ──────────────────────────────────────
         if (poolVisible && waterMesh) {
