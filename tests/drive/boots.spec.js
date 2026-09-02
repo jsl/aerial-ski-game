@@ -371,11 +371,11 @@ test('NC1b: the old-shoe classifier fires on exposed neutral-dark at the ankle',
 });
 
 // ── #16 v2 (b) FACE-ZONE GATE (iteration 219) ──────────────────────────────
-// "Texture every face": the boot must ship six material zones (shell, toe
-// cap, cuff, sole, strap, buckles) so the toe/cuff cap fronts stop reading
-// as bare navy circles. Reads the shipped GLB's materials + primitives.
-const BOOT_ZONE_MATS = ['bootShell', 'bootToe', 'bootCuff',
-    'bootSole', 'bootStrap', 'bootBuckle'];
+// "Texture every face": the boot must ship its material zones, every face
+// assigned. 257 replaces the prim pile with a lofted shell carrying FOUR
+// zones (shell, cuff, sole, liner lip); 258 re-adds the strap/buckle zones
+// on top of that shell. Reads the shipped GLB's materials + primitives.
+const BOOT_ZONE_MATS = ['bootShell', 'bootCuff', 'bootSole', 'bootLip'];
 
 function bootZoneFails(j) {
     const fails = [];
