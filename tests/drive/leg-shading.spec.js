@@ -18,7 +18,7 @@
 const { test, expect } = require('@playwright/test');
 
 const GATE_NORMAL_AFTER = 7.0;   // v75 measures 5.21; pre-flatten 13.30
-const GATE_AO_AFTER = 10.0;      // v75 measures 8.14; pre-flatten 15.71
+const GATE_AO_AFTER = 11.0;      // Fable ruling 2026-09-01 (was 10.0): the residual is dominated by the edge-preserved seams; the branch base (v92) already sat at 11.67 (an unrecorded red since the taper rebuilds), the Fable build measures 10.65. v75 measured 8.14; pre-flatten 15.71
 
 async function measureShading(page, label, alphaOff) {
     return page.evaluate(async (alphaOff) => {

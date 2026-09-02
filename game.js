@@ -2492,7 +2492,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=89";   // 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
+    const ASSET_V = "?v=93";   // 93: Fable athlete fixes (gusset, leg tubes, hand-abducted bake) — the maps changed; 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -10319,6 +10319,34 @@ void main(void) {
                         const m = character.meshes[seg + side];
                         if (m) m.position.z += dz;
                     }
+                }
+                // Fable (2026-09-01): the parked hands-vs-thigh red. With the
+                // arm plane at ±0.175 the glove centroid hangs at x≈0.156,
+                // INSIDE the thigh's outer face at hand height (0.1585 uphill),
+                // so half the glove is buried in the thigh and the black
+                // fingers show through the suit — read by the author as crotch
+                // "transparency". A relaxed hang carries the forearms a few
+                // degrees outward (the elbow's carrying angle), so in the
+                // ready stance the forearm hinges 7.4° outward about its own
+                // elbow end: hand centroid +~40 mm, elbow untouched, fading
+                // with the tuck like every other stance term (hands go to the
+                // knees). Binds and the neutral pose are unchanged, so the
+                // bind≡driver gate (measured at tuck 0, ready off) still holds.
+                for (const side of ['L', 'R']) {
+                    const la = character.meshes['lowerArm' + side];
+                    if (!la) continue;
+                    const th = (side === 'L' ? 1 : -1) * 0.13 * _stanceW;
+                    const phi = -la.rotation.x, r0 = la.rotation.z;
+                    const d0 = [-Math.sin(r0), Math.cos(r0) * Math.cos(phi), -Math.cos(r0) * Math.sin(phi)];
+                    const ex = la.position.x - 0.125 * d0[0];
+                    const ey = la.position.y - 0.125 * d0[1];
+                    const ez = la.position.z - 0.125 * d0[2];
+                    const r1 = r0 + th;
+                    const d1 = [-Math.sin(r1), Math.cos(r1) * Math.cos(phi), -Math.cos(r1) * Math.sin(phi)];
+                    la.position.x = ex + 0.125 * d1[0];
+                    la.position.y = ey + 0.125 * d1[1];
+                    la.position.z = ez + 0.125 * d1[2];
+                    la.rotation.z = r1;
                 }
             }
         }

@@ -5,36 +5,40 @@
  "res": 2048,
  "stats": {
   "normal_flatten": {
-   "before": 14.62,
-   "after": 5.68,
-   "texels": 502497
+   "before": 12.23,
+   "after": 4.69,
+   "texels": 481426
   },
   "normal": {
    "p99": 1.0,
-   "mean": 0.6529,
-   "belowHalf": 0.0071,
+   "mean": 0.6555,
+   "belowHalf": 0.0053,
    "srgb": false
   },
   "ao_flatten": {
-   "before": 21.63,
-   "after": 11.67,
-   "texels": 502497
+   "before": 19.49,
+   "after": 10.71,
+   "texels": 481426
   },
   "crotch_ao": {
-   "before": 181.64,
-   "after": 199.19,
-   "texels": 29911
+   "before": 193.8,
+   "after": 202.16,
+   "texels": 22133
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8911,
+   "mean": 0.8909,
    "belowHalf": 0.0,
    "srgb": false
   },
+  "leg_ink": {
+   "texels": 319262,
+   "ink": 8739
+  },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7611,
-   "belowHalf": 0.1629,
+   "mean": 0.7645,
+   "belowHalf": 0.1574,
    "srgb": true
   },
   "face": {
@@ -44,9 +48,9 @@
    "rim_side_h": 0.5538,
    "rim_back_h": 0.5574,
    "dome_off": 0.001,
-   "turn_deg": -0.3757,
+   "turn_deg": -0.3666,
    "goggle_proud": 0.0433,
-   "goggle_push_mm": 6.3618,
+   "goggle_push_mm": 6.3654,
    "nose_tip_h": 0.3565,
    "temple_verts": [
     16,
@@ -59,41 +63,41 @@
    ]
   },
   "faceForward": [
-   -0.0066,
+   -0.0064,
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.60173
+  "stripe_leak": 0.62229
  },
  "delivery": {
   "athlete_albedo": {
-   "mean_abs": 0.0038,
+   "mean_abs": 0.0037,
    "p99_abs": 0.0314,
-   "png": 1268998,
-   "ratio": 3.13,
+   "png": 1253562,
+   "ratio": 3.21,
    "res": 2048,
-   "web": 405150
+   "web": 391090
   },
   "athlete_ao": {
-   "mean_abs": 0.0087,
+   "mean_abs": 0.0088,
    "p99_abs": 0.0863,
-   "png": 1872650,
-   "ratio": 15.35,
+   "png": 1907895,
+   "ratio": 15.47,
    "res": 1024,
-   "web": 121968
+   "web": 123296
   },
   "athlete_normal": {
-   "mean_deg": 1.382,
-   "p95_deg": 4.121,
-   "png": 4730015,
-   "ratio": 8.12,
+   "mean_deg": 1.273,
+   "p95_deg": 3.659,
+   "png": 4614804,
+   "ratio": 8.13,
    "res": 2048,
-   "web": 582854
+   "web": 567910
   },
-  "total_web": 1109972
+  "total_web": 1082296
  },
  "faceForward": [
-  -0.0066,
+  -0.0064,
   0.0,
   -1.0
  ]

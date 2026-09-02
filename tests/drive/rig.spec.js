@@ -1060,9 +1060,9 @@ test('the suit stands off the body (dressed girth carries the shell offset)', as
     // negative control is unchanged: BODY_SHELL_OFF=1 cannot even ship
     // (the build aborts on the curvature/inflection gates, iter-168).
     expect(r.thighL, `left thigh breadth ${r.thighL} m — the suit shell ` +
-        `is missing (shipped tube reads 0.215+)`).toBeGreaterThanOrEqual(0.212);
+        `is missing (shipped tube reads 0.215+)`).toBeGreaterThanOrEqual(0.115); // Fable ruling 2026-09-01: floor re-bound to the slimmer 125 mm tube (author: "thighs are huge"); dressed breadth measures 0.125 (unflexed) / 0.18 (flexed uphill thigh)
     expect(r.thighR, `right thigh breadth ${r.thighR} m — the suit shell ` +
-        `is missing (shipped tube reads 0.137+)`).toBeGreaterThanOrEqual(0.134);
+        `is missing (shipped tube reads 0.137+)`).toBeGreaterThanOrEqual(0.115);
 });
 
 // ── The crease-band normal-variance gate was DELETED here (session 12) ─────

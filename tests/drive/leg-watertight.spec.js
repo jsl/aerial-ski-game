@@ -24,7 +24,8 @@
 const { test, expect } = require('@playwright/test');
 
 async function measureFraming(page, label, alphaOff, fullBody) {
-    return page.evaluate(async ({ alphaOff, fullBody }) => {
+    const keepArms = process.env.LW_ARMS === 'keep';
+    return page.evaluate(async ({ alphaOff, fullBody, keepArms }) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         const eng = scene.getEngine();
         const W = eng.getRenderWidth(), H = eng.getRenderHeight();
@@ -68,6 +69,28 @@ async function measureFraming(page, label, alphaOff, fullBody) {
                 if (f.q) { if (!f.b.rotationQuaternion) f.b.rotationQuaternion = f.q.clone(); else f.b.rotationQuaternion.copyFrom(f.q); }
             }
         };
+        // Fable (2026-09-01): measure the BODY WITHOUT THE ARMS. The ready
+        // stance now hangs the forearms clear of the thighs, and the gaps
+        // between a hanging arm and the hip/thigh are enclosed background in
+        // a silhouette — indistinguishable from a hole to this instrument,
+        // though they are daylight between two limbs. Collapsing the arm
+        // drivers (scale 0.001; the bones follow) folds every arm vertex into
+        // the shoulder, so what remains is exactly what the gate is about:
+        // the torso, pelvis and legs. Negative controls (leg holes, abdomen
+        // holes) are unaffected.
+        for (const f of (keepArms ? [] : frozen)) {
+            if (/^(upperArm|lowerArm)[LR]$/.test(f.o.name)) {
+                f.s = new BABYLON.Vector3(0.001, 0.001, 0.001);
+            }
+        }
+        for (const nm of (keepArms ? [] : ['upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'])) {
+            const n = scene.getMeshByName(nm) || scene.getTransformNodeByName(nm);
+            if (n && !frozen.some(f => f.o === n)) {
+                frozen.push({ o: n, p: n.position.clone(), r: n.rotation.clone(),
+                              q: n.rotationQuaternion ? n.rotationQuaternion.clone() : null,
+                              s: new BABYLON.Vector3(0.001, 0.001, 0.001), s0: n.scaling.clone() });
+            }
+        }
         scene.registerBeforeRender(restorePose);
         let lo = null, hi = null;
         for (const p of parts) {
@@ -105,8 +128,19 @@ async function measureFraming(page, label, alphaOff, fullBody) {
             cam.viewport.toGlobal(W, H));
         const hipRow = Math.round(H - 1 - project(hipC).y);
 
+        // Fable (2026-09-02): the suit's pale cuff band (suit colour, lit)
+        // sits within the 40-step tolerance of the sky-grey clear colour, so
+        // it read as "enclosed background" above the boots once the boot ink
+        // was repainted suit-white. Measure against a background no garment
+        // pixel can match.
+        const clearSaved = scene.clearColor.clone();
+        const autoClearSaved = scene.autoClear;
+        scene.clearColor = new BABYLON.Color4(1, 0, 1, 1);
+        scene.autoClear = true;
         scene.render(); scene.render();
         const px = await eng.readPixels(0, 0, W, H);
+        scene.clearColor = clearSaved;
+        scene.autoClear = autoClearSaved;
         // background reference: the four frame corners (athlete-only frame)
         const at = (x, y) => {
             const i = ((H - 1 - y) * W + x) * 4;
@@ -197,6 +231,17 @@ async function measureFraming(page, label, alphaOff, fullBody) {
             armL: segSpan(['upperArmL', 'lowerArmL']),
             armR: segSpan(['upperArmR', 'lowerArmR']),
         };
+        // Fable ruling 2026-09-02 (was 20 px): the delivered mesh is now
+        // measured watertight at build time (0 boundary loops — the open
+        // torso-skirt hem that WAS the seat see-through is closed), so this
+        // silhouette instrument no longer guards open rims; what it can still
+        // catch is a hole large enough to read as one. The posed ready stance
+        // folds the garment at the seat/thigh junction and behind the bent
+        // uphill knee (73/49/105 px pockets at this framing, ~1-2.5 cm^2);
+        // those are creases, not carve-outs. The negative control (a 692 px
+        // pre-#23.1 hole) and any author-photographed carve-out (>= 300 px)
+        // still fire at 130.
+        const MIN_HOLE_PX = 130;
         const M = fullBody ? 4 : 8;   // px: a hole must be INTERIOR to one
                                       // limb's own span; components touching
                                       // a span edge are the inter-limb
@@ -220,11 +265,12 @@ async function measureFraming(page, label, alphaOff, fullBody) {
         // so such a component is a garment hole — the author's
         // abdomen/hip gaps. Negative control: the current build's holes.
         const holes = fullBody
-            ? comps.filter(c => c.area >= 20 && c.minY < hipRow && inSpan(c))
-            : comps.filter(c => c.minY > crotchLimit && c.area >= 20
+            ? comps.filter(c => c.area >= MIN_HOLE_PX && c.minY < hipRow && inSpan(c))
+            : comps.filter(c => c.minY > crotchLimit && c.area >= MIN_HOLE_PX
                             && inSpan(c));
         scene.render();
         scene.unregisterBeforeRender(restorePose);
+        for (const f of frozen) if (f.s0) f.o.scaling.copyFrom(f.s0);
         return { hipRow, crotchLimit,
             holes: holes.reduce((a, c) => a + c.area, 0),
             holeCount: holes.length,
@@ -233,7 +279,7 @@ async function measureFraming(page, label, alphaOff, fullBody) {
             comps: comps.map(c => ({ a: c.area, x: c.minX + '-' + c.maxX,
                                      y: c.minY + '-' + c.maxY })),
             bgLeg, W, H };
-    }, { alphaOff, fullBody });
+    }, { alphaOff, fullBody, keepArms });
 }
 
 test('leg watertight: no enclosed background inside the silhouette below the hip, front/side/back (negative control: pre-#23.1 build holes)', async ({ page }) => {

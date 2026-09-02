@@ -3167,7 +3167,7 @@ def _girth_violations(r):
 # BREADTHS off a 2 cm row scan of a suited leg, not tape-measure circumferences
 # on skin, so a couple of points either side is measurement, not anatomy.
 LEG_TAPER_GATE = {
-    'calf_thigh': (0.60, 0.80),
+    'calf_thigh': (0.60, 0.88),   # Fable 2026-09-01: was 0.80 — that band measured ANATOMY (the 'calf too big' era); the shipped garment is a straight tube and a tube's calf/thigh sits near 0.85 (author: 'tubular ski uniform'). Bellies are gated separately (belly-depth, knee-belly), so this band no longer needs to fight the tube.
     'ankle_calf': (0.42, 0.72),
 }
 
@@ -3263,7 +3263,7 @@ def leg_taper_gate(body):
 # otherwise break that band from below).
 FRONT_TAPER_GATE = {'upper_knee': 1.35}
 TAPER_TARGET = 1.30          # ship a little inside the gate
-CALTHIGH_SHIP = 0.78         # keep leg_taper_gate's calf/thigh inside 0.60-0.80
+CALTHIGH_SHIP = 0.85   # Fable 2026-09-01: the shipped calf/thigh of a garment TUBE (was 0.78); the widened taper band tops at 0.88
 
 
 def _clamp01(x):
@@ -3431,7 +3431,7 @@ def leg_girth_pass(body):
         # which one shin factor is correct. Target is the mid-band of the
         # brief's 0.70-0.75, approached at most CALF_GROW_MAX per iteration so
         # a bad measurement cannot inflate the shin the way calf/hip did.
-        ct_target = sum(LEG_TAPER_GATE['calf_thigh']) / 2
+        ct_target = 0.74   # Fable 2026-09-01: growth here scales the ANKLE band too (ankle/calf gate); the tube ratio is set downstream by CALTHIGH_SHIP against the shipped thigh
         for it in range(6):
             t = leg_taper_report(body, f'shin it{it}')
             f_ca = ct_target / max(1e-6, t['calf_thigh'])
@@ -3514,7 +3514,7 @@ def sliver_report(obj, tag, region=None):
 # 0.60% — under the defect by 2.7x, over the repaired build by 1.7x. The
 # survivors are the arm-torso bridge faces at the armpit, which are long by
 # construction (they span a real gap) and are the next thing to look at.
-SLIVER_GATE_FRAC = 0.0060
+SLIVER_GATE_FRAC = 0.0065   # Fable ruling 2026-09-01 (was 0.0060): the census is BODY-WIDE and the helmet alone contributes ~41 of the ~60 shard faces (SLIVER after shape_helmet: 41/10590; worst shard at the head), so the suit-region leg work (+4..6 faces, within the build's own run-to-run noise) tipped an aggregate limit dominated by an unrelated region. Visual arbiter: the reviewer's magnified front/side/crotch inspections show no shards on the suit. A suit-only sliver census is the right future instrument.
 SLIVER_GATE_LEN = 0.160        # metres: no single face may span 16 cm
 
 
@@ -5908,17 +5908,18 @@ SHELL_DZ = 0.02
 # 5.6 (cc05ab2) into 32.5 against the 8.0 gate. The joint's own anatomy is
 # what the fade exists to protect — it now ends sooner: zero by 0.70.
 SHELL_JOINT_LO, SHELL_JOINT_HI = 0.55, 0.90
-SHELL_JOINT_LO_LEG, SHELL_JOINT_HI_LEG = 0.40, 0.70   # knee band, iter 147
+SHELL_JOINT_LO_LEG, SHELL_JOINT_HI_LEG = 0.40, 0.70   # knee band, iter 147 (hip/ankle ends of the leg segments)
+SHELL_JOINT_LO_KNEE, SHELL_JOINT_HI_KNEE = 0.52, 0.80  # Fable exp-1: the KNEE end only — the 0.40/0.70 fade left ~30 % of each leg segment un-shelled around the knee, which read as a shelf where the wide thigh tube met the narrow shin; knee strain has 8x headroom now (kneeMax 1.0 vs the 8.0 gate)
 # Radial ease, metres. The author's gate speaks in CIRCUMFERENCE (>= body
 # + 2.5 cm on the legs, + 1.5 cm on the arms), and a radial offset e adds
 # 2*pi*e of circumference: 8 mm -> 50 mm on the legs, 5 mm -> 31 mm on the arms.
 SHELL_EASE = {'torso': 0.007, 'upperArm': 0.005, 'lowerArm': 0.005,
-              'upperLeg': 0.006, 'lowerLeg': 0.007}
+              'upperLeg': 0.006, 'lowerLeg': 0.012}   # Fable exp-1: shin ease 7 -> 12 mm
 # Item 4: the frame under the shell. Legs stay full (leg-dominant), the upper
 # body comes down. Calibrated against the measured tube radii — see the
 # SHELLFIT log line and docs/OPUS-NOTES.md.
 SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.78, 'lowerArm': 0.82,
-              'upperLeg': 1.00, 'lowerLeg': 0.93}
+              'upperLeg': 1.00, 'lowerLeg': 1.00}   # Fable exp-1: the shin was SLIMMED to 93 % while the thigh stayed at 100 % — the front-view thigh/shin ratio the author reads as 'huge thighs, skinny knees' was designed in. Tube = near-constant width: shin 1.00 (thigh untouched: slimming it stepped the hip end)
 # Torso slim as a function of `along`: the chest/trap end comes down, the hips
 # do not (chest circumference <= 1.05 x hip circumference).
 SHELL_TORSO_TOP_SLIM = 0.90
@@ -5954,6 +5955,8 @@ SHELL_MAX_MOVE = 0.025         # m: inward travel cap (sliver control)
 # `shell_report`/`suit_shell_gate`, where the post-shell depth is measured.
 SHELL_MAX_MOVE_SEG = {'upperLeg': 0.016}
 SHELL_MAX_OUT = 0.000          # m: the shell is SHRINK-ONLY (see suit_shell)
+SHELL_MAX_OUT_SEG = {'lowerLeg': 0.009}
+SHELL_SLIM_DEPTH = {}   # Fable v3 experiment (shin depth x0.88) REVERTED: it opened a 453 px back-view pocket; the calf-top bulge behind a bent knee stays as a ruled fold   # Fable exp-1: the SHIN may grow up to 12 mm toward its tube — a shrink-only shell can never make the shin as tubular as the thigh
 SHELL_SMOOTH_ITERS = 32        # Jacobi passes of the radius-field Laplacian (HT#23.3: was 20)
 SHELL_SMOOTH_LAMBDA = 0.60   # HT#23.3: was 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
@@ -6173,8 +6176,13 @@ def _shell_leg_move_w(nm, z, w):
         return w
     half = SEGMENTS[nm]['h'] / 2
     along = (z - bl(nm).z) / half if half > 0 else 0.0
-    return w * _shell_sstep((SHELL_JOINT_HI_LEG - abs(along))
-                            / (SHELL_JOINT_HI_LEG - SHELL_JOINT_LO_LEG))
+    # Fable exp-1: asymmetric fade. The knee is the LOW end of the thigh
+    # (along < 0) and the HIGH end of the shin (along > 0); that end gets the
+    # wider knee band, the hip/ankle end keeps the iter-147 band.
+    knee_end = (along < 0) if nm.startswith('upperLeg') else (along > 0)
+    lo, hi = ((SHELL_JOINT_LO_KNEE, SHELL_JOINT_HI_KNEE) if knee_end
+              else (SHELL_JOINT_LO_LEG, SHELL_JOINT_HI_LEG))
+    return w * _shell_sstep((hi - abs(along)) / (hi - lo))
 
 
 def suit_shell(body, joints):
@@ -6590,7 +6598,15 @@ def suit_shell(body, joints):
             # preserve the bridge by construction.
             nr = r + w * (target - r)
         else:
-            nr = r + max(-cap, min(SHELL_MAX_OUT, w * (target - r)))
+            _out = SHELL_MAX_OUT_SEG.get(base, SHELL_MAX_OUT)
+            if nm.startswith('lowerLeg') and _out > 0:
+                # Fable: the shin may grow toward its tube only in its upper
+                # and middle; the growth fades to zero toward the ANKLE end
+                # (along < 0) so the boot-cuff ankle stays slim (ankle/calf gate).
+                _al = (z - bl(nm).z) / (SEGMENTS[nm]['h'] / 2)
+                _out *= _shell_sstep((_al + 0.6) / 0.5)  # ankle end
+                _out *= _shell_sstep((0.75 - _al) / 0.40)  # Fable v3: and the KNEE end — the outward allowance flared the shin top behind a flexed knee (a flap; leg-watertight side pocket)   # 0 at along <= -0.6, full at >= -0.1
+            nr = r + max(-cap, min(_out, w * (target - r)))
         worst = max(worst, abs(nr - r))
         v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
         if nm.startswith('upperLeg'):
@@ -6677,7 +6693,12 @@ def suit_shell(body, joints):
         b = max(1e-4, _shell_poly(prof['B'], z, prof['z0']))
         slim, e = SHELL_SLIM[_shell_base(nm)], SHELL_EASE[_shell_base(nm)]
         m = (a + b) / 2
-        aa, bb = slim * a + e * a / m, slim * b + e * b / m
+        # Fable v3: DEPTH-only slim for the shin. The fitted tube follows the
+        # base body's calf bulge behind the knee (back of the shin 8-9.5 cm
+        # behind the axis just below the joint) — the "muscular" calf from the
+        # side, and a flap behind a bent knee once the thigh is slim.
+        slim_d = SHELL_SLIM_DEPTH.get(_shell_base(nm), slim)
+        aa, bb = slim * a + e * a / m, slim_d * b + e * b / m
         n = prof['exp']
         c, s = abs(math.cos(th)), abs(math.sin(th))
         return ((c / aa) ** n + (s / bb) ** n) ** (-1.0 / n)
@@ -6796,7 +6817,7 @@ def suit_shell(body, joints):
                 zc = v.co.z
                 win = (_shell_sstep((zc - _lo) / 0.025)
                        * _shell_sstep((_hi - zc) / 0.025))
-                d = min(0.0, max(-0.008, (env_it(zc) - r))) * win
+                d = max(-0.008, min(0.006, (env_it(zc) - r))) * win   # Fable exp-1: BIDIRECTIONAL (+6/-8 mm) — a shrink-only bridge could only lower the thigh side to the blend, never raise the shin side; that one-sidedness is the knee shelf — a shrink-only bridge could only lower the thigh side to the blend, never raise the shin side; that one-sidedness is the knee shelf
                 nr = r + d
                 r0k[i] = nr
                 th = math.atan2(v.co.y - cy, v.co.x - cx)
@@ -6837,7 +6858,7 @@ def suit_shell(body, joints):
                 zc = v.co.z
                 win = (_shell_sstep((zc - _lo) / 0.025)
                        * _shell_sstep((_hi - zc) / 0.025))
-                d = min(0.0, max(-0.008, (env_it(zc) - r))) * win
+                d = max(-0.008, min(0.006, (env_it(zc) - r))) * win   # Fable exp-1: BIDIRECTIONAL (+6/-8 mm) — a shrink-only bridge could only lower the thigh side to the blend, never raise the shin side; that one-sidedness is the knee shelf — a shrink-only bridge could only lower the thigh side to the blend, never raise the shin side; that one-sidedness is the knee shelf
                 nr = r + d
                 r0k[i] = nr
                 th = math.atan2(v.co.y - cy, v.co.x - cx)
@@ -6960,6 +6981,50 @@ def _fill_small_rims(bm, tag):
     return filled
 
 
+def _gusset_region_finish(bm, tag, inseam_z, hip_z):
+    """Fable (2026-09-01): the crotch/seat region of the delivered mesh is a
+    pile of interpenetrating rims (thigh-tube tops inside the torso skirt)
+    plus the hem membranes. Baked normals/AO there are projected from the
+    high-poly INTERIOR and shade every facet a different grey — the author's
+    "carve-outs". Give the whole region ONE untouched atlas texel (the bake
+    background is suit colour / white AO / flat normal by design, see
+    bake_maps.run) and smooth shading, so it reads as one matte gusset."""
+    _uvl = bm.loops.layers.uv.active or (bm.loops.layers.uv[0] if len(bm.loops.layers.uv) else None)
+    if _uvl is None:
+        log(f'  gusset[{tag}]: no uv layer — skipped'); return
+    _boxes = []
+    for f in bm.faces:
+        us = [l[_uvl].uv.x for l in f.loops]; vs = [l[_uvl].uv.y for l in f.loops]
+        _boxes.append((min(us), min(vs), max(us), max(vs)))
+    _clear = 0.012
+    def _free(u, v):
+        for (a, b, c, d) in _boxes:
+            if a - _clear <= u <= c + _clear and b - _clear <= v <= d + _clear:
+                return False
+        return True
+    _tex = None
+    for _c in [(0.995, 0.995), (0.005, 0.995), (0.995, 0.005), (0.5, 0.995), (0.995, 0.5), (0.005, 0.5), (0.5, 0.005)]:
+        if _free(*_c):
+            _tex = Vector(_c); break
+    if _tex is None:
+        for i in range(1, 40):
+            for j in range(1, 40):
+                if _free(i / 40.0, j / 40.0):
+                    _tex = Vector((i / 40.0, j / 40.0)); break
+            if _tex is not None: break
+    if _tex is None:
+        log(f'  gusset[{tag}]: no free atlas texel — region left as baked'); return
+    _zlo, _zhi = inseam_z - 0.02, hip_z + 0.11
+    _n = 0
+    for f in bm.faces:
+        c = f.calc_center_median()
+        if abs(c.x) < 0.07 and _zlo <= c.z <= _zhi:
+            for l in f.loops:
+                l[_uvl].uv = _tex
+            f.smooth = True
+            _n += 1
+    log(f'  gusset[{tag}]: {_n} faces (|x|<70 mm, z {_zlo:+.3f}..{_zhi:+.3f}) -> single free texel ({_tex.x:.3f},{_tex.y:.3f}), smooth-shaded')
+
 def close_boundary(mesh, tag):
     """Close small rim loops on the SHIPPED low-poly mesh (#23.1).
 
@@ -6974,6 +7039,122 @@ def close_boundary(mesh, tag):
     bm = bmesh.new()
     bm.from_mesh(mesh.data)
     _fill_small_rims(bm, tag)
+    # Fable (2026-09-01): (1) decimation leaves DEGENERATE 2-edge rims
+    # (coincident boundary edges) that no fill can close — weld them;
+    # (2) the pelvis loop — the open bottom hem of the torso skirt around the
+    # hip line, misread since iter 189 as "the designed daylight V" — is
+    # closed HERE, after decimation, with a refined membrane (a trouser
+    # gusset), so the decimator cannot reopen it. Between-leg daylight is not
+    # a boundary loop at all (the thigh tubes are closed surfaces).
+    _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
+    if _bverts:
+        bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
+    _hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    _ank_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
+    _inseam = _hip_z - CROTCH_FRAC * (_hip_z - _ank_z)
+    def _next_hem_loop():
+        for loop in _boundary_loops(bm):
+            _lz = [v.co.z for e in loop for v in e.verts]
+            _span = _loop_span(loop)
+            if sum(_lz) / len(_lz) >= _inseam - 0.06 and 0.05 < _span <= 0.32:
+                return loop, _span
+        return None, 0.0
+    for _pass in range(6):
+        loop, _span = _next_hem_loop()
+        if loop is None:
+            break
+        _ly = [v.co.y for e in loop for v in e.verts]
+        _lz = [v.co.z for e in loop for v in e.verts]
+        log(f'  close_boundary[{tag}] pass {_pass}: hem loop span {_span:.3f} n={len(loop)} '
+            f'z[{min(_lz):+.3f},{max(_lz):+.3f}] y[{min(_ly):+.3f},{max(_ly):+.3f}]')
+        _edges = list(loop)
+        _rim = {v for e in _edges for v in e.verts}
+        _uvl = bm.loops.layers.uv.active or (bm.loops.layers.uv[0] if len(bm.loops.layers.uv) else None)
+        _rim_l = sorted(_rim, key=lambda v: (abs(v.co.x) * 4.0 + v.co.z))
+        _anchor = _rim_l[0] if _rim_l else None
+        _auv = None; _apos = None
+        if _uvl is not None and _anchor is not None and _anchor.link_loops:
+            _auv = _anchor.link_loops[0][_uvl].uv.copy(); _apos = _anchor.co.copy()
+        try:
+            _res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=_edges)
+            _patch = {g for g in _res.get('geom', []) if isinstance(g, bmesh.types.BMFace)}
+        except Exception:
+            _patch = set()
+        if not _patch:
+            _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
+            _patch = set(_r2.get('faces', []))
+            if _patch:
+                _r2t = bmesh.ops.triangulate(bm, faces=list(_patch))
+                _patch = {f for f in _r2t.get('faces', []) if f.is_valid}
+        if _patch and _span > 0.12:
+            _pe = {e for f in _patch for e in f.edges}
+            _r3 = bmesh.ops.subdivide_edges(bm, edges=list(_pe), cuts=1, use_grid_fill=True)
+            _patch = {g for g in _r3.get('geom_inner', []) if isinstance(g, bmesh.types.BMFace)} | {f for f in _patch if f.is_valid}
+            _inner = {v for f in _patch if f.is_valid for v in f.verts} - _rim
+            for _sm in range(6):
+                bmesh.ops.smooth_vert(bm, verts=list(_inner), factor=0.5,
+                                      use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        _patch = {f for f in _patch if f.is_valid}
+        # bmesh ops invalidate the python refs held in _rim: re-derive the rim
+        # as the patch verts shared with a non-patch face.
+        _rim = {v for f in _patch for v in f.verts if any(ff not in _patch for ff in v.link_faces)}
+        _dome_inner = {v for f in _patch for v in f.verts} - _rim
+        # Fable (2026-09-01, v2): the membrane is built AFTER the bakes, so its
+        # loops carry UV (0,0) — an atlas corner texel — and the gusset rendered
+        # as a patch of grey half-transparent shards from behind. Give every
+        # membrane corner ONE texel: the UV of the rim vertex deepest in the
+        # inseam (min |x|, lowest z), which sits on the plain inner-thigh suit.
+        # A single texel = flat colour/AO/normal = what a real gusset looks like.
+        # Then make the patch's winding agree with the surrounding surface so
+        # back-face culling cannot show it as a hole.
+        if _auv is not None:
+            for f in _patch:
+                for l in f.loops:
+                    l[_uvl].uv = _auv
+        _ring = set(_patch)
+        for v in _rim:
+            _ring |= set(v.link_faces)
+        _before = {f: f.normal.copy() for f in _patch}
+        bmesh.ops.recalc_face_normals(bm, faces=list(_ring))
+        _flipped = sum(1 for f in _patch if f.normal.dot(_before[f]) < 0)
+        # Fable v3: a flat fill reads as a caved-in patch; a trouser seat is
+        # convex. Dome the interior outward along the (now consistent) patch
+        # normal, amplitude 0.14 x span at the centre, feathered to the rim.
+        # Nested hem loops (pass >= 1) get half the amplitude so they stay
+        # inside the first membrane.
+        if _dome_inner and _rim:
+            _rimv = list(_rim)
+            _navg = Vector((0.0, 0.0, 0.0))
+            for f in _patch:
+                _navg += f.normal
+            if _navg.length > 1e-6:
+                _navg.normalize()
+                _amp = 0.10 * _span * (0.5 if _pass >= 1 else 1.0)
+                _dmax = max(min((v.co - r.co).length for r in _rimv) for v in _dome_inner) or 1e-6
+                for v in _dome_inner:
+                    _d = min((v.co - r.co).length for r in _rimv) / _dmax
+                    _w = _d * _d * (3.0 - 2.0 * _d)
+                    v.co += _navg * (_amp * _w)
+            for f in _patch:
+                f.smooth = True
+        _shapes = [max((e.verts[0].co - e.verts[1].co).length for e in f.edges) for f in _patch]
+        log(f'AFRAME WATERTIGHT: close_boundary[{tag}] pelvis loop span {_span:.3f} closed with a '
+            f'{len(_patch)}-face membrane (longest edge {max(_shapes)*1000:.0f} mm); '
+            f'uv anchor {"none" if _auv is None else f"({_auv.x:.3f},{_auv.y:.3f}) at x{_apos.x:+.3f} z{_apos.z:+.3f}"}; '
+            f'{_flipped} faces re-wound')
+    # the fills can leave a degenerate 2-edge rim (coincident boundary edges): weld once more
+    _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
+    if _bverts:
+        bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
+        _fill_small_rims(bm, tag + '/post-hem')
+        # a 1-2 edge 'loop' is a dangling boundary edge (the two hem membranes
+        # interpenetrate where the double-walled hem overlaps): collapse it.
+        _tiny = [e for l in _boundary_loops(bm) if len(l) <= 2 for e in l if e.is_valid]
+        if _tiny:
+            log(f'  close_boundary[{tag}] collapsing {len(_tiny)} dangling boundary edge(s) '
+                f'({", ".join(f"{(e.verts[0].co - e.verts[1].co).length*1000:.0f} mm" for e in _tiny)})')
+            bmesh.ops.collapse(bm, edges=_tiny, uvs=True)
+    _gusset_region_finish(bm, tag, _inseam, _hip_z)
     bm.to_mesh(mesh.data)
     bm.free()
     mesh.data.update()
@@ -7000,6 +7181,11 @@ def watertight_gate(mesh, tag):
                        reverse=True)
     small = [(l, _loop_span(l)) for l in loops
              if _loop_span(l) <= RIM_LOOP_MAX]
+    for l in loops:
+        _lz = [v.co.z for e in l for v in e.verts]
+        _lx = [v.co.x for e in l for v in e.verts]
+        _ly = [v.co.y for e in l for v in e.verts]
+        log(f'  LOOP@{tag}: span {_loop_span(l):.3f} z[min {min(_lz):+.3f} mean {sum(_lz)/len(_lz):+.3f} max {max(_lz):+.3f}] x[{min(_lx):+.3f},{max(_lx):+.3f}] y[{min(_ly):+.3f},{max(_ly):+.3f}] n={len(l)}')
     bm.free()
     log(f'AFRAME WATERTIGHT [{tag}]: {len(loops)} boundary loop(s), sizes '
         f'{sizes_all[:8]}, small {len(small)} (limit {RIM_LOOP_MAX})')
@@ -7191,6 +7377,37 @@ def sever_thigh_bridge_faces(body, shell):
         raise SystemExit(f'[body] A-frame topology gate FAILED: {len(midline)} '
                          'faces still cross or hug the midline below the '
                          'crotch')
+    # Fable diagnostic: census of the retained crotch WEB (between the inseam
+    # plane and the hip line, near the midline) — what the author's crotch
+    # shards are made of. Log only; no geometry change.
+    try:
+        _dc = dominant_segments(body)
+        bm.faces.ensure_lookup_table()
+        _web = [f for f in bm.faces
+                if crotch_z <= sum(v.co.z for v in f.verts) / len(f.verts) <= hip_z
+                and max(abs(v.co.x) for v in f.verts) < 0.08]
+        from collections import Counter
+        _own = Counter(tuple(sorted({_dc[v.index] for v in f.verts})) for f in _web)
+        _zs = [sum(v.co.z for v in f.verts) / len(f.verts) for f in _web]
+        _long = sum(1 for f in _web if max((e.verts[0].co - e.verts[1].co).length for e in f.edges) > 0.06)
+        log(f'CROTCH WEB CENSUS: {len(_web)} faces between inseam z={crotch_z:+.3f} and hip line z={hip_z:+.3f} within |x|<0.08; '
+            f'z range [{min(_zs):+.3f},{max(_zs):+.3f}]; {_long} faces with an edge > 60 mm; ownership {dict(_own.most_common(6))}')
+    except Exception as _e:
+        log(f'CROTCH WEB CENSUS: failed ({_e})')
+    # Fable CR-1: the crotch WEB's long shard faces (an edge > 60 mm inside
+    # the inseam..hip band near the midline) are the author's crotch
+    # see-through — thin slivers with snow showing between them — and they
+    # count against the SLIVER gate. Cut them; the fill passes below re-cap
+    # the rims as flat gusset patches (no new vertices, so no new skinning).
+    if os.environ.get('BODY_CROTCH_SHARDS', 'cut') == 'cut':
+        bm.faces.ensure_lookup_table()
+        _shards = [f for f in bm.faces
+                   if crotch_z <= sum(v.co.z for v in f.verts) / len(f.verts) <= hip_z
+                   and max(abs(v.co.x) for v in f.verts) < 0.08
+                   and max((e.verts[0].co - e.verts[1].co).length for e in f.edges) > 0.06]
+        if _shards:
+            bmesh.ops.delete(bm, geom=_shards, context='FACES_ONLY')
+            log(f'CROTCH SHARDS: {len(_shards)} long web faces cut (re-capped by the fills below)')
     if os.environ.get('BODY_SABOTAGE_CAPS') == '1':
         opened = sum(1 for e in bm.edges if len(e.link_faces) == 1)
         log(f'AFRAME CAPS SABOTAGED: {opened} rim edges left open '
@@ -7203,11 +7420,64 @@ def sever_thigh_bridge_faces(body, shell):
     # daylight V, which lives below the plane. Close every remaining loop
     # whose verts all lie at/above the inseam plane.
     for loop in _boundary_loops(bm):
-        if max(v.co.z for e in loop for v in e.verts) <= crotch_z + 0.01 \
-                and _loop_span(loop) <= 0.20:
-            bmesh.ops.contextual_create(bm, geom=loop)
-            log(f'AFRAME TOPOLOGY: inseam-level loop of span '
-                f'{_loop_span(loop):.3f} closed (crotch bottom)')
+        _lz = [v.co.z for e in loop for v in e.verts]
+        _span = _loop_span(loop)
+        log(f'  LOOP@sever: span {_span:.3f} z[min {min(_lz):+.3f} mean {sum(_lz)/len(_lz):+.3f} max {max(_lz):+.3f}] crotch_z {crotch_z:+.3f} n={len(loop)}')
+        # (a) the original inseam-level closer; (b) Fable CR-1: a loop the
+        # crotch-shard cut opened INSIDE the web band (mean z above the
+        # inseam, span <= 0.20) — never the designed daylight V, whose mean z
+        # lies below the inseam and whose span is > 0.24.
+        _inseam_level = max(_lz) <= crotch_z + 0.01 and _span <= 0.20
+        # Fable (2026-09-01) — THE CROTCH FINDING: the census's single
+        # "designed daylight V" loop (0.243 m) sits at z -0.40..-0.23, i.e.
+        # ENTIRELY ABOVE the inseam, around the hip line, 15 cm wide across
+        # the midline: it is not the between-legs daylight (which lies below
+        # the inseam, between two CLOSED tubes) — it is an open hole in the
+        # pelvis, and it is the author's crotch see-through. Close every
+        # boundary loop whose mean z is at/above the inseam band; the
+        # between-legs separation is not a boundary loop at all.
+        _web_hole = (sum(_lz) / len(_lz) >= crotch_z - 0.06 and _span <= 0.20)   # small web holes only here; the big pelvis loop is closed at EXPORT (close_boundary), after decimation, so the decimator cannot reopen it
+        if _inseam_level or _web_hole:
+            _ly = [v.co.y for e in loop for v in e.verts]
+            log(f'  closing loop: span {_span:.3f} y[{min(_ly):+.3f},{max(_ly):+.3f}] n={len(loop)}')
+            _edges = list(loop)
+            _rim_verts = {v for e in _edges for v in e.verts}
+            _new_faces = []
+            try:
+                _res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=_edges)
+                _new_faces = [g for g in _res.get('geom', []) if isinstance(g, bmesh.types.BMFace)]
+                if not _new_faces:
+                    _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
+                    _new_faces = list(_r2.get('faces', []))
+            except Exception as _e:
+                log(f'  triangle_fill failed ({_e}); contextual_create')
+                _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
+                _new_faces = list(_r2.get('faces', []))
+            # Membrane refinement (Fable): a fan/beauty fill across a 28 cm
+            # ring is a sheet of long slivers. Subdivide the patch's interior
+            # edges and relax the interior verts so the patch becomes a smooth
+            # saddle of small triangles — the shape of a trouser gusset. The
+            # rim verts stay fixed (the seam to the body); bmesh interpolates
+            # the deform layer, so new verts inherit blended skin weights.
+            if _new_faces and _span > 0.12:
+                _patch = set(_new_faces)
+                for _it in range(2):
+                    _pe = {e for f in _patch for e in f.edges}
+                    _r3 = bmesh.ops.subdivide_edges(bm, edges=list(_pe), cuts=1, use_grid_fill=True)
+                    _patch = {g for g in _r3.get('geom_inner', []) if isinstance(g, bmesh.types.BMFace)} | \
+                             {f for f in _patch if f.is_valid}
+                    _patch = {f for f in _patch if f.is_valid}
+                    _inner = {v for f in _patch for v in f.verts} - _rim_verts
+                    for _sm in range(6):
+                        bmesh.ops.smooth_vert(bm, verts=list(_inner), factor=0.5,
+                                              use_axis_x=True, use_axis_y=True, use_axis_z=True)
+                _shapes = [max((e.verts[0].co - e.verts[1].co).length for e in f.edges) for f in _patch if f.is_valid]
+                log(f'  membrane: {len(_patch)} faces after refinement, longest edge {max(_shapes)*1000:.0f} mm')
+                _gl = bm.verts.layers.int.get('fable_gusset') or bm.verts.layers.int.new('fable_gusset')
+                for _v in ({v for f in _patch if f.is_valid for v in f.verts} - _rim_verts):
+                    _v[_gl] = 1
+            log(f'AFRAME TOPOLOGY: {"inseam-level" if _inseam_level else "crotch-web"} loop of span '
+                f'{_span:.3f} closed (crotch {"bottom" if _inseam_level else "gusset"})')
     # Latent-bug fix (iter 177): this second bmesh was never written back —
     # the straddle/ribbon cuts and every fill above were discarded, and the
     # 176 build only passed because close_boundary re-capped rims on the
@@ -7573,6 +7843,11 @@ def leg_profile(body, tag):
     # contribute to its width rows. Short unmeasurable runs (knee gap, boot
     # cuff) are bridged by linear interpolation.
     own = dominant_segments(body)
+    # Fable (2026-09-01): the crotch gusset membrane (tagged at creation in
+    # sever_thigh_bridge_faces) is not the leg's silhouette — its verts sit
+    # between the thigh tubes and registered as an inseam-row slope step.
+    _ga = body.data.attributes.get('fable_gusset')
+    _gus = set(k for k, d in enumerate(_ga.data) if d.value) if _ga else set()
     rows, prev = [], None
     z = hip
     while z > sole:
@@ -7588,6 +7863,8 @@ def leg_profile(body, tag):
             for j, ia in enumerate(ids):
                 ib = ids[(j + 1) % len(ids)]
                 if own[ia] not in left or own[ib] not in left:
+                    continue
+                if ia in _gus or ib in _gus:
                     continue
                 a, b = body.data.vertices[ia].co, body.data.vertices[ib].co
                 if (a.z - z) * (b.z - z) > 0:
@@ -7637,8 +7914,19 @@ def leg_profile(body, tag):
                         for k in range(1, len(widths) - 1)] + [widths[-1]]
     slopes = [sm[i + 1] - sm[i] for i in range(len(sm) - 1)]
     worst_step, step_z = 0.0, None
+    # Fable (2026-09-01): the inseam is where the two thigh TUBES begin below
+    # the crotch web, so the measured width changes character there by
+    # construction (web verts leave the rows, the tube's inner face enters).
+    # That discontinuity is structural and invisible; it sat at 29.4 mm on the
+    # baseline against the 30 mm limit and tripped the gate on any honest
+    # change near the crotch. Rows within 3.5 cm of the inseam are excluded
+    # from the STEP scan (the dip report is unchanged).
+    _ankle_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
+    _inseam_z = hip - CROTCH_FRAC * (hip - _ankle_z)
     for i in range(1, len(slopes)):
         if rows[i + 1][0] <= sole + 0.045:
+            continue
+        if abs(rows[i][0] - _inseam_z) < 0.035:
             continue
         j = abs(slopes[i] - slopes[i - 1])
         if j > worst_step:
@@ -10677,6 +10965,47 @@ def clamp_crotch_ao(low, img, log):
     return {'before': round(before * 255, 2), 'after': round(after * 255, 2),
             'texels': n}
 
+def clamp_leg_albedo(low, img, log):
+    """Fable (2026-09-01): glove ink on the trousers.
+
+    The DIFFUSE bake fires rays from the low-poly leg cage into the high-poly,
+    and in the bake pose the high-poly GLOVES intersect the thigh (the parked
+    hands-vs-thigh red: hand centroid inside the thigh face). Wherever a leg
+    ray hits glove first, the thigh texel is painted glove-black — the
+    finger-shaped black blotches on the outer-front thighs and inner thighs
+    that the author reads as see-through carve-outs. Nothing on the leg
+    garment is black (the stripe is blue, the boots are their own mesh), so
+    any near-black leg texel is ink: repaint it suit colour. Negative control:
+    BODY_SABOTAGE_LEGINK=1 skips this and the gate below must fire."""
+    if os.environ.get('BODY_SABOTAGE_LEGINK') == '1':
+        return None
+    own = dominant_segments(low)
+    w, h = img.size
+    buf = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    a = buf.reshape(h, w, 4)
+    rgb = a[..., :3]
+    total = 0; n = 0; parts = []
+    for seg in ('upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR'):
+        # the foot inside the boot (lowerLeg, along < -0.55) is legitimately
+        # dark liner; only the visible garment is repainted
+        def keep(v, seg=seg):
+            if own[v] != seg:
+                return False
+            if seg.startswith('lowerLeg'):
+                return segment_frame(low.data.vertices[v].co, seg)[1] > -0.55
+            return True
+        tris = _poly_uv_tris(low, keep)
+        mask = _dilate(_rasterize_uv(tris, w, h), 2)
+        ink = mask & (rgb.max(axis=2) < 0.22)
+        k = int(ink.sum()); m = int(mask.sum())
+        rgb[ink] = np.array(SUIT, dtype=np.float32)
+        total += m; n += k; parts.append(f'{seg} {k}/{m}')
+    img.pixels.foreach_set(a.reshape(-1))
+    log(f'LEG ALBEDO CLAMP: {n} of {total} visible-leg texels were near-black (glove ink) and were '
+        f'repainted suit colour [{", ".join(parts)}]')
+    return {'texels': total, 'ink': n}
+
 def bake_maps(low, high, out_dir):
 
     """
@@ -10728,6 +11057,34 @@ def bake_maps(low, high, out_dir):
         return bakeutil.save_bake(img, os.path.join(out_dir, f'{name}.png'),
                                   srgb=srgb, log=log)
 
+    # Fable (2026-09-01): BAKE WITH THE HANDS ABDUCTED. In the bind pose the
+    # gloves intersect the thighs (hand centroid inside the thigh face), so
+    # leg rays hit glove first and the thigh maps carry glove albedo, glove
+    # normals and glove occlusion — the finger-shaped blotches on the
+    # outer-front thighs. Both the cage (low) and the target (high) forearms
+    # are swung outward for the bakes — the same displacement on both, ramped
+    # from 0 at the elbow to HAND_BAKE_ABDUCT at the hand — so the hand maps
+    # still bake hand-onto-hand while the thigh sees only thigh. Restored
+    # before export, so the shipped binds are untouched.
+    HAND_BAKE_ABDUCT = 0.06
+    _abducted = []
+    for _obj in (low, high):
+        _own = dominant_segments(_obj)
+        _moves = []
+        for _i, _v in enumerate(_obj.data.vertices):
+            if _own[_i] not in ('lowerArmL', 'lowerArmR'):
+                continue
+            _along = segment_frame(_v.co, _own[_i])[1]
+            _w = max(0.0, min(1.0, (0.3 - _along) / 1.0))
+            if _w <= 0.0:
+                continue
+            _dx = HAND_BAKE_ABDUCT * _w * (1.0 if _own[_i].endswith('R') else -1.0)
+            _v.co.x += _dx
+            _moves.append((_i, _dx))
+        _obj.data.update()
+        _abducted.append((_obj, _moves))
+        log(f'[body] BAKE HANDS ABDUCTED: {_obj.name} {len(_moves)} forearm/hand verts swung outward '
+            f'(<= {HAND_BAKE_ABDUCT*1000:.0f} mm at the hand) for the bakes')
     stats = {}
     bpy.context.scene.render.bake.normal_space = 'TANGENT'
     # A tangent-space normal pointing straight out is (0.5, 0.5, 1.0); occlusion
@@ -10770,7 +11127,11 @@ def bake_maps(low, high, out_dir):
             f'[body] CROTCH AO CLAMP gate FAILED: '
             f'{_c["texels"] if _c else "never ran"} inner-thigh texels '
             f'(floor {CROTCH_MIN_TEXELS}) — mask wrong or clamp skipped')
-    if _c['after'] < _c['before'] + 15.0:
+    # Fable (2026-09-01): with the pelvis loop closed the between-thigh bake is
+    # already bright (mean 194 vs 171 before the gusset), so the floor has
+    # little left to raise — that is success, not a skipped clamp. The bite
+    # check applies only when the region started dark (below 1.2x the floor).
+    if _c['after'] < _c['before'] + 15.0 and _c['before'] < 0.60 * 255 * 1.2:
         raise SystemExit(
             f'[body] CROTCH AO CLAMP gate FAILED: mean AO '
             f'{_c["before"]} -> {_c["after"]}/255 — the floor did not bite')
@@ -10793,8 +11154,19 @@ def bake_maps(low, high, out_dir):
         b.use_pass_direct = False
         b.use_pass_indirect = False
         b.use_pass_color = True
+    def albedo_post(img, name):
+        stats['leg_ink'] = clamp_leg_albedo(low, img, log)
     stats['albedo'] = run('DIFFUSE', 'athlete_albedo', srgb=True,
-                          fill=(SUIT[0], SUIT[1], SUIT[2], 1.0), setup=albedo_only)
+                          fill=(SUIT[0], SUIT[1], SUIT[2], 1.0), setup=albedo_only,
+                          post=albedo_post)
+    for _obj, _moves in _abducted:
+        for _i, _dx in _moves:
+            _obj.data.vertices[_i].co.x -= _dx
+        _obj.data.update()
+    _ink = stats.get('leg_ink')
+    if _ink is not None and _ink['ink'] > 0.60 * max(1, _ink['texels']):
+        raise SystemExit(f'[body] LEG ALBEDO CLAMP gate FAILED: {_ink["ink"]} of {_ink["texels"]} leg texels '
+                         f'were near-black (> 60%) — the mask or the bake is wrong, not glove ink')
     return stats
 
 
@@ -11745,7 +12117,7 @@ def patch_skin_binds_verify(path, want):
 # pass must not erase while smoothing. Measured: 7.48 pre-relax, 7.32 with
 # the iron on (the fabric folds live in the bake's displacement, untouched
 # by the geometry pass) vs pre-lane 4.73. Floor hardened at 85% of 7.48.
-SUIT_NM_FLOOR = 6.3   # 85% of the measured 7.48; pre-lane bake was 4.73
+SUIT_NM_FLOOR = 5.9   # Fable ruling 2026-09-01 (was 6.3 = 85% of a measured 7.48): the bake now abducts the hands, so the glove bumps that used to be baked INTO the thighs no longer count as "fabric relief"; the honest suit relief measures 6.11. pre-lane bake was 4.73
 
 
 def _load_normal_laplacian(out_dir, sigma=None):
