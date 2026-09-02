@@ -3321,6 +3321,18 @@ void main(void) {
                      }
                      return _lc === Infinity ? null : +_lc.toFixed(4);
                  })(),
+                 // SLOT 256 instrument: the WORST (highest) particle
+                 // clearance — the propped-part measure — and the lie-down
+                 // duration (undefined on the current build).
+                 maxClear: (function () {
+                     let _mc = -Infinity;
+                     for (const _pt of ragdoll.parts) {
+                         const _c = _pt.p.y - (_crashFloorY(_pt.p.z) + _pt.r);
+                         if (_c > _mc) _mc = _c;
+                     }
+                     return _mc === -Infinity ? null : +_mc.toFixed(4);
+                 })(),
+                 lieDur: ragdoll.lieDur !== undefined ? ragdoll.lieDur : null,
                  // HT#13 (2026-08-30): ski rest offsets from the eject point.
                  skis: (ragdoll.skis || []).map((s) => ({
                      dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),

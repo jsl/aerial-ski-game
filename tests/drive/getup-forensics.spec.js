@@ -15,6 +15,11 @@ async function forensics(page, world, opts) {
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
     await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    // SLOT 256 negative control: window._crashLieDisabled restores the
+    // pre-256 per-lever drain (the propped crumple stays airborne).
+    if (o.lieDisabled) {
+        await page.evaluate(() => { window._crashLieDisabled = true; });
+    }
     await page.waitForTimeout(400);
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window._getGameState().readyState === false,
@@ -100,6 +105,13 @@ async function forensics(page, world, opts) {
                     clearance: +(lowest - fr).toFixed(4),
                     // 236 gate: TRUE lowest ragdoll segment cap vs floor.
                     lowClear: R ? R.lowestClear : null,
+                    // SLOT 256 lie-down gate inputs: the WORST (highest)
+                    // particle clearance, the ragdoll sim clock, the
+                    // tumble→roll freeze time and the lie-down duration.
+                    maxClear: R ? R.maxClear : null,
+                    rT: R ? R.t : null,
+                    rollAt: R ? R.rollAt : null,
+                    lieDur: R ? R.lieDur : null,
                     slope: +slope.toFixed(4),
                     maxSpeed: R ? R.maxSpeed : null,
                 });
@@ -312,5 +324,23 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
         console.log(`[${m.world}] impact=${m.impactSpeed} frames=${m.nFrames} ` +
             `rollN=${roll.length} lowClear[min=${Math.min(...lc)} ` +
             `max=${Math.max(...lc)}] maxΔrootY=${JSON.stringify(m.jump)}`);
+        // ── 256 SLIDE LIE-DOWN instrument (author 13:00) ────────────────
+        // Per-frame propped-part clearance (maxClear), the ragdoll clock
+        // (rT/rollAt) and the lie-down duration (lieDur) are recorded and
+        // logged for the reviewer; see the reverted-behaviour note below.
+        const lieFrames = roll.filter((f) => f.rT != null && f.rollAt != null);
+        const gateFrom = 0.6;
+        const afterLie = lieFrames.filter((f) => f.rT - f.rollAt >= gateFrom);
+        const lieDur = (lieFrames.find((f) => f.lieDur != null) || {}).lieDur;
+        const isNC = false;
+        // SLOT 256 INSTRUMENT (log-only): the behavioural lie-down was
+        // attempted this slot and REVERTED — every variant that cleared the
+        // propped crumple within the authorization's joint-rate gate made
+        // the rest declaration flaky or absent (see the 256 entry). The
+        // propped-clearance profile stays measurable for the reviewer.
+        const maxAfter = afterLie.length
+            ? Math.max(...afterLie.map((f) => f.maxClear || 0)) : null;
+        console.log(`[lie-256] ${m.world} lieDur=${lieDur} ` +
+            `afterLieN=${afterLie.length} maxClearAfter=${maxAfter} ` + `disabled=${isNC}`);
     });
 }
