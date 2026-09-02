@@ -445,6 +445,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 242 | **KNEE-GAP TOPOLOGY, STEP 1 LANDED (241-ruling slot): the env-gated `LEG_SPAN_DEBUG` edge-span diagnostic in `leg_profile` PROVES the bridging-edge mechanism — post-shell joint row z=−0.635 reads 130 mm vs neighbours 61–83 mm and 28 of its 30 crossing leg edges span ≥ 20 mm of z (band: 429 faces, 105 with z-extent > 15 mm, max 91 mm). Step 2 (subdivide bridging edges ≤ 10 mm + 241 ring) implemented and PARTIALLY effective (joint-row long spans 28→10, wide band faces 105→43) but NOT acceptance-green: joint row still 130 mm, ring breadth 133/135 mm, taper gate fails ankle_calf 0.730, and the weight-inheritance nearest-match marked 10262 false-positive "new" verts — REVERTED, attempt preserved in scratch for the next slot. Shipped change = the diagnostic only (env-gated, geometry untouched). unit 81/81, golden 30/30 (0 diffs), look 7/7, ASSET_V unchanged.** | entry 242. |
 | — | Iteration 238 | **#21 v5 TUCK ENTRY (237-ruling slot): new per-rendered-frame gate `tests/drive/tuck-entry.spec.js` over the FULL enter-hold-exit cycle from the starting position (keyboard Space AND gamepad RT). Pre-fix: sole gaps 0.0 mm on every frame (heels planted — (a) already held at bone level) but a 0.187 m HIP TEAR at tuck 0.5 — the author's "body stretches weird". Root cause: `_seatTorsoOnHips` scaled the hip-closure correction by the blend weight w (a constraint applied as a lerp); at mid-blend half the ~0.37 m pin-vs-torso gap stayed open. Fix: seat correction applies at FULL strength whenever engaged (continuous at the endpoints — the gap is 0 there); game.js only, display-only (ADR-0002). Post-fix: hip/knee tears ≤ 30 mm mid-blend, segment-length drift 0.5 mm (gate (b) ≤ 5 mm), sole gap 0.0 mm. OPEN (named for 239; interim snap bound 0.15 in the spec): two single-frame handoff snaps remain — shoulder d−0.143 at tuck 0.50 (keyboard), hip d+0.100 at cycle start (gamepad) — the ready-stance block handing arms/hips to the blend mid-cycle; snap gate tightens to 30 mm after that fix. The ruling's ankle-trail re-measure add-on was NOT run (deadline). unit 81/81, golden 30/30, tuck-entry 2/2, tuck-grounded+tuck-sitting+chain 15/15, tuck-coverage 6/6; look shots NOT regenerated (deadline). ASSET_V unchanged.** | entry 238. |
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
 | — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
@@ -14141,6 +14142,58 @@ slide-plunge-then-rise pattern above — if their report was on a *natural* (non
 path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
+
+### 242 — slot 242 (knee-gap topology, ruling on 241): step 1 PROVEN and landed as an env-gated instrument; step 2 (subdivide + ring) implemented, partially effective, NOT acceptance-green — reverted per the never-carry rule
+
+**Shipped change: the step-1 diagnostic only.** `leg_profile` gains an env-gated
+(`LEG_SPAN_DEBUG=1`) instrument that, for every profile row within ±5 cm of the knee,
+logs the row width, the leg edges that SET its min/max x with each edge's endpoint
+z-gap and x-span, and the knee-band face z-extent census. Geometry, gates and default
+builds are untouched (env off = zero cost).
+
+**Step 1 numbers (probe build, res 2048, shipped/post-shell stage — mechanism PROVEN
+per the ruling's criterion):**
+- joint row z=−0.635 reads **130 mm** while its neighbours read 83 (−0.655) / 65
+  (−0.615) / 61 (−0.595) mm;
+- **28 of the joint row's 30 crossing leg edges have endpoint z-gap ≥ 20 mm** (the
+  ±2-cm neighbours: 22–24 of 24–26);
+- knee band (±5 cm): 429 faces, **105 with z-extent > 15 mm, max 91 mm**.
+The 130 mm row is drawn by long bridging edges across the sparse knee gap — exactly
+the hypothesised mechanism; the joint row is not made of verts any radial pass owns.
+
+**Step 2 (built on a probe, NOT shipped — attempt preserved in
+`~/aerial-agents/scratch/iter-242/build_with_repair.py`):** `repair_knee_topology`
+after `sever_thigh_bridge_faces` — subdivide every leg-leg edge within ±5 cm of a
+knee spanning > 10 mm in z (cuts = ceil(span/10 mm)), inherit weights for new verts,
+smooth only new verts 2 × 0.3, then the 241 ring (112 × 118 mm superellipse on each
+1-cm rung's own centroid, smoothstep ±10 cm). Measured: joint-row long spans
+28 → 10 of 34; band faces > 15 mm 105 → 43; faces 10849 → 11081. But: the joint row
+STAYED 130 mm, the ring's own rung breadth logged 133/135 mm (target 112), the worst
+step rose to 18.1 mm at z=−0.655, the taper gate FAILED `ankle_calf` 0.730 > 0.72
+(the ring raised the shin-top rows 94 → 105–109 mm, shrinking the measured calf),
+and the weight-inheritance nearest-match classified 10262 "new" verts (coordinate
+duplicate false positives) — unsafe to ship. Reverted; `git checkout` back to HEAD
+content before the diagnostic was re-applied.
+
+**Verification (shipped state = HEAD geometry + diagnostic):** probe build reproduces
+the step-1 numbers identically; the pre-existing `--samples 4` probe artifact
+(`LEG-SHADING FLATTEN gate FAILED`) fires identically on HEAD without the diagnostic
+(checked by stash) — not caused by this change. `npm run test:unit` 81/81;
+`npm run test:golden` 30/30, 0 diffs, no recapture; look 7/7 (shots regenerated,
+assets/ASSET_V untouched). Scratch: probe glbs/logs deleted; the repair attempt file
+kept for the next slot.
+
+**Open questions for the reviewer:** (1) step 2 moved the census but not the row —
+the surviving 10 long spans at the joint and the 91 mm face persist because my
+edge filter skipped mixed-ownership and hlpKnee edges (`own(a) != own(b)`); may the
+next slot extend the cut to ANY edge with leg-classified endpoints under the ruling's
+same ≤ 10 mm criterion? (2) the ring again failed the same way as 241 (breadth 133 vs
+112, shin-top rows lifted, ankle_calf gate) — with topology repaired the ring should
+move the row verts; the residual failure looks like the ring target fighting the
+taper gates exactly as 241's req (c) anticipated. May I land repair + ring with a
+re-measured shin-top target (the ring's raised 105–109 mm rows are anatomically right
+for a knee), i.e. is the ankle_calf 0.72 band the binding constraint to re-derive
+first, or should the ring land at a smaller breadth first and re-measure?
 
 ### 241 — slot 241 (section-centred knee ring, ruling on 239): FALSIFIED — the ring itself lands (knee-band dip 11.0 -> 7.3 mm, the proud shin-top 144 mm row removed) but requirement (b)'s validation FAILS: the ring's measured x-breadth (93/81 mm L/R) and the profile's joint row (145 mm) disagree, so nothing shipped and every edit is reverted
 

@@ -7856,6 +7856,13 @@ def leg_profile(body, tag):
     # between the thigh tubes and registered as an inseam-row slope step.
     _ga = body.data.attributes.get('fable_gusset')
     _gus = set(k for k, d in enumerate(_ga.data) if d.value) if _ga else set()
+    _kspan_dbg = None
+    if os.environ.get('LEG_SPAN_DEBUG'):
+        _cu = bl('upperLegL')
+        _cl = bl('lowerLegL')
+        _kz = (_cu.z - SEGMENTS['upperLegL']['h'] / 2
+               + _cl.z + SEGMENTS['lowerLegL']['h'] / 2) / 2
+        _kspan_dbg = {'knees': [_kz], 'edges': [], 'extrema': {}}
     rows, prev = [], None
     z = hip
     while z > sole:
@@ -7885,8 +7892,17 @@ def leg_profile(body, tag):
                 t = (z - a.z) / dz
                 if 0.0 <= t <= 1.0:
                     cand.append(a.x + t * (b.x - a.x))
+                    if _kspan_dbg is not None and any(abs(z - kz) <= 0.05
+                                                      for kz in _kspan_dbg['knees']):
+                        _kspan_dbg['edges'].append({
+                            'row': z, 'own': (own[ia], own[ib]),
+                            'zgap': abs(a.z - b.z), 'xspan': abs(a.x - b.x),
+                            'x': a.x + t * (b.x - a.x),
+                        })
         w = max(cand) - min(cand) if len(cand) >= 4 else None
         rows.append((z, w))
+        if _kspan_dbg is not None and len(cand) >= 4:
+            _kspan_dbg['extrema'][z] = (min(cand), max(cand))
         z -= 0.02
     n = len(rows)
     i = 0
@@ -7939,6 +7955,33 @@ def leg_profile(body, tag):
         j = abs(slopes[i] - slopes[i - 1])
         if j > worst_step:
             worst_step, step_z = j, rows[i][0]
+    if _kspan_dbg is not None:
+        # Ruling on 241, step 1: what is the joint row MADE of?  For the
+        # rows within +/-5 cm of the knee, report the row width and the
+        # edges that SET its min/max x, with each edge's endpoint z-gap
+        # (long spans across the sparse knee gap = the bridging-edge
+        # mechanism), plus knee-band face z-extents. Env-gated: costs
+        # nothing on normal builds.
+        def _pz(p):
+            vs = [body.data.vertices[i].co.z for i in p.vertices]
+            return max(vs) - min(vs)
+        for rz, (mn, mx) in sorted(_kspan_dbg['extrema'].items()):
+            ee = [e for e in _kspan_dbg['edges'] if abs(e['row'] - rz) < 1e-6]
+            long = [e for e in ee if e['zgap'] >= 0.02]
+            log(f'KNEESPAN [{tag}] row z={rz:+.3f}: width {(mx - mn) * 1000:.0f} mm '
+                f'({len(ee)} leg edges, {len(long)} with z-gap >= 20 mm)')
+            for side, val in (('min', mn), ('max', mx)):
+                e = next((e for e in ee if abs(e['x'] - val) < 1e-9), None)
+                if e:
+                    log(f'KNEESPAN   {side} x={e["x"]:+.3f} own={e["own"]} '
+                        f'edge z-gap {e["zgap"] * 1000:.0f} mm, '
+                        f'x-span {e["xspan"] * 1000:.0f} mm')
+        _band = [p for p in body.data.polygons
+                 if all(abs(body.data.vertices[i].co.z - _kz) <= 0.05
+                        for i in p.vertices)]
+        log(f'KNEESPAN [{tag}] band faces {len(_band)}, z-extent > 15 mm: '
+            f'{sum(1 for p in _band if _pz(p) > 0.015)} '
+            f'(max {max((_pz(p) for p in _band), default=0) * 1000:.0f} mm)')
     log(f'{tag} leg profile: ' + ' '.join(f'{w:.3f}' for w in widths))
     if os.environ.get('BODY_SETTLE_DEBUG'):
         sl = [widths[i + 1] - widths[i] for i in range(len(widths) - 1)]
