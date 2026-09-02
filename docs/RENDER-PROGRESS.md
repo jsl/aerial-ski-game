@@ -14481,3 +14481,7 @@ spec remains the headline; then):
 game.js display pose blending outside the athlete-ban blocks — confirm they are in
 THIS lane, not the Opus lane. (2) the mirrored back-digit ruling from earlier
 reviews is still outstanding.
+### 247 — Flight pose update (P7)
+Update POSE_ARMS_UP in `engine/core/body-model.js` to define tight overhead arms by the ears for the flight layout.
+Verified: `npm run test:unit` passes (81/81).
+Open: Integration of the flight pose into the renderer's pose blending.
