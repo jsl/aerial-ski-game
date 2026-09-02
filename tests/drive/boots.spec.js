@@ -528,73 +528,122 @@ test('NC2: boots hidden fail the rendered clause', async ({ page }) => {
     expect(fails.length, 'gate must detect boots-not-rendered').toBeGreaterThan(0);
 });
 
-// ── 259 SIGNED IN-GAME FOOT-AXIS GATE (the 15:25 ruling, clause c) ─────────
-// The acceptance is IN THE GAME, SIGNED, root-local: the boot must span from
-// z_ankle − 0.17 (toe, forward = −z; the athlete faces −z) to z_ankle + 0.11
-// (heel). The 258 build-side gate measured an UNSIGNED offset in the build
-// frame, so a fully mirrored loft passed it. Measured exactly as the
-// reviewer's probe: root-local (the body's world matrix inverse), the boot
-// primitives' aggregate bounding box, the ankle end = lowerLeg driver node
-// + 0.18 m along the node's −Y.
-async function measureSigned(page) {
-    return await page.evaluate(() => {
+// ── 264 SKI-RELATIVE SIGNED FOOT-AXIS GATE (the 16:30 ruling on 259, slotted
+// to 264 by the 19:10 ruling on 263) ─────────────────────────────────────────
+// The 259 gate measured the boot in the BODY ROOT frame and hard-coded
+// toe = −z there. The loft is authored toe = +dy in Blender, which lands
+// mirrored in the root frame, and v97's BOOT_FWD = −1 flips the geometry
+// back — after which the ROOT-frame gate reads the old sign on the correct
+// build (the carried red of the 16:30 ruling). The ruler is the SKI, not
+// the root: toe = the ski-tip side = ski-LOCAL −z. Two frame facts drive
+// the implementation: (1) in the ready stance the ski is pitched/rolled
+// (~22°, the in-run), so the VERTICAL cuff extent pollutes a full-bbox
+// projection onto the ski axis — the fore-aft measure uses ONLY the sole
+// corners (bbox corners within 3 cm of the ski-local bottom); (2) the ski
+// frame's roll mixes x/y, so the x-centre and cuff checks stay ROOT-local,
+// where the ski frame has no z component. Bands are the ACCEPTED v97
+// geometry measured by this instrument (see the 264 entry): toe 0.117 L /
+// 0.120 R, heel 0.180 L / 0.183 R, ± 3 cm. The 258 mirror (toe extent
+// ≈ 0.009 — the whole boot behind the ankle) fails the toe band outright.
+// NC7 measures against the ski axis REVERSED (the frame's local x/z
+// negated — a mesh yaw would also flip the pitch the sole filter uses).
+// In the flipped frame the numbers are exactly those a mirrored boot (the
+// 258 defect) produces, and the gate must fire.
+async function measureSigned(page, flip) {
+    return await page.evaluate((flip) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         scene.render();
         const body = scene.getMeshByName('athleteBody') ||
             scene.meshes.find(m => m.name && m.name.startsWith('athleteBody'));
         body.computeWorldMatrix(true);
-        const inv = body.getWorldMatrix().clone().invert();
-        const toLocal = (v) => BABYLON.Vector3.TransformCoordinates(v, inv);
+        const toRoot = (v) => BABYLON.Vector3.TransformCoordinates(
+            v, body.getWorldMatrix().clone().invert());
         const skel = scene.skeletons[0];
         const out = {};
+        const cornersOf = (bi) => {
+            const a = bi.minimumWorld, b = bi.maximumWorld;
+            const cs = [];
+            for (const x of [a.x, b.x]) for (const y of [a.y, b.y])
+                for (const z of [a.z, b.z])
+                    cs.push(new BABYLON.Vector3(x, y, z));
+            return cs;
+        };
+        const box = () => ({
+            mn: new BABYLON.Vector3(1e9, 1e9, 1e9),
+            mx: new BABYLON.Vector3(-1e9, -1e9, -1e9),
+        });
+        const grow = (bx, l) => {
+            bx.mn = BABYLON.Vector3.Minimize(bx.mn, l);
+            bx.mx = BABYLON.Vector3.Maximize(bx.mx, l);
+        };
         for (const side of ['L', 'R']) {
             const boots = scene.meshes.filter(m =>
                 m.name && m.name.indexOf('athleteBoot' + side) === 0);
-            if (!boots.length) { out[side] = null; continue; }
-            let mn = new BABYLON.Vector3(1e9, 1e9, 1e9);
-            let mx = new BABYLON.Vector3(-1e9, -1e9, -1e9);
+            const ski = scene.getMeshByName('ski' + side);
+            if (!boots.length || !ski) { out[side] = null; continue; }
+            ski.computeWorldMatrix(true);
+            const wm = ski.getWorldMatrix();
+            let M = wm;
+            if (flip) {
+                // negate rows 0 (xAxis) and 2 (zAxis): 180° about local y.
+                const e = wm.m.slice();
+                for (let c = 0; c < 4; c++) { e[c] = -e[c]; e[8 + c] = -e[8 + c]; }
+                M = BABYLON.Matrix.FromArray(e);
+            }
+            const toSki = (v) => BABYLON.Vector3.TransformCoordinates(
+                v, M.clone().invert());
+            const root = box(), sk = box();
+            const worldCorners = [];
             for (const b of boots) {
                 b.refreshBoundingInfo(true);
                 b.computeWorldMatrix(true);
-                const bi = b.getBoundingInfo().boundingBox;
-                for (const c of [
-                    new BABYLON.Vector3(bi.minimumWorld.x, bi.minimumWorld.y, bi.minimumWorld.z),
-                    new BABYLON.Vector3(bi.maximumWorld.x, bi.maximumWorld.y, bi.maximumWorld.z)]) {
-                    const l = toLocal(c);
-                    mn = BABYLON.Vector3.Minimize(mn, l);
-                    mx = BABYLON.Vector3.Maximize(mx, l);
+                for (const c of cornersOf(b.getBoundingInfo().boundingBox)) {
+                    worldCorners.push(c);
+                    grow(root, toRoot(c));
+                    grow(sk, toSki(c));
                 }
             }
             const bone = skel.bones.find(b => b.name === 'lowerLeg' + side);
             const at = bone.getAbsoluteTransform();
-            const node = toLocal(BABYLON.Vector3.TransformCoordinates(
-                at.getTranslation(), body.getWorldMatrix()));
-            const yDir = BABYLON.Vector3.TransformNormal(
+            const nodeW = BABYLON.Vector3.TransformCoordinates(
+                at.getTranslation(), body.getWorldMatrix());
+            const yDirW = BABYLON.Vector3.TransformNormal(
                 new BABYLON.Vector3(0, 1, 0),
                 at.multiply(body.getWorldMatrix())).normalize();
-            const ankleEnd = node.subtract(yDir.scale(0.18));
+            const ankleEndW = nodeW.subtract(yDirW.scale(0.18));
+            const ankleSki = toSki(ankleEndW);
+            const ankleRoot = toRoot(ankleEndW);
+            // sole corners: within 3 cm of the ski-local bbox bottom — the
+            // fore-aft foot span, unpolluted by the (pitched-frame) cuff.
+            const soleZ = worldCorners.map(toSki)
+                .filter(l => l.y < sk.mn.y + 0.03).map(l => l.z);
             out[side] = {
-                zmin: +(mn.z - ankleEnd.z).toFixed(3),
-                zmax: +(mx.z - ankleEnd.z).toFixed(3),
-                xcOff: +(((mn.x + mx.x) / 2) - ankleEnd.x).toFixed(3),
-                cuff: +(mx.y - mn.y).toFixed(3),
+                // ski-local sole corners: −z is the TIP side, so the toe
+                // extent (ankle − zmin) and heel extent (zmax − ankle) are
+                // both positive on a correctly oriented boot.
+                toe: +(ankleSki.z - Math.min(...soleZ)).toFixed(3),
+                heel: +(Math.max(...soleZ) - ankleSki.z).toFixed(3),
+                // root-local checks (the ski frame's roll pollutes x/y):
+                xcOff: +(((root.mn.x + root.mx.x) / 2) - ankleRoot.x).toFixed(3),
+                cuff: +(root.mx.y - root.mn.y).toFixed(3),
             };
         }
         return out;
-    });
+    }, flip);
 }
 
 function signedAxisGate(s, tag) {
     const fails = [];
     for (const side of ['L', 'R']) {
         const d = s[side];
-        if (!d) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
-        if (d.zmin < -0.20 || d.zmin > -0.12)
-            fails.push(`${tag} ${side}: boot z-min ${d.zmin} vs ankle end ` +
-                `(gate [−0.20, −0.12]) — toe end misplaced${d.zmin > 0 ? ' (boot behind the ankle, the 258 mirror)' : ''}`);
-        if (d.zmax < 0.06 || d.zmax > 0.14)
-            fails.push(`${tag} ${side}: boot z-max ${d.zmax} vs ankle end ` +
-                `(gate [+0.06, +0.14]) — heel end misplaced`);
+        if (!d) { fails.push(`${tag} ${side}: boot or ski mesh missing`); continue; }
+        if (d.toe < 0.09 || d.toe > 0.15)
+            fails.push(`${tag} ${side}: boot toe extent ${d.toe} along the ski ` +
+                `axis from the ankle end, sole corners (gate [0.09, 0.15]) — ` +
+                `toe end misplaced${d.toe < 0.02 ? ' (boot behind the ankle, the 258 mirror)' : ''}`);
+        if (d.heel < 0.15 || d.heel > 0.21)
+            fails.push(`${tag} ${side}: boot heel extent ${d.heel} along the ski ` +
+                `axis from the ankle end, sole corners (gate [0.15, 0.21]) — heel end misplaced`);
         if (Math.abs(d.xcOff) > 0.02)
             fails.push(`${tag} ${side}: boot x-centre ${d.xcOff} off the ankle x (gate ±0.02)`);
         if (d.cuff < 0.14 || d.cuff > 0.21)
@@ -603,10 +652,31 @@ function signedAxisGate(s, tag) {
     return fails;
 }
 
-test('SIGNED FOOT AXIS: boot spans toe −z / heel +z about the ankle end, root-local', async ({ page }) => {
+test('SIGNED FOOT AXIS ski-relative: boot spans toward the ski tip / tail about the ankle end', async ({ page }) => {
     await bootReady(page);
     await frame(page, Math.PI * 0.30);
-    const s = await measureSigned(page);
+    const s = await measureSigned(page, false);
     const fails = signedAxisGate(s, 'signed');
     expect(fails, fails.join('; ')).toEqual([]);
+});
+
+test('NC7 signed gate reads the SKI axis: flipping the ski long axis swaps toe/heel and fires the gate', async ({ page }) => {
+    await bootReady(page);
+    await frame(page, Math.PI * 0.30);
+    const before = await measureSigned(page, false);
+    const after = await measureSigned(page, true);
+    for (const side of ['L', 'R']) {
+        expect(before[side] && after[side], 'both measurements present').toBeTruthy();
+        // The frame flip negates ski-local z exactly: the physical toe end
+        // now measures as the heel extent, byte for byte.
+        expect(after[side].toe, `side ${side}: toe extent under the flipped ` +
+            `ski axis must read the unflipped heel (the ruler is the ski)`)
+            .toBeCloseTo(before[side].heel, 2);
+        expect(after[side].heel, `side ${side}: heel extent under the flipped ` +
+            `ski axis must read the unflipped toe`)
+            .toBeCloseTo(before[side].toe, 2);
+        const fails = signedAxisGate(after, 'NC7');
+        expect(fails.length, `NC7 must fire on the flipped ski axis: ${fails.join('; ')}`)
+            .toBeGreaterThan(0);
+    }
 });

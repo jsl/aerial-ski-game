@@ -11495,6 +11495,20 @@ def add_boots(arm, joints, body):
         cuff_secs.append((topc + Vector((0, 0, 0.004)), lipA, lipB,
                           U, Y, 'lip'))
         loft(f'bootCuff{side}', cuff_secs)
+        # 264 BOOTS DETAILS: two near-black buckle straps over the navy
+        # shell — one across the instep, one around the cuff — 2.5 mm proud
+        # of the underlying ring, in the existing sole material (no new
+        # zones, no skinning change, +64 tris per strap vs the <= 1200 gate).
+        # This is the author's beginner-boot read (buckles visible at
+        # gameplay distance); the material/paint pass is slot 271.
+        loft(f'bootStrapInstep{side}', [
+            (Vector((ax, ay + BOOT_FWD * (0.045 + s * 0.004), sole + 0.056)),
+             0.0500, 0.0575, U, Z, 'sole')
+            for s in (-1, 1)])
+        loft(f'bootStrapCuff{side}', [
+            (Vector((ax, ay + BOOT_FWD * 0.006, sole + 0.072 + s * 0.004)),
+             0.0500, 0.0555, U, Y, 'sole')
+            for s in (-1, 1)])
 
         for o in pieces:
             if not o.data.materials:
