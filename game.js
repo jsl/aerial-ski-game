@@ -7650,25 +7650,39 @@ void main(void) {
             }
         }
         const _rp = character.root.position;
-        // 236 #24(a) GROUNDED SLIDE: the rendered body follows this root
-        // (drivers are written root-relative), and the engine's crashed-root
-        // physics dives BALLISTICALLY under the terrain during the rigid
-        // slide — iter-235 measured clearance swinging +1.25 ↔ −9.38 m and
-        // single-frame root drops of 1.63 m. During 'roll' the root is
-        // terrain-conformed EVERY frame: it rides at the frozen crumple's own
-        // lie height above the crash floor, captured at the tumble→roll
-        // handoff (the tumble's contact projection already holds the body on
-        // the snow there, so the capture is pop-free). The lag-comp
-        // translation below then carries the conformed motion to the frozen
-        // particles, so the whole slide reads grounded. 'settling' keeps its
-        // own contact-driven lowering (a clamp here would fight it) and past
-        // OUTRUN_Z the ride is cut by design.
-        if (R.phase === 'roll' && R.torso.z < OUTRUN_Z) {
-            if (R._rootLie === undefined) {
-                R._rootLie = _rp.y - _crashFloorY(_rp.z);
+        // 249 CRASH SLIDE COHERENCE (reviewer spec, 2026-09-02 08:20): the
+        // ragdoll particles are the SINGLE carrier of the crash slide, and
+        // the rendered root follows THEM every frame — never the reverse.
+        // The old arrangement ran two carriers (the machine's particle ride
+        // AND the engine's crashed-root slide, reconciled by an iter-123
+        // lag-comp translation that was cut past OUTRUN_Z), so once the
+        // ride ended the engine root kept sliding on while the particles —
+        // and every leg driver node and boot with them — stayed behind:
+        // the reviewer measured the root at z 81.5 against legs parked at
+        // z 71.9 (9.5 m apart for ~4 s); this slot's NC measured 6.26 m
+        // through 'settling' with a 1.73 m single-frame leg jump in 'roll'.
+        // Slave the root to the torso particle mid: x/z always; y from the
+        // crumple lie height over the crash floor once grounded (captured
+        // at the tumble→roll handoff, as in 236), from the torso mid
+        // itself while the tumble is airborne. Engine state untouched
+        // (display-only, ADR-0002; same class as the 236 conform). The
+        // get-up/walk-off machine (ragdoll.walkoff) drives the root
+        // itself and is exempt, as is the frozen rest park.
+        const _slaveRoot = function (rp) {
+            if (!ragdoll || ragdoll.walkoff || ragdoll.resting || !R.torso) return rp;
+            rp.x = R.torso.x;
+            rp.z = R.torso.z;
+            if (R.phase === 'tumble') {
+                rp.y = R.torso.y;
+            } else {
+                if (R._rootLie === undefined) {
+                    R._rootLie = rp.y - _crashFloorY(rp.z);
+                }
+                rp.y = _crashFloorY(rp.z) + R._rootLie;
             }
-            _rp.y = _crashFloorY(_rp.z) + R._rootLie;
-        }
+            return rp;
+        };
+        _slaveRoot(_rp);
         // The engine can write the root AGAIN after this step (the same
         // late-write hazard the rest park solves with _parkObs), which would
         // reach the render as the ballistic dive one frame later — iter-236
@@ -7677,56 +7691,14 @@ void main(void) {
         if (scene && scene.onBeforeRenderObservable && !R._slideConformObs) {
             R._slideConformObs = scene.onBeforeRenderObservable.add(function () {
                 if (!ragdoll || ragdoll.resting || ragdoll.walkoff) return;
-                if (ragdoll.phase !== 'roll' || ragdoll.torso.z >= OUTRUN_Z) return;
-                if (ragdoll._rootLie === undefined) return;
-                const _crt = character.root.position;
-                _crt.y = _crashFloorY(_crt.z) + ragdoll._rootLie;
-                // 237 RE-PIN ORDERING (ruling on 236): any world matrix
-                // computed earlier in the frame (the per-frame crash
-                // write-back calls computeWorldMatrix) is now stale — the
-                // skinned mesh would render at the pre-pin root, which is
-                // exactly the measured "ankle probes trail the conformed
-                // particles by up to 2.7 m". Force the recompute so the
-                // render and the bones see the pinned transform.
+                // 249: re-slave x/y/z, not only y — the engine can re-write
+                // the crashed root's whole transform after this step.
+                _slaveRoot(character.root.position);
+                // 237 RE-PIN ORDERING (ruling on 236): force the world
+                // matrix recompute so the render and the bones see the
+                // pinned transform.
                 character.root.computeWorldMatrix(true);
             });
-        }
-        const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
-        const _rq = character.root.rotationQuaternion || R.qRoot;
-        const qRootInv = _crashQConj(_rq);
-        // Root-slide lag compensation (iter 123): translate the frozen world
-        // points by the root's per-FRAME delta before the ticks, so the
-        // rendered body tracks the sliding root exactly (per-frame because
-        // the root's own motion is engine-driven at frame granularity).
-        // HT#13 (2026-08-30): the ride ENDS at the roll-out — past OUTRUN_Z
-        // the machine's own flat friction brakes the body to rest a few
-        // metres past the transition (targets single 3–8 / double 6–12 /
-        // triple 10–18 m); without this cut the engine's crashed root keeps
-        // re-accelerating down the out-run and drags the body ~30 m past
-        // the flat (measured rest 33.5 m past rollOutZ at the 8 m/s² brake).
-        if (R.phase !== 'tumble' && R.torso.z < OUTRUN_Z) {
-            if (R._lastRoot) {
-                const _rd = _crashVSub(rootPos, R._lastRoot);
-                for (const pt of R.parts) {
-                    pt.p.x += _rd.x; pt.p.y += _rd.y; pt.p.z += _rd.z;
-                    // Rigid translation: move the velocity memory too, so
-                    // the tick's displacement read (p − prev) stays EXACTLY
-                    // 0 once stopped — translating only p made maxSpeed
-                    // read the root's residual slide for every post-stop
-                    // frame the root kept moving (the 151–322 nonzero tail
-                    // samples). Every tick re-bases prev = p, so this is
-                    // inert during roll/settling.
-                    if (pt.prev) {
-                        pt.prev.x += _rd.x; pt.prev.y += _rd.y; pt.prev.z += _rd.z;
-                    }
-                }
-                if (R.legacySlide) {
-                    for (const sk of R.skis) {
-                        sk.pos.x += _rd.x; sk.pos.y += _rd.y; sk.pos.z += _rd.z;
-                    }
-                }
-            }
-            R._lastRoot = _crashV(rootPos.x, rootPos.y, rootPos.z);
         }
         R._acc = (R._acc || 0) + Math.min(dt, 0.25);
         let _n = 0;
@@ -7736,6 +7708,19 @@ void main(void) {
             _n++;
         }
         if (_n >= 24) R._acc = 0; // dump backlog under extreme load (≤ 5 fps)
+        // 249: the slave runs AFTER the ticks, on the freshly integrated
+        // particles — the driver write-back below must express its
+        // root-relative locals against exactly the root the observer will
+        // re-pin to before render, or the leg nodes overshoot by one frame
+        // of torso motion (measured 0.70 m separation / 0.93 m leg jump).
+        const P = R.byName;
+        R.torso = _crashV((P.torsoTop.p.x + P.torsoBottom.p.x) / 2,
+                          (P.torsoTop.p.y + P.torsoBottom.p.y) / 2,
+                          (P.torsoTop.p.z + P.torsoBottom.p.z) / 2);
+        _slaveRoot(_rp);
+        const rootPos = _crashV(_rp.x, _rp.y, _rp.z);
+        const _rq = character.root.rotationQuaternion || R.qRoot;
+        const qRootInv = _crashQConj(_rq);
         // ── Write driver transforms (root-local, bones follow as always) ──
         // Arm segments are passed (distal, proximal) so the written +Y matches
         // the arm drivers' own frame (+Y = elbow/wrist end); torso/head/legs
@@ -7758,7 +7743,6 @@ void main(void) {
             const rx = Math.atan2(dirL.z, dirL.y);
             n.rotation.x = rx; n.rotation.z = rz;
         };
-        const P = R.byName;
         writeSeg('torso', P.torsoTop.p, P.torsoBottom.p);
         writeSeg('head', P.headTop.p, P.neck.p);
         writeSeg('upperArmL', P.elbowL.p, P.shL.p);
@@ -7769,14 +7753,6 @@ void main(void) {
         writeSeg('lowerLegL', P.kneeL.p, P.ankleL.p);
         writeSeg('upperLegR', P.hipR.p, P.kneeR.p);
         writeSeg('lowerLegR', P.kneeR.p, P.ankleR.p);
-        // Torso world position for the camera ease + spray.
-        R.torso = _crashV((P.torsoTop.p.x + P.torsoBottom.p.x) / 2,
-                          (P.torsoTop.p.y + P.torsoBottom.p.y) / 2,
-                          (P.torsoTop.p.z + P.torsoBottom.p.z) / 2);
-        if (R.phase === 'roll' && R.chopBottomSpeed == null &&
-            R.torso.z >= OUTRUN_Z - 2) {
-            R.chopBottomSpeed = Math.hypot(R.slideV.x, R.slideV.z);
-        }
         for (const sk of R.skis) {
             const n = sk.node;
             const eps2 = 0.05;
@@ -7789,6 +7765,10 @@ void main(void) {
             n.position.x = loc.x; n.position.y = loc.y; n.position.z = loc.z;
         }
         _crashWalkoffStep(R);
+        if (R.phase === 'roll' && R.chopBottomSpeed == null &&
+            R.torso.z >= OUTRUN_Z - 2) {
+            R.chopBottomSpeed = Math.hypot(R.slideV.x, R.slideV.z);
+        }
         // iter 127: park + freeze in the SAME step that detects rest, with
         // the driver locals freshly written above and the root positioned at
         // the capture. The previous position (freeze at the START of the
