@@ -2498,7 +2498,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=96";   // 96: 258 boots shell v2 (loft re-landed centred on the ankle-band centroid, lip closed to the shin, ankle-anchor gates) ; 95: Fable F7 (seat membrane weights) ; 93: Fable athlete fixes (gusset, leg tubes, hand-abducted bake) — the maps changed; 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
+    const ASSET_V = "?v=95";   // 95: Fable F7 (seat membrane weights) ; 93: Fable athlete fixes (gusset, leg tubes, hand-abducted bake) — the maps changed; 89: reviewer emergency revert of 223's occluder merge — v88 collapsed the skinned mesh in-game (athlete invisible); assets restored to v87 content
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
