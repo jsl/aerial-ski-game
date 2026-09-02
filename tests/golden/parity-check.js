@@ -25,6 +25,10 @@ for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort()) 
     for (let i = 0; i < n; i++) {
         const a = wf[i].state || {}, b = hf[i].state || {};
         for (const k of FIELDS) {
+            // tuckAmount is a DISPLAY blend while grounded on the in-run (slot 243's
+            // auto-crouch); the invariant is its value in the AIR — the engine reads
+            // the tuck at and after the lip. Grounded frames are not compared.
+            if (k === 'tuckAmount' && (a.grounded !== false || b.grounded !== false)) continue;
             const da = typeof a[k] === 'number' ? Math.abs(a[k] - b[k]) : (a[k] === b[k] ? 0 : 1);
             if (da > maxd[k]) { maxd[k] = da; if (da > 1e-9 && firstBad === null) firstBad = `${k}@f${wf[i].f}`; }
         }
