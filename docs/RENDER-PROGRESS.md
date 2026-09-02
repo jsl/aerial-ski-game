@@ -397,6 +397,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 238 | **#21 v5 TUCK ENTRY (237-ruling slot): new per-rendered-frame gate `tests/drive/tuck-entry.spec.js` over the FULL enter-hold-exit cycle from the starting position (keyboard Space AND gamepad RT). Pre-fix: sole gaps 0.0 mm on every frame (heels planted — (a) already held at bone level) but a 0.187 m HIP TEAR at tuck 0.5 — the author's "body stretches weird". Root cause: `_seatTorsoOnHips` scaled the hip-closure correction by the blend weight w (a constraint applied as a lerp); at mid-blend half the ~0.37 m pin-vs-torso gap stayed open. Fix: seat correction applies at FULL strength whenever engaged (continuous at the endpoints — the gap is 0 there); game.js only, display-only (ADR-0002). Post-fix: hip/knee tears ≤ 30 mm mid-blend, segment-length drift 0.5 mm (gate (b) ≤ 5 mm), sole gap 0.0 mm. OPEN (named for 239; interim snap bound 0.15 in the spec): two single-frame handoff snaps remain — shoulder d−0.143 at tuck 0.50 (keyboard), hip d+0.100 at cycle start (gamepad) — the ready-stance block handing arms/hips to the blend mid-cycle; snap gate tightens to 30 mm after that fix. The ruling's ankle-trail re-measure add-on was NOT run (deadline). unit 81/81, golden 30/30, tuck-entry 2/2, tuck-grounded+tuck-sitting+chain 15/15, tuck-coverage 6/6; look shots NOT regenerated (deadline). ASSET_V unchanged.** | entry 238. |
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
 | — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
 | — | Iteration 237 | **236-ruling slot: (a) TRIPLE GET-UP STALL FIXED — root cause = the walk `roll` stage's 7-iteration rise bisection assumed a monotone `lift(b)`; the played-crash curve is steep AND non-monotone (measured triple: 0 → 0.125@b.03 → 0.45@b.05 → 1.2@b.1 → 3.8 m hump@b.4 → 0@b=1; local slope 15–25 m/unit-b near b≈0.05), so every tested midpoint overshot the per-frame `_RISE_CAP` allowance and `rollB` froze at 0.022–0.047 — kneel never entered (root frozen 7.5 s → cap). Fix = local-slope pacing (0.004 probe step sizes the advance to the frame budget; the whole-chain governor stays the hard cap) + a 2.5 s escalation completing the blend over the next 0.75 s (end pose grounded: measured lift(1)=0; descent unclamped ⇒ never a rise-permit). (b) RE-PIN ORDERING: the `onBeforeRenderObservable` re-pin now forces `character.root.computeWorldMatrix(true)` so any same-frame world matrix computed before the pin is refreshed (236's 2.7 m skinned-ankle trail suspect). GATE: `getup-forensics` now asserts walk-start within 6 s of rest on the played path in ALL 3 worlds (NC: the pre-237 freeze); `_walkoffProbe` extended with `st/stT/rollB/govY`.** | unit 81/81; golden 30/30 (0 diffs); getup-forensics 3/3 — rest→walk-start 3.00 / 3.05 / 4.90 s (single/double/triple); 236 lowClear band gate still green; crash-ragdoll 10/10 on the mid-iteration build (open: rerun on final); look not regenerated (no asset/visual-scene change; ASSET_V unchanged) | crash-ragdoll rerun; re-measure the skinned-ankle trail with the computeWorldMatrix re-pin; forensics dumps land in `shots/forensics_null.json` (m.world field is always null — probe nit, harmless) | entry 237. |
@@ -14092,6 +14093,38 @@ slide-plunge-then-rise pattern above — if their report was on a *natural* (non
 path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
+
+### 238 — #21 v5 TUCK ENTRY: full-cycle per-frame gate + full-strength hip seat
+
+**What changed:**
+1. New gate `tests/drive/tuck-entry.spec.js` (237-ruling slot): samples EVERY rendered frame
+   of the enter-hold-exit tuck cycle from the starting position, keyboard (Space) AND gamepad
+   (RT through a stubbed pad), measuring per frame: boot–ski sole gaps (toe + heel, both skis),
+   per-segment joint-to-joint length vs bind length (drift), and torso/hip/knee/shoulder joint
+   gaps (snap = max frame-to-frame gap change).
+2. Fix (`game.js`, display-only, ADR-0002): `_seatTorsoOnHips` scaled the hip-closure
+   translation by the entry weight w — a CONSTRAINT applied as a lerp. Measured pre-fix:
+   0.187 m hip tear at tuck 0.50 (the author's "body stretches weird going into tuck"). The
+   correction now applies at full strength whenever engaged; continuous at the endpoints
+   because the gap itself is 0 there. Heels: sole gaps were ALREADY 0.0 mm on every frame
+   (the boot–ski pin owns the ankle), so ruling (a) held at bone level pre-fix.
+
+**Verification:** unit 81/81; golden 30/30 (0 diffs, no recapture); tuck-entry 2/2 — post-fix
+sole gap 0.0, segment drift 0.0005 m, hip/knee tears ≤ 30 mm mid-blend; tuck-grounded +
+tuck-sitting + chain 15/15; tuck-coverage 6/6. Look shots NOT regenerated (deadline risk);
+no asset change, ASSET_V unchanged.
+
+**Open (named for 239):** two single-frame handoff snaps remain — shoulder Δ−0.143 at
+tuck 0.50 (keyboard), hip Δ+0.100 at cycle start (gamepad) — the ready-stance block handing
+the arms/hips to the blend mid-cycle; the spec carries an INTERIM 0.15 snap bound, to be
+tightened to 30 mm after the ready-block handoff is blended. The ruling's ankle-trail
+re-measure add-on was NOT run this slot (time).
+
+**Open questions for the reviewer:** (1) in the READY stance a stationary tuck holds the arms
+at the sides at the authored rest mount (gap 0.147, rigid translation, not stretch) — is that
+the wanted picture, or should a stationary tuck at the gate blend the arms to the knees like
+the settled squat gate assumes? (2) may the interim 0.15 snap bound stand until 239 lands the
+ready-block handoff fix?
 
 ### 237 — TRIPLE GET-UP STALL (local-slope pacing + escalation) and re-pin ordering
 

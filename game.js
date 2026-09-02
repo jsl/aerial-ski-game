@@ -1420,8 +1420,14 @@ function _seatTorsoOnHips(meshes, tuck, armRaise) {
     if (!n) return null;
     hy /= n; hz /= n;
     const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
-    const dy = (hy - (t.position.y - 0.275 * tc)) * w;
-    const dz = (hz - (t.position.z - 0.275 * ts)) * w;
+    // #21 v5 (ruling on 237): the seat is a CONSTRAINT, not a pose blend.
+    // Scaling the correction by the entry weight w left half the pin-vs-torso
+    // gap open mid-blend (measured 0.187 m hip tear at tuck 0.5 — the author's
+    // "body stretches weird going into tuck"). The chain must close fully on
+    // every blend frame; continuity at the endpoints is preserved because the
+    // gap itself is 0 there (the rest pose is chain-consistent).
+    const dy = (hy - (t.position.y - 0.275 * tc));
+    const dz = (hz - (t.position.z - 0.275 * ts));
     for (const nm of ['torso', 'head', 'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR']) {
         const m = meshes[nm];
         if (!m) continue;
