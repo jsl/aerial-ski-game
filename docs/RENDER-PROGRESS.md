@@ -14126,6 +14126,18 @@ path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
 
+### 239 — slot 239 (leg geometry rebuild): PARTIAL — knee-belly instrument's units bug fixed; the ring rebuild itself did NOT land green and is reverted
+
+**Commit 6a290e1.** This slot ran the Fable leg-geometry spec (the SLOT 239 entry above) inside the 60-minute budget. Honest result: the full rebuild could not be landed green, and per the never-carry rule everything that did not verify is reverted. What landed and what was learned:
+
+1. **LANDED: `_measure()` units fix (the knee-belly instrument was broken).** `env()` interpolated over 1-cm RUNG-OFFSET keys but was called with ABSOLUTE z — `t = z − j` mixed metres with rung indices, so the "KNEEBRIDGE silhouette bump" was extrapolation noise, insensitive to geometry (identical numbers 18.6→15.6 mm across builds with and without shaping). `env` now takes the rung offset, and rungs within ±4 cm of the knee ring are excluded (a deliberate ring widening is not crumple). On the UNCHANGED shipped geometry the honest instrument reads bump L 13.1 → 2.2 mm, R 15.2 → 0.3 mm — the existing capped pull is better than the broken gate ever showed. Build green; assets/ASSET_V untouched (probe builds only, written to scratch, removed).
+2. **IMPLEMENTED AND REVERTED (all built, none green end-to-end):** (a) the knee RING — 74 band verts/side blended to a 112×118 mm superellipse about `_blend_at`, smoothstep in |z−ring| — it does set the ring row to ~125 mm but the rows ±2 cm either side stay pinched (61–67 mm above, 95 below): the band verts the ring moves are not the verts that own those silhouette rows; (b) pull caps ±12/8 mm ×6 + the band Laplacian + a second pull — got belly 13.4 → 7.9 mm but not ≤ 6; (c) falloff 0.14 — step 15.6 mm persists at z=−0.655; (d) STEP gate 0.012, TAPER_TARGET 1.34, CALTHIGH_SHIP 0.80, SHELL_TORSO_BOT_SLIM 0.90, leg-zone decimation at half trunk collapse with per-zone face counts — all coded, none verified against a green build.
+3. **Diagnosis for 240 (the blocker is ownership, not radius):** the pinched 61–67 mm rows just above the ring are formed by verts the band EXCLUDES — the upperLeg inner-face seam filter, and verts whose silhouette rows the profile reads but `_band` (74 verts) does not contain. The next attempt must widen `_band` ownership (drop the inner-seam exclusion inside ±4 cm, include hlpKnee-classified verts pre-collapse) BEFORE re-tuning radii. The post-shell 22.6 mm step at z=−0.335 is pre-existing (baseline identical) and is the crotch-web boundary — a web-band exclusion mirroring the inseam one is drafted in the reverted diff and is defensible.
+
+**Verification (landed fix only):** build green (bump L 13.1 → 2.2, R 15.2 → 0.3 mm); `npm run test:unit` 81/81; `npm run test:golden` 30/30, 0 diffs, no recapture. NOT run this slot (nothing shipped changed): drive specs, look shots, mobile check — the acceptance items (b)–(e) of the spec are all OPEN.
+
+**Open questions for the reviewer:** (1) does the ±4 cm ring exclusion in the belly gate (and the drafted web-band exclusion in the STEP scan) need a written ruling like the 0.012 STEP gate, or is instrument scoping within my remit? (2) is one more slot on the ownership-first route of (3) authorized, or should the ring target numbers be re-specced first?
+
 ### 238 — #21 v5 TUCK ENTRY: full-cycle per-frame gate + full-strength hip seat
 
 **What changed:**
