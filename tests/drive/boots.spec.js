@@ -137,6 +137,41 @@ async function measure(page) {
                 kneeY: kneeNode ? kneeNode.getAbsolutePosition().y : null,
                 footprint: foot,
             };
+            // 258: the posed shin ankle-band centroid, skinned through the
+            // skeleton palette (the build-side posed cloud in render space —
+            // the anchor the 14:45 ruling measures against, not the bone
+            // pivot, which sits behind a leaning shin).
+            const matIdx = body.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+            const matW = body.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+            const pos = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const palette = skel.getTransformMatrices(body);
+            // The palette is indexed by bone.getIndex() (the skeleton's
+            // matrix-palette slot), NOT by the position in skel.bones —
+            // glTF joint order and Babylon bone order differ.
+            const shinBone = skel.bones.find(b => b.name === 'lowerLeg' + side);
+            const pij = shinBone ? shinBone.getIndex() : -1;
+            const cloud = [];
+            if (pij >= 0 && matIdx && matW && pos) {
+                for (let i = 0; i < matIdx.length / 4; i++) {
+                    let hit = -1;
+                    for (let k = 0; k < 4; k++)
+                        if (matIdx[i * 4 + k] === pij && matW[i * 4 + k] > 0.9) hit = k;
+                    if (hit < 0) continue;
+                    const pm = BABYLON.Matrix.FromArray(palette, matIdx[i * 4 + hit] * 16);
+                    const p = BABYLON.Vector3.TransformCoordinates(
+                        new BABYLON.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]), pm);
+                    cloud.push(BABYLON.Vector3.TransformCoordinates(p, bodyWorld));
+                }
+            }
+            if (cloud.length > 20) {
+                const soleY = Math.min(...cloud.map(v => v.y));
+                const band = cloud.filter(v => v.y <= soleY + 0.10);
+                const avg = (f) => band.reduce((a, v) => a + f(v), 0) / band.length;
+                out.sides[side].centroid = [
+                    +avg(v => v.x).toFixed(3), +avg(v => v.y).toFixed(3),
+                    +avg(v => v.z).toFixed(3)];
+                out.sides[side].cloudN = band.length;
+            }
 
         }
         return out;
@@ -276,6 +311,68 @@ test('NC3: a forward-sitting boot fires the center-alignment gate', async ({ pag
     const fails = centerGate(m, 'NC3');
 });
 
+// ── 258 ANKLE-ANCHOR GATE (the 14:45 ruling, clause b) ─────────────────────
+// The boot's bounding-box centre must sit within 4 cm of the POSED shin
+// ankle-band centroid (lateral x AND fore-aft z), and that centroid must lie
+// inside the boot's x–z footprint (the cuff ring's footprint). 257 shipped
+// cuffs standing ahead of the shins; this gate anchors the shell to the same
+// posed-cloud centroid the Blender build measures.
+function ankleAnchorGate(m, tag) {
+    const fails = [];
+    for (const side of ['L', 'R']) {
+        const s = m.sides[side];
+        if (!s) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
+        if (!s.centroid) { fails.push(`${tag} ${side}: no posed shin cloud`); continue; }
+        const cx = (s.min[0] + s.max[0]) / 2, cz = (s.min[2] + s.max[2]) / 2;
+        const offX = cx - s.centroid[0], offZ = cz - s.centroid[2];
+        if (Math.abs(offX) > 0.04 || Math.abs(offZ) > 0.04) {
+            fails.push(`${tag} ${side}: boot bbox centre (${cx.toFixed(3)},` +
+                `${cz.toFixed(3)}) is ${(offX * 100).toFixed(1)} cm x / ` +
+                `${(offZ * 100).toFixed(1)} cm z off the posed ankle-band ` +
+                `centroid (${s.centroid[0]}, ${s.centroid[2]}) — boot not on the foot`);
+        }
+        const inside = s.centroid[0] >= s.min[0] && s.centroid[0] <= s.max[0] &&
+            s.centroid[2] >= s.min[2] && s.centroid[2] <= s.max[2];
+        if (!inside) {
+            fails.push(`${tag} ${side}: ankle-band centroid (${s.centroid[0]},` +
+                `${s.centroid[2]}) OUTSIDE the boot x–z footprint`);
+        }
+    }
+    return fails;
+}
+
+test('ANKLE-ANCHOR: boot bbox centre within 4 cm of the posed shin centroid', async ({ page }) => {
+    await bootReady(page);
+    await frame(page, Math.PI * 0.30);
+    const m = await measure(page);
+    const fails = ankleAnchorGate(m, 'anchor');
+    expect(fails, fails.join('; ')).toEqual([]);
+});
+
+test('NC6: a boot shoved fore-aft off the posed shin centroid fires the ankle-anchor gate', async ({ page }) => {
+    await bootReady(page);
+    await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        for (const side of ['L', 'R']) {
+            const bs = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            if (!bs.length) continue;
+            bs[0].computeWorldMatrix(true);
+            const parent = bs[0].parent || null;
+            const inv = parent
+                ? parent.getWorldMatrix().clone().invert()
+                : BABYLON.Matrix.Identity();
+            const dir = BABYLON.Vector3.TransformNormal(
+                new BABYLON.Vector3(0, 0, -0.08), inv);
+            for (const b of bs) b.position.addInPlaceFromFloats(dir.x, dir.y, dir.z);
+        }
+    });
+    await frame(page, Math.PI * 0.30);
+    const m = await measure(page);
+    const fails = ankleAnchorGate(m, 'NC6');
+    expect(fails.some(f => f.includes('not on the foot')), fails.join('; ')).toBe(true);
+});
+
 test('CLOSURE: the boot meshes are watertight (zero welded boundary edges)', () => {
     // #16 v2 (b), the "close every face" half: read the shipped GLB directly
     // and classify edges after position-welding (the export splits vertices
@@ -370,12 +467,12 @@ test('NC1b: the old-shoe classifier fires on exposed neutral-dark at the ankle',
     expect(good.oldShoeFrac).toBeLessThanOrEqual(0.05);
 });
 
-// ── #16 v2 (b) FACE-ZONE GATE (iteration 219) ──────────────────────────────
-// "Texture every face": the boot must ship six material zones (shell, toe
-// cap, cuff, sole, strap, buckles) so the toe/cuff cap fronts stop reading
-// as bare navy circles. Reads the shipped GLB's materials + primitives.
-const BOOT_ZONE_MATS = ['bootShell', 'bootToe', 'bootCuff',
-    'bootSole', 'bootStrap', 'bootBuckle'];
+// ── #16 v2 (b) FACE-ZONE GATE (iteration 219; four zones since 257) ────────
+// "Texture every face": the boot must ship its material zones (shell, sole,
+// cuff, liner lip) so no face zone reads as bare unpainted shell. Reads the
+// shipped GLB's materials + primitives. (258: toe/strap/buckle details
+// return on this shell in slot 261.)
+const BOOT_ZONE_MATS = ['bootShell', 'bootSole', 'bootCuff', 'bootLip'];
 
 function bootZoneFails(j) {
     const fails = [];
@@ -396,7 +493,7 @@ function bootZoneFails(j) {
     return fails;
 }
 
-test('FACE ZONES: the boot carries all six material zones, every face assigned', () => {
+test('FACE ZONES: the boot carries all four material zones, every face assigned', () => {
     const fs = require('fs');
     const path = require('path');
     const glb = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'athlete_body.glb'));
@@ -429,4 +526,87 @@ test('NC2: boots hidden fail the rendered clause', async ({ page }) => {
     const m = await measure(page);
     const fails = containmentGate(m, 'NC2');
     expect(fails.length, 'gate must detect boots-not-rendered').toBeGreaterThan(0);
+});
+
+// ── 259 SIGNED IN-GAME FOOT-AXIS GATE (the 15:25 ruling, clause c) ─────────
+// The acceptance is IN THE GAME, SIGNED, root-local: the boot must span from
+// z_ankle − 0.17 (toe, forward = −z; the athlete faces −z) to z_ankle + 0.11
+// (heel). The 258 build-side gate measured an UNSIGNED offset in the build
+// frame, so a fully mirrored loft passed it. Measured exactly as the
+// reviewer's probe: root-local (the body's world matrix inverse), the boot
+// primitives' aggregate bounding box, the ankle end = lowerLeg driver node
+// + 0.18 m along the node's −Y.
+async function measureSigned(page) {
+    return await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        scene.render();
+        const body = scene.getMeshByName('athleteBody') ||
+            scene.meshes.find(m => m.name && m.name.startsWith('athleteBody'));
+        body.computeWorldMatrix(true);
+        const inv = body.getWorldMatrix().clone().invert();
+        const toLocal = (v) => BABYLON.Vector3.TransformCoordinates(v, inv);
+        const skel = scene.skeletons[0];
+        const out = {};
+        for (const side of ['L', 'R']) {
+            const boots = scene.meshes.filter(m =>
+                m.name && m.name.indexOf('athleteBoot' + side) === 0);
+            if (!boots.length) { out[side] = null; continue; }
+            let mn = new BABYLON.Vector3(1e9, 1e9, 1e9);
+            let mx = new BABYLON.Vector3(-1e9, -1e9, -1e9);
+            for (const b of boots) {
+                b.refreshBoundingInfo(true);
+                b.computeWorldMatrix(true);
+                const bi = b.getBoundingInfo().boundingBox;
+                for (const c of [
+                    new BABYLON.Vector3(bi.minimumWorld.x, bi.minimumWorld.y, bi.minimumWorld.z),
+                    new BABYLON.Vector3(bi.maximumWorld.x, bi.maximumWorld.y, bi.maximumWorld.z)]) {
+                    const l = toLocal(c);
+                    mn = BABYLON.Vector3.Minimize(mn, l);
+                    mx = BABYLON.Vector3.Maximize(mx, l);
+                }
+            }
+            const bone = skel.bones.find(b => b.name === 'lowerLeg' + side);
+            const at = bone.getAbsoluteTransform();
+            const node = toLocal(BABYLON.Vector3.TransformCoordinates(
+                at.getTranslation(), body.getWorldMatrix()));
+            const yDir = BABYLON.Vector3.TransformNormal(
+                new BABYLON.Vector3(0, 1, 0),
+                at.multiply(body.getWorldMatrix())).normalize();
+            const ankleEnd = node.subtract(yDir.scale(0.18));
+            out[side] = {
+                zmin: +(mn.z - ankleEnd.z).toFixed(3),
+                zmax: +(mx.z - ankleEnd.z).toFixed(3),
+                xcOff: +(((mn.x + mx.x) / 2) - ankleEnd.x).toFixed(3),
+                cuff: +(mx.y - mn.y).toFixed(3),
+            };
+        }
+        return out;
+    });
+}
+
+function signedAxisGate(s, tag) {
+    const fails = [];
+    for (const side of ['L', 'R']) {
+        const d = s[side];
+        if (!d) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
+        if (d.zmin < -0.20 || d.zmin > -0.12)
+            fails.push(`${tag} ${side}: boot z-min ${d.zmin} vs ankle end ` +
+                `(gate [−0.20, −0.12]) — toe end misplaced${d.zmin > 0 ? ' (boot behind the ankle, the 258 mirror)' : ''}`);
+        if (d.zmax < 0.06 || d.zmax > 0.14)
+            fails.push(`${tag} ${side}: boot z-max ${d.zmax} vs ankle end ` +
+                `(gate [+0.06, +0.14]) — heel end misplaced`);
+        if (Math.abs(d.xcOff) > 0.02)
+            fails.push(`${tag} ${side}: boot x-centre ${d.xcOff} off the ankle x (gate ±0.02)`);
+        if (d.cuff < 0.14 || d.cuff > 0.21)
+            fails.push(`${tag} ${side}: cuff top ${d.cuff} above the sole (gate [0.14, 0.21])`);
+    }
+    return fails;
+}
+
+test('SIGNED FOOT AXIS: boot spans toe −z / heel +z about the ankle end, root-local', async ({ page }) => {
+    await bootReady(page);
+    await frame(page, Math.PI * 0.30);
+    const s = await measureSigned(page);
+    const fails = signedAxisGate(s, 'signed');
+    expect(fails, fails.join('; ')).toEqual([]);
 });
