@@ -467,6 +467,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 | — | Iteration 244 | **SLOT 244 LANDED = CROUCH SKIN + RE-LAND (ruling on 243): the preserved 243 diff (`scratch/iter-243/wip.patch` + `inrun-start.spec.js`) re-applied and completed — (a) hold-phase torso/hip seat: already a full constraint since the #21 v5 change; MEASURED green in the sustained auto-crouch hold (tuck 0.85, grounded): hip gap ≤ 0.0002 m on every sampled in-run frame (static gate crouch at tuck 1.0 reads 0.020 m, at the ≤ 2 cm boundary — noted); back close-ups (gate + in-run hold) show no tail streak. (b) hand contract: `_SQUAT_HAND_AHEAD` 0.03 → 0.18 so the gate crouch (tuck 1.0, _lastSquat 1) reads hand z − hip z −0.265 (was −0.164, contract −0.40…−0.25); `_INRUN_HAND_AHEAD` stays 0.20 (mid-in-run −0.285, in-run hold tuck 0.85 ≈ −0.40…−0.28, inside band). (c) `tuck-entry.spec` exit waits now `tuckAmount ≤ (_inrunFloor || 0) + 0.005` (byte-identical at the gate) + NEW in-run cycle test above the floor — green: drift 0.0005, tear 0.018, abs 0.033. (d) `inrun-start` landed: floor peak 0.850 monotone, tuck 0.0000 at the lip, armRaise 0.980 pre-lip, sweep first tLip 0.080 s, worst joint rate 297 °/s. Golden traces recaptured (tuckAmount display blend only — 0 physics-state diffs); parity-check PASS (tuck compared airborne only, per the 07:00 ruling). unit PASS, golden 30/30, inrun-start 2/2, inrun-contact 2/2, tuck-entry 3/3, look 7/7 (shots regenerated, inspected — unchanged from the stable baseline). Display-only (ADR-0002), ASSET_V unchanged. Next: 245 REVIEW.** | entry 244. |
 | — | Iteration 238 | **#21 v5 TUCK ENTRY (237-ruling slot): new per-rendered-frame gate `tests/drive/tuck-entry.spec.js` over the FULL enter-hold-exit cycle from the starting position (keyboard Space AND gamepad RT). Pre-fix: sole gaps 0.0 mm on every frame (heels planted — (a) already held at bone level) but a 0.187 m HIP TEAR at tuck 0.5 — the author's "body stretches weird". Root cause: `_seatTorsoOnHips` scaled the hip-closure correction by the blend weight w (a constraint applied as a lerp); at mid-blend half the ~0.37 m pin-vs-torso gap stayed open. Fix: seat correction applies at FULL strength whenever engaged (continuous at the endpoints — the gap is 0 there); game.js only, display-only (ADR-0002). Post-fix: hip/knee tears ≤ 30 mm mid-blend, segment-length drift 0.5 mm (gate (b) ≤ 5 mm), sole gap 0.0 mm. OPEN (named for 239; interim snap bound 0.15 in the spec): two single-frame handoff snaps remain — shoulder d−0.143 at tuck 0.50 (keyboard), hip d+0.100 at cycle start (gamepad) — the ready-stance block handing arms/hips to the blend mid-cycle; snap gate tightens to 30 mm after that fix. The ruling's ankle-trail re-measure add-on was NOT run (deadline). unit 81/81, golden 30/30, tuck-entry 2/2, tuck-grounded+tuck-sitting+chain 15/15, tuck-coverage 6/6; look shots NOT regenerated (deadline). ASSET_V unchanged.** | entry 238. |
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
+| — | Iteration 245 (review) | **REVIEW-ONLY (capped form): unit PASS, golden 30/30 (v95, no recapture), drive 37/37 (spine/chain/tuck-entry/inrun-start/inrun-contact/inrun-crouch/ready-stance/leg-watertight), look 7/7 + shots inspected. F7 spine-lag fix HOLDS (no back tear in the in-run hold framing); bib "30" legible front; in-run band at flank parity (211.4 vs 211.8/215.4). Remaining defects measured: kicker face −9 % grey (191.8 vs flanks), in-run arms hang vertical instead of hands-forward-at-knee + buried head, tuck boot/binding block dominates the flight silhouette, pink bib smear (paint lane), pale horizon seam at ridge/treeline. Queue: 246–248 crash (F5) → in-run arm/head pass → kicker brightness → boot-block measure. No source/asset change, ASSET_V unchanged.** | entry 245. |
 | — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
 | — | Iteration 237 | **236-ruling slot: (a) TRIPLE GET-UP STALL FIXED — root cause = the walk `roll` stage's 7-iteration rise bisection assumed a monotone `lift(b)`; the played-crash curve is steep AND non-monotone (measured triple: 0 → 0.125@b.03 → 0.45@b.05 → 1.2@b.1 → 3.8 m hump@b.4 → 0@b=1; local slope 15–25 m/unit-b near b≈0.05), so every tested midpoint overshot the per-frame `_RISE_CAP` allowance and `rollB` froze at 0.022–0.047 — kneel never entered (root frozen 7.5 s → cap). Fix = local-slope pacing (0.004 probe step sizes the advance to the frame budget; the whole-chain governor stays the hard cap) + a 2.5 s escalation completing the blend over the next 0.75 s (end pose grounded: measured lift(1)=0; descent unclamped ⇒ never a rise-permit). (b) RE-PIN ORDERING: the `onBeforeRenderObservable` re-pin now forces `character.root.computeWorldMatrix(true)` so any same-frame world matrix computed before the pin is refreshed (236's 2.7 m skinned-ankle trail suspect). GATE: `getup-forensics` now asserts walk-start within 6 s of rest on the played path in ALL 3 worlds (NC: the pre-237 freeze); `_walkoffProbe` extended with `st/stT/rollB/govY`.** | unit 81/81; golden 30/30 (0 diffs); getup-forensics 3/3 — rest→walk-start 3.00 / 3.05 / 4.90 s (single/double/triple); 236 lowClear band gate still green; crash-ragdoll 10/10 on the mid-iteration build (open: rerun on final); look not regenerated (no asset/visual-scene change; ASSET_V unchanged) | crash-ragdoll rerun; re-measure the skinned-ankle trail with the computeWorldMatrix re-pin; forensics dumps land in `shots/forensics_null.json` (m.world field is always null — probe nit, harmless) | entry 237. |
 | — | Iteration 233 | **B-NET ANISO (P12 conformance, polish buffer): `bnetTex.anisotropicFilteringLevel` 16 with `?bnet_sabotage=1` NC; new bnet-legibility.spec 2/2 (aniso==16 + fence-cloth visibility inFrame 86; NC fires aniso==1). Diagnoses recorded: (a) scene.png fence tangle is NOT texture filtering — near-black-albedo probe moved cloth-patch lum <0.06; it is dark background through the alpha holes at grazing angles, candidate fix depth-fade/LOD on the net material (reviewer call); (b) review-230 seam-worst-row (5.1% @ y=0.425) is diffuse horizon speckle peaking at the silhouette row (7.5% @ y=0.443), sky-through-bare-crown gaps + AA, not the box-seam class. unit 81/81, golden 30/30 (no recapture), venue+grey-ramp 7/7. index.html ?v=92; ASSET_V unchanged.** | entry 233. |
@@ -14419,3 +14420,62 @@ re-confirmed at the next review or in 237.
 **Open questions for the reviewer:** (1) is the report-only demotion of the root-Y pop gate
 acceptable, or should the gate sample the conformed root through an observable instead?
 (2) the skinned-ankle divergence above — gate it or by-eye it first?
+
+### 245 — REVIEW (capped slot): F7 spine-lag fix holds; measured kicker-face grey ramp −9%, in-run arms still hang, tuck boot-block dominates
+
+**Verification (budget-compliant; full run-all NOT run).** `npm run test:unit` PASS
+(0 fail). `npm run test:golden` 30/30 (v95 traces, no recapture). Drive specs most
+relevant to the recent landings (244 in-run start + F7 spine re-solve): spine, chain,
+tuck-entry, inrun-start, inrun-contact, inrun-crouch, ready-stance, leg-watertight —
+**37/37** on DRIVE_PORT 8123 (8099 is held by another lane). `look` 7/7, shots
+regenerated and INSPECTED (scene, figure, figure_front, pose_inrun_side,
+pose_tuck_side). No source or asset change this slot; ASSET_V unchanged.
+
+**What now reads wrong (with numbers):**
+1. **Kicker-face grey ramp is the remaining dark patch.** scene.png luminance:
+   kicker face **191.8** vs foreground flank **211.8** / right flank **215.4** — the
+   face is ~9 % darker. The in-run band itself now reads at parity (**211.4**), so
+   the corridor-multiplier and material-mismatch fixes hold; what is left is
+   localised to the kicker's curved face (SSAO in the concave transition and/or the
+   baked `terrain_shadow`/`terrain_skyvis` multipliers on the kicker segments — the
+   bake A/B shots exist in `shots/bake_*_on/off.png` for the next slot).
+   Snow still brighter than sky (212 vs 144 top band) ✓.
+2. **In-run crouch: arms hang VERTICALLY down, not forward at knee height**
+   (pose_inrun_side). The torso pitch is right (near-horizontal) and the F7 fix
+   holds — no back tear in the hold framing — but `_inrunArmForward`'s hands read at
+   boot level, not knee height, and the footage (IMG_3768 f_002) has forearms
+   forward with the back flat. Also the upper back shows a shell hump at the
+   shoulder-blade line and the head/face reads buried into the shoulders rather than
+   looking along the in-run (244 item 3's head counter does not survive this pose).
+3. **Tuck silhouette dominated by the boot/binding block** (pose_tuck_side): the
+   navy boots+bindings slab in front of the chest reads roughly twice the visual
+   size of the same boots in the ready framings — likely pose proximity + the dark
+   albedo, but it is the loudest thing in the flight pose after the skis.
+4. **Long-standing paint debts persist** (Opus/paint lane, reported not touched):
+   the pink/magenta smear under the bib front (figure_front), thin stick-like arms,
+   and the back-digit orientation ruling still outstanding (front "30" reads
+   correctly).
+5. **Horizon seam**: scene.png left edge shows a pale background strip between the
+   dark near ridgeline and the tree wall — the cyan-band class, much reduced but not
+   zero at the ridge/treeline join. Ridgelines still read as flat dark cones/slabs
+   rather than forested ridges (P6 debt).
+
+**What holds:** bib "30" legible and correctly oriented in figure_front (P7
+acceptance met); boots seated on bindings in both figure framings; no visible suit
+tears in ready or in-run-hold framings (F7 confirmed by eye); corridor/flank parity
+on the in-run; crash/get-up work from 236–237 untouched and green in the batch.
+
+**Re-prioritised list for the next iterations** (246–248 crash physics per the F5
+spec remains the headline; then):
+1. 246 carry the crash rotation (F5) — as scheduled.
+2. Small renderer-side pass: in-run arm-forward height (hands to knee height) + head
+   counter that survives the auto-crouch; both display-only in game.js pose blending.
+3. Kicker-face brightness: A/B the bake multipliers and SSAO radius on the kicker
+   segments (instruments already in `shots/bake_*`).
+4. Tuck boot-block read (3 above) — measure boot apparent size vs the ready framing
+   before touching anything.
+
+**Open questions for the reviewer:** (1) the in-run arm/head fixes (item 2) are
+game.js display pose blending outside the athlete-ban blocks — confirm they are in
+THIS lane, not the Opus lane. (2) the mirrored back-digit ruling from earlier
+reviews is still outstanding.
