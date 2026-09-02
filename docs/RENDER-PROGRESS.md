@@ -14573,12 +14573,13 @@ Open questions for the reviewer: none new (251's items 1 and 3 stand; item 2 is 
 - **Raw-table knee/ankle residuals at grounded blends are logged-only** (0.10–0.22 m): the raw table separates shin from ski, but the player sees the pinned composition (gated, 1.1 mm). chain.spec has never gated the raw separation at those blends either.
 - **Back band 15.95 in the deep hold (squat = tuck):** possibly the F7 seat-membrane defect class reappearing in the probe composition, possibly the instrument (2 mm edges). Needs the reviewer's close-up framing to arbitrate.
 - **NOT DONE this slot (time mark hit): the tucked framing in leg-watertight.spec.js + the crotch-gusset negative control.** Everything else in ruling item (4) is covered indirectly (the composed flight-tuck seam/boot gates run green), but the silhouette-level gusset gate does not exist yet.
-- `npm run test:unit` / `test:golden` were NOT run before the commit (time mark hit); the diff is one new spec + one display probe, no golden-path code. Next session should run both first and revert if anything moves.
+- `npm run test:unit` / `test:golden` were not run before the code commit (time mark hit); both were run immediately after and are GREEN — unit pass, golden **30/30 scenarios match** (no recapture needed: the diff is one new spec + one display probe, no golden-path code).
 
 **Open questions for the reviewer:**
 1. Is the 0.125 m tuck-0 shoulder reading an instrument artefact (formula ignores rotation.x) or a real table defect? A corrected anchor would close it either way.
 2. Should the deep-hold back-band strain (15.95) be arbitrated against the F7 close-ups before 255?
 3. Confirm the intended negative-control mechanism for the tucked leg-watertight framing (occluder-off vs pre-v93 asset).
+
 
 ### 253 — flight arms + landing prep (F4 spec part 243, per the 11:15 ruling on 252)
 
