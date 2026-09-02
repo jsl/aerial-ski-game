@@ -14119,12 +14119,10 @@ also hit 236's green run) retries once before gating. `_walkoffProbe` now report
 
 **Verification.** unit 81/81; golden 30/30 (0 diffs, no recapture); getup-forensics 3/3 —
 rest→walk-start 3.00 / 3.05 / 4.90 s (single/double/triple; NC = the pre-237 triple freeze);
-236's per-frame lowClear [−5 cm, +8 cm] band gate green in all worlds. crash-ragdoll ran
-10/10 on the mid-iteration build (before a missing `_slope` line was restored — the get-up
-machine is covered end-to-end by the final forensics run); rerun queued. ASSET_V unchanged;
+236's per-frame lowClear [−5 cm, +8 cm] band gate green in all worlds. crash-ragdoll re-run on the FINAL build: 10/10. ASSET_V unchanged;
 look not regenerated (no asset or default-scene change; the crash path is spec-verified).
 
-**Open.** crash-ragdoll rerun on the final build; re-measure the skinned-ankle trail with the
+**Open.** Re-measure the skinned-ankle trail with the
 computeWorldMatrix re-pin (needs reviewer by-eye per the 236 ruling).
 
 ### 236 — #24(a) GROUNDED SLIDE: engine-root terrain-conform during the rigid slide; getup-forensics becomes the gate
