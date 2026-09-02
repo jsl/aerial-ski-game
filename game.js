@@ -9301,8 +9301,13 @@ void main(void) {
                 state.airTime         = 0.0;
                 state.armSnap         = 0.0;
                 state.layArmT         = 0.0;
-                state.armRaise        = 0.0;
-                state.armRaiseTarget  = 0;
+                // Slot 253 (F4 spec): the sweep is the takeoff and the arms
+                // STAY overhead as the display base pose through flight —
+                // armRaise is NOT reset at the lip. The tuck's hands-at-shins
+                // blend runs through w = tuck·(1−armRaise), unchanged; the
+                // arm-drop mechanic (raiseT = armRaise·(1−armDrop)) is
+                // untouched (GAME-LOGIC INVARIANT 1).
+                state.armRaiseTarget = 1;
                 state.armSnapTarget   = 0;
                 // Hide billboard on takeoff
                 billboard.isVisible   = false;
@@ -10137,6 +10142,82 @@ void main(void) {
                 _squat * Math.max(state.tuckAmount, offAxisVisualTuck));
             if (_lsGet('setting_gamepad') === '1' && state.armSnap < 0.01 && state.armRaise < 0.01) {
                 applyGamepadLateral(character.meshes, _gpArmLX, _gpArmRX, state.armDropL, state.armDropR);
+            }
+            // ── Flight arms + landing prep (slot 253, F4 spec) ───────────
+            // Display-only overlays on top of applyPose (ADR-0002). Reads
+            // state.vy / terrainRootY read-only; tuck/pike/arm-drop state is
+            // never written (GAME-LOGIC INVARIANTS 1–3).
+            // (a) The spot: for the last 0.35 s before touchdown (predicted
+            //     from the vertical speed and the height over the terrain),
+            //     the arms open laterally ~55° and the knees pre-flex ~15°,
+            //     rate-limited. Suppressed while tucked/piked — the kick-out
+            //     owns that shape until it releases.
+            // (b) Touchdown absorb: an envelope peaking ~0.12 s after impact,
+            //     released by 0.6 s, its depth scaled by the vertical impact
+            //     speed (0.6× at 6 m/s, 1.0× at ≥ 9 m/s). The arms stay wide
+            //     through the ride-out and return to the sides over ~1 s
+            //     (the spot blend decays once the absorb envelope is done).
+            {
+                if (window._absorbAge === undefined) {
+                    window._absorbAge = Infinity; window._spotT = 0;
+                    window._absorbK = 0; window._wasGrounded = true;
+                }
+                const _air = !state.grounded && !state.crashed &&
+                             !_poolDiveMode && !_trampolineMode && !_trampolineMatMode;
+                let _spotTarget = 0;
+                if (_air && (state.vy || 0) < -0.5) {
+                    const _h = state.rootY - terrainRootY(state.posZ);
+                    if (_h / -(state.vy) <= 0.35) _spotTarget = 1;
+                }
+                if (state.grounded && !window._wasGrounded && !state.crashed) {
+                    window._absorbAge = 0;
+                    window._absorbK = Math.max(0.6, Math.min(1.0,
+                        0.6 + ((Math.abs(state.vy) || 0) - 6) / 3 * 0.4));
+                }
+                window._wasGrounded = state.grounded;
+                if (_air) window._absorbAge = Infinity;
+                else if (window._absorbAge !== Infinity) window._absorbAge += dt;
+                // Spot blend: up at 4/s in the air (0.25 s ramp); on the
+                // ground it decays over 1.0 s once the absorb is done.
+                const _spotRate = _air ? 4.0 : (window._absorbAge > 0.6 ? 1.0 : 0);
+                const _dS = _spotTarget - window._spotT;
+                window._spotT += Math.abs(_dS) <= _spotRate * dt ? _dS
+                               : Math.sign(_dS) * _spotRate * dt;
+                if (state.grounded && _spotTarget === 0) window._spotT = Math.max(0, window._spotT);
+
+                const _free = 1 - Math.max(state.tuckAmount, state.pikeAmount || 0);
+                // Absorb envelope: linear attack 0.12 s, release by 0.6 s.
+                const _age = window._absorbAge;
+                const _env = (_age < 0.12) ? (_age / 0.12)
+                           : (_age < 0.6) ? 1 - (_age - 0.12) / 0.48 : 0;
+                const _open = window._spotT * _free;
+                if (_open > 0.001) {
+                    character.meshes.upperArmL.rotation.z += 0.96 * _open;
+                    character.meshes.upperArmR.rotation.z -= 0.96 * _open;
+                }
+                // Knee fold: 15° pre-flex in the spot; absorb adds depth.
+                const _k = Math.max(0.31 * window._spotT * _free, _env * window._absorbK * 0.42);
+                if (_k > 0.001) {
+                    const _aH = 0.45 * _k, _aK = 0.85 * _k;
+                    const _drop = 0.36 * (2 - Math.cos(_aH) - Math.cos(_aK));
+                    for (const _side of ['L', 'R']) {
+                        const _ul = character.meshes['upperLeg' + _side];
+                        const _ll = character.meshes['lowerLeg' + _side];
+                        const _sk = character.meshes['ski' + _side];
+                        const _rxU0 = _ul.rotation.x, _rxL0 = _ll.rotation.x;
+                        _ul.rotation.x = _rxU0 + _aH;
+                        _ll.rotation.x = _rxL0 - _aK;
+                        _ll.position.z += 0.18 * (Math.sin(_ll.rotation.x) - Math.sin(_rxL0));
+                        _ll.position.y += _drop + 0.18 * (Math.cos(_rxL0) - Math.cos(_ll.rotation.x));
+                        _sk.position.y += _drop;
+                        _ul.position.y = _ll.position.y + 0.18 * Math.cos(_ll.rotation.x) + 0.18 * Math.cos(_ul.rotation.x);
+                        _ul.position.z = _ll.position.z + 0.18 * Math.sin(_ll.rotation.x) + 0.18 * Math.sin(_ul.rotation.x);
+                    }
+                    character.root.position.y -= _drop;
+                }
+                window._spotProbe = { spot: +window._spotT.toFixed(3),
+                                      env: +_env.toFixed(3), k: +window._absorbK.toFixed(2),
+                                      armOpenDeg: +(0.96 * _open * 180 / Math.PI).toFixed(1) };
             }
         }
 
