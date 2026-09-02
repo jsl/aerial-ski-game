@@ -73,10 +73,10 @@
   "athlete_albedo": {
    "mean_abs": 0.0037,
    "p99_abs": 0.0314,
-   "png": 1253569,
+   "png": 1253575,
    "ratio": 3.21,
    "res": 2048,
-   "web": 391104
+   "web": 391092
   },
   "athlete_ao": {
    "mean_abs": 0.0088,
@@ -92,9 +92,9 @@
    "png": 4614805,
    "ratio": 8.13,
    "res": 2048,
-   "web": 567870
+   "web": 567878
   },
-  "total_web": 1082270
+  "total_web": 1082266
  },
  "faceForward": [
   -0.0064,
