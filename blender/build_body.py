@@ -11343,6 +11343,22 @@ def add_boots(arm, joints, body):
         assert 0.14 <= cuff_top - sole <= 0.21, (
             f'boot {side}: cuff top {cuff_top:+.3f} is {cuff_top - sole:+.3f} '
             f'above the sole — ankle anchor not in the posed mesh frame')
+        # 258 (14:45 ruling, clause c): the cuff must CLOSE to the shin — the
+        # liner lip's inner radius may exceed the shin's own ankle radius by
+        # at most 8 mm, or the open ring shows its interior from above. The
+        # shin's ankle radius comes from the top slice of the posed band.
+        band_top = [v for v in band
+                    if sole + 0.06 <= v.co.z <= sole + 0.095]
+        bx = max(v.co.x for v in band_top) - min(v.co.x for v in band_top)
+        by = max(v.co.y for v in band_top) - min(v.co.y for v in band_top)
+        # breadth/2 of the slim slice: the cloud also carries the old
+        # boot-paint tube and the align-yaw fore-aft spread, so centroid
+        # distances (median ~105 mm) overstate the shin; breadth matches
+        # leg_taper_gate's ankle 74 / shin-above-cuff 81 mm numbers.
+        r_shin = min(bx, by) / 2
+        log(f'boot {side}: shin ankle slice breadth x {bx*1000:.0f} / '
+            f'y {by*1000:.0f} mm -> r_shin {r_shin*1000:.0f} mm '
+            f'({len(band_top)} verts)')
         pieces = []
 
         def prim(kind, name, **kw):
@@ -11366,60 +11382,117 @@ def add_boots(arm, joints, body):
                 bpy.ops.object.transform_apply(location=True, rotation=True)
             o.select_set(True)
             pieces.append(o)
-
-        # Sole plate + DIN ledges (toe and heel, proud of the sole)
+        # 258 (14:45 ruling, clause a): the footprint is centred on the
+        # ankle-band centroid — heel ~0.12 m behind it, toe ~0.18 m ahead
+        # (the binding stations toe +0.20 / heel -0.20 bracket the span).
         prim('box', 'sole', w=0.102, d=0.300, h=0.018,
-             x=ax, y=ay + 0.020, z=sole + 0.009)
+             x=ax, y=ay + 0.030, z=sole + 0.009)
         prim('box', 'ledge_toe', w=0.104, d=0.040, h=0.012,
-             x=ax, y=ay + 0.135, z=sole + 0.006)
+             x=ax, y=ay + 0.155, z=sole + 0.006)
         prim('box', 'ledge_heel', w=0.104, d=0.040, h=0.012,
-             x=ax, y=ay - 0.115, z=sole + 0.006)
-        # Clog: shell box + half-round toe cap (cylinder laid along Y)
-        prim('box', 'clog', w=0.098, d=0.230, h=0.095,
-             x=ax, y=ay + 0.015, z=sole + 0.018 + 0.0475)
-        prim('cyl', 'toe', radius=0.048, depth=0.098, rot_x=math.pi / 2,
-             x=ax, y=ay + 0.130, z=sole + 0.018 + 0.0475)
-        # Lower shell rising past the ankle
-        prim('cone', 'shank', radius1=0.056, radius2=0.048, depth=0.090,
-             x=ax, y=ay - 0.005, z=sole + 0.113 + 0.045)
-        # Cuff, leaning forward 12 deg about the ankle (real boot geometry;
-        # the flight boot-ski sweep pins SHIN to SKI and is untouched — the
-        # cuff is display geometry skinned rigidly to the shin bone).
-        # Iter 208 (15:10-ruling redo): the cuff now rises to the strap line
-        # (an_z + 0.175) so the boot reads as a tall shell around the foot,
-        # and the power strap SEATS on the cuff top instead of floating a
-        # 3 cm gap above it (visible in the 208 measurement build's
-        # figure_front.png).
-        prim('cone', 'cuff', radius1=0.052, radius2=0.061, depth=0.175,
-             rot_x=-0.21,
-             x=ax, y=ay - 0.010, z=an_z + 0.0875)
-        # Power strap across the cuff top (overlapping the cuff cone so the
-        # rendered boot is ONE connected component)
-        prim('box', 'strap', w=0.128, d=0.034, h=0.024,
-             x=ax, y=ay - 0.010, z=an_z + 0.168)
-        # Buckles: 3 on the OUTER face of the cuff + 1 instep
-        for k, dz in enumerate((0.030, 0.075, 0.120)):
-            prim('box', f'buckle{k}', w=0.014, d=0.026, h=0.020,
-                 x=ax + sgn * 0.058, y=ay - 0.010, z=an_z + dz)
-        prim('box', 'buckle_instep', w=0.020, d=0.014, h=0.012,
-             x=ax, y=ay + 0.055, z=sole + 0.115)
-        # #16 v2 (b) "texture every face": per-piece zoning. sole/ledges =
-        # black rubber, shell = glossy navy, toe cap and cuff get their own
-        # shades so the cap circles stop reading as bare shell, strap dark,
-        # buckles steel. Buckles default (zone map falls through to 'buckle').
+             x=ax, y=ay - 0.095, z=sole + 0.006)
+
+        # 257 THE SHELL: one smooth closed loft per boot instead of the
+        # cube/cylinder pile — a FOOT loft (heel 70 mm, ball 95 mm, rounded
+        # toe box, 0.30 m nose to heel) unioned at the instep with a CUFF
+        # loft (95 x 105 mm ring) that leans FORWARD 15 deg about the ankle
+        # and tops out at cuff_top with a rolled liner lip.  Smooth-shaded,
+        # ~470 tris per boot (gate <= 1200).
         mats = {
-            'shell':  _boot_mat('bootShell',  (0.050, 0.060, 0.130), 0.35, 0.0),
-            'sole':   _boot_mat('bootSole',   (0.012, 0.012, 0.014), 0.85, 0.0),
-            'strap':  _boot_mat('bootStrap',  (0.020, 0.020, 0.026), 0.60, 0.0),
-            'buckle': _boot_mat('bootBuckle', (0.560, 0.580, 0.620), 0.30, 0.9),
-            'cuff':   _boot_mat('bootCuff',   (0.060, 0.075, 0.175), 0.45, 0.0),
-            'toe':    _boot_mat('bootToe',    (0.028, 0.032, 0.068), 0.50, 0.0),
+            'shell': _boot_mat('bootShell', (0.050, 0.060, 0.130), 0.35, 0.0),
+            'sole':  _boot_mat('bootSole',  (0.012, 0.012, 0.014), 0.85, 0.0),
+            'cuff':  _boot_mat('bootCuff',  (0.060, 0.075, 0.175), 0.45, 0.0),
+            'lip':   _boot_mat('bootLip',   BOOT_CUFF, 0.60, 0.0),
         }
-        zone = {'sole': 'sole', 'ledge_toe': 'sole', 'ledge_heel': 'sole',
-                'clog': 'shell', 'shank': 'shell', 'toe': 'toe',
-                'cuff': 'cuff', 'strap': 'strap'}
+        ZONES = ('shell', 'sole', 'cuff', 'lip')
+
+        U = Vector((1, 0, 0))
+        Y = Vector((0, 1, 0))
+        Z = Vector((0, 0, 1))
+        N = 16                                   # ring resolution
+
+        def loft(name, secs):
+            """secs: [(centre, A, B, u, v, zone)]; elliptical rings connected
+            band by band, then the first and last rings capped with a fan.
+            Each sec's zone names the material of the band ABOVE its ring;
+            the end caps reuse the adjacent band's zone."""
+            bm = bmesh.new()
+            rv = [[bm.verts.new(c + u * (A * math.cos(2 * math.pi * k / N))
+                                   + v * (B * math.sin(2 * math.pi * k / N)))
+                   for k in range(N)] for (c, A, B, u, v, zn) in secs]
+            zi = []                              # face -> zone name, in order
+            for i in range(len(rv) - 1):
+                for k in range(N):
+                    k2 = (k + 1) % N
+                    bm.faces.new((rv[i][k], rv[i][k2],
+                                  rv[i + 1][k2], rv[i + 1][k]))
+                zi.extend([secs[i][5]] * N)
+            for ri in (0, len(rv) - 1):
+                cen = bm.verts.new(sum((v.co for v in rv[ri]), Vector()) / N)
+                for k in range(N):
+                    k2 = (k + 1) % N
+                    bm.faces.new((rv[ri][k], rv[ri][k2], cen))
+                zi.extend([secs[0][5] if ri == 0 else secs[-1][5]] * N)
+            me = bpy.data.meshes.new(name)
+            bm.to_mesh(me)
+            for zn in ZONES:
+                me.materials.append(mats[zn])
+            # face order out of to_mesh matches bmesh face creation order
+            for p, zn in zip(me.polygons, zi):
+                p.material_index = ZONES.index(zn)
+            o = bpy.data.objects.new(name, me)
+            bpy.context.collection.objects.link(o)
+            pieces.append(o)
+        # Foot loft: heel counter (70 mm) -> ball (95 mm) -> instep -> a
+        # rounded toe box; 0.30 m nose to heel, ellipses in the x-z plane,
+        # spanning ay-0.12 (heel) .. ay+0.18 (toe).
+        foot_secs = [
+            (Vector((ax, ay + dy, sole + cz)), A, B, U, Z, 'shell')
+            for (dy, cz, A, B) in ((-0.120, 0.042, 0.035, 0.040),
+                                   (-0.098, 0.046, 0.038, 0.046),
+                                   (-0.056, 0.050, 0.044, 0.050),
+                                   (-0.010, 0.056, 0.0475, 0.056),
+                                   (0.042, 0.056, 0.0475, 0.054),
+                                   (0.090, 0.050, 0.0475, 0.046),
+                                   (0.134, 0.042, 0.043, 0.036),
+                                   (0.162, 0.034, 0.030, 0.026),
+                                   (0.180, 0.028, 0.017, 0.014))]
+        loft(f'bootFoot{side}', foot_secs)
+
+        # Cuff loft: starts buried inside the foot, 95 x 105 mm ring, leaning
+        # FORWARD 15 deg about the ankle (top shifts +y by
+        # (cuff_top-sole) * tan 15 deg), rolled liner lip at cuff_top.
+        lean = (cuff_top - sole) * math.tan(math.radians(15))
+        cuff_secs = [
+            (Vector((ax, ay + dy, sole + dz)), 0.0475, 0.0525, U, Y,
+             'cuff' if dz >= 0.118 else 'shell')
+            for (dy, dz) in ((0.012, 0.040), (0.006, 0.072),
+                             (-0.002, 0.102), (-0.006, 0.128),
+                             (-0.010 + lean * 0.45, 0.152),
+                             (-0.012 + lean, 0.175))]
+        topc = cuff_secs[-1][0]
+        # 258 clause (c): the lip folds INWARD to r_shin + 4 mm (hard gate
+        # <= r_shin + 8 mm) so the ring closes onto the shin — no open cuff
+        # interior visible from above (the 257 defect the close-ups caught).
+        # 257 shipped a fixed 47.5 mm lip; the clause is checked against the
+        # measured shin radius below.
+        lipA = min(r_shin + 0.004, 0.0475)
+        lipB = min(r_shin + 0.004, 0.0525)
+        log(f'boot {side}: liner lip inner radii ({lipA*1000:.0f}, '
+            f'{lipB*1000:.0f}) mm vs shin ankle {r_shin*1000:.0f} mm '
+            f'(clause <= {(r_shin + 0.008)*1000:.0f}; 257 fixed lip 47.5)')
+        assert lipB <= r_shin + 0.008, (
+            f'boot {side}: lip inner {lipB*1000:.0f} mm > shin {r_shin*1000:.0f} '
+            f'+ 8 mm — the cuff ring does not close onto the shin')
+        cuff_secs.append((topc + Vector((0, -0.008, -0.012)), lipA, lipB,
+                          U, Y, 'lip'))
+        cuff_secs.append((topc + Vector((0, 0, 0.004)), lipA, lipB,
+                          U, Y, 'lip'))
+        loft(f'bootCuff{side}', cuff_secs)
+
         for o in pieces:
-            o.data.materials.append(mats[zone.get(o.name, 'buckle')])
+            if not o.data.materials:
+                o.data.materials.append(mats['sole'])
 
         bpy.ops.object.select_all(action='DESELECT')
         for o in pieces:
@@ -11438,27 +11511,52 @@ def add_boots(arm, joints, body):
         boot.vertex_groups[leg].add(list(range(len(boot.data.vertices))), 1.0, 'ADD')
         mod = boot.modifiers.new('arm', 'ARMATURE')
         mod.object = arm
-        # Material slots arrive from the pieces (join consolidates them).
-        # GATE: exactly six zones, every one carrying faces — an empty slot
-        # would silently ship an unpainted face zone.
+        # Material slots arrive from the lofts / prim pieces (join
+        # consolidates them). GATE: exactly the four 257 zones, every one
+        # carrying faces — an empty slot would silently ship an unpainted
+        # face zone. (258 re-adds strap/buckle zones on this shell.)
         counts = {}
         for p in boot.data.polygons:
             n = boot.data.materials[p.material_index].name
             counts[n] = counts.get(n, 0) + 1
-        assert len(counts) == 6, (
+        assert len(counts) == 4, (
             f'boot {side}: {len(counts)} material zones on the joined shell, '
-            f'want 6 ({sorted(counts)})')
+            f'want 4 {sorted(ZONES)} ({sorted(counts)})')
         assert min(counts.values()) >= 6, (
             f'boot {side}: a zone collapsed to {min(counts.values())} faces')
+        tris = sum(len(p.vertices) - 2 for p in boot.data.polygons)
+        assert tris <= 1200, f'boot {side}: {tris} tris > 1200'
         log('boot ' + side + ' face zones: ' + ', '.join(
-            f'{k}={v}' for k, v in sorted(counts.items())))
+            f'{k}={v}' for k, v in sorted(counts.items())) +
+            f', {tris} tris')
         log(f'boot {side}: shell to z={cuff_top:.3f}, sole {sole:.3f}, '
             f'{len(boot.data.vertices)} verts rigid to {leg}')
+        # 258 clause (b) THE ANKLE-ANCHOR GATE (the 14:45 ruling): the shin's
+        # ankle-band centroid must lie inside the cuff ring's footprint, and
+        # the boot's bounding-box centre within 4 cm of it (lateral + fore-
+        # aft). 257 shipped cuffs standing ahead of the shins; this gate makes
+        # that placement impossible to ship silently again.
+        vs = [v.co for v in boot.data.vertices]
+        bx0, bx1 = min(c.x for c in vs), max(c.x for c in vs)
+        by0, by1 = min(c.y for c in vs), max(c.y for c in vs)
+        bcx, bcy = (bx0 + bx1) / 2, (by0 + by1) / 2
+        ring = cuff_secs[2]                  # the dz=0.102 mid-ring section
+        in_ring = ((ax - ring[0].x) ** 2 / ring[1] ** 2
+                   + (ay - ring[0].y) ** 2 / ring[2] ** 2) <= 1.0
+        assert in_ring, (
+            f'boot {side}: ankle-band centroid ({ax:+.3f},{ay:+.3f}) lies '
+            f'OUTSIDE the cuff ring footprint at ({ring[0].x:+.3f},{ring[0].y:+.3f})')
+        offx, offy = bcx - ax, bcy - ay
+        log(f'boot {side}: ankle-anchor centroid in cuff ring: {in_ring}; '
+            f'bbox centre offset ({offx*1000:+.0f}, {offy*1000:+.0f}) mm')
+        assert abs(offx) <= 0.04 and abs(offy) <= 0.04, (
+            f'boot {side}: bbox centre ({bcx:+.3f},{bcy:+.3f}) is '
+            f'({offx*1000:+.0f},{offy*1000:+.0f}) mm off the ankle-band '
+            f'centroid ({ax:+.3f},{ay:+.3f}) — boot not on the foot')
         return boot
 
     made = [build('L', -1.0), build('R', +1.0)]
     return made
-
 
 def add_equipment():
     """Skis stay rigid, separate objects."""
