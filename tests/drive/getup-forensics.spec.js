@@ -88,6 +88,12 @@ async function forensics(page, world, opts) {
                     phase,
                     walkPhase: Wp ? Wp.phase : null,
                     rootY: +rp.y.toFixed(4), rootZ: +rp.z.toFixed(3),
+                    // 252 camera gate: the follow target must track the
+                    // slaved root, not the parked ENGINE root.
+                    targetZ: +((scene.activeCamera && scene.activeCamera.target)
+                        ? scene.activeCamera.target.z : 0).toFixed(3),
+                    targetX: +((scene.activeCamera && scene.activeCamera.target)
+                        ? scene.activeCamera.target.x : 0).toFixed(3),
                     llZL: llz('lowerLegL'), llZR: llz('lowerLegR'),
                     bootZL: blL, bootZR: blR,
                     lowestY: +lowest.toFixed(4),
@@ -193,12 +199,24 @@ async function forensics(page, world, opts) {
                     phase: f.phase, walkPhase: f.walkPhase, t: f.t };
             }
         }
+        // 252 CAMERA gate: the follow target must stay on the rendered
+        // body through the whole crash. NC (1198dd8): the target eased to
+        // the parked ENGINE root and ran 5.6 m past the body (target z
+        // 81.5 vs root z 75.9 at rest).
+        let maxTargetSep = { d: 0 };
+        for (let i = 0; i < F.frames.length; i++) {
+            const f = F.frames[i];
+            const s = Math.abs(f.targetZ - f.rootZ);
+            if (s > maxTargetSep.d) maxTargetSep = { d: +s.toFixed(3), i,
+                phase: f.phase, walkPhase: f.walkPhase, t: f.t,
+                rootZ: f.rootZ, targetZ: f.targetZ };
+        }
         return { world: window._getGameState().world || null,
             impactSpeed: window._crashImpactSpeed(),
             nFrames: F.frames.length,
             walkStartIndex: F.walkStart ?? null,
             jump, top5, slideStats, byWalk,
-            maxSep, maxBootSep, maxLLJump,
+            maxSep, maxBootSep, maxLLJump, maxTargetSep,
             frames: F.frames,
             error: F.error || null, crashErr: window._crashErr || null };
     });
@@ -281,6 +299,12 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
         console.log(`[coherence-249] ${m.world} maxSep=${JSON.stringify(m.maxSep)} ` +
             `maxBootSep=${JSON.stringify(m.maxBootSep)} maxLLJump=${JSON.stringify(m.maxLLJump)}`);
         expect(m.maxSep.d).toBeLessThanOrEqual(0.5);
+        // ── 252 CAMERA gate (ruling on 251) ─────────────────────────────
+        // The follow target tracks the slaved root on every crash frame:
+        // max |target z − root z| ≤ 1.5 m. NC: the 1198dd8 build eases the
+        // target to the parked ENGINE root and fails at 5.6 m.
+        console.log(`[camera-252] ${m.world} maxTargetSep=${JSON.stringify(m.maxTargetSep)}`);
+        expect(m.maxTargetSep.d).toBeLessThanOrEqual(1.5);
         expect(m.maxBootSep.d).toBeLessThanOrEqual(0.3);
         expect(m.maxLLJump.d).toBeLessThanOrEqual(0.15);
         const roll = m.frames.filter((f) => f.phase === 'roll');

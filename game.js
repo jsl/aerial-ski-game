@@ -7277,7 +7277,17 @@ void main(void) {
             rest[seg.name] = { x: n.position.x, y: n.position.y, z: n.position.z,
                 rx: n.rotation.x || 0, rz: n.rotation.z || 0 };
         }
-        const pk = R._park || character.root.position;
+        // 252 NC RE-AIM (ruling on 251): the swoop negative control must
+        // sabotage the CARRIER the whole-chain gate measures — the unpaced
+        // roll blend alone no longer breaks it on the single carrier. The
+        // flag now reproduces the pre-Fable defect: the walk-off is seeded
+        // from the frozen PARTICLE centre (R.torso — root-relative) read
+        // as a WORLD coordinate, so the kneel slides the whole root toward
+        // the phantom station and the whole-chain rise gate must fire. The
+        // real build seeds from the parked root and passes.
+        const pk = (typeof window !== 'undefined' && window._crashSwoopFixDisabled && R.torso)
+            ? { x: R.torso.x, y: R.torso.y, z: R.torso.z }
+            : (R._park || character.root.position);
         const q = character.root.rotationQuaternion || R.qRoot;
         // Fable (2026-09-01): the "stand station" was R.torso.x/z — a
         // ROOT-RELATIVE particle centre (the ragdoll drivers are written
@@ -10489,28 +10499,36 @@ void main(void) {
                 camera.radius = 10;
             }
         }
-        // Fable (2026-09-02, author: "the athlete seemed to disappear after
-        // coming to rest"): free-look switches ON at the crash rest, and the
-        // follow block below stands down entirely while it is on — but the
-        // RENDERED body keeps moving after the physics state parks (the rigid
-        // slide carries it 10+ m, the walk-off then takes it sideways to the
-        // B-net), so the orbit target stayed on empty snow (measured: target
-        // z 70.7 vs root z 81.5, root x 0 -> 4.5 m). Free-look keeps the
-        // orbit angles free; the TARGET follows the rendered root.
-        // (crashActive stays true through the rest and the walk-off, so the
-        // condition is: free-look has taken the follow block out, or the
-        // ragdoll branch below is not the one framing the body.)
-        if (state.crashed && character && character.root &&
-            (_freeLookActive || !(crashActive && ragdoll))) {
-            // Track ragdoll torso if available, otherwise fallback to root
-            const _ck = Math.min(1, 2.5 * dt);
-            const _target = (ragdoll && ragdoll.torso) ? ragdoll.torso : character.root.position;
-            const _offY = (ragdoll && ragdoll.torso) ? -0.3 : 0.5;
+        // 252 (ruling on 251): on EVERY crash frame — slide, rest beat and
+        // walk-off, free-look on or off — the camera target eases to the
+        // SLAVED character.root on all three axes. The single carrier of
+        // 249 must also be the camera's: the previous arrangement let the
+        // non-free-look hard-set below write `state.posZ` (the ENGINE root)
+        // into the target during the slide, and the parked engine root runs
+        // ~5.6 m past the rendered body (measured on 1198dd8: root z rest
+        // 75.9, target z 81.5). ragdoll.torso is a root-relative particle
+        // centre and was never a world target.
+        if (state.crashed && character && character.root) {
+            const _ck = Math.min(1, 6 * dt);
+            const _target = character.root.position;
             camera.target.x += (_target.x - camera.target.x) * _ck;
-            camera.target.y += (_target.y + _offY - camera.target.y) * _ck;
+            camera.target.y += (_target.y + 0.5 - camera.target.y) * _ck;
             camera.target.z += (_target.z - camera.target.z) * _ck;
+            // Measured on the played slide (10:55 run): the ease alone lags
+            // 3.2–4.0 m at peak slide speed — outside the 1.5 m gate — so
+            // the target is additionally clamped to 1.2 m of the root.
+            const _dx = camera.target.x - _target.x;
+            const _dy = camera.target.y - (_target.y + 0.5);
+            const _dz = camera.target.z - _target.z;
+            const _d = Math.hypot(_dx, _dy, _dz);
+            if (_d > 1.2) {
+                const _s = 1.2 / _d;
+                camera.target.x = _target.x + _dx * _s;
+                camera.target.y = _target.y + 0.5 + _dy * _s;
+                camera.target.z = _target.z + _dz * _s;
+            }
         }
-        if (!_freeLookActive) {
+        if (!_freeLookActive && !state.crashed) {
             camera.target.y = _visRootY;
             camera.target.z = state.posZ;
         }

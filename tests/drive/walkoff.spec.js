@@ -249,15 +249,20 @@ test('crash #14: get up and walk clear of the corridor in every world', async ({
 });
 
 
-test('crash #29 negative control: the unpaced roll blend (swoop fix disabled) fails the whole-chain gate', async ({ page }) => {
+test('crash #29 negative control: the pre-249 particle-centre seeding (swoop flag) fails the whole-chain gate', async ({ page }) => {
     test.setTimeout(240_000);
+    // 252 re-aim (ruling on 251): the single carrier made the unpaced roll
+    // blend alone harmless, so the NC now sabotages the carrier itself —
+    // the walk-off is seeded from the frozen particle centre read as a
+    // WORLD coordinate (the pre-Fable defect), and the kneel slide must
+    // fire the whole-chain rise gate.
     const m = await measureWalkoff(page, 'triple', false, false, true);
     console.log('WALKOFF SWOOP-NEGCONTROL ' + JSON.stringify(
         { swoopLegacy: m.swoopLegacy, phase: m.phase,
           getupRows: (m.getup || []).length }));
     expect(m.swoopLegacy, 'swoop-fix disable flag was active').toBe(true);
     expect(wholeChainGatePasses(m),
-        'negative control: the unpaced roll blend must FAIL the whole-chain gate')
+        'negative control: the particle-centre seeding must FAIL the whole-chain gate')
         .toBe(false);
 });
 test('crash #14 negative control: the previous stay-down ending fails', async ({ page }) => {
