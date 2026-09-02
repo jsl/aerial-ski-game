@@ -3957,6 +3957,23 @@ void main(void) {
         }
         return gaps;
     };
+    // Slot 254 (skin through the jump): the AIRBORNE composition the player
+    // sees — the pose table AND the boot–ski pin the frame loop applies in
+    // every non-crash state (see the pin block near the render step). The
+    // raw _poseProbe table leaves the ski where the table put it, which is a
+    // pose the player never sees (measured: tuck 0.5 airborne ankle gap
+    // 0.329 m raw; pinned, within the bend's chord). Display-side only.
+    window._airHold = function (tuck, pikeAmount) {
+        const M = character.meshes;
+        applyPose(M, tuck, 1, 1, 0, 0, 0, false, pikeAmount || 0, 0);
+        // The frame loop's airborne order (see the render-step block):
+        // pin → seat → arm-forward. armRaise is 1 airborne (the held
+        // overhead base pose), squat 0.
+        _pinBootsToSkis(M, tuck, 1);
+        _seatTorsoOnHips(M, tuck, 1);
+        _inrunArmForward(M, tuck, 1, 0);
+        return true;
+    };
 
     // In-run crouch hold (display-side, ADR-0002). _poseProbe applies the POSE
     // TABLE only; what the player actually sees in the crouch is that table
