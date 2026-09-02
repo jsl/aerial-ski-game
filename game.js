@@ -6657,9 +6657,11 @@ void main(void) {
     // knee/elbow is propped, then shin/forearm about the knee/elbow. The
     // axis is cross(u, down) with a lateral fallback — a limb frozen
     // straight UP makes that cross product ZERO, which silently disabled
-    // the first attempt (measured maxClearAfter 0.41-0.63 m). The hard
-    // sticks re-project lengths every step; the settle lowering handles
-    // whatever the fold leaves propped after the window. Runs in BOTH the
+    // the first attempt (measured maxClearAfter 0.41-0.63 m). Both hinges
+    // gate on the KNEE/ELBOW's clearance (ruling on 261, Q1a — the old
+    // ankle-gated hinge 2 skipped exactly the bent chains); whatever the
+    // length-preserving fold cannot reach is handled by the post-window
+    // per-particle floor easing at 0.5 m/s (Q1b). Runs in BOTH the
     // roll and settling phases (the slide can stop well inside the 1 s
     // window). NC: window._crashLieDisabled = true skips the fold.
     const _FOLD_CHAINS = [['hipL', 'kneeL', 'ankleL'],
@@ -6673,7 +6675,11 @@ void main(void) {
     const _lieFoldStep = function (R, dt) {
         if (R.foldT0 === undefined || R._lieFoldDone || R.looseGroundRest) return;
         const _FOLD_T = 1.0;
-        if (R.t - R.foldT0 >= _FOLD_T) {
+        if (!R._lieWindowOver && R.t - R.foldT0 >= _FOLD_T) {
+            // Once-marker: the old branch re-fired every frame, so
+            // foldDoneAt/lieDur kept growing with the slide (measured
+            // lieDur 3.9 s for a 1.0 s window).
+            R._lieWindowOver = true;
             R.foldDoneAt = R.t; R.lieDur = R.foldDoneAt - R.foldT0;
             return;
         }
@@ -6682,10 +6688,14 @@ void main(void) {
         for (const _pn of _FOLD_CHAINS) {
             const A = R.byName[_pn[0]], B = R.byName[_pn[1]], C = R.byName[_pn[2]];
             if (!A || !B || !C) continue;
-            // hinge list: [pivot, movers..., trigger point that must be propped]
+            // hinge list: [pivot, movers..., trigger point whose clearance
+            // gates the hinge]. Ruling on 261 (Q1a): hinge 2 gates on the
+            // KNEE/ELBOW clearance, not the distal end's — a bent chain
+            // (grounded ankle, knee airborne) is exactly the propped case
+            // the old ankle gate skipped.
             const _hinges = [
-                [A, B, C, B],       // about hip/shoulder while knee/elbow propped
-                [B, C, null, C],    // about knee/elbow while the end is propped
+                [A, B, C, B],       // about hip/shoulder while knee/elbow airborne
+                [B, C, null, B],    // about knee/elbow while knee/elbow airborne
             ];
             for (const [P, M, D, _trig] of _hinges) {
                 if (!_trig || _trig.p.y - _floor(_trig) <= 0.03) continue;
@@ -7264,9 +7274,17 @@ void main(void) {
                 _lieFoldStep(R, dt);
                 for (const pt of R.parts) {
                     const _tY = _crashFloorY(pt.p.z) + pt.r;
-                    const _rate = /^ankle/.test(pt.name) ? 0.5 : /^knee/.test(pt.name) ? 0.35
+                    // Per-lever rates (ruling on 256); AFTER the fold window
+                    // the leg class eases at 0.5 m/s per the ruling on 261
+                    // (Q1b) — hips included, they are the last prop under a
+                    // grounded pelvis. Arms/head stay at 0.3: an arm at 0.5
+                    // on the 0.25 m forearm lever is 114 deg/s, over the
+                    // ruled 90 deg/s post-window joint-rate gate.
+                    const _postWin = R.foldDoneAt !== undefined;
+                    const _rate = /^ankle/.test(pt.name) ? 0.5 : /^knee/.test(pt.name) ? (_postWin ? 0.5 : 0.35)
                                 : /^(head|neck)/.test(pt.name) ? 0.3          // head/neck lever ~0.3 m: 0.4 m/s measured a 1.60 rad/s neck rate — over the ruled 90 deg/s post-window limit; 0.3 clears it
-                                : 0.3;   // hips/arms: 0.3 m/s per the ruling on 256 (arm lever ~0.3 m → 1 rad/s)
+                                : /^hip/.test(pt.name) ? (_postWin ? 0.5 : 0.3)
+                                : 0.3;   // arms: 0.3 m/s per the ruling on 256 (arm lever ~0.3 m → 1 rad/s)
                     if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
                 }
                 for (const hp of R.hard) {
@@ -7289,16 +7307,21 @@ void main(void) {
             // support, max point 0.5 m" finish with per-segment support:
             // the lowest end cap of every torso/head/arm/leg segment, plus
             // a hip cap, must be within 2.5 cm internally (headroom for the
-            // rendered 8 cm gate).
-            // The fold keeps running through settling — the slide can stop
-            // well inside its 1.0 s window (it ends with the window).
-            _lieFoldStep(R, dt);
+            // rendered 8 cm gate).  262: a segment counts only when BOTH
+            // ends are down (was: either end) — the old min() let a tilted
+            // straight leg with the hip grounded declare "settled" with the
+            // ankle up to 1.2 m in the air (261's carried red).
+            // Same per-lever rates as the roll phase (ruling on 261 Q1b:
+            // after the fold window the leg class — hips included — eases
+            // at 0.5 m/s; arms/head 0.3 per the ruling on 256).
             let _above = 0;
+            const _postWinS = R.foldDoneAt !== undefined;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
                 const _gap = pt.p.y - _tY;
                 if (_gap > _above) _above = _gap;
-                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+                const _rateS = /^(ankle|knee|hip)/.test(pt.name) ? (_postWinS ? 0.5 : 0.35) : 0.3;
+                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - _rateS * dt);
             }
             // Alternate exact segment lengths with terrain projection.  The
             // former settle ran only the length pass, so its final pass could
@@ -7331,14 +7354,18 @@ void main(void) {
             ];
             let _segmentAbove = 0;
             for (const _pair of _restSegs) {
-                _segmentAbove = Math.max(_segmentAbove, Math.min(
+                _segmentAbove = Math.max(_segmentAbove, Math.max(
                     _gapAt(R.byName[_pair[0]]), _gapAt(R.byName[_pair[1]])));
             }
             const _hipAbove = Math.min(_gapAt(R.byName.hipL), _gapAt(R.byName.hipR));
             R.maxSpeed = 0;
             const _settled = R.looseGroundRest
                 ? (_above <= 0.5 || R.t - R.settleT0 > 2)
-                : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025) ||
+                // 262: 0.025 → 0.04 — the stick/lowering equilibrium sits at
+                // ~0.030 m (measured plateau), so the 0.025 threshold NEVER
+                // declared and rest came only via the 10 s hang guard,
+                // stalling the get-up. 0.04 still clears the 8 cm gate.
+                : ((_segmentAbove <= 0.04 && _hipAbove <= 0.04) ||
                     R.t - R.settleT0 > 10);   // hang guard only — arms come down first (ruling on 256)
             if (_settled) {
                 for (let _i = 0; _i < 12; _i++) {

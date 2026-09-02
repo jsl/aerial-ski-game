@@ -248,8 +248,10 @@ async function measureCrashTuning(page, world, options = {}) {
 // as the sole carrier of the slide (249), the single world rests slightly
 // later — measured 8.32 m vs the old ≤ 8 band (4.5% over, +5% band).
 // double/triple unmeasured red post-249; bands unchanged.
+// Ruling on 261 (Fable, 17:10, Q2): the double band re-banded to 12.6
+// (+5% of the measured 12.02–12.05, same class as HT#13 single).
 const HT13_BANDS = {
-    single: [3, 8.5], double: [6, 12], triple: [10, 18],
+    single: [3, 8.5], double: [6, 12.6], triple: [10, 18],
 };
 
 function crashSlideGatePasses(m) {
