@@ -3329,9 +3329,12 @@ void main(void) {
             speed: W ? W.speed : 0,
             targetX: W ? W.targetX : null,
             planted: W ? (W.planted || null) : null,
+            st: W ? (W.st || null) : null,
+            stT: W && W.stT !== undefined ? +W.stT.toFixed(3) : null,
+            rollB: W && W.rollB !== undefined ? +W.rollB.toFixed(4) : null,
+            govY: W && W.govY !== undefined ? +W.govY.toFixed(3) : null,
         };
     };
-
     // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
     if (_trampolineMode || _poolDiveMode) {
         if (character.meshes['skiL']) character.meshes['skiL'].isVisible = false;
@@ -7358,7 +7361,6 @@ void main(void) {
                     W.phase = 'roll';
                     W.planted = 'knees-hands';
                     const bRaw = _walkoffSmooth(Math.min(1, getT / 0.65));
-                    const prevRootY = W.govY !== undefined ? W.govY : W.root0.y;
                     const allowance = _RISE_CAP * dtS;
                     const liftAt = function (b) {
                         writeSolved(crouch, b);
@@ -7370,14 +7372,35 @@ void main(void) {
                         b = bRaw; // NC: the unpaced blend — this is the swoop
                         liftAt(b);
                     } else {
-                        let lo = W.rollB || 0, hi = Math.max(lo, bRaw), ok = lo;
-                        for (let it = 0; it < 7 && hi > lo + 1e-4; it++) {
-                            const mid = (lo + hi) / 2;
-                            if (W.root0.y + liftAt(mid) <= prevRootY + allowance) {
-                                ok = mid; lo = mid;
-                            } else hi = mid;
+                        // 237 TRIPLE GET-UP STALL, root-caused: the old
+                        // 7-iteration bisection assumed lift(b) is monotone.
+                        // The played-crash curve is steep AND non-monotone
+                        // (measured triple: 0 → 3.8 m hump → 0 across b 0→1;
+                        // local slope 15–25 m per unit b near b≈0.05), so all
+                        // 7 midpoints overshot the per-frame rise allowance,
+                        // every probe failed, and rollB froze at 0.022–0.047 —
+                        // the get-up never left the roll state (root frozen
+                        // 7.5 s → cap). Pace on the LOCAL slope instead: a
+                        // 0.004 probe step sizes the advance so the ankle lift
+                        // grows by ≈ the frame budget; the whole-chain
+                        // governor downstream stays the hard cap.
+                        const lo = W.rollB || 0;
+                        const _probe = Math.min(1, lo + 0.004);
+                        const _l0 = liftAt(lo);
+                        const _l1 = liftAt(_probe);
+                        const _slope = Math.max((_l1 - _l0) / 0.004, 1e-4);
+                        b = Math.max(lo, Math.min(bRaw,
+                            lo + allowance / _slope));
+                        // Escalation (237 ruling: guarantee roll progress):
+                        // if the paced blend has not finished in 2.5 s,
+                        // complete it over the next 0.75 s regardless. The
+                        // blend's end pose is grounded (measured lift(1)=0)
+                        // and descent is unclamped, so the escape can only
+                        // hold or lower the root — never a rise-permit.
+                        if (getT > 2.5) {
+                            b = Math.max(b, Math.min(1, (getT - 2.5) / 0.75));
                         }
-                        b = Math.max(W.rollB || 0, ok);
+                        b = Math.min(1, b);
                         W.rollB = b;
                         liftAt(b); // leave the rig written at the accepted blend
                     }
@@ -7610,6 +7633,14 @@ void main(void) {
                 if (ragdoll._rootLie === undefined) return;
                 const _crt = character.root.position;
                 _crt.y = _crashFloorY(_crt.z) + ragdoll._rootLie;
+                // 237 RE-PIN ORDERING (ruling on 236): any world matrix
+                // computed earlier in the frame (the per-frame crash
+                // write-back calls computeWorldMatrix) is now stale — the
+                // skinned mesh would render at the pre-pin root, which is
+                // exactly the measured "ankle probes trail the conformed
+                // particles by up to 2.7 m". Force the recompute so the
+                // render and the bones see the pinned transform.
+                character.root.computeWorldMatrix(true);
             });
         }
         const rootPos = _crashV(_rp.x, _rp.y, _rp.z);

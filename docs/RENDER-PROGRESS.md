@@ -398,6 +398,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 ## Status board
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
 | — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
+| — | Iteration 237 | **236-ruling slot: (a) TRIPLE GET-UP STALL FIXED — root cause = the walk `roll` stage's 7-iteration rise bisection assumed a monotone `lift(b)`; the played-crash curve is steep AND non-monotone (measured triple: 0 → 0.125@b.03 → 0.45@b.05 → 1.2@b.1 → 3.8 m hump@b.4 → 0@b=1; local slope 15–25 m/unit-b near b≈0.05), so every tested midpoint overshot the per-frame `_RISE_CAP` allowance and `rollB` froze at 0.022–0.047 — kneel never entered (root frozen 7.5 s → cap). Fix = local-slope pacing (0.004 probe step sizes the advance to the frame budget; the whole-chain governor stays the hard cap) + a 2.5 s escalation completing the blend over the next 0.75 s (end pose grounded: measured lift(1)=0; descent unclamped ⇒ never a rise-permit). (b) RE-PIN ORDERING: the `onBeforeRenderObservable` re-pin now forces `character.root.computeWorldMatrix(true)` so any same-frame world matrix computed before the pin is refreshed (236's 2.7 m skinned-ankle trail suspect). GATE: `getup-forensics` now asserts walk-start within 6 s of rest on the played path in ALL 3 worlds (NC: the pre-237 freeze); `_walkoffProbe` extended with `st/stT/rollB/govY`.** | unit 81/81; golden 30/30 (0 diffs); getup-forensics 3/3 — rest→walk-start 3.00 / 3.05 / 4.90 s (single/double/triple); 236 lowClear band gate still green; crash-ragdoll 10/10 on the mid-iteration build (open: rerun on final); look not regenerated (no asset/visual-scene change; ASSET_V unchanged) | crash-ragdoll rerun; re-measure the skinned-ankle trail with the computeWorldMatrix re-pin; forensics dumps land in `shots/forensics_null.json` (m.world field is always null — probe nit, harmless) | entry 237. |
 | — | Iteration 233 | **B-NET ANISO (P12 conformance, polish buffer): `bnetTex.anisotropicFilteringLevel` 16 with `?bnet_sabotage=1` NC; new bnet-legibility.spec 2/2 (aniso==16 + fence-cloth visibility inFrame 86; NC fires aniso==1). Diagnoses recorded: (a) scene.png fence tangle is NOT texture filtering — near-black-albedo probe moved cloth-patch lum <0.06; it is dark background through the alpha holes at grazing angles, candidate fix depth-fade/LOD on the net material (reviewer call); (b) review-230 seam-worst-row (5.1% @ y=0.425) is diffuse horizon speckle peaking at the silhouette row (7.5% @ y=0.443), sky-through-bare-crown gaps + AA, not the box-seam class. unit 81/81, golden 30/30 (no recapture), venue+grey-ramp 7/7. index.html ?v=92; ASSET_V unchanged.** | entry 233. |
 | — | Iteration 232 | **KICKER WALL/FACE JUNCTION LINE (230 queue item 2): full-width dark lip tube `kickerJunctionLine` at the take-off-face/back-wall junction; red trim untouched (2026-08-29 ruling). kicker-edge.spec 2/2 (rendered lip band darkFrac 0.508, lum 0.198 vs snow 0.739; NC fires 0/0.528). unit 81/81, golden 30/30 after census-only recapture (0 physics diffs, 30 scen / 5408 frames), look 7/7, kicker-faces+venue+terrain-corridor 12/12. index.html ?v=91; ASSET_V unchanged. Queue: item 3 paint fixes are athlete-banned pending reviewer lane assignment.** | entry 232. |
 | — | Iteration 230 (review) | **REVIEW-ONLY (capped form): unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected), review-measure 1/1, spray 2/2 (NC fires 2.55 m), crash-ragdoll 10/10 in batch. 227–229 landings HOLD. Measured: corridor 0.829 vs flanks 0.851/0.841 (grey-ramp −0.022, holds); athlete shadow 68% darker under; sky r−b −0.123 vs −0.25 gate (parked sky-colour slice still the loudest colour gap); kicker dark wall/face edge line still absent (loudest kicker gap). Athlete nits reported not touched: pink bib smear, side-view mirrored digits. Queue: sky slice → kicker edge line → paint fixes; review 235. No source/asset change, ASSET_V unchanged.** | entry 230. |
@@ -14090,6 +14091,41 @@ slide-plunge-then-rise pattern above — if their report was on a *natural* (non
 path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
+
+### 237 — TRIPLE GET-UP STALL (local-slope pacing + escalation) and re-pin ordering
+
+Ruling-on-236 slot, both items.
+
+**(a) Stall, root-caused.** In the played triple crash the walkoff machine entered `st='roll'`
+and froze: `rollB` pinned at 0.022–0.047, `stT` 0, root frozen at the rest lie from ~7.5 s to
+the 15 s cap — walk-start never came. Instrumented lift curve (`_ankleFloorLift` vs blend b):
+0 → 0.125 m (b=.03) → 0.45 (b=.05) → 1.2 (b=.1) → a 3.8 m hump (b≈.4) → 0 (b=1). The old
+7-iteration bisection searched [rollB, 1] at ~1/128 resolution; against a local slope of
+15–25 m per unit b every tested midpoint overshot the per-frame `_RISE_CAP` allowance, all
+mids failed, `ok` stayed at `lo` — a deterministic stall. Fix: pace on the LOCAL slope (a
+0.004 probe step sizes the advance to the frame budget; the downstream whole-chain governor
+remains the hard cap), plus escalation — if the blend has not finished in 2.5 s it completes
+over the next 0.75 s regardless (safe: the blend end pose is grounded, lift(1)=0, and descent
+is unclamped). The `swoopOff` NC path is untouched.
+
+**(b) Re-pin ordering.** The 236 conform observer now calls
+`character.root.computeWorldMatrix(true)` after the pin, so a world matrix computed earlier in
+the frame (the crash write-back forces one) cannot reach the render pre-pin.
+
+**Gate.** `getup-forensics` asserts, per world, walk-start within 6 s of ragdoll rest on the
+played path; the degenerate-run signature (all-`pre` frames, probes null — a harness race that
+also hit 236's green run) retries once before gating. `_walkoffProbe` now reports
+`st/stT/rollB/govY`.
+
+**Verification.** unit 81/81; golden 30/30 (0 diffs, no recapture); getup-forensics 3/3 —
+rest→walk-start 3.00 / 3.05 / 4.90 s (single/double/triple; NC = the pre-237 triple freeze);
+236's per-frame lowClear [−5 cm, +8 cm] band gate green in all worlds. crash-ragdoll ran
+10/10 on the mid-iteration build (before a missing `_slope` line was restored — the get-up
+machine is covered end-to-end by the final forensics run); rerun queued. ASSET_V unchanged;
+look not regenerated (no asset or default-scene change; the crash path is spec-verified).
+
+**Open.** crash-ragdoll rerun on the final build; re-measure the skinned-ankle trail with the
+computeWorldMatrix re-pin (needs reviewer by-eye per the 236 ruling).
 
 ### 236 — #24(a) GROUNDED SLIDE: engine-root terrain-conform during the rigid slide; getup-forensics becomes the gate
 

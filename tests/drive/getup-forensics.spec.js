@@ -146,14 +146,24 @@ async function forensics(page, world, opts) {
             walkStartIndex: F.walkStart ?? null,
             jump, top5, slideStats, byWalk,
             frames: F.frames,
-            error: F.error || null };
+            error: F.error || null, crashErr: window._crashErr || null };
     });
 }
 for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')) {
     test(`forensics ${world}: root-Y dump impact → walk-start`, async ({ page }) => {
-        const m = await forensics(page, world, {
+        const run = () => forensics(page, world, {
             tuck: process.env.FG_TUCK !== '0',
         });
+        let m = await run();
+        // Degenerate-run retry (seen pre-237 too: the 236 green run also
+        // produced one): occasionally the sampler attaches after the whole
+        // crash machine has already run and torn down, so every frame reads
+        // phase 'pre' with null probes. That run carries no signal — rerun
+        // once on the same page before gating.
+        if (!m.frames.some((f) => f.phase === 'tumble' || f.phase === 'roll')) {
+            console.log(`[forensics] ${world}: degenerate run (no ragdoll frames), retrying once`);
+            m = await run();
+        }
         expect(m.error).toBeNull();
         expect(m.nFrames).toBeGreaterThan(60);
         // ── 236 #24(a) GROUNDED SLIDE gate (RULING on 235) ──────────────
@@ -184,14 +194,31 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
                     `env=${env.toFixed(3)} lowClear=${f.lowClear}`);
             }
         }
+        // Persist the dump for the progress entry and the next reviews.
+        require('fs').writeFileSync(
+            path.join(OUT, `forensics_${m.world}.json`), JSON.stringify(m, null, 1));
+        // ── 237 TRIPLE GET-UP STALL gate (ruling on 236) ────────────────
+        // On the played path in EVERY world the walkoff machine must reach
+        // the walk within 6 s of ragdoll rest. NC (pre-237 build): triple
+        // froze in walkoff 'roll' with rollB pinned at 0.022–0.047 — the
+        // 7-iteration rise bisection could not accept any midpoint on the
+        // measured non-monotone lift curve (0 → 3.8 m hump → 0) — and
+        // walk-start never came (root frozen 7.5 s → spec cap).
+        console.log('[dbg] n=', m.frames.length,
+            'walks=', m.frames.filter((f) => f.walkPhase === 'walk').length,
+            'sample=', JSON.stringify(m.frames[m.frames.length-1]));
+        const tRest = (m.frames.find((f) => f.phase === 'stopped') || {}).t;
+        const fWalk = m.frames.find((f) => f.walkPhase === 'walk' || f.walkPhase === 'done');
+        expect(tRest).toBeDefined();
+        expect(fWalk).toBeDefined();
+        const getupS = (fWalk.t - tRest) / 1000;
+        expect(getupS).toBeLessThan(6.0);
+        console.log(`[getup-237] ${m.world} rest→walk-start = ${getupS.toFixed(2)} s`);
         // Instrument output for the progress entry.
         const roll = m.frames.filter((f) => f.phase === 'roll');
         const lc = roll.map((f) => f.lowClear).filter((v) => v != null);
         console.log(`[${m.world}] impact=${m.impactSpeed} frames=${m.nFrames} ` +
             `rollN=${roll.length} lowClear[min=${Math.min(...lc)} ` +
             `max=${Math.max(...lc)}] maxΔrootY=${JSON.stringify(m.jump)}`);
-        // Persist the dump for the progress entry and the next reviews.
-        require('fs').writeFileSync(
-            path.join(OUT, `forensics_${m.world}.json`), JSON.stringify(m, null, 1));
     });
 }
