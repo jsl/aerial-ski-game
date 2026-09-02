@@ -459,6 +459,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 **Open questions for the reviewer:** none new.
 ## Status board
 | — | Iteration 242 | **KNEE-GAP TOPOLOGY, STEP 1 LANDED (241-ruling slot): the env-gated `LEG_SPAN_DEBUG` edge-span diagnostic in `leg_profile` PROVES the bridging-edge mechanism — post-shell joint row z=−0.635 reads 130 mm vs neighbours 61–83 mm and 28 of its 30 crossing leg edges span ≥ 20 mm of z (band: 429 faces, 105 with z-extent > 15 mm, max 91 mm). Step 2 (subdivide bridging edges ≤ 10 mm + 241 ring) implemented and PARTIALLY effective (joint-row long spans 28→10, wide band faces 105→43) but NOT acceptance-green: joint row still 130 mm, ring breadth 133/135 mm, taper gate fails ankle_calf 0.730, and the weight-inheritance nearest-match marked 10262 false-positive "new" verts — REVERTED, attempt preserved in scratch for the next slot. Shipped change = the diagnostic only (env-gated, geometry untouched). unit 81/81, golden 30/30 (0 diffs), look 7/7, ASSET_V unchanged.** | entry 242. |
+| — | Iteration 244 | **SLOT 244 LANDED = CROUCH SKIN + RE-LAND (ruling on 243): the preserved 243 diff (`scratch/iter-243/wip.patch` + `inrun-start.spec.js`) re-applied and completed — (a) hold-phase torso/hip seat: already a full constraint since the #21 v5 change; MEASURED green in the sustained auto-crouch hold (tuck 0.85, grounded): hip gap ≤ 0.0002 m on every sampled in-run frame (static gate crouch at tuck 1.0 reads 0.020 m, at the ≤ 2 cm boundary — noted); back close-ups (gate + in-run hold) show no tail streak. (b) hand contract: `_SQUAT_HAND_AHEAD` 0.03 → 0.18 so the gate crouch (tuck 1.0, _lastSquat 1) reads hand z − hip z −0.265 (was −0.164, contract −0.40…−0.25); `_INRUN_HAND_AHEAD` stays 0.20 (mid-in-run −0.285, in-run hold tuck 0.85 ≈ −0.40…−0.28, inside band). (c) `tuck-entry.spec` exit waits now `tuckAmount ≤ (_inrunFloor || 0) + 0.005` (byte-identical at the gate) + NEW in-run cycle test above the floor — green: drift 0.0005, tear 0.018, abs 0.033. (d) `inrun-start` landed: floor peak 0.850 monotone, tuck 0.0000 at the lip, armRaise 0.980 pre-lip, sweep first tLip 0.080 s, worst joint rate 297 °/s. Golden traces recaptured (tuckAmount display blend only — 0 physics-state diffs); parity-check PASS (tuck compared airborne only, per the 07:00 ruling). unit PASS, golden 30/30, inrun-start 2/2, inrun-contact 2/2, tuck-entry 3/3, look 7/7 (shots regenerated, inspected — unchanged from the stable baseline). Display-only (ADR-0002), ASSET_V unchanged. Next: 245 REVIEW.** | entry 244. |
 | — | Iteration 238 | **#21 v5 TUCK ENTRY (237-ruling slot): new per-rendered-frame gate `tests/drive/tuck-entry.spec.js` over the FULL enter-hold-exit cycle from the starting position (keyboard Space AND gamepad RT). Pre-fix: sole gaps 0.0 mm on every frame (heels planted — (a) already held at bone level) but a 0.187 m HIP TEAR at tuck 0.5 — the author's "body stretches weird". Root cause: `_seatTorsoOnHips` scaled the hip-closure correction by the blend weight w (a constraint applied as a lerp); at mid-blend half the ~0.37 m pin-vs-torso gap stayed open. Fix: seat correction applies at FULL strength whenever engaged (continuous at the endpoints — the gap is 0 there); game.js only, display-only (ADR-0002). Post-fix: hip/knee tears ≤ 30 mm mid-blend, segment-length drift 0.5 mm (gate (b) ≤ 5 mm), sole gap 0.0 mm. OPEN (named for 239; interim snap bound 0.15 in the spec): two single-frame handoff snaps remain — shoulder d−0.143 at tuck 0.50 (keyboard), hip d+0.100 at cycle start (gamepad) — the ready-stance block handing arms/hips to the blend mid-cycle; snap gate tightens to 30 mm after that fix. The ruling's ankle-trail re-measure add-on was NOT run (deadline). unit 81/81, golden 30/30, tuck-entry 2/2, tuck-grounded+tuck-sitting+chain 15/15, tuck-coverage 6/6; look shots NOT regenerated (deadline). ASSET_V unchanged.** | entry 238. |
 | — | Iteration 235 (forensics) | **FORENSICS ONLY (per #29 v2 / #24(a); no fixes): new `getup-forensics.spec.js` dumps per-rendered-frame skierRoot-Y + lowest-point ground clearance from impact → walk-start in all 3 worlds (+ a no-tuck pose variant). FINDINGS: (1) NO single-frame upward root jump anywhere — max rise ≤ 0.09 m/frame (rise phase 0.05), so the handoff-snap suspect is CLEAR on the scripted path; (2) the SLIDE (`roll` phase) is the defect: per-frame root-Y drops up to −1.00/−1.38/−1.56 m (single/double/triple) and clearance oscillates +1.2 m airborne ↔ −2.7/−6.4/−9.3 m UNDER the crash floor — #24(a) confirmed quantitatively, worse than airborne; (3) NEW: in triple the get-up never leaves the walk `roll` stage — root frozen at clearance 0.005 from ~7.5 s to the 15 s cap, no kneel/rise/walk. unit 81/81, golden 30/30, look 7/7 (shots regenerated + inspected: bib 30 legible, scene composition unchanged). ASSET_V unchanged. 236–238 fix on these numbers.** | entry 235. |
 | — | Iteration 236 | **#24(a) GROUNDED SLIDE FIXED (236-ruling slot): root cause = the rendered body follows the ENGINE root (drivers written root-relative) and the engine's crashed-root physics dives BALLISTICALLY under the terrain during the rigid slide; the lag-comp translation dragged the dive into the particles (the +1.25 ↔ −9.38 m oscillation was rigid-slide vs ballistic-root fighting). Fix: during `roll` the engine root is terrain-conformed EVERY frame at the frozen crumple's captured lie height (`_rootLie`, pop-free capture at the tumble→roll handoff), plus an `onBeforeRenderObservable` re-pin defeating the engine's late root write (measured rendered body 1.8–2.7 m under the floor with the step-time clamp alone). The tick's slope-following `_dy` stays — dropping it made the slide airborne (lowClear 0.23 → 1.62 m in 5 frames; A/B measured). GATE: `getup-forensics` is now the #24(a) gate — every roll-phase frame's lowest ragdoll segment cap within [−5 cm, +8 cm] of the crash floor: single 28/28 frames [−0.7, −0.1] mm, double 33/33, triple 37/37 [−0.7, +57.5] mm (NC: HEAD tunnelling to −9.38 m). Root-Y pop check is report-only (probe samples the raw engine root; write-ordering vs the conform observer non-deterministic; worst reported |ΔrootY| 1.53 with lowClear 0 — rendered body grounded). OPEN: skinned-ankle probes trail the conformed particles up to 2.7 m (triple) — real skinning stretch vs bone-matrix sampling lag unresolved, needs reviewer by-eye on 8201. unit 81/81, golden 30/30 (0 diffs, no recapture), forensics 3/3. Display-only, ASSET_V unchanged.** | entry 236. |
@@ -14155,6 +14156,73 @@ slide-plunge-then-rise pattern above — if their report was on a *natural* (non
 path that differs, the dumps (JSON in `shots/forensics_*.json`) should be re-run on that path
 before 236 lands; (2) the triple get-up stall needs a ruling on whether 236 or a separate slot
 owns it (it is a distinct failure from the slide, but shares the roll-stage code).
+
+### 244 — slot 244 (ruling on 243): CROUCH SKIN + RE-LAND — the preserved 243 diff re-applied and completed; the in-run auto-crouch start ships green with the hand contract, the floor-return cycle gate, and the recaptured traces
+
+**Starting point.** The reviewer-preserved `scratch/iter-243/wip.patch` (22 files:
+the in-run auto-crouch floor + time-to-lip extension window + paced takeoff arm
+sweep + head-along-in-run counter + `_inrunProbe` + recaptured golden traces) was
+re-applied verbatim, plus `inrun-start.spec.js` restored into `tests/drive/`.
+Baseline with the patch alone: unit PASS, `audit-physics-state` 0 diffs,
+parity-check PASS, inrun-start 2/2 — but `inrun-contact` gate crouch hand band
+−0.164 (contract −0.40…−0.25) and the `tuck-entry` cycle still waited for
+`tuckAmount < 0.005`.
+
+**(a) Hold-phase torso/hip seat — measured, no code change needed.** The
+ruling's prescribed fix (seat at full strength for the whole grounded crouch) has
+been in place since the #21 v5 change (the correction is a constraint, not a
+w-scaled blend). Measured with a temp per-frame probe: in the sustained
+auto-crouch hold (grounded, tuck 0.85, before the extension window) the hip gap
+is ≤ **0.0002 m on every sampled frame**. The static gate crouch (Space at the
+gate, tuck 1.0) reads 0.020 m — exactly at the ≤ 2 cm boundary; noted, not
+regressed by this lane. Back close-ups (reviewer frontprobe framing, radius 2.5,
+both alphas) at the gate crouch and in the run hold show a continuous suit back —
+no tail streak.
+
+**(b) Hand contract.** Two measured calibration rounds on
+`_inrunArmForward`'s constants:
+- `_SQUAT_HAND_AHEAD` 0.03 → 0.18: the gate crouch (tuck 1.0, `_lastSquat` 1, so
+  the squat branch owns the aim) read hand z − hip z −0.164 at 0.03, −0.245 at
+  0.16, and lands **−0.265** at 0.18 — inside the contract, hands still at the
+  knees.
+- `_INRUN_HAND_AHEAD` stays 0.20 (243's value): 0.32 was tried and REJECTED —
+  the mid-in-run spec measured −0.405 (band floor) and the tuck-0.85 auto hold
+  probed −0.405…−0.518 (the deeper the speed-pose, the further the knee sits
+  ahead of the hip, so a bigger knee offset overshoots the hip band). At 0.20:
+  mid-in-run **−0.285**, in-run hold ≈ −0.40…−0.28, all inside −0.40…−0.25.
+
+**(c) `tuck-entry.spec` cycle amendment (written ruling).** Both exit waits
+(keyboard `runCycle` and gamepad) now wait for
+`tuckAmount ≤ (window._inrunFloor || 0) + 0.005` — at the gate the floor is
+undefined → 0 → byte-identical to the previous `< 0.005`. A NEW third test runs
+the same enter/hold/exit cycle ON THE IN-RUN above the active floor (floor >
+0.3): exit returns to the floor and the gates hold — drift 0.0005 m
+(upperLegL@tuck 0.66), tear 0.018 m, abs gap 0.033. The in-run audit scopes to
+grounded frames (the airborne raise blend repositions the arm chains whole and
+trips this sampler's segment-length metric by construction; the airborne pose is
+the flight specs' contract).
+
+**(d) Landing.** `inrun-start` 2/2: auto floor peak **0.850 monotone**, tuck
+**0.0000 at the lip**, armRaise 0.980 pre-lip → 1.0 by the lip, sweep fires at
+tLip 0.080 s, worst joint rate 297 °/s (upperArmL, inside the 12°/frame gate at
+60 Hz), held Space still reaches tuck 1.000. Golden traces recaptured (from the
+preserved 243 diff): per-frame field diff is `tuckAmount` only — the display
+in-run crouch blend; `audit-physics-state` **0 physics-state diffs**, 0
+display-node diffs outside the blend; parity-check PASS with the tuck compared
+airborne only (per the 07:00 ruling; `parity-check.js` carries that change).
+
+**Verification:** unit PASS, golden 30/30, inrun-start 2/2, inrun-contact 2/2,
+tuck-entry 3/3, look 7/7 — shots regenerated and inspected: `scene.png` and
+`figure.png` unchanged from the stable baseline (no asset change, ASSET_V
+unchanged). Temp probe spec deleted; scratch probes removed. Display/state only
+(ADR-0002); engine/ and body-model untouched.
+
+**Open questions for the reviewer:** (1) the static gate crouch's hip gap sits
+AT the 2 cm boundary (0.020 m L / 0.0204 m R) while the in-run hold is 0.0002 m —
+worth a ruling on whether the gate-crouch residual (something post-seat displaces
+the torso bottom or thigh top at tuck 1.0) needs its own slot; (2) the hand band
+is tight at speed (hold tuck 0.85 ≈ −0.40 edge): if a future pose deepens the
+crouch further, `_INRUN_HAND_AHEAD` may need a speed term rather than a constant.
 
 ### 242 — slot 242 (knee-gap topology, ruling on 241): step 1 PROVEN and landed as an env-gated instrument; step 2 (subdivide + ring) implemented, partially effective, NOT acceptance-green — reverted per the never-carry rule
 

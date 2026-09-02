@@ -131,7 +131,13 @@ async function runCycle(page) {
     await page.waitForFunction(() => window._getGameState().tuckAmount > 0.995, null, { timeout: 10_000 });
     await page.waitForTimeout(1200);            // hold
     await page.keyboard.up(' ');
-    await page.waitForFunction(() => window._getGameState().tuckAmount < 0.005, null, { timeout: 10_000 });
+    // Slot 244(c) (reviewer ruling on 243, written ruling): on the in-run the
+    // exit returns to the auto-crouch FLOOR, not to 0, so the wait is
+    // `tuckAmount ≤ _inrunFloor + 0.005`. At the gate the floor is undefined
+    // → 0 → byte-identical to the previous `< 0.005`.
+    await page.waitForFunction(() =>
+        window._getGameState().tuckAmount <= (window._inrunFloor || 0) + 0.005,
+        null, { timeout: 10_000 });
     await page.waitForTimeout(400);
     await stopSampler(page);
     return page.evaluate(() => window.__entry.frames);
@@ -175,12 +181,52 @@ test.describe('tuck entry/hold/exit per-frame gates (#21 v5)', () => {
             const gp = navigator.getGamepads()[0];
             gp.buttons[7] = { pressed: false, value: 0 };
         });
-        await page.waitForFunction(() => window._getGameState().tuckAmount < 0.005, null, { timeout: 10_000 });
+        await page.waitForFunction(() =>
+            window._getGameState().tuckAmount <= (window._inrunFloor || 0) + 0.005,
+            null, { timeout: 10_000 });
         await page.waitForTimeout(400);
         const n = await stopSampler(page);
         const frames = await page.evaluate(() => window.__entry.frames);
         expect(n, 'cycle sampled').toBeGreaterThan(30);
         const all = audit('gamepad/all', frames);
+        expect(all.gap, `sole gap at ${all.gapKey}`).toBeLessThanOrEqual(GAP_LIMIT);
+        expect(all.drift, `segment drift at ${all.driftKey}`).toBeLessThanOrEqual(DRIFT_LIMIT);
+        expect(all.tear, `joint tear at ${all.tearKey}`).toBeLessThanOrEqual(TEAR_LIMIT);
+    });
+
+    test('in-run: Space cycle above the auto-crouch floor — returns to the floor, gates hold', async ({ page }) => {
+        // Slot 244(c), second half of the written ruling: the same enter/hold/
+        // exit cycle run ON THE IN-RUN, where the exit returns to the
+        // auto-crouch floor (not 0). The wait amendment above makes the exit
+        // condition `tuckAmount ≤ floor + 0.005`; this test makes the cycle
+        // actually sample there.
+        await boot(page);
+        await page.keyboard.press('ArrowUp');       // leave the ready gate
+        await page.waitForFunction(() =>
+            (window._inrunFloor || 0) > 0.3 && window._getGameState().grounded,
+            null, { timeout: 20_000 });
+        await installSampler(page);
+        await page.waitForTimeout(200);
+        await page.keyboard.down(' ');
+        await page.waitForFunction(() => window._getGameState().tuckAmount > 0.995,
+            null, { timeout: 10_000 });
+        await page.waitForTimeout(500);             // hold, well before the lip
+        await page.keyboard.up(' ');
+        await page.waitForFunction(() =>
+            window._getGameState().grounded &&
+            window._getGameState().tuckAmount <= (window._inrunFloor || 0) + 0.005,
+            null, { timeout: 10_000 });
+        const n = await stopSampler(page);
+        const all0 = await page.evaluate(() => window.__entry.frames);
+        // The gates scope to the GROUNDED crouch cycle: the takeoff extension
+        // and the flight arm sweep are display blends of other states (their
+        // pivots trip this sampler's segment-length metric by construction —
+        // the arm chains are repositioned whole by the raise blend), and the
+        // airborne pose is gated by the flight specs, not this cycle.
+        const frames = all0.filter(f => f.grounded);
+        expect(n, 'in-run cycle sampled').toBeGreaterThan(20);
+        expect(frames.length, 'in-run cycle grounded frames').toBeGreaterThan(20);
+        const all = audit('inrun/all', frames);
         expect(all.gap, `sole gap at ${all.gapKey}`).toBeLessThanOrEqual(GAP_LIMIT);
         expect(all.drift, `segment drift at ${all.driftKey}`).toBeLessThanOrEqual(DRIFT_LIMIT);
         expect(all.tear, `joint tear at ${all.tearKey}`).toBeLessThanOrEqual(TEAR_LIMIT);

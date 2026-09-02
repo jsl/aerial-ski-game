@@ -1460,8 +1460,14 @@ function _seatTorsoOnHips(meshes, tuck, armRaise) {
 // lands just above knee height, which is the footage posture.
 // Renderer-side only (ADR-0002): lives OUTSIDE applyPose so the solver stays
 // byte-identical to computePose (the pose-solver differential unit test).
-const _INRUN_HAND_AHEAD = 0.20;
-const _SQUAT_HAND_AHEAD = 0.03;   // #21 v4: hands ON the knees when stopped
+const _INRUN_HAND_AHEAD = 0.20;   // unchanged from 243: at tuck 0.85 on the in-run this lands
+// hand z − hip z ≈ −0.40…−0.28 (measured; the knee sits ~0.15–0.25 ahead of
+// the hip in the crouch, more as speed deepens the pose), inside the
+// −0.40…−0.25 contract of inrun-contact.
+const _SQUAT_HAND_AHEAD = 0.18;   // #21 v4 hands-on-knees at rest, lifted to 0.18 by slot 244(b):
+// the gate crouch (tuck 1.0, _lastSquat 1) measures the SAME −0.25…−0.40
+// contract; 0.03 gave −0.164, 0.16 gave −0.245, 0.18 lands ≈ −0.265 (hands
+// still at the knees).
 function _inrunArmForward(meshes, tuck, armRaise, squatDamp) {
     const w = (tuck || 0) * (1 - (armRaise || 0));
     if (w <= 0.001) return;
@@ -3714,6 +3720,21 @@ void main(void) {
     // field: the golden harness serialises that object whole, so its key set
     // is frozen by the traces.
     window._isPaused = function () { return paused; };
+    // In-run start diagnostics (F3 spec) — deliberately a SEPARATE probe, not
+    // a _getGameState() field: the golden harness serialises _getGameState()
+    // whole and its key set is frozen by the traces.
+    window._inrunProbe = function () {
+        const _v = Math.max(0.05, state.vz || 0);
+        return {
+            grounded: state.grounded, readyState: readyState,
+            posZ: state.posZ, vz: state.vz,
+            tuckTarget: state.tuckTarget, tuckAmount: state.tuckAmount,
+            armRaise: state.armRaise, armRaiseTarget: state.armRaiseTarget,
+            tLip: (KICKER_END_Z - state.posZ) / _v,
+            extend: !!window._inrunExtend,
+        };
+    };
+
 
     // Ready-stance diagnostics for the drive spec: per-ski clearance of the
     // 5 lowest-edge samples against the physics surface (terrainRootY(z) -
@@ -9048,12 +9069,50 @@ void main(void) {
 
         if (_lsGet('setting_gamepad') === '1') pollGamepad();
 
+        // ── In-run auto-crouch floor + takeoff extension window (F3 spec) ──
+        // Renderer/state display blend (ADR-0002): the footage crouch (IMG_3768
+        // f_002) is a FLOOR under the player's tuck target on the in-run, and
+        // the release is time-to-lip, not distance. Physics parity: the floor
+        // releases at tLip 0.8 s and the release is paced so tuckAmount is 0.00
+        // at the lip — the engine sees the same tuck at takeoff as a no-input
+        // run today. A held Space (tuckTarget 1.0) always wins: the floor only
+        // ever RAISES the target (max), never lowers it, and on release the
+        // target is zeroed ONLY if it is still the floor's own value.
+        window._inrunExtend = false;
+        if (state.grounded && !readyState && !state.crashed && !_poolDiveMode &&
+            !_trampolineMode && !_trampolineMatMode && state.posZ < KICKER_END_Z) {
+            const _v    = Math.max(0.05, state.vz || 0);
+            const _tLip = (KICKER_END_Z - state.posZ) / _v;
+            if (_tLip > 0.8) {
+                const _s = Math.min(1, Math.max(0, (_v - 3) / 7));
+                const _crouchAuto = _s * _s * (3 - 2 * _s) * 0.85;
+                if (_crouchAuto > state.tuckTarget) state.tuckTarget = _crouchAuto;
+                window._inrunFloor = state.tuckTarget;
+            } else {
+                window._inrunExtend = true;   // extension window: floor released
+                if (state.tuckTarget <= (window._inrunFloor || 0) + 1e-9)
+                    state.tuckTarget = 0;
+            }
+        }
+
         // ── Smooth tuck / pike transitions ─────────────────────────────────
         if (!state.crashed) {
             const tDiff = state.tuckTarget - state.tuckAmount;
-            const step  = TUCK_RATE * dt;
-            state.tuckAmount += (Math.abs(tDiff) <= step) ? tDiff : Math.sign(tDiff) * step;
+            // Extension pacing (F3): inside the window (tLip ≤ 0.8 s) with the
+            // floor released, the release is CONSTANT-RATE over 0.65 s so
+            // tuckAmount hits 0 at tLip ≈ 0.15 s — TUCK_RATE alone would snap
+            // the whole crouch out in ~0.17 s; a tuck-proportional rate would
+            // decay exponentially and never reach 0. Held tucks (tDiff > 0)
+            // and airborne blends keep TUCK_RATE exactly.
+            if (!window._inrunExtend || !window._inrunTuck0)
+                window._inrunTuck0 = state.tuckAmount || 0.0001;
+            const tRate = (window._inrunExtend && tDiff < 0)
+                ? Math.min(TUCK_RATE, Math.max(0.5, window._inrunTuck0 / 0.65))
+                : TUCK_RATE;
+            if (tDiff >= 0 || !window._inrunExtend) window._inrunTuck0 = 0;
             const pDiff = state.pikeTarget - state.pikeAmount;
+            const step  = tRate * dt;
+            state.tuckAmount += (Math.abs(tDiff) <= step) ? tDiff : Math.sign(tDiff) * step;
             const pStep = (pDiff < 0 ? PIKE_RELEASE_RATE : PIKE_RATE) * dt;
             state.pikeAmount += (Math.abs(pDiff) <= pStep) ? pDiff : Math.sign(pDiff) * pStep;
             // Drive arms down to sides when pike is releasing
@@ -10015,22 +10074,32 @@ void main(void) {
         state.armSnap += Math.abs(dSnap) <= armStep ? dSnap : Math.sign(dSnap) * armStep;
         // Animate arm raise (straight up)
         const dRaise = state.armRaiseTarget - state.armRaise;
-        state.armRaise += Math.abs(dRaise) <= armStep ? dRaise : Math.sign(dRaise) * armStep;
+        // In-run takeoff sweep (F3): the window gives ~0.7 s, so pace the
+        // raise at ~0.7 s there instead of ARM_DROP_RATE's 0.25 s — a 180°
+        // sweep in 0.25 s is ~12°/frame at 60 Hz and breaches the joint-rate
+        // gate on any frame jitter. Everywhere else ARM_DROP_RATE is kept.
+        const _raiseRate = (window._inrunExtend && state.grounded &&
+                            state.posZ < KICKER_END_Z) ? 1.4 : ARM_DROP_RATE;
+        const _raiseStep = _raiseRate * dt;
+        state.armRaise += Math.abs(dRaise) <= _raiseStep ? dRaise : Math.sign(dRaise) * _raiseStep;
         // Fade snap and raise back out on landing
         if (state.grounded) { state.armSnapTarget = 0; state.armRaiseTarget = 0; }
-        // ── Arms sweep up through the kicker curve (human-testing #2 item 5) ──
-        // The in-run forward hold (review note: "from the transition into the
-        // kicker the arms rise together and are straight overhead by the lip")
-        // releases here: entering the kicker arc sets drop→0 (raised side of
-
-        // the sweep) and raise→1; ARM_DROP_RATE completes both in ~0.25 s, so
-        // the arms are overhead by the lip. The grounded fade above is undone
-        // deliberately; _inrunArmForward's w = tuck·(1−armRaise) hands the
-        // pose over to the raise blend as armRaise climbs.
-        if (state.grounded && !_poolDiveMode && !_trampolineMode && !_trampolineMatMode &&
-            state.posZ >= KICKER_START_Z && state.posZ <= KICKER_END_Z + 1.0) {
-            armLTarget = 0; armRTarget = 0;
-            state.armRaiseTarget = 1;
+        // The sweep is the TAKEOFF: it fires on time-to-lip (tLip ≤ 0.8 s),
+        // not on entering the kicker curve — the athlete extends out of the
+        // auto-crouch and the arms sweep from the knees up past the ears,
+        // overhead by the lip (ARM_DROP_RATE ≈ 0.25 s). The grounded fade
+        // above is undone deliberately; _inrunArmForward's
+        // w = tuck·(1−armRaise) hands the pose over to the raise blend.
+        if (state.grounded && !_poolDiveMode && !_trampolineMode && !_trampolineMatMode) {
+            const _vArms    = Math.max(0.05, state.vz || 0);
+            const _tLipArms = (KICKER_END_Z - state.posZ) / _vArms;
+            const _inWin    = state.posZ < KICKER_END_Z
+                ? _tLipArms <= 0.8
+                : state.posZ <= KICKER_END_Z + 1.0;
+            if (_inWin) {
+                armLTarget = 0; armRTarget = 0;
+                state.armRaiseTarget = 1;
+            }
         }
 
         // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
@@ -10323,6 +10392,24 @@ void main(void) {
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1,
                              window._lastSquat || 0);
+            // F3 item 4: in the crouch the head looks ALONG the in-run, not
+            // at the snow — counter-pitch to 40 % of the torso's forward
+            // pitch (i.e. −0.6 × torso pitch relative), the counter capped at
+            // 35°, weighted by the crouch blend w = tuck·(1−armRaise) so it is
+            // exactly 0 at rest and during the takeoff sweep. Display-only
+            // (ADR-0002), applied after the pose solver like the overlays above.
+            {
+                const _hd = character.meshes.head, _tr = character.meshes.torso;
+                if (_hd && _tr) {
+                    const _wH = Math.max(0, Math.min(1, state.tuckAmount)) *
+                        (state.grounded ? 1 - Math.max(0, Math.min(1, state.armRaise)) : 0);
+                    if (_wH > 0.001) {
+                        const _counter = Math.max(-0.611, Math.min(0.611, 0.6 * _tr.rotation.x));
+                        const _target = _tr.rotation.x - _counter;
+                        _hd.rotation.x += (_target - _hd.rotation.x) * _wH;
+                    }
+                }
+            }
             if (_stanceW > 0.001) {
                 for (const [side, preZ] of [['L', preZL], ['R', preZR]]) {
                     if (preZ === null || preZ === undefined) continue;
