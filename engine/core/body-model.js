@@ -251,10 +251,10 @@ const POSE_ARMS_T = {
 };
 
 const POSE_ARMS_UP = {
-    upperArmL: { x: -0.175, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.175, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.175, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.175, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.12, y:  0.85, rx: -1.8, rz: 0.05, dz: 0.10 },
+    upperArmR: { x:  0.12, y:  0.85, rx: -1.8, rz: -0.05, dz: 0.10 },
+    lowerArmL: { x: -0.12, y:  1.20, rx: -1.8, rz: 0.05, dz: 0.10 },
+    lowerArmR: { x:  0.12, y:  1.20, rx: -1.8, rz: -0.05, dz: 0.10 },
 };
 
 // Frozen: these hang off the shared AerialEngine namespace, which every
