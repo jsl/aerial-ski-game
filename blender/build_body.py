@@ -11296,6 +11296,12 @@ def _boot_mat(name, colour, rough, metal):
 
 
 
+# Fable (2026-09-02, after three GLM slots landed the boot BEHIND the ankle): in the
+# game's root frame the athlete faces -z and Blender's +y maps to +z = BEHIND. The
+# foot loft and the cuff lean are authored 'toe = +dy'; BOOT_FWD flips that so the
+# toe lands ahead of the ankle (measured in-game: boot z must span ankle-0.17..+0.11).
+BOOT_FWD = -1.0
+
 def add_boots(arm, joints, body):
     """#16 (NEXT.md item 5): real ski boots — rigid, skinned to the shins.
 
@@ -11386,11 +11392,11 @@ def add_boots(arm, joints, body):
         # ankle-band centroid — heel ~0.12 m behind it, toe ~0.18 m ahead
         # (the binding stations toe +0.20 / heel -0.20 bracket the span).
         prim('box', 'sole', w=0.102, d=0.300, h=0.018,
-             x=ax, y=ay + 0.030, z=sole + 0.009)
+             x=ax, y=ay + BOOT_FWD * 0.030, z=sole + 0.009)
         prim('box', 'ledge_toe', w=0.104, d=0.040, h=0.012,
-             x=ax, y=ay + 0.155, z=sole + 0.006)
+             x=ax, y=ay + BOOT_FWD * 0.155, z=sole + 0.006)
         prim('box', 'ledge_heel', w=0.104, d=0.040, h=0.012,
-             x=ax, y=ay - 0.095, z=sole + 0.006)
+             x=ax, y=ay - BOOT_FWD * 0.095, z=sole + 0.006)
 
         # 257 THE SHELL: one smooth closed loft per boot instead of the
         # cube/cylinder pile — a FOOT loft (heel 70 mm, ball 95 mm, rounded
@@ -11447,7 +11453,7 @@ def add_boots(arm, joints, body):
         # rounded toe box; 0.30 m nose to heel, ellipses in the x-z plane,
         # spanning ay-0.12 (heel) .. ay+0.18 (toe).
         foot_secs = [
-            (Vector((ax, ay + dy, sole + cz)), A, B, U, Z, 'shell')
+            (Vector((ax, ay + BOOT_FWD * dy, sole + cz)), A, B, U, Z, 'shell')
             for (dy, cz, A, B) in ((-0.120, 0.042, 0.035, 0.040),
                                    (-0.098, 0.046, 0.038, 0.046),
                                    (-0.056, 0.050, 0.044, 0.050),
@@ -11464,7 +11470,7 @@ def add_boots(arm, joints, body):
         # (cuff_top-sole) * tan 15 deg), rolled liner lip at cuff_top.
         lean = (cuff_top - sole) * math.tan(math.radians(15))
         cuff_secs = [
-            (Vector((ax, ay + dy, sole + dz)), 0.0475, 0.0525, U, Y,
+            (Vector((ax, ay + BOOT_FWD * dy, sole + dz)), 0.0475, 0.0525, U, Y,
              'cuff' if dz >= 0.118 else 'shell')
             for (dy, dz) in ((0.012, 0.040), (0.006, 0.072),
                              (-0.002, 0.102), (-0.006, 0.128),
