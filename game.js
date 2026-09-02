@@ -8146,6 +8146,27 @@ void main(void) {
     canvas.addEventListener('pointerup', _clearFreeLookDrag, true);
     canvas.addEventListener('pointercancel', _clearFreeLookDrag, true);
     window.addEventListener('pointerup', _clearFreeLookDrag, true);
+    // 250 Finding 3 (freelook #27): with a real mouse, setPointerCapture
+    // retargets the release to the canvas and Babylon's ArcRotate pointer
+    // input sees it; synthetic (and some out-of-window) releases bypass
+    // capture, so Babylon's pointer cache keeps the drag alive and bare
+    // cursor moves keep orbiting. Replay the release to the canvas once so
+    // Babylon's own handlers end the drag too.
+    let _replayingUp = false;
+    const _replayUp = (e) => {
+        if (_replayingUp) return;
+        _replayingUp = true;
+        try {
+            canvas.dispatchEvent(new PointerEvent('pointerup', {
+                pointerId: e.pointerId, pointerType: e.pointerType,
+                clientX: e.clientX, clientY: e.clientY,
+                buttons: e.buttons, bubbles: true,
+            }));
+        } catch (_) {}
+        _replayingUp = false;
+    };
+    window.addEventListener('pointerup', _replayUp, true);
+    window.addEventListener('pointercancel', _replayUp, true);
     window.addEventListener('pointercancel', _clearFreeLookDrag, true);
     window.addEventListener('blur', _clearFreeLookDrag);
     document.addEventListener('visibilitychange', _clearFreeLookDrag);
@@ -10479,7 +10500,8 @@ void main(void) {
         // (crashActive stays true through the rest and the walk-off, so the
         // condition is: free-look has taken the follow block out, or the
         // ragdoll branch below is not the one framing the body.)
-        if (state.crashed && character && character.root) {
+        if (state.crashed && character && character.root &&
+            (_freeLookActive || !(crashActive && ragdoll))) {
             // Track ragdoll torso if available, otherwise fallback to root
             const _ck = Math.min(1, 2.5 * dt);
             const _target = (ragdoll && ragdoll.torso) ? ragdoll.torso : character.root.position;
@@ -10487,7 +10509,8 @@ void main(void) {
             camera.target.x += (_target.x - camera.target.x) * _ck;
             camera.target.y += (_target.y + _offY - camera.target.y) * _ck;
             camera.target.z += (_target.z - camera.target.z) * _ck;
-        } else {
+        }
+        if (!_freeLookActive) {
             camera.target.y = _visRootY;
             camera.target.z = state.posZ;
         }
@@ -10500,8 +10523,11 @@ void main(void) {
             camera.alpha += _da * Math.min(1, 5 * dt);
             if (Math.abs(_da) < 0.005) { camera.alpha = _camTargetAlpha; _camTargetAlpha = null; }
         }
-        // Camera height management — never fight mouse input; only nudge when airborne/landing
-        if (!_poolDiveMode) {
+        // Camera height management — never fight mouse input; only nudge when
+        // airborne/landing. Stands down entirely while free-look owns the
+        // camera (P10); 246 dropped this guard and the follow re-wrote the
+        // orbit target every frame (coach_zoom/look framing red, 250 Finding 2).
+        if (!_freeLookActive && !_poolDiveMode) {
             if (!state.grounded && cameraMode !== 1) {
                 // Very slow raise throughout the flip — 0.022 rad/s, capped at CAM_BETA_LAND
                 camera.beta = Math.max(CAM_BETA_LAND, camera.beta - 0.022 * dt);

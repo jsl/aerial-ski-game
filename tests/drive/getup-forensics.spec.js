@@ -159,11 +159,13 @@ async function forensics(page, world, opts) {
         let maxSep = { d: 0 };
         let maxLLJump = { d: 0 };
         let maxBootSep = { d: 0 };
-        // The i=1 interval spans the ragdoll SEED (particles initialised
-        // from the impact velocity while the sampler attached mid-impact);
-        // it is a discontinuity by construction, not a rendered snap —
-        // the coherence metric starts at i=2. (A run measured 0.266 m
-        // there once; the same world passed at 0.134 on the rerun.)
+        // The i=1..3 intervals span the ragdoll SEED (particles
+        // initialised from the impact velocity while the sampler attached
+        // mid-impact); it is a discontinuity by construction, not a
+        // rendered snap. 250's review measured the seed transient
+        // reaching i=3 (maxLLJump 0.168–0.307 @ i=3, t≈258–283 ms,
+        // nondeterministic across reruns) — exclusion extended to i>3
+        // per the 09:30 ruling (250 review, Finding 1).
         for (let i = 0; i < F.frames.length; i++) {
             const f = F.frames[i];
             const s = sep(f);
@@ -172,10 +174,12 @@ async function forensics(page, world, opts) {
                 rootZ: f.rootZ, llZL: f.llZL, llZR: f.llZR };
             const bs = Math.max(Math.abs(f.bootZL - f.llZL),
                 Math.abs(f.bootZR - f.llZR));
+            if (bs > maxBootSep.d) maxBootSep = { d: +bs.toFixed(3), i,
+                phase: f.phase, walkPhase: f.walkPhase, t: f.t };
             // During the WALK-OFF get-up the root is deliberately static
             // while the kneel/rise sweeps the legs under it (bounded by
             // the maxSep gate) — the snap contract is the crash proper.
-            if (i > 1 && f.walkPhase === null) {
+            if (i > 3 && f.walkPhase === null) {
                 const p = F.frames[i - 1];
                 // 249: the leg nodes' jump RELATIVE to the root's own
                 // jump — the coherent body legitimately slides 0.5–0.9 m
