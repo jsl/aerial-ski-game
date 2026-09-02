@@ -7246,12 +7246,21 @@ void main(void) {
         }
         const pk = R._park || character.root.position;
         const q = character.root.rotationQuaternion || R.qRoot;
-        const side = R.torso.x < 0 ? -1 : 1;
+        // Fable (2026-09-01): the "stand station" was R.torso.x/z — a
+        // ROOT-RELATIVE particle centre (the ragdoll drivers are written
+        // root-relative) used as a WORLD coordinate. The kneel phase then
+        // slid the whole body from the park to that phantom station:
+        // forensics measured −5.8 m (single) / −9.4 m (double) of root
+        // travel in the 0.7 s kneel — the author's "sweeps away from the
+        // point where he stops". The athlete stands up IN PLACE: the stand
+        // station is the park itself; only the walk moves the root, and it
+        // moves in X toward the B-net from there.
+        const side = pk.x < 0 ? -1 : 1;
         R.walkoff = {
             phase: 'getup', speed: 0, rest,
             root0: { x: pk.x, y: pk.y, z: pk.z },
             q0: { x: q.x, y: q.y, z: q.z, w: q.w },
-            standX: R.torso.x, standZ: R.torso.z,
+            standX: pk.x, standZ: pk.z,
             side, targetX: side * _WALKOFF_X,
             qWalk: _crashQAxis(0, 1, 0, Math.PI + side * Math.PI / 2),
         };
@@ -10277,12 +10286,19 @@ void main(void) {
             // pin, entirely in the uphill THIGH term: the root/skis are
             // already seated, and a thigh-pitch change moves only the thigh
             // centre, so the seating gates stay exact.
-            if (readyState && state.tuckAmount < 0.05 &&
+            // Fable (2026-09-01, #21 v5 residual snaps): the stance flex and the
+            // arm z-follow below were gated on a HARD threshold (tuck < 0.05),
+            // so entering the tuck switched both off in one frame — the
+            // remaining "back stretches funny" handoff snap. They now FADE with
+            // the tuck (fully on at 0, gone by tuck 0.25), which is continuous.
+            const _stanceW = readyState
+                ? Math.max(0, Math.min(1, 1 - (state.tuckAmount || 0) / 0.25)) : 0;
+            if (_stanceW > 0.001 &&
                 _readyStance.last && _readyStance.last.legF > 0.001) {
                 const _ulL = character.meshes.upperLegL;
                 const _llL = character.meshes.lowerLegL;
                 if (_ulL && _llL) {
-                    const _f = 1.12 * _readyStance.last.legF; // 0.291 rad = 16.7°, in the ruling's 15–20° band
+                    const _f = _stanceW * 1.12 * _readyStance.last.legF; // 0.291 rad = 16.7° at full weight, in the ruling's 15–20° band
                     _ulL.rotation.x = _llL.rotation.x + _f;
                     _ulL.position.y = _llL.position.y + 0.18 * Math.cos(_llL.rotation.x)
                                     + 0.18 * Math.cos(_ulL.rotation.x);
@@ -10295,10 +10311,10 @@ void main(void) {
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1,
                              window._lastSquat || 0);
-            if (readyState && state.tuckAmount < 0.05) {
+            if (_stanceW > 0.001) {
                 for (const [side, preZ] of [['L', preZL], ['R', preZR]]) {
                     if (preZ === null || preZ === undefined) continue;
-                    const dz = character.meshes['upperLeg' + side].position.z - preZ;
+                    const dz = (character.meshes['upperLeg' + side].position.z - preZ) * _stanceW;
                     for (const seg of ['upperArm', 'lowerArm']) {
                         const m = character.meshes[seg + side];
                         if (m) m.position.z += dz;
