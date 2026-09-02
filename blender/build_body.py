@@ -6787,17 +6787,25 @@ def suit_shell(body, joints):
                                  for j in range(1, len(sm) - 1)] + [sm[-1]])
             prf = dict(zip(ks, sm))
 
-            def env(z):
-                if z <= ks[0]:
+            def env(u):
+                if u <= ks[0]:
                     return prf[ks[0]]
-                if z >= ks[-1]:
+                if u >= ks[-1]:
                     return prf[ks[-1]]
-                j = max(j2 for j2 in ks if j2 <= z)
+                j = max(j2 for j2 in ks if j2 <= u)
                 jx = ks.index(j)
                 k2 = ks[jx + 1] if jx + 1 < len(ks) else j
-                t = z - j
+                t = u - j
                 return prf[j] + (prf[k2] - prf[j]) * t
-            worst = max(max(rungs[k]) - env(k * 0.01 + _lo) for k in ks)
+            # SLOT 239 instrument fix: `env` interpolates over RUNG-OFFSET
+            # keys (1 per cm) but was called with ABSOLUTE z, so `t = z - j`
+            # mixed metres with rung indices and the "bump" was extrapolation
+            # noise, insensitive to the geometry. `env` now takes the rung
+            # offset, and the rungs within +/-4 cm of the knee ring are
+            # excluded — the ring is a deliberate widening, not crumple.
+            _ring_k = int(round((_ring - _lo) / 0.01))
+            worst = max(max(rungs[k]) - env(k) for k in ks
+                        if abs(k - _ring_k) > 4)
             return env, worst
         if _kb_off:
             _b0 = _measure()[1]
