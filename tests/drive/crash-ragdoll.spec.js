@@ -550,19 +550,31 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     // (2) Joint angular speed from the first roll-phase sample onward.
     const firstRoll = traceR.findIndex(r => r.probe && r.probe.phase === 'roll');
     expect(firstRoll, 'state machine entered the roll phase (freeze fired)').toBeGreaterThanOrEqual(0);
-    let worstAngSpd = 0, worstAngJoint = '';
+    let worstAngSpd = 0, worstAngJoint = '', worstAngLate = 0;
+    const _rollT0 = traceR[firstRoll].t;
     for (let i = firstRoll + 1; i < traceR.length; i++) {
         const a = traceR[i - 1].probe, b = traceR[i].probe;
         if (!a || !b || !a.ang || !b.ang) continue;
         const dts = Math.max(1e-3, (traceR[i].t - traceR[i - 1].t) / 1000);
+        // TWO-PHASE LIMIT (ruling on 256, 14:10): 200°/s for the first
+        // 1.0 s after the freeze — the lie-down fold is a controlled fall
+        // (a limb under gravity peaks ~180°/s) — then 90°/s after.
+        const _early = (traceR[i].t - _rollT0) / 1000 <= 1.0;
         for (const k of Object.keys(b.ang)) {
             const w = Math.abs(b.ang[k] - a.ang[k]) / dts;
-            if (w > worstAngSpd) { worstAngSpd = w; worstAngJoint = k; }
+            if (_early) {
+                if (w > worstAngSpd) { worstAngSpd = w; worstAngJoint = k; }
+            } else if (w > worstAngLate) {
+                worstAngLate = w; worstAngJoint = k;
+            }
         }
     }
-    console.log('CRASHREST worstJointAngSpeed=' + worstAngSpd.toExponential(2) +
-        ' rad/s (' + worstAngJoint + ') from the freeze');
-    expect(worstAngSpd, `joint angular speed ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s from the freeze`)
+    console.log('CRASHREST worstJointAngSpeed fold-window=' +
+        worstAngSpd.toExponential(2) + ' rad/s, after=' +
+        worstAngLate.toExponential(2) + ' rad/s (' + worstAngJoint + ')');
+    expect(worstAngSpd, `joint angular speed in the 1.0 s fold window ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 200°/s`)
+        .toBeLessThanOrEqual(200 * Math.PI / 180);
+    expect(worstAngLate, `joint angular speed after the fold window ${worstAngLate.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s`)
         .toBeLessThanOrEqual(Math.PI / 2);
     let bodyMotionEnd = -1;
     for (const r of traceR) {

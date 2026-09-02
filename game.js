@@ -6647,7 +6647,101 @@ void main(void) {
         };
     }
 
+    // SLIDE LIE-DOWN v2 (ruling on 256, 14:10; slot 261): the freeze props
+    // limbs up to ~0.9 m (a leg frozen vertical). A rigid pose cannot
+    // TRANSLATE down (fixed limb lengths — 256's attempt 1 stalled at
+    // 0.42-0.46 m), so each limb FOLDS about its PROXIMAL joints — a
+    // length-preserving rotation toward the floor — over <= 1.0 s from the
+    // freeze at ω <= 200 deg/s (the ruled two-phase joint-rate limit).
+    // Two hinges per chain: thigh/upper-arm about the hip/shoulder while the
+    // knee/elbow is propped, then shin/forearm about the knee/elbow. The
+    // axis is cross(u, down) with a lateral fallback — a limb frozen
+    // straight UP makes that cross product ZERO, which silently disabled
+    // the first attempt (measured maxClearAfter 0.41-0.63 m). The hard
+    // sticks re-project lengths every step; the settle lowering handles
+    // whatever the fold leaves propped after the window. Runs in BOTH the
+    // roll and settling phases (the slide can stop well inside the 1 s
+    // window). NC: window._crashLieDisabled = true skips the fold.
+    const _FOLD_CHAINS = [['hipL', 'kneeL', 'ankleL'],
+                          ['hipR', 'kneeR', 'ankleR'],
+                          ['shL', 'elbowL', 'wristL'],
+                          ['shR', 'elbowR', 'wristR']];
+    // Fold at 180 deg/s: under the ruled 200 deg/s joint-rate limit with
+    // margin for the stick re-projection's overshoot (measured 3.65 rad/s
+    // peak when folding at the full 200).
+    const _FOLD_W = 180 * Math.PI / 180;
+    const _lieFoldStep = function (R, dt) {
+        if (R.foldT0 === undefined || R._lieFoldDone || R.looseGroundRest) return;
+        const _FOLD_T = 1.0;
+        if (R.t - R.foldT0 >= _FOLD_T) {
+            R.foldDoneAt = R.t; R.lieDur = R.foldDoneAt - R.foldT0;
+            return;
+        }
+        const _floor = function (pt) { return _crashFloorY(pt.p.z) + pt.r; };
+        let _allDone = true;
+        for (const _pn of _FOLD_CHAINS) {
+            const A = R.byName[_pn[0]], B = R.byName[_pn[1]], C = R.byName[_pn[2]];
+            if (!A || !B || !C) continue;
+            // hinge list: [pivot, movers..., trigger point that must be propped]
+            const _hinges = [
+                [A, B, C, B],       // about hip/shoulder while knee/elbow propped
+                [B, C, null, C],    // about knee/elbow while the end is propped
+            ];
+            for (const [P, M, D, _trig] of _hinges) {
+                if (!_trig || _trig.p.y - _floor(_trig) <= 0.03) continue;
+                _allDone = false;
+                const _end = D || M;
+                let ux = _end.p.x - P.p.x, uy = _end.p.y - P.p.y,
+                    uz = _end.p.z - P.p.z;
+                const ul = Math.hypot(ux, uy, uz) || 1e-9;
+                ux /= ul; uy /= ul; uz /= ul;
+                const _rem = Math.acos(Math.min(1, Math.max(-1, -uy)));
+                if (_rem < 0.02) continue;
+                let ax = uz, ay = 0, az = -ux;   // u x (0,-1,0)
+                let al = Math.hypot(ax, ay, az);
+                if (al < 1e-6) {                 // limb straight up/down
+                    ax = -uy; ay = ux; az = 0;   // u x (0,0,-1) → lateral
+                    al = Math.hypot(ax, ay, az) || 1e-9;
+                }
+                ax /= al; ay /= al; az /= al;
+                let _th = Math.min(_FOLD_W * dt, _rem);
+                // Floor overshoot guard: halve the step if the moving end
+                // would punch through the snow.
+                for (let _try = 0; _try < 3; _try++) {
+                    const _c = Math.cos(_th), _s = Math.sin(_th);
+                    const _rot = function (pt) {
+                        const rx = pt.p.x - P.p.x,
+                              ry = pt.p.y - P.p.y,
+                              rz = pt.p.z - P.p.z;
+                        const cx = ay * rz - az * ry;
+                        const cy = az * rx - ax * rz;
+                        const cz = ax * ry - ay * rx;
+                        return {
+                            x: P.p.x + _c * rx + _s * cx,
+                            y: P.p.y + _c * ry + _s * cy,
+                            z: P.p.z + _c * rz + _s * cz,
+                        };
+                    };
+                    const _re = _rot(_end);
+                    if (_re.y >= _crashFloorY(_re.z) + _end.r - 0.004) {
+                        for (const _mv of (D ? [M, D] : [M])) {
+                            const _rm = _rot(_mv);
+                            _mv.p.x = _rm.x; _mv.p.y = _rm.y; _mv.p.z = _rm.z;
+                        }
+                        break;
+                    }
+                    _th *= 0.5;
+                }
+            }
+        }
+        if (_allDone) {
+            R._lieFoldDone = true;
+            R.foldDoneAt = R.t; R.lieDur = R.foldDoneAt - R.foldT0;
+        }
+    };
     function _crashRagdollTick(R, dt) {
+
+
         R.t += dt;
         // When the hard freeze has fired (R.phase leaves 'tumble'), the
         // ragdoll pose is FROZEN in world space — but the physics root KEEPS
@@ -7157,12 +7251,22 @@ void main(void) {
                 // its back with the skis pointing straight up. The rate is
                 // now per lever: the ankle (hip lever ~0.9 m) at 0.5 m/s is
                 // 0.55 rad/s, the knee (0.45 m) at 0.35 m/s is 0.78 rad/s,
-                // both under the 90 deg/s joint-rate gate; arms stay at 0.15.
+                // both under the 90 deg/s joint-rate gate. Ruling on 256
+                // (14:10): arms settle at 0.3 m/s (lever ~0.3 m → 1 rad/s)
+                // so the arms come down BEFORE rest is declared.
+                // LIE-DOWN v2 fold (see _lieFoldStep above): <= 1.0 s from
+                // the freeze, ω <= 200 deg/s, two hinges per limb chain.
+                if (R.foldT0 === undefined) R.foldT0 = R.t;
+                if (R._lieFoldDone === undefined) {
+                    R._lieFoldDone = (typeof window !== 'undefined' &&
+                        window._crashLieDisabled === true);   // NC: no fold
+                }
+                _lieFoldStep(R, dt);
                 for (const pt of R.parts) {
                     const _tY = _crashFloorY(pt.p.z) + pt.r;
                     const _rate = /^ankle/.test(pt.name) ? 0.5 : /^knee/.test(pt.name) ? 0.35
-                                : /^(head|neck)/.test(pt.name) ? 0.4          // head/neck lever ~0.3 m from the torso top: 1.33 rad/s (double-world rest measured 0.098 m head clearance at 0.3)
-                                : /^(hip|torsoBottom)/.test(pt.name) ? 0.3 : 0.15;   // hips keep pace with the legs, or the body rests as a bridge (triple-world hip cap > 8 cm)
+                                : /^(head|neck)/.test(pt.name) ? 0.3          // head/neck lever ~0.3 m: 0.4 m/s measured a 1.60 rad/s neck rate — over the ruled 90 deg/s post-window limit; 0.3 clears it
+                                : 0.3;   // hips/arms: 0.3 m/s per the ruling on 256 (arm lever ~0.3 m → 1 rad/s)
                     if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
                 }
                 for (const hp of R.hard) {
@@ -7176,19 +7280,25 @@ void main(void) {
                 R.maxSpeed = _vH;
             }
         } else if (R.phase === 'settling') {
-            // Bounded post-stop settle: lower non-contacting parts at
-            // 0.15 m/s (the rolling-settle rate; joint angular speed stays
-            // far under the 90°/s gate), relaxing the hard sticks so joints
-            // stay ≤ 2 cm.  HT#20 replaces the old "any support, max point
-            // 0.5 m" finish with per-segment support: the lowest end cap of
-            // every torso/head/arm/leg segment, plus a hip cap, must be within
-            // 2.5 cm internally (headroom for the rendered 8 cm gate).
+            // Bounded post-stop settle: lower non-contacting parts at the
+            // per-lever rates (arms 0.3 m/s per the ruling on 256 — the
+            // arms must come down BEFORE rest is declared; the settle
+            // TIMEOUT that used to leave them propped 0.22-0.25 m is
+            // removed, keeping only a 10 s hang guard), relaxing the hard
+            // sticks so joints stay ≤ 2 cm.  HT#20 replaces the old "any
+            // support, max point 0.5 m" finish with per-segment support:
+            // the lowest end cap of every torso/head/arm/leg segment, plus
+            // a hip cap, must be within 2.5 cm internally (headroom for the
+            // rendered 8 cm gate).
+            // The fold keeps running through settling — the slide can stop
+            // well inside its 1.0 s window (it ends with the window).
+            _lieFoldStep(R, dt);
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
                 const _gap = pt.p.y - _tY;
                 if (_gap > _above) _above = _gap;
-                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.15 * dt);
+                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
             }
             // Alternate exact segment lengths with terrain projection.  The
             // former settle ran only the length pass, so its final pass could
@@ -7229,7 +7339,7 @@ void main(void) {
             const _settled = R.looseGroundRest
                 ? (_above <= 0.5 || R.t - R.settleT0 > 2)
                 : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025) ||
-                    R.t - R.settleT0 > 3.25);
+                    R.t - R.settleT0 > 10);   // hang guard only — arms come down first (ruling on 256)
             if (_settled) {
                 for (let _i = 0; _i < 12; _i++) {
                     for (const hp of R.hard) {
@@ -7712,6 +7822,12 @@ void main(void) {
             rp.x = R.torso.x;
             rp.z = R.torso.z;
             if (R.phase === 'tumble') {
+                rp.y = R.torso.y;
+            } else if (R.foldT0 !== undefined && !R._lieFoldDone) {
+                // LIE-DOWN v2: during the fold window the lie height is not
+                // final — follow the torso particle itself, and only CAPTURE
+                // _rootLie once the fold is done (the ruling: captured
+                // after the fold).
                 rp.y = R.torso.y;
             } else {
                 if (R._rootLie === undefined) {
