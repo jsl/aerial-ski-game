@@ -527,7 +527,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
-| — | Iteration 282 | **LEGS RE-CENTRE v6b (the 01:30 ruling's slot): determinism test PASS (two flag-on builds identical — pipeline deterministic, winding 11→42 identical in both); close_boundary bisected with per-pass traces — ALL conflicts born in hem pass 0; band NON-ORIENTABLE by local flips (greedy holds 11→11, exact orientation 61, both reverted/kept honestly); NEW deterministic batched local repair replaces the island recalc (11 held vs 42) with NC semantics intact; DEFAULT v100 green (0/0, export OK), flag-on gate RED at 11 → env-gated, NO SHIP, ASSET_V 100. unit 81/81, golden 30/30. Open: topological fix (delete the double-wall overlap) proposed for 283.** | entry 282. |
+| — | Iteration 285 (review) | **REVIEW-ONLY (capped form): tip = v100 (284 reverted). unit 81/81, golden 30/30, look 7/7, boots 14/14; leg-axis gates RED as mandated on v100 (G1 +0.072/+0.073, G2 bands 0.059–0.091, NC green) — instrument state, not a regression. Shots inspected: bib 30 legible, feet seated per v100, cone peaks still the loudest scene gap; grey ramp HOLDS (corridor 212.9 ≥ flanks 205.4/191.3). Magenta bib-hem patch RE-MEASURED bigger: front 790 px @ x515–583/y406–432 (280: x540–562). No source/asset change, ASSET_V 100. Next: 286 v6e per the 03:25 ruling.** | entry 285. |
 | — | Iteration 283 | **LEGS RE-CENTRE v6c (the 02:10 ruling's slot): the overlap attacked topologically at source — hem-membrane faces tagged per pass (new `mem_pass` int layer), NEW `_membrane_deoverlap` (deterministic 30 mm centroid grid vs the pass-0 torso-side wall; deletes duplicates, re-closes rims; fired 9/9 nested faces flag-on, 4/21 default), NEW `_orient_patch` (BFS winding consistency per membrane disk + boundary-majority alignment), the big pelvis fill's `subdivide_edges` REMOVED (it made the patch edge-non-manifold via T-junctions — BFS reached only 108/212), and a REAL bug fixed: `_winding_repair` computed flips but NEVER called `reverse_faces` (282's repair was a silent no-op) — now applied, with a deterministic sequential + pair-move descent fallback. Flag-on winding 11 → 3 conflict edges (all at the welded suit/membrane junction x≈−0.02, z≈−0.32); the 3 form an odd flip cycle (singles AND pairs all fail to descend) = genuinely non-orientable weld → gate RED, export refused, NO SHIP, ASSET_V stays 100. Default build green end-to-end (0/0 winding, watertight, export OK). unit 81/81, golden 30/30, boots + 14 drive specs green; leg-axis RED is the documented pre-ship v100 state (G1 +0.072/+0.073, NC fires); look 7/7. Open: the last 3 edges need the suit's own double-wall overlap deleted upstream (the ruling's Q2 option), not another repair pass.** | entry 283. |
 | — | Iteration 276 | **LEGS RE-CENTRE v2 (the 23:30 ruling's slot): the acceptance instrument `tests/drive/leg-axis.spec.js` LANDED and is RED on v100 exactly as mandated (G1 +0.072/+0.073, G2 bands fire, NC +0.07 fires); the v2 mechanism as specced (clamp removed, nearest-row fill, ankle-follow) FAILS the build's SLIVER gate (103/9864 = 1.04% vs 0.65%) — shear at the cuff/sole feature rings where adjacent-row offsets step ~60 mm; landed env-gated DEFAULT-OFF with the numbers, asset NOT shipped, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: feature-ring exclusion or 2-row blend at the ankle station for a v3.** |
 | — | Iteration 277 | **LEGS RE-CENTRE v3 (the 23:40 ruling's slot): feature-ring + boot/sole exclusion from the population, 5-row box ×2, 15 mm/row slope limit — the field is SMOOTH and the SLIVER gate PASSES (49/9464 = 0.5178% ≤ 0.65% WITHOUT re-banding; 276 was 1.0442%); max row step capped at 15.0 mm; dropped rings logged. leg-axis still RED on the shipped probe: G1 +0.042/+0.044 (v100 +0.072 — real progress, gate 0.03), G2 bands 0.041–0.055, G3 −0.075/−0.071 (boot block-shift guard) ⇒ per the fallback rule landed env-gated DEFAULT-OFF, asset reverted, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: smooth-field class exhausted; G1 vs G3 needs a different mechanism (LEGS 3/4 ruling).** | entry 277. |
@@ -1825,6 +1825,47 @@ still stands from entry 83.
 
 ## Iterations
 
+### 285 — REVIEW-ONLY (capped form, the queue's "285 = REVIEW" slot): tip = v100 after 284's
+revert; instruments verified in the mandated state; shots regenerated + inspected; magenta
+bib-hem patch re-measured (front 790 px, larger than 280's reading); grey ramp HOLDS
+(corridor brightest); no source/asset change, ASSET_V stays 100
+
+**Verification (budget kept: unit + golden + boots + leg-axis + look only).**
+`npm run test:unit` 81/81 fail 0; `npm run test:golden` 30/30 (no recapture — the revert
+restored the v100 traces' own tree); look 7/7, shots regenerated (fresh set in `shots/`).
+Drive: boots.spec + leg-axis.spec on `DRIVE_PORT=8410` (8099 held by another lane):
+boots 14/14 GREEN; leg-axis gates RED exactly as mandated on shipped v100 — G1 shin-at-cuff
+**+0.072 L / +0.073 R** (gate 0.03), G2 bands 0.059–0.091 (gate ±0.035), bootCentreAlong
+−0.53/−0.54, and the NC (synthetic +0.07 shin shift must fail) PASSES = instrument sensitive.
+This is the correct carried red the 276-instrument ruling expects; it is NOT a regression
+from the revert — the revert restored it deliberately. 286's v6e (seat the foot to the
+explicit −0.07…−0.03 target, restore the ANKLE-ANCHOR gate to the 283 form) is the fix slot.
+
+**Shots inspected (v100).**
+- `figure_front.png`: bib "30" legible both digits; shins enter the boot cuffs; boots
+  under the legs on the skis; suit lumpy at knees/hips (athlete-lane debt, unchanged).
+- `figure_side.png`: foot in profile with the toe box forward and the heel behind —
+  the seated-foot reading is consistent with v100's measured −0.043 foot-band offset;
+  no v101 "foot slid back" defect visible (that shipped and was reverted).
+- `scene.png`: kicker block, B-net, wands, flag, coach all present; cone-peak horizon
+  still reads wrong (P6, loudest scene gap).
+- **Magenta bib-hem patch re-measured** (pink = R,B > G−25 mask): figure_front 790 px @
+  x 515–583 / y 406–432; figure_side 531 px @ x 461–568 / y 365–400; figure 392 px @
+  x 538–562 / y 365–402. This is LARGER than 280's front reading (x 540–562) — the patch
+  has grown or my earlier region was tighter; it remains the loudest athlete paint defect
+  (271 spec, athlete/material lane).
+- **Grey ramp holds**: scene.png corridor band 212.9 vs flank L 205.4 / flank R 191.3
+  (0–255 luma) — corridor ≥ flanks everywhere, brightest-surface goal met in this framing.
+  Sky 148.5; snow vs sky contrast healthy.
+
+**Re-prioritised for the next iterations.** 1) 286 v6e exactly as the 03:25 ruling (foot
+seat + gate restore + ship). 2) Magenta patch root-cause (271 spec) — now with a bigger
+measured footprint; candidate gate: pink-mask px inside the suit region ≤ 50 with a firing
+NC. 3) P6 horizon (cone peaks) — loudest non-athlete scene gap unchanged since 255.
+4) Sky blue-slice colour (r−b −0.12 vs −0.25 gate, parked since 230) still stands.
+
+**Open questions for the reviewer.** None new; the magenta-patch growth number above is
+offered for the 271-slot spec band.
 ### 279 — LEGS RE-CENTRE v5 (the 00:25 ruling's slot): the field's TARGET is
 the bone −15 mm along the toe axis — **LEG-AXIS GREEN (G1 −0.018 L / −0.014 R,
 bands ≤ ±0.015), NC fires — but boots.spec ANKLE-ANCHOR is RED on the flag-on
