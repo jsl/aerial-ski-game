@@ -5960,7 +5960,11 @@ SHELL_SLIM_DEPTH = {}   # Fable v3 experiment (shin depth x0.88) REVERTED: it op
 SHELL_SMOOTH_ITERS = 32        # Jacobi passes of the radius-field Laplacian (HT#23.3: was 20)
 SHELL_SMOOTH_LAMBDA = 0.60   # HT#23.3: was 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
-KNEE_BELLY_GATE = 0.006        # m: knee-band belly p95 over the blended tube
+KNEE_BELLY_GATE = 0.008 if os.environ.get('LEG_RECEN', '0') == '1' else 0.006
+# m: knee-band belly p95 over the blended tube. Fable F8 ruling (2026-09-02 23:00): 8 mm
+# for the RE-CENTRED shin only (LEG_RECEN=1): the band's class changed (shin moved 110 mm
+# onto the bone), the bridge's +6/-8 mm travel cannot reach a 7.3 mm p95 (4 of 74 verts),
+# and LEGS 3's knee guards own this band next. The default build keeps 6 mm.
 # HUMAN TESTING #15: the rest mesh needs enough real clearance that the gentle
 # 3-degree A-frame pose still shows at least 3 cm of daylight at mid-thigh.
 # This is an INNER-face plane, not a width change: the outer thigh and every
@@ -6312,26 +6316,38 @@ def suit_shell(body, joints):
                 _diag[nm] = (_st.median(v[0] for v in mk.values()),
                              _st.median(v[1] for v in mk.values()), len(mk))
         moved = {nm: [0.0, 0.0, 0] for nm in leg_segs}
+        # Fable F8 (22:10): the ring closer segfault was an OWNERSHIP tear —
+        # the AFRAME sever ring spans the knee and its shin-owned verts moved
+        # ~11 cm while its thigh-owned neighbours stayed, so bmesh got a
+        # self-crossing loop. The shin's smoothed row offset is therefore
+        # applied to EVERY suit vert of that leg (both segments) as one smooth
+        # field: full below knee_z - 7 cm, fading to zero by knee_z + 7 cm.
+        # The thigh keeps its own A-frame line (no thigh offsets, per the
+        # ruling on 269); the sever fade at z -0.75 is gone (it was what
+        # left the unmoved rows reading as fat radii: taper 0.994).
         for i, v in enumerate(vs):
             nm = dom[i]
-            if not nm.startswith('lowerLeg'):
+            if nm not in leg_segs:
                 continue
-            # SHINS ONLY this slot. The thigh's per-row medians are
-            # contamination-dominated (max 46 mm vs an 11 mm median-of-
-            # medians — buttock flare and seat rows, not tube offset) and
-            # moving them opens a 31.0 mm leg-profile STEP at z -0.355; the
-            # thigh's designed line is the A-frame want_x line, not the bl()
-            # hip station. Ruled four-segment scope recorded as a deviation
-            # in the entry. The knee blend is moot with one mover, so the
-            # shin takes its own smoothed row offset everywhere; the fade to
-            # 0 above the sever ring keeps that ring unmoved for the
-            # watertight closer.
+            shin = 'lowerLeg' + nm[-1]
             k = int(math.floor(v.co.z / SHELL_DZ))
-            ox, oy = _off(nm, k)
-            t = _shell_sstep(((-0.75) - v.co.z) / 0.05)
+            ox, oy = _off(shin, k)
+            # F8: FORE-AFT ONLY. The shin's lateral offset from its bone
+            # (-19 mm L / +8 mm R) is the A-frame's continuation into the
+            # knee, continuous with the unmoved thigh; re-centring x put a
+            # lateral jog into the knee band. The defect the author sees is
+            # the +110 mm forward sweep (dy).
+            ox = 0.0
+            # F8: the fade uses the KNEE BRIDGE's own blend window
+            # [ring - 0.10, ring + 0.07] with its smoothstep, so the moved
+            # verts and the bridge's blended tube target agree through the
+            # band (a +/-7 cm window about knee_z left a 12-18 mm belly).
+            _rg = bl('upperLeg' + nm[-1]).z - SEGMENTS['upperLeg' + nm[-1]]['h'] / 2
+            t = 1.0 - _shell_sstep((v.co.z - (_rg - 0.10)) / 0.17)
             ox, oy = ox * t, oy * t
-            if ox == 0.0 and oy == 0.0:
+            if abs(ox) < 1e-6 and abs(oy) < 1e-6:
                 continue
+            nm = shin if t > 0.0 else nm
             v.co.x -= ox
             v.co.y -= oy
             m = moved[nm]
@@ -6462,9 +6478,16 @@ def suit_shell(body, joints):
         # the cuff with no lean. Pin BEFORE the rung/ab refit so the radius
         # polynomials are fitted about the bone line and the tube still
         # encloses the calf. Negative control: LEG_AXIS_PIN=0 skips the pin.
-        if nm in ('lowerLegL', 'lowerLegR') and os.environ.get('LEG_AXIS_PIN', '1') != '0':
-            cx, cy = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
-            log(f'  LEGAXIS {nm}: axis pinned to the bone line '
+        if nm in ('lowerLegL', 'lowerLegR') and os.environ.get('LEG_AXIS_PIN', '0') == '1':
+            # Fable F8 (22:55): a STRAIGHT axis — fore-aft ON the bone (the
+            # re-centre put the cloud there), laterally at the shin's OWN
+            # median offset (the A-frame's continuation: -19 mm L / +8 mm R).
+            # Pinning x to the bone as well fitted the left shin's lateral
+            # semi-axis at 87 mm (calf 145 mm) because the cloud sits 19 mm
+            # off the bone's x.
+            _mx = statistics.median(o[1] for o in obs)
+            cx, cy = (_mx, 0.0, 0.0), (0.0, 0.0, 0.0)
+            log(f'  LEGAXIS {nm}: axis pinned straight at (bone x {_mx*1000:+.1f} mm, bone y) '
                 f'({c.x:+.3f}, {c.y:+.3f})')
         exp = _shell_exp(nm)
         ab = []
@@ -6521,8 +6544,13 @@ def suit_shell(body, joints):
         # want_x re-centre, zero the fore-aft axis and the lateral
         # slope/bow, so both leg axes meeting at the knee are on-bone and
         # the knee blend interpolates between two bone lines.
-        prof['cx'] = (want_x - old_x, 0.0, 0.0)
-        prof['cy'] = (0.0, 0.0, 0.0)
+        # Fable F8 (22:20): 268 zeroed the thigh's lateral slope/bow and its
+        # fore-aft axis here; a vertical thigh tube at the hip's x stands
+        # 47 mm outside the knee and the knee-band verts spread between the
+        # two tubes (thigh 125 -> 162, calf 103 -> 143 mm: 268's taper red).
+        # The A-frame's converging slope IS the design: shift only, as before.
+        prof['cx'] = (prof['cx'][0] + want_x - old_x,
+                      prof['cx'][1], prof['cx'][2])
         # Restore every thigh-owned suit vertex excluded by the old one-tube
         # fit.  The joint fade is retained, so this still joins continuously
         # to the torso and knee helper bands.
@@ -6853,14 +6881,29 @@ def suit_shell(body, joints):
     def _make_blend(pu, pl, ul, ll, lo, hi):
         def _blend_at(z, x, y):
             t = min(1.0, max(0.0, (z - lo) / (hi - lo)))
-            sB = _shell_sstep(t)
+            # Fable F8 (22:30): the blend was INVERTED since 199 — sB rose
+            # with z, so the SHIN's axis/radius was applied at the top of
+            # the window (7 cm into the thigh) and the THIGH's at the bottom
+            # (10 cm into the shin). While both axes were fitted from the
+            # same base cloud it only cost the collar above the ring (F6's
+            # 66/71 mm rows); with the shin on the bone it put a 12-18 mm
+            # belly on both ends. sB is now the THIGH weight: 0 at the
+            # bottom (shin), 1 at the top (thigh).
+            # KNEE_BLEND_FIX=1 enables the corrected orientation; the default
+            # keeps 199's (the flipped DEFAULT build trips the SLIVER gate at
+            # 0.655 % vs 0.65 % — a re-band question for the LEGS slot).
+            _fix = os.environ.get('KNEE_BLEND_FIX', '0') == '1'
+            sB = (1.0 - _shell_sstep(t)) if _fix else _shell_sstep(t)
             ux, uy = _shell_axis_at(pu, z)
             lx, ly = _shell_axis_at(pl, z)
-            cx, cy = ux + (lx - ux) * sB, uy + (ly - uy) * sB
+            if _fix:   # sB = thigh weight
+                cx, cy = lx + (ux - lx) * sB, ly + (uy - ly) * sB
+            else:      # 199: sB = shin weight (inverted along z)
+                cx, cy = ux + (lx - ux) * sB, uy + (ly - uy) * sB
             th = math.atan2(y - cy, x - cx)
             rU = _seg_target(pu, ul, z, th)
             rL = _seg_target(pl, ll, z, th)
-            return cx, cy, rU + (rL - rU) * sB
+            return cx, cy, (rL + (rU - rL) * sB) if _fix else (rU + (rL - rU) * sB)
         return _blend_at
 
     for _s in ('L', 'R'):
@@ -7628,24 +7671,15 @@ def sever_thigh_bridge_faces(body, shell):
             _rim_verts = {v for e in _edges for v in e.verts}
             _new_faces = []
             try:
-                # slot 269: contextual_create FIRST — triangle_fill(beauty)
-                # segfaults Blender (rc 139, reproducible) on the re-centred
-                # sever loop (LEGS 2c moved the ring verts in y); the
-                # contextual n-gon is the safe closer and the membrane
-                # refinement below re-smooths it either way.
+                _res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=_edges)
+                _new_faces = [g for g in _res.get('geom', []) if isinstance(g, bmesh.types.BMFace)]
+                if not _new_faces:
+                    _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
+                    _new_faces = list(_r2.get('faces', []))
+            except Exception as _e:
+                log(f'  triangle_fill failed ({_e}); contextual_create')
                 _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
                 _new_faces = list(_r2.get('faces', []))
-                if not _new_faces:
-                    _res = bmesh.ops.triangle_fill(bm, use_beauty=True,
-                                                   use_dissolve=False, edges=_edges)
-                    _new_faces = [g for g in _res.get('geom', [])
-                                  if isinstance(g, bmesh.types.BMFace)]
-            except Exception as _e:
-                log(f'  contextual_create failed ({_e}); triangle_fill')
-                _res = bmesh.ops.triangle_fill(bm, use_beauty=True,
-                                               use_dissolve=False, edges=_edges)
-                _new_faces = [g for g in _res.get('geom', [])
-                              if isinstance(g, bmesh.types.BMFace)]
             # Membrane refinement (Fable): a fan/beauty fill across a 28 cm
             # ring is a sheet of long slivers. Subdivide the patch's interior
             # edges and relax the interior verts so the patch becomes a smooth
