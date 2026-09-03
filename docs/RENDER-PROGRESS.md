@@ -15136,3 +15136,72 @@ Reading: the F6 "shin halves its rows" signature is GONE at the fit — the shin
 **Open questions for the reviewer:**
 1. Port hygiene: a stale `http.server` squats 8099 in this sandbox; the drive suite needs `DRIVE_PORT` set to a free port. Should the driver scripts (`ops/run_batch*.sh`) export a per-iteration `DRIVE_PORT` so a squatted default never fakes a webServer failure?
 2. The 01:00 ruling's ship step expects `LEG_RECEN=0` to read +0.072 on leg-axis as the negative control after defaults flip — confirmed this iteration that v100 reads exactly +0.072/+0.073, so the NC anchor is valid. No question beyond confirming the ship-slot acceptance list stands as written.
+
+### 281 — LEGS RE-CENTRE v6 attempt (the 01:00 ruling's slot): foot rows KEEP
+THEIR OWN medians, field carries smoothly to the sole — build-side field GREEN
+and logged, but the flag-on ship-res build is RED at the delivered-mesh WINDING
+gate (42 inside-out edges, left hip/hem), so NO SHIP: env-gated default-off,
+ASSET_V stays 100, asset NOT shipped
+
+**What changed.** `blender/build_body.py` only. (a) The LEG_RECEN row
+population no longer excludes the rows below the ankle station: the foot rows
+keep their OWN smoothed medians (the v6 ruling — the foot was correctly seated
+in v100 and must not ride the ankle row's ≈−0.11 field), with the ONE 5-row
+box pass + 25 mm/row forward-backward slope limit carrying the field from the
+ankle row down to the sole. The ride-the-ankle override is deleted. Per-row
+offsets are logged from the sole to the cuff top. (b) `close_boundary`
+robustness (inert on the default build — it only fires when BOTH fills of a
+hem loop return no faces): a 1–2-edge dangling rim is now deleted/failed
+explicitly instead of crashing on `max()` of an empty patch — v6's field
+produces one such 119 mm fin at pre-export pass 4 that crashed builds 1–2.
+(c) `orient_consistent` logs the locations of winding-conflict edges before
+failing (diagnostic; inert when green).
+
+**Build numbers (ship-res `LEG_RECEN=1 LEG_AXIS_PIN=1 KNEE_BLEND_FIX=1
+--boots on`, `scratch/iter-281/build4-5.log`).** Per-row field, lowerLegL (z
+mm → oy mm): sole −1000:−100.1 … ankle band −820..−760: −127.6…−114.0, cuff
+top −640:−117.2; lowerLegR sole −97.3, mid −126.0, cuff −113.0. Max row step
+11.2/10.4 mm (the slope limit never binds — the own-medians field is SMOOTHER
+than v5's). Dropped feature rings (sole/heel edges): −49..−47. Build gates:
+taper calf/thigh 0.781 (gate 0.6–0.88), ankle/calf 0.514, front taper 1.300
+(≤ 1.35), SLIVER after finish_lowpoly 46/9461 = 0.4862% ≤ 0.65% (no
+re-banding), low-poly WINDING 0/0.
+
+**Why no ship.** The delivered-mesh WINDING gate fails: 11 same-direction
+edges BEFORE repair, 42 AFTER (v5's build: 0/0). All 42 edges sit on the LEFT
+side, x −0.17…−0.01, z −0.32…−0.46 — the left hip/gusset/bib-hem membrane
+region, the same neighbourhood as the pass-4 dangling fin. Two treatments of
+the fin tried (collapse — worse, and the build crashed on it; delete the fin
+— the reported state) and the 11 pre-repair conflicts persist either way, so
+the trigger is the v6 field's changed geometry reaching `close_boundary`
+pre-export, not the fin handling itself. With a hard gate red there is no
+export, so no glb, and the game-side gates (leg-axis G1/G2/G3, boots.spec
+ANKLE-ANCHOR + NC6, look suite, ASSET_V/tags flip) were NOT run — the ship
+set is simply not reachable this iteration.
+
+**Verification (default tree, v100).** unit PASS (81/81 class), golden 30/30,
+no recapture; `git diff` touches only `blender/build_body.py` and this file;
+assets/, game.js, index.html byte-identical to HEAD (the LEG_RECEN and
+close_boundary changes are no-ops on the default build — LEG_RECEN is
+env-gated off; the close_boundary branch only executes when a hem loop fills
+to nothing, which never happened on v100's geometry).
+
+**Open.** (1) Root-cause the winding burst: why does a foot-row-only offset
+change (sole moves ~85 mm instead of riding the ankle row's ~96 mm) surface
+11 inside-out edges at the LEFT hip/hem 0.5 m above? Suspects: the
+gusset/single-texel membrane or the crotch-web cut interacting with the
+changed `_diag` lateral medians that LEG_AXIS_PIN stashes (build log line
+`LEGRECEN lowerLegL: dx med −18.4` vs v5's −19.3 — a 1 mm lateral shift of
+the pin), or a latent left/right asymmetry the smoother field finally
+exposes. (2) 282 = BOOTS/SUIT POLISH (271 spec) per the queue once the v6
+ship lands.
+
+**Open questions for the reviewer:**
+1. Is the WINDING failure's trigger in scope to fix by exempting the
+   re-centred field's rows from the LEG_AXIS_PIN lateral stash (the 1 mm dx
+   change is the only measured delta near the failure region), or should 282
+   first bisect close_boundary stages on the flag-on build (each stage logs;
+   one build per bisect step)?
+2. The 119 mm dangling fin at pre-export pass 4 is new with v6 — is deleting
+   it (current treatment) acceptable, or should the hem membranes' overlap
+   that produces it be closed upstream?

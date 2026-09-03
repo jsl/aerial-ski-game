@@ -6289,12 +6289,13 @@ def suit_shell(body, joints):
             # the median is robust anyway, this keeps the rows honest)
             if v.co.x * c.x < 0 or math.hypot(v.co.x - c.x, v.co.y - c.y) < 0.02:
                 continue
-            # v3 (SLOT 277, the 23:40 ruling on 276): the legacy hidden
-            # boot/sole pieces below the ankle station are geometry, not a
-            # tube cross-section — they never enter the row population (their
-            # rows ride the ankle row below anyway).
-            if v.co.z < bl('lowerLeg' + nm[-1]).z - SEGMENTS['lowerLeg' + nm[-1]]['h'] / 2 + 0.02:
-                continue
+            # SLOT 281 (v6, the 01:00 ruling on 279): rows BELOW the ankle
+            # station KEEP THEIR OWN smoothed medians — the foot was correctly
+            # seated in v100 (its own offset ~-0.05 relative to the boot
+            # centre), so the foot must not ride the ankle row's ~-0.11 field
+            # (that is what slid the foot inside the boot on the v5 build).
+            # The feature-ring drop and the 25 mm/row slope limit below carry
+            # the field from the ankle row down to the sole smoothly.
             rows[nm].setdefault(int(math.floor(v.co.z / SHELL_DZ)), []).append(
                 (v.co.x - c.x, v.co.y - c.y))
         # v3 (SLOT 277, the 23:40 ruling on 276): a SMOOTH offset field.
@@ -6375,18 +6376,19 @@ def suit_shell(body, joints):
                     if ks:
                         kk = min(ks, key=lambda x: abs(x - k))
                         out[k] = smk[kk]
-            # rows below the ankle station follow the ankle row (the foot
-            # rides with the ankle; its own row medians measure the foot's
-            # forward reach, not a tube offset)
-            side = nm[-1]
-            _ank = bl('lowerLeg' + side)
-            _ka = int(math.floor((_ank.z - SEGMENTS['lowerLeg' + side]['h'] / 2
-                                  + 0.02) / SHELL_DZ))
-            if ks:
-                _ref = min(ks, key=lambda x: abs(x - _ka))
-                for k in list(out):
-                    if k <= _ka:
-                        out[k] = out[_ref]
+            # SLOT 281 (v6): NO ride-the-ankle override — every row keeps its
+            # own smoothed, slope-limited median (the ruling: the foot rows'
+            # own medians seat the foot as in v100; the 25 mm/row limit
+            # carries the field from the ankle row down to the sole).
+            # Per-row offsets from the sole to the cuff top (fore-aft y,
+            # toe axis -y; the applied shift is -(o - T) after the T below):
+            if nm.startswith('lowerLeg') and ks:
+                _cz = bl('lowerLeg' + nm[-1]).z
+                _top = int(math.floor((_cz + SEGMENTS['lowerLeg' + nm[-1]]['h'] / 2) / SHELL_DZ))
+                _rows = ' '.join(
+                    f'{k * SHELL_DZ * 1000:+.0f}mm:{out[k][1] * 1000:+.1f}'
+                    for k in sorted(out) if k <= _top)
+                log(f'  LEGRECEN {nm} row offsets (z:mm -> oy mm): {_rows}')
             sm[nm] = out
         for nm in leg_segs:
             sm.setdefault(nm, {})
@@ -7440,6 +7442,19 @@ def close_boundary(mesh, tag):
         _before = {f: f.normal.copy() for f in _patch}
         bmesh.ops.recalc_face_normals(bm, faces=list(_ring))
         _flipped = sum(1 for f in _patch if f.normal.dot(_before[f]) < 0)
+        if not _patch:
+            # SLOT 281: a 1-2 edge 'loop' (a dangling boundary edge, e.g.
+            # where the double-walled hem interpenetrates) fills to nothing —
+            # collapse it here, the same treatment the post-pass cleanup
+            # applies, instead of crashing on the empty-patch log below.
+            if len(_edges) <= 2:
+                bmesh.ops.delete(bm, geom=list(_edges), context='EDGES')
+                log(f'  close_boundary[{tag}] pass {_pass}: dangling '
+                    f'{len(_edges)}-edge rim deleted (fin), no membrane')
+                continue
+            raise SystemExit(
+                f'[body] close_boundary[{tag}]: hem loop span {_span:.3f} '
+                f'n={len(loop)} filled to NOTHING (both fills failed)')
         # Fable v3: a flat fill reads as a caved-in patch; a trouser seat is
         # convex. Dome the interior outward along the (now consistent) patch
         # normal, amplitude 0.14 x span at the centre, feathered to the rim.
@@ -7596,6 +7611,15 @@ def orient_consistent(mesh, tag):
         bm = bmesh.new()
         bm.from_mesh(mesh.data)
     after = _winding_conflicts(bm)
+    if after:
+        _locs = []
+        for e in bm.edges:
+            if len(e.link_faces) == 2:
+                l0, l1 = e.link_loops[0], e.link_loops[1]
+                if l0.vert == l1.vert:
+                    c = (e.verts[0].co + e.verts[1].co) * 0.5
+                    _locs.append(f'({c.x:+.3f},{c.y:+.3f},{c.z:+.3f})')
+        log(f'WINDING edge locations ({len(_locs)}): {" ".join(_locs[:40])}')
     bm.free()
     log(f'WINDING [{tag}]: {before} same-direction edge(s) before, '
         f'{after} after '
