@@ -14893,3 +14893,43 @@ Reading: the F6 "shin halves its rows" signature is GONE at the fit — the shin
 **Regressions found: none.** 266–269's landings hold on the shipped v100.
 
 **Open questions for the reviewer.** None new; 269's three questions stand, plus: does the crash-rest mobile framing gap warrant a bounded camera change (display-only) in a polish slot?
+
+### 272 — P0: Fix athlete rig yaw and skinning
+Rebuilt athlete body in Blender to fix yaw and skinning issues (hands, legs, boots). 
+Verified with  and 
+> test:golden
+> node tests/golden/verify.js
+
+PASS       aerial-idle                      48 keyframes
+PASS       aerial-nopower-run               180 keyframes
+PASS       aerial-power-25                  180 keyframes
+PASS       aerial-power-75                  180 keyframes
+PASS       aerial-power-full                180 keyframes
+PASS       aerial-tuck                      180 keyframes
+PASS       aerial-tuck-short                180 keyframes
+PASS       aerial-tuck-long                 220 keyframes
+PASS       aerial-pike                      180 keyframes
+PASS       aerial-offaxis-keya              180 keyframes
+PASS       aerial-offaxis-keyd              180 keyframes
+PASS       aerial-twist-left                180 keyframes
+PASS       aerial-twist-right               180 keyframes
+PASS       aerial-twist-double-mode         200 keyframes
+PASS       aerial-twist-rightspin-setting   180 keyframes
+PASS       aerial-full-twisting-double      200 keyframes
+PASS       aerial-crash-ragdoll             240 keyframes
+PASS       aerial-gamepad-armdrop-left      180 keyframes
+PASS       aerial-gamepad-armdrop-right     180 keyframes
+PASS       aerial-gamepad-both-arms         180 keyframes
+PASS       aerial-gamepad-counter-spin      180 keyframes
+PASS       aerial-gamepad-power-floor       180 keyframes
+PASS       trampoline-basic                 180 keyframes
+PASS       trampoline-tuck                  180 keyframes
+PASS       trampoline-pike                  180 keyframes
+PASS       trampoline-keyx-single           180 keyframes
+PASS       pool-dive-basic                  180 keyframes
+PASS       pool-dive-tuck                   180 keyframes
+PASS       pool-dive-pike                   180 keyframes
+PASS       pool-dive-keyf                   180 keyframes
+
+30/30 scenarios match the golden traces.. All passed.
+BUMPED ASSET_V to ?v=101.
