@@ -117,9 +117,32 @@ async function forensics(page, world, opts) {
                     rT: R ? R.t : null,
                     rollAt: R ? R.rollAt : null,
                     lieDur: R ? R.lieDur : null,
+                    // 294: body-centre clearance + hinge states for the
+                    // lie-down t→clearance curve.
+                    coreClear: R ? R.coreClear : null,
+                    hinge: R ? R.hinge : null,
                     slope: +slope.toFixed(4),
                     maxSpeed: R ? R.maxSpeed : null,
                 });
+                // 294: joint-rate accumulator on the SIM clock (the ruled
+                // two-phase gate: 220°/s in the 1.0 s window after the
+                // tumble→roll hand-over, then 90°/s). Summary only — the
+                // per-frame angles stay out of the dump.
+                if (R && R.ang && R.rollAt != null && R.t != null) {
+                    const J = window._fgDump.jr || (window._fgDump.jr =
+                        { prev: null, early: 0, earlyJ: '', late: 0, joint: '' });
+                    if (J.prev) {
+                        const dts = Math.max(1e-3, R.t - J.prev.t);
+                        const early = (R.t - R.rollAt) <= 1.0;
+                        for (const k of Object.keys(R.ang)) {
+                            const w = Math.abs(R.ang[k] - (J.prev.ang[k] || 0)) / dts;
+                            if (early) {
+                                if (w > J.early) { J.early = w; J.earlyJ = k; }
+                            } else if (w > J.late) { J.late = w; J.joint = k; }
+                        }
+                    }
+                    J.prev = { t: R.t, ang: Object.assign({}, R.ang) };
+                }
                 const started = Wp && (Wp.phase === 'walk' || Wp.phase === 'done');
                 if ((started && F.frames.length > F.walkStart + 30) ||
                     now - F.impactT > 15_000) { F.finished = true; return; }
@@ -230,6 +253,9 @@ async function forensics(page, world, opts) {
         }
         return { world: window._getGameState().world || null,
             impactSpeed: window._crashImpactSpeed(),
+            jointRates: F.jr ? { early: +F.jr.early.toFixed(3),
+                earlyJ: F.jr.earlyJ || '', late: +F.jr.late.toFixed(3),
+                joint: F.jr.joint || '' } : null,
             nFrames: F.frames.length,
             walkStartIndex: F.walkStart ?? null,
             jump, top5, slideStats, byWalk,
@@ -388,9 +414,33 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
             `lowClear[min=${Math.min(...lc)} max=${Math.max(...lc)}] ` +
             `restAt=${tRest} getupS=${getupS.toFixed(2)} ` +
             `maxSep=${m.maxSep.d} maxBootSep=${m.maxBootSep.d} ` +
-            `maxLLJump=${m.maxLLJump.d} maxTargetSep=${m.maxTargetSep.d}`);
+            `maxLLJump=${m.maxLLJump.d} maxTargetSep=${m.maxTargetSep.d} ` +
+            `jointRates=${JSON.stringify(m.jointRates)}`);
+        // 294 curve: t→clearance at 0.25 s steps from the tumble end
+        // (rollAt), body-centre (coreClear) and worst particle (maxClear),
+        // plus the hinge states at each step.
+        const curve = [];
+        for (const b of [0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0]) {
+            const at = lieFrames.filter((f) => f.rT - f.rollAt <= b);
+            const f = at.length ? at[at.length - 1] : null;
+            curve.push(`${b.toFixed(2)}s:core=${f && f.coreClear != null ? f.coreClear.toFixed(3) : 'n/a'}` +
+                `/max=${f && f.maxClear != null ? f.maxClear.toFixed(3) : 'n/a'}` +
+                `${f && f.hinge ? `/hinge=${f.hinge.kneeL[0]}${f.hinge.kneeR[0]}${f.hinge.elbL[0]}${f.hinge.elbR[0]}` : ''}`);
+        }
+        console.log(`[lie-v4-curve] ${world} ` + curve.join(' '));
         require('fs').writeFileSync(
             path.join(OUT, `forensics_liev4_${world}.json`), JSON.stringify(m, null, 1));
+        // ── 294 PROFILE (ruling on 293; log-only — the bar is NOT earned:
+        // the in-window knee whip below lives in the pre-freeze
+        // keep-falling phase (293 code, sim-identical by construction —
+        // both spikes sit inside windows ending before their freeze:
+        // double freeze +4.08 s, triple +1.63 s), so the default stays
+        // OFF per the slot's fallback. Next slot owns the whip.)
+        const downBy2 = lieFrames.find((f) => f.rT - f.rollAt <= 2.0 &&
+            f.coreClear != null && f.coreClear <= 0.08);
+        console.log(`[lie-v4-bar] ${world} coreDownBy2s=${downBy2 ? (downBy2.rT - downBy2.rollAt).toFixed(2) + 's' : 'MISS'} ` +
+            `jointEarly=${m.jointRates ? m.jointRates.early.toFixed(2) + '/' + m.jointRates.earlyJ : 'n/a'} ` +
+            `jointLate=${m.jointRates ? m.jointRates.late.toFixed(2) + '/' + m.jointRates.joint : 'n/a'}`);
     });
 }
 

@@ -3333,6 +3333,17 @@ void main(void) {
                      return _mc === -Infinity ? null : +_mc.toFixed(4);
                  })(),
                  lieDur: ragdoll.lieDur !== undefined ? ragdoll.lieDur : null,
+                // 294: the body-CENTRE clearance (torso particle vs the
+                // crash floor) for the lie-down t→clearance curve, plus
+                // the hinge states the 261 gates classify (propped chains
+                // keep falling — no chain-support exemption in the ease).
+                coreClear: (function () {
+                    const _a = ragdoll.byName.torsoTop, _b = ragdoll.byName.torsoBottom;
+                    if (!_a || !_b) return null;
+                    const _my = (_a.p.y + _b.p.y) / 2, _mz = (_a.p.z + _b.p.z) / 2;
+                    return +(_my - (_crashFloorY(_mz) + (_a.r + _b.r) / 2)).toFixed(4);
+                })(),
+                hinge: ragdoll._lieHinge || null,
                  // HT#13 (2026-08-30): ski rest offsets from the eject point.
                  skis: (ragdoll.skis || []).map((s) => ({
                      dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),
@@ -6889,6 +6900,50 @@ void main(void) {
     // 0.8 x gate-omega x its shortest stick (the lever it rotates about),
     // 200 deg/s in the ruled first-1.0 s window, 90 deg/s after. The hard
     // sticks re-project below keep the joints within 2 cm.
+    // 294 (ruling on 293; 261 Q1): ruled 0.5 m/s floor easing on EVERY
+    // particle that is not ground-supported, for the v4 frozen tail (293
+    // measured the rigid tail re-propping to 0.53 m at the landing→out-run
+    // roll-out with no drain running). Support is per-particle ONLY
+    // (gap <= 0.02, the codebase contact epsilon): the 261 hinge gates on
+    // knee/elbow clearance decide "propped" vs "falling", and a propped
+    // chain with a grounded ankle is NOT supported — it keeps falling at
+    // the hinge (no chain-support exemption). The hard sticks re-project
+    // below, so joints stay within 2 cm while chains fold at contacts.
+    // Skipped for the #20 NC (looseGroundRest lowers NOTHING) and the v4
+    // NC (_crashLieDisabled freezes the propped crumple at hand-over).
+    const _crashLieFloorEase = function (R, dt) {
+        if (R.looseGroundRest) return;
+        const _gapOf = function (name) {
+            const pt = R.byName[name];
+            return pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
+        };
+        // Hinge states for the forensics curve (261 ruling): 'down' (the
+        // hinge is at the snow), 'propped' (hinge high on a grounded
+        // distal end — keeps falling), 'falling' (unsupported, easing).
+        const _hinge = function (mid, dist) {
+            const _m = _gapOf(mid), _d = _gapOf(dist);
+            if (_m <= 0.02) return 'down';
+            if (_m > 0.08 && _d <= 0.05) return 'propped';
+            return 'falling';
+        };
+        R._lieHinge = {
+            kneeL: _hinge('kneeL', 'ankleL'), kneeR: _hinge('kneeR', 'ankleR'),
+            elbL: _hinge('elbowL', 'wristL'), elbR: _hinge('elbowR', 'wristR'),
+        };
+        for (const pt of R.parts) {
+            const _tY = _crashFloorY(pt.p.z) + pt.r;
+            if (pt.p.y - _tY <= 0.02) continue;
+            pt.p.y = Math.max(_tY, pt.p.y - 0.5 * dt);
+        }
+        for (const hp of R.hard) {
+            const a = hp.a.p, b = hp.b.p;
+            const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+            const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+            const k = (l - hp.rest) / l * 0.5;
+            a.x += dx * k; a.y += dy * k; a.z += dz * k;
+            b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+        }
+    };
     const _crashLieDrain = function (R, dt, wCapDeg) {
         if (!R._leverDone) {
             R._leverDone = true;
@@ -7522,6 +7577,11 @@ void main(void) {
                     // v4 frozen tail: the pose is set (every joint rate went
                     // under 30 deg/s, or the lieDisabled NC froze at
                     // hand-over) — the rigid piece just rides the slide.
+                    // 294: the rigid ride re-propped to 0.53 m at the
+                    // roll-out (293) — keep the ruled 0.5 m/s floor easing
+                    // running in the tail so the frozen body conforms
+                    // instead of pivoting on its middle. Both NCs skip
+                    // it (inside _crashLieFloorEase / the flag check).
                     let _lift = 0;
                     for (const pt of R.parts) {
                         pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
@@ -7532,6 +7592,7 @@ void main(void) {
                     if (_lift > 0) {
                         for (const pt of R.parts) pt.p.y += _lift;
                     }
+                    if (_crashLieV4() && !_crashLieNC()) _crashLieFloorEase(R, dt);
                     R.maxSpeed = _vH;
                 } else {
                     // v4 KEEPS FALLING: the slide translation moves the whole
