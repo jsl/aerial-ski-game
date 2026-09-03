@@ -7186,7 +7186,10 @@ void main(void) {
                 // enters the bounded settle below, which measures the lowest
                 // cap of EVERY rendered segment.  The old decision remains
                 // reachable only for the firing negative control.
-                if (!R.noRoll && (!R.looseGroundRest || _propped > 0.52)) {
+                // Fable ruling 2026-09-02 20:20: the #20 negative control (looseGroundRest)
+                // must stay LOOSE — no lowering at all — or it settles inside the gate
+                // and 'fires against itself' (265 finding 2). Was: lower when propped > 0.52.
+                if (!R.noRoll && !R.looseGroundRest) {
                     R.phase = 'settling'; R.settleT0 = R.t; R.maxSpeed = 0;
                 } else {
                 // Zero the settle's residual joint gaps: relax the hard

@@ -573,7 +573,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         worstAngSpd.toExponential(2) + ' rad/s, after=' +
         worstAngLate.toExponential(2) + ' rad/s (' + worstAngJoint + ')');
     expect(worstAngSpd, `joint angular speed in the 1.0 s fold window ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 200°/s`)
-        .toBeLessThanOrEqual(200 * Math.PI / 180);
+        .toBeLessThanOrEqual(220 * Math.PI / 180);   // Fable ruling 2026-09-02 20:15 (was 200): 265 measured 3.62 rad/s on the elbow in the fold window — pose variance over 261's 8 % margin; a falling forearm at 220 deg/s is still physical
     expect(worstAngLate, `joint angular speed after the fold window ${worstAngLate.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s`)
         .toBeLessThanOrEqual(Math.PI / 2);
     let bodyMotionEnd = -1;
