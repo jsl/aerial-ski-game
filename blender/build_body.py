@@ -6291,29 +6291,44 @@ def suit_shell(body, joints):
                 continue
             rows[nm].setdefault(int(math.floor(v.co.z / SHELL_DZ)), []).append(
                 (v.co.x - c.x, v.co.y - c.y))
+        # v2 (SLOT 276, the 23:30 ruling on 274): the 40 mm contaminated-row
+        # clamp is GONE — the row offsets are the signal, and the clamp was
+        # what turned the move into the 11 cm whole-block shift. Keep the
+        # 3-row low-pass; rows with < 6 verts take the NEAREST kept row; rows
+        # BELOW the ankle station (the foot inside the boot) use the ankle
+        # row's offset — the foot moves with the ankle, not to its own median.
         med = {}
         for nm, rk in rows.items():
             med[nm] = {k: (_st.median(p[0] for p in rk[k]),
-                           _st.median(p[1] for p in rk[k]))
-                       for k in rk if len(rk[k]) >= 6}
+                           _st.median(p[1] for p in rk[k]),
+                           len(rk[k]))
+                       for k in rk}
         sm = {}
         for nm, mk in med.items():
-            ks = sorted(mk)
+            keep = {k: v for k, v in mk.items() if v[2] >= 6}
+            ks = sorted(keep)
             out = {}
             for j, k in enumerate(ks):
-                nb = [mk[x] for x in ks[max(0, j - 1):j + 2]]
+                nb = [keep[x][:2] for x in ks[max(0, j - 1):j + 2]]
                 out[k] = (sum(p[0] for p in nb) / len(nb),
                           sum(p[1] for p in nb) / len(nb))
-            # contaminated-row guard: a row whose median sits > 40 mm from
-            # the segment's own median-of-medians is not the tube (crotch
-            # sheet, glute fold) — clamp it to the segment median
-            seg = med[nm]
-            if seg:
-                mx = _st.median(v[0] for v in seg.values())
-                my = _st.median(v[1] for v in seg.values())
+            # rows with < 6 verts take the nearest kept row
+            for k, v in mk.items():
+                if v[2] < 6 and ks:
+                    kk = min(ks, key=lambda x: abs(x - k))
+                    out[k] = keep[kk][:2]
+            # rows below the ankle station follow the ankle row (the foot
+            # rides with the ankle; its own row medians measure the foot's
+            # forward reach, not a tube offset)
+            side = nm[-1]
+            _ank = bl('lowerLeg' + side)
+            _ka = int(math.floor((_ank.z - SEGMENTS['lowerLeg' + side]['h'] / 2
+                                  + 0.02) / SHELL_DZ))
+            if ks:
+                _ref = min(ks, key=lambda x: abs(x - _ka))
                 for k in list(out):
-                    if math.hypot(out[k][0] - mx, out[k][1] - my) > 0.04:
-                        out[k] = (mx, my)
+                    if k <= _ka:
+                        out[k] = out[_ref]
             sm[nm] = out
         for nm in leg_segs:
             sm.setdefault(nm, {})
