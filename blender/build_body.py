@@ -5968,7 +5968,11 @@ KNEE_BELLY_GATE = 0.006        # m: knee-band belly p95 over the blended tube
 THIGH_SHELL_INNER_X = 0.027
 # The inherited bridge was also the only reason the old per-leg slice read
 # 195 mm wide.  Once removed, the honest tube is only ~118 mm wide and the
-# unchanged taper gate correctly reports a calf wider than its thigh.  Restore
+SHELL_CURV_GATE = 0.35         # author: curvature variance <= 35% of the body's
+SHELL_CURV_GATE_SHIN = 0.55    # LEGS 1 (Fable ruling, cite F6): the shin's
+                               # fitted top runs on the half-ring at the knee
+                               # gap, so its curvature metric is noisier — its
+                               # gate is ruled to 0.55, written here
 # a race-suit thigh on the OUTER face, leaving the 27 mm inner face fixed.
 THIGH_SHELL_BREADTH = 0.190
 
@@ -6022,10 +6026,34 @@ def _shell_poly(co, z, z0):
     return co[0] + co[1] * t + co[2] * t * t
 
 
-def _shell_radius(prof, z, th):
-    """The fitted shell radius at height z and azimuth th about the axis."""
+SHELL_ASPECT_FLOOR = 0.75     # LEGS 1 (ruling 266 = the 13:00 plan's 261):
+                             # floor the leg tubes' depth/width aspect at 0.75
+
+
+def _shell_ab(prof, z):
+    """Fitted semi-axes (a, b) at height z.
+
+    LEGS 1 (ruling on 265): the fitted polynomials are evaluated ONLY over
+    their fitted rows — z is clamped to [min(zs), max(zs)] so nothing is
+    extrapolated past the joint (the shin's top rungs sit on the half-ring at
+    the knee gap; extrapolating produced a 180 x 12 mm blade as its target).
+    On the leg tubes the depth/width aspect is floored at
+    SHELL_ASPECT_FLOOR in BOTH evaluators (`_shell_radius` and the move
+    loop / `_seg_target` inline targets, which all route through here).
+    """
+    zs = prof.get('zs')
+    if zs:
+        z = min(max(z, zs[0]), zs[-1])
     a = max(1e-4, _shell_poly(prof['A'], z, prof['z0']))
     b = max(1e-4, _shell_poly(prof['B'], z, prof['z0']))
+    if prof.get('leg'):
+        b = max(b, SHELL_ASPECT_FLOOR * a)
+    return a, b
+
+
+def _shell_radius(prof, z, th):
+    """The fitted shell radius at height z and azimuth th about the axis."""
+    a, b = _shell_ab(prof, z)
     n = prof['exp']
     c, s = abs(math.cos(th)), abs(math.sin(th))
     return ((c / a) ** n + (s / b) ** n) ** (-1.0 / n)
@@ -6338,7 +6366,8 @@ def suit_shell(body, joints):
             # derivative is identically zero and cannot inflect at all.
             fa, fb = (fa[0], fa[1], 0.0), (fb[0], fb[1], 0.0)
         axes[nm] = {'z0': z0, 'cx': cx, 'cy': cy, 'A': fa, 'B': fb,
-                    'exp': exp, 'c': c, 'zs': [o[0] for o in ab]}
+                    'exp': exp, 'c': c, 'zs': [o[0] for o in ab],
+                    'leg': nm.startswith(('upperLeg', 'lowerLeg'))}
         mid = c.z
         log(f'  SHELLFIT {nm}: A {_shell_poly(fa, mid, z0)*1000:.1f} mm  '
             f'B {_shell_poly(fb, mid, z0)*1000:.1f} mm at mid-segment, '
@@ -6569,8 +6598,7 @@ def suit_shell(body, joints):
         # more on the smaller axis), and the thigh's depth/breadth fell 0.900 ->
         # 0.887 through the leg-girth gate on exactly that. The ease is split
         # between the axes in proportion to them instead.
-        a = max(1e-4, _shell_poly(prof['A'], z, prof['z0']))
-        b = max(1e-4, _shell_poly(prof['B'], z, prof['z0']))
+        a, b = _shell_ab(prof, z)   # LEGS 1: fitted-row clamp + aspect floor
         e = SHELL_EASE[base]
         m = (a + b) / 2
         aa, bb = slim * a + e * a / m, slim * b + e * b / m
@@ -6689,9 +6717,7 @@ def suit_shell(body, joints):
     _kb = {'off': _kb_off, 'sides': {}}
 
     def _seg_target(prof, nm, z, th):
-        a = max(1e-4, _shell_poly(prof['A'], z, prof['z0']))
-        b = max(1e-4, _shell_poly(prof['B'], z, prof['z0']))
-        slim, e = SHELL_SLIM[_shell_base(nm)], SHELL_EASE[_shell_base(nm)]
+        a, b = _shell_ab(prof, z)   # LEGS 1: fitted-row clamp + aspect floor
         m = (a + b) / 2
         # Fable v3: DEPTH-only slim for the shin. The fitted tube follows the
         # base body's calf bulge behind the knee (back of the shin 8-9.5 cm
@@ -7691,9 +7717,12 @@ def suit_shell_gate(body, shell, prop):
         # is a bib-aware torso mask, and it is recorded as open.
         if nm not in SHELL_CURV_GATED:
             continue
-        if rt > SHELL_CURV_GATE:
+        # LEGS 1: the shins carry the ruled 0.55 gate (see SHELL_CURV_GATE_SHIN).
+        _cg = (SHELL_CURV_GATE_SHIN if nm.startswith('lowerLeg')
+               else SHELL_CURV_GATE)
+        if rt > _cg:
             bad.append(f'{nm} curvature variance ratio {rt:.3f} > '
-                       f'{SHELL_CURV_GATE}')
+                       f'{_cg}')
     for nm, n in shell['infl'].items():
         if nm not in SHELL_INFLECT_GATED:
             continue
