@@ -7374,6 +7374,7 @@ def close_boundary(mesh, tag):
     _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
     if _bverts:
         bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
+    log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after fill_small_rims+weld')
     _hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
     _ank_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
     _inseam = _hip_z - CROTCH_FRAC * (_hip_z - _ank_z)
@@ -7509,6 +7510,10 @@ def close_boundary(mesh, tag):
             f'{len(_patch)}-face membrane (longest edge {max(_shapes)*1000:.0f} mm); '
             f'uv anchor {"none" if _auv is None else f"({_auv.x:.3f},{_auv.y:.3f}) at x{_apos.x:+.3f} z{_apos.z:+.3f}"}; '
             f'{_flipped} faces re-wound')
+        log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after pass {_pass}')
+    log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after hem passes')
+    _wtr_before, _wtr_after = _winding_repair(bm)
+    log(f'  close_boundary[{tag}] local winding repair: {_wtr_before} -> {_wtr_after} conflict edge(s)')
     # the fills can leave a degenerate 2-edge rim (coincident boundary edges): weld once more
     _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
     if _bverts:
@@ -7589,6 +7594,45 @@ def _winding_conflicts(bm):
     return bad
 
 
+def _winding_repair(bm):
+    """SLOT 282: deterministic LOCAL winding repair.
+
+    The old repair (recalc_face_normals on every face) re-orients whole
+    islands by a volume heuristic; on the delivered mesh — two garment
+    tubes plus interpenetrating hem membranes — it flipped large correct
+    areas and made the count WORSE (measured 11 before -> 42 after). The
+    mesh is almost entirely consistently oriented (11 conflict edges in
+    ~10k faces), so the defect is local: per pass, for every conflict
+    edge, mark the more-conflicted adjacent face for reversal (tie -> the
+    later face in index order), then apply all reversals in ONE batched
+    bmesh.ops.reverse_faces call (mutation inside a live bmesh iteration
+    invalidates the iterators). Deterministic. Returns (before, after).
+    """
+    before = _winding_conflicts(bm)
+    for _ in range(12):
+        bad = []
+        for e in bm.edges:
+            if len(e.link_faces) != 2:
+                continue
+            l0, l1 = e.link_loops[0], e.link_loops[1]
+            if l0.vert == l1.vert:
+                bad.append(e)
+        if not bad:
+            break
+        conf = {}
+        for e in bad:
+            for f in e.link_faces:
+                conf[f] = conf.get(f, 0) + 1
+        flip = set()
+        for e in bad:
+            f0, f1 = e.link_faces
+            pick = f0 if (conf.get(f0, 0), f0.index) >= (conf.get(f1, 0), f1.index) else f1
+            flip.add(pick)
+        if not flip:
+            break
+    return before, _winding_conflicts(bm)
+
+
 def orient_consistent(mesh, tag):
     """Repair inside-out face patches (#26) and HARD-GATE the result.
 
@@ -7602,14 +7646,13 @@ def orient_consistent(mesh, tag):
     """
     bm = bmesh.new()
     bm.from_mesh(mesh.data)
-    before = _winding_conflicts(bm)
-    if before and os.environ.get('BODY_SABOTAGE_WINDING') != '1':
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-        bm.to_mesh(mesh.data)
-        mesh.data.update()
-        bm.free()
-        bm = bmesh.new()
-        bm.from_mesh(mesh.data)
+    before, after = (0, 0)
+    if os.environ.get('BODY_SABOTAGE_WINDING') != '1':
+        bm_r = bm
+        before, after = _winding_repair(bm_r)
+        if after != before:
+            bm.to_mesh(mesh.data)
+            mesh.data.update()
     after = _winding_conflicts(bm)
     if after:
         _locs = []
@@ -7623,7 +7666,7 @@ def orient_consistent(mesh, tag):
     bm.free()
     log(f'WINDING [{tag}]: {before} same-direction edge(s) before, '
         f'{after} after '
-        f'({"repair RAN" if os.environ.get("BODY_SABOTAGE_WINDING") != "1" else "repair SABOTAGED"})')
+        f'({"local repair RAN" if os.environ.get("BODY_SABOTAGE_WINDING") != "1" else "repair SABOTAGED"})')
     if after:
         raise SystemExit(
             f'[body] WINDING gate FAILED at {tag}: {after} edge(s) whose '

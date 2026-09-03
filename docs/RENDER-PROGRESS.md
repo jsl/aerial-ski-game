@@ -521,6 +521,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 282 | **LEGS RE-CENTRE v6b (the 01:30 ruling's slot): determinism test PASS (two flag-on builds identical — pipeline deterministic, winding 11→42 identical in both); close_boundary bisected with per-pass traces — ALL conflicts born in hem pass 0; band NON-ORIENTABLE by local flips (greedy holds 11→11, exact orientation 61, both reverted/kept honestly); NEW deterministic batched local repair replaces the island recalc (11 held vs 42) with NC semantics intact; DEFAULT v100 green (0/0, export OK), flag-on gate RED at 11 → env-gated, NO SHIP, ASSET_V 100. unit 81/81, golden 30/30. Open: topological fix (delete the double-wall overlap) proposed for 283.** | entry 282. |
 | — | Iteration 276 | **LEGS RE-CENTRE v2 (the 23:30 ruling's slot): the acceptance instrument `tests/drive/leg-axis.spec.js` LANDED and is RED on v100 exactly as mandated (G1 +0.072/+0.073, G2 bands fire, NC +0.07 fires); the v2 mechanism as specced (clamp removed, nearest-row fill, ankle-follow) FAILS the build's SLIVER gate (103/9864 = 1.04% vs 0.65%) — shear at the cuff/sole feature rings where adjacent-row offsets step ~60 mm; landed env-gated DEFAULT-OFF with the numbers, asset NOT shipped, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: feature-ring exclusion or 2-row blend at the ankle station for a v3.** |
 | — | Iteration 277 | **LEGS RE-CENTRE v3 (the 23:40 ruling's slot): feature-ring + boot/sole exclusion from the population, 5-row box ×2, 15 mm/row slope limit — the field is SMOOTH and the SLIVER gate PASSES (49/9464 = 0.5178% ≤ 0.65% WITHOUT re-banding; 276 was 1.0442%); max row step capped at 15.0 mm; dropped rings logged. leg-axis still RED on the shipped probe: G1 +0.042/+0.044 (v100 +0.072 — real progress, gate 0.03), G2 bands 0.041–0.055, G3 −0.075/−0.071 (boot block-shift guard) ⇒ per the fallback rule landed env-gated DEFAULT-OFF, asset reverted, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: smooth-field class exhausted; G1 vs G3 needs a different mechanism (LEGS 3/4 ruling).** | entry 277. |
 | — | Iteration 274 | **ULTRA pass (272 spec verbatim): all three re-centre gates resolved AT SOURCE in `blender/build_body.py`, mechanism stays env-gated, NO asset shipped. (1) KNEE_BLEND_FIX was an algebraic no-op (weight-flip + lerp-flip cancel — both branches identical, blend inverted in both modes); corrected under the flag. (2) LEG_AXIS_PIN's lateral median was candidate-skewed −41 mm vs the cloud's −19 mm (near-axis exclusion eats the moved tube's centre); pin now uses the re-centre's own median when LEG_RECEN ran. Taper 0.938 → thigh 163 / calf 126 = 0.776, front 1.300 — bands untouched. (3) Locality 36 → 0 by written ruling (rigid w≥0.999 weights rotate exactly, zero smear; bands/limits/NC premise untouched). (4) NM variance 3.98 → 5.93 ≥ 5.9 with no bake change (balloon UV dilution). Ship-res flag-on build exports green (probe.glb in scratch, deleted after numbers). Default ship-res build = HEAD by the build's own numbers (taper 125/103, slivers 63/9742, NM 6.15, locality 0; 51/930672 bytes 1-ulp BIN noise). unit 81/81, golden 30/30 (no recapture). NOT done: ASSET_V stays 100; LEG-AXIS build gate + leg-axis.spec.js still to be created; boots.spec/look/close-ups BLOCKED (chromium SIGTRAPs at launch in this sandbox).** | entry 274. |
@@ -15207,3 +15208,69 @@ ship lands.
 2. The 119 mm dangling fin at pre-export pass 4 is new with v6 — is deleting
    it (current treatment) acceptable, or should the hem membranes' overlap
    that produces it be closed upstream?
+
+
+### 282 — LEGS RE-CENTRE v6b (the 01:30 ruling's slot): determinism test DONE (two builds IDENTICAL — the pipeline is deterministic), close_boundary bisected with per-pass traces — ALL delivered-mesh conflicts are born in hem pass 0, and the band is NON-ORIENTABLE by any local flip repair; deterministic local repair landed (better: 11 held vs 42), default v100 verified untouched, flag-on stays env-gated, NO SHIP
+
+**What changed.** `blender/build_body.py` only (additive except the replaced
+repair inside `orient_consistent`). (a) NEW `_winding_repair(bm)`: a
+deterministic LOCAL winding repair — per pass, for every conflict edge, mark
+the more-conflicted adjacent face for reversal (tie → later face index), then
+apply all reversals in ONE batched `bmesh.ops.reverse_faces` call (mutation
+inside a live bmesh iteration invalidates the iterators and hung two builds —
+the batched form is the fix). It replaces the global island-volume
+`recalc_face_normals` in `orient_consistent`, which on the flag-on build made
+the count WORSE (11 → 42). `BODY_SABOTAGE_WINDING=1` still skips the repair,
+so the negative control semantics are unchanged. (b) Per-pass conflict traces
+in `close_boundary` (after fill+weld, after each hem pass, after all passes)
+plus a post-hem `_winding_repair` call with its own log — the bisect
+instrument the ruling asked for. (c) Two exact-orientation variants were
+TRIED AND REVERTED (evidence in `scratch/iter-282/det*.log`): per-membrane
+seed-against-shell + BFS propagation (batched) reached 61 conflicts — worse
+than the ring recalc — and REGRESSED the DEFAULT build to 9, so the ring
+recalc stays.
+
+**Determinism test (a) of the ruling: PASS — deterministic.** Two flag-on
+ship-res builds from the same tree (`scratch/iter-282/det1.log`, `det2.log`):
+identical verts/faces, identical sliver counts, identical winding trajectory
+(11 before → 42 after) and IDENTICAL conflict-edge locations. The repair pass
+is not the entry-174 nondeterminism class; the ruling's branch (b) applies.
+
+**Bisect (b): the conflicts are born in `close_boundary` hem pass 0.**
+0 conflict edges after fill_small_rims+weld → pass 0 closes the span-0.281
+pelvis loop with the 212-face membrane + subdivide → 11 conflicts (ring
+recalc treatment). With exact orientation instead: 0 → 61. The nested passes
+1–5 add zero new conflicts. Conclusion: the pass-0 membrane + the pre-existing
+double-walled hem overlap form a band that is NON-ORIENTABLE by local rules —
+the greedy repair holds 11→11 (batched) and cannot reach 0 from any start
+state tried (11→14 unbatched, 61→62 from the exact-orientation state). This
+is a TOPOLOGY defect (membrane overlap), not a repair-order defect: another
+repair pass cannot fix it; the overlap interior must be deleted/merged before
+orientation.
+
+**Verification.** DEFAULT build (v100, ship res): WINDING 0/0, local repair
+no-op (before=0), watertight 0 boundary loops, glTF export OK — the default
+asset path is untouched. Flag-on build (`LEG_RECEN=1 LEG_AXIS_PIN=1
+KNEE_BLEND_FIX=1`): WINDING gate RED at 11 (same edges, left hip/hem), so no
+export, no ship; assets stay v100, ASSET_V stays 100, `assets/`, `game.js`,
+`index.html` untouched; env-gated default-off. unit **81/81**, golden
+**30/30** (no recapture — no physics/display change). The 119 mm fin
+(pass 4) behaviour unchanged from 281 (deleted, deterministic).
+
+**Open.** The concrete 283 fix: in `close_boundary` pass 0, BEFORE filling,
+make the hem manifold — weld/delete the interior faces of the double-wall
+overlap (the rim's 3+-face edges and the coincident boundary edges around
+x −0.17…−0.01, z −0.32…−0.46), then fill and orient; a manifold band orients
+exactly and the 11 disappear at the source. The magenta bib-hem patch (x
+540–562, owned per the 280 ruling) is untouched this iteration.
+
+**Open questions for the reviewer:**
+1. Is the topological route approved for 283 (delete/merge the double-wall
+   overlap interior in `close_boundary` pass 0 before fill+orient), or should
+   the nested membrane passes 1–5 be dropped instead (they add no conflicts
+   but they DO overlap the pass-0 membrane — possible source of the
+   double wall)?
+2. The 281 answer (Q2) asked whether the 119 mm fin is repair noise: the
+   determinism test shows it appears identically in both builds, so it is
+   GEOMETRY (the overlap), not repair noise — deletion stays acceptable only
+   as a temporary measure under the topological fix.
