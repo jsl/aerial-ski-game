@@ -14835,3 +14835,26 @@ Reading: the F6 "shin halves its rows" signature is GONE at the fit — the shin
 2. Leg-taper band [0.6, 0.88] vs the on-bone design's 0.884: re-band to ~0.93 (measured + 5 %, the 249/251 convention), or does LEGS 4 (272, proportions) own the re-fit of the taper bands wholesale?
 3. Confirm the pin-before-refit order is the intended reading of "(a) after SHELLFIT, replace the axis polynomials": pinning after the refit ships a tube that misses the leg by 8 cm (measured), so I read the ruling as pin-then-refit.
 4. The spec's (c) LEG AXIS build gate and (d) `tests/drive/leg-axis.spec.js` are NOT landed — no asset shipped, so there is nothing for the drive gate to gate yet. 269 should re-run this slot's (c)/(d) verbatim on top of the re-banded build.
+
+### 269 — LEGS 2c attempted (the 21:45 ruling): the rigid per-row re-centre BUILT and bisected — the full-shin move is geometrically right (inflections 0/0, SHELLCURV 0.116/0.109) but ships a reproducible Blender segfault in the sever-ring closer, and the sever-faded partial move fattens the fitted tube (taper 0.994); mechanism landed env-gated OFF (LEG_RECEN=1), no asset rebuilt, ASSET_V stays 100
+
+**Scope (`blender/build_body.py` only, `suit_shell` before the candidates loop):** per SHELL_DZ row (bone frame), median (dx, dy) of the suit-owned verts dominated by the segment, 3-row box low-pass along z, subtracted from every vert of the row — pure per-row translation, girth untouched; contaminated-row guard (a row median > 40 mm from the segment's median-of-medians is clamped); knee-blend and sever-fade variants bisected below. 268's pin untouched.
+
+**Bisect (probe builds, `scratch/iter-269/`; ship numbers at res 2048 where stated):**
+
+| build | shin fit A/B (mid) | SHELLCURV shins | INFLECT shins | shipped taper | verdict |
+|---|---|---|---|---|---|
+| HEAD (268, LEG_RECEN=0 = default) | 97.5/107.5 class | 0.357/0.332 | report-only 4/4 | 0.884 RED (268's block) | baseline |
+| full move, all four segments | upperLegR starved (3 sections), A-frame missing | — | — | — | thigh move onto bl() is wrong: the thigh's designed line is the A-frame `want_x` line, not the bl() hip station |
+| full move, shins only (no fades) | 43.9/30.5 | **0.116/0.109** | **0/0 GREEN** (the 268 instrument artifact GONE) | not reached | geometrically right; **Blender segfault rc 139** in `_close_boundary`/fill on the translated sever ring (z −0.762..−0.593, reproducible 3/3, both `triangle_fill(beauty)` and `contextual_create`) |
+| shins only + sever fade (0 above z −0.75) | 130–167 (fit fattened by the unmoved knee rows reading as 113 mm offsets) | 0.083/0.104 | 3/1 | **0.994 RED** (calf 161 vs thigh 162) | the partial move is incoherent with the pin-to-bone refit: unmoved rows read as fat radii |
+| thigh move included + sever fade | — | — | — | — | 31.0 mm leg-profile STEP at z −0.355: the thigh's per-row medians are contamination-dominated (max 46 mm vs an 11 mm median-of-medians — buttock/seat rows) |
+
+**Why nothing shipped:** the ruled mechanism (move the skin to the bone, fit finds cx/cy ≈ 0) is only coherent as a FULL-shin move, and that build dies in Blender's bmesh closer on the sever ring; every partial variant re-creates the fat-tube/taper class of defect the ruling rejected. Per the 267 revert rule the mechanism is committed DEFAULT-OFF (`LEG_RECEN=1` enables it; default build = HEAD behaviour, gates as HEAD), the asset is NOT rebuilt, **ASSET_V stays 100**, `assets/` untouched.
+
+**Verification on the committed tree:** unit 81/81; golden 30/30 (no recapture — no physics/display change); look NOT re-run (shipped asset identical to 267/268's v100). Evidence logs: `scratch/iter-269/{probe7,probe11,ship1}.log` — sweepable.
+
+**Open questions for the reviewer:**
+1. The segfault: a translated (rigidly moved) sever-ring segfaults Blender 5.2.1's bmesh `triangle_fill(beauty)` AND `contextual_create` (rc 139, pthread_once in the trace, 3/3 repro). Options: (a) move the ring verts RIGIDLY (one offset for the whole ring, not per-row) so the closer sees a congruent ring; (b) close the ring BEFORE the re-centre (re-order the pipeline); (c) re-band the closer away from bmesh ops. My reading: (a) is cheap and inside the ruling's spirit.
+2. Scope deviation, recorded: the ruling's four-segment move is not shippable as stated — the thigh's per-row medians measure the buttock/seat contamination, not a tube offset (46 mm max vs 11 mm median), and the thigh's authored line is the A-frame `want_x` line. Confirm the thigh is exempt (or that LEGS 4 proportions owns it).
+3. The taper negative control needs the ruling's reading confirmed: a correct girth-preserving re-centre moves the CLOUD, so the shipped taper calipers (which read the moved cloud about the pinned bone axis) go green only when the fit is re-fitted about the bone on the FULLY moved cloud — i.e. the taper can only be judged on the segfault-free full move (its number is unknown; the 0.884 and 0.994 readings are both partial-move artifacts).

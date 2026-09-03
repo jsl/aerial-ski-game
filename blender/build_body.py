@@ -6235,6 +6235,116 @@ def suit_shell(body, joints):
     ankle_z = {s: bl(f'lowerLeg{s}').z - SEGMENTS[f'lowerLeg{s}']['h'] / 2
                for s in ('L', 'R')}
 
+    # ── LEGS 2c (ruling on 268, slot 269): rigid per-row re-centre ──────────
+    # 268 pinned the shin AXIS to the bone and re-fitted the tube about it,
+    # which shipped a fat tube enclosing the offset cloud (calf 103 -> 143 mm,
+    # taper 0.884). The ruling: move the SKIN to the bone, not the tube's
+    # girth. For each leg segment, per SHELL_DZ row (bone frame), take the
+    # median (dx, dy) of the suit-owned verts dominated by that segment,
+    # low-pass the row offsets along z (3-row box), and subtract the smoothed
+    # offset from EVERY vert of the row — a pure translation per row, girth
+    # and relief untouched. Inside knee_z +/- 7 cm the applied offset blends
+    # between the thigh's and the shin's (no tear; the row offsets are
+    # continuous through the band by construction). This runs BEFORE the
+    # SHELLFIT loop, so the fit then finds cx/cy ~ 0 on its own; 268's pin
+    # stays as belt-and-braces. The taper band is the girth negative control:
+    # a correct re-centre changes NO girth. DEFAULT OFF this slot (LEG_RECEN=1
+    # enables): the full-shin move is blocked by a reproducible Blender
+    # segfault (rc 139) in the AFRAME sever-ring closer, and the partial
+    # (sever-faded) move fattens the fitted tube (taper 0.994 vs the 0.88
+    # band) — see the 269 entry. Default build = HEAD behaviour.
+    if os.environ.get('LEG_RECEN', '0') == '1':
+        import statistics as _st
+        leg_segs = ('upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR')
+        knee_z = (bl('upperLegL').z - SEGMENTS['upperLegL']['h'] / 2
+                  + bl('lowerLegL').z + SEGMENTS['lowerLegL']['h'] / 2) / 2
+        rows = {nm: {} for nm in leg_segs}
+        for i, v in enumerate(vs):
+            nm = dom[i]
+            if nm not in leg_segs:
+                continue
+            c = bl(nm)
+            # suit-owned only: drop the cross-centre crotch sheet and the
+            # near-axis crease (the same exclusions the candidate loop makes;
+            # the median is robust anyway, this keeps the rows honest)
+            if v.co.x * c.x < 0 or math.hypot(v.co.x - c.x, v.co.y - c.y) < 0.02:
+                continue
+            rows[nm].setdefault(int(math.floor(v.co.z / SHELL_DZ)), []).append(
+                (v.co.x - c.x, v.co.y - c.y))
+        med = {}
+        for nm, rk in rows.items():
+            med[nm] = {k: (_st.median(p[0] for p in rk[k]),
+                           _st.median(p[1] for p in rk[k]))
+                       for k in rk if len(rk[k]) >= 6}
+        sm = {}
+        for nm, mk in med.items():
+            ks = sorted(mk)
+            out = {}
+            for j, k in enumerate(ks):
+                nb = [mk[x] for x in ks[max(0, j - 1):j + 2]]
+                out[k] = (sum(p[0] for p in nb) / len(nb),
+                          sum(p[1] for p in nb) / len(nb))
+            # contaminated-row guard: a row whose median sits > 40 mm from
+            # the segment's own median-of-medians is not the tube (crotch
+            # sheet, glute fold) — clamp it to the segment median
+            seg = med[nm]
+            if seg:
+                mx = _st.median(v[0] for v in seg.values())
+                my = _st.median(v[1] for v in seg.values())
+                for k in list(out):
+                    if math.hypot(out[k][0] - mx, out[k][1] - my) > 0.04:
+                        out[k] = (mx, my)
+            sm[nm] = out
+        for nm in leg_segs:
+            sm.setdefault(nm, {})
+        # blended thigh<->shin through the knee band; nearest row off the ends
+        def _off(nm, k):
+            mk = sm[nm]
+            if k in mk:
+                return mk[k]
+            if not mk:
+                return (0.0, 0.0)
+            kk = min(mk, key=lambda x: abs(x - k))
+            return mk[kk]
+        _diag = {nm: (0.0, 0.0, 0) for nm in leg_segs}
+        for nm, mk in med.items():
+            if mk:
+                _diag[nm] = (_st.median(v[0] for v in mk.values()),
+                             _st.median(v[1] for v in mk.values()), len(mk))
+        moved = {nm: [0.0, 0.0, 0] for nm in leg_segs}
+        for i, v in enumerate(vs):
+            nm = dom[i]
+            if not nm.startswith('lowerLeg'):
+                continue
+            # SHINS ONLY this slot. The thigh's per-row medians are
+            # contamination-dominated (max 46 mm vs an 11 mm median-of-
+            # medians — buttock flare and seat rows, not tube offset) and
+            # moving them opens a 31.0 mm leg-profile STEP at z -0.355; the
+            # thigh's designed line is the A-frame want_x line, not the bl()
+            # hip station. Ruled four-segment scope recorded as a deviation
+            # in the entry. The knee blend is moot with one mover, so the
+            # shin takes its own smoothed row offset everywhere; the fade to
+            # 0 above the sever ring keeps that ring unmoved for the
+            # watertight closer.
+            k = int(math.floor(v.co.z / SHELL_DZ))
+            ox, oy = _off(nm, k)
+            t = _shell_sstep(((-0.75) - v.co.z) / 0.05)
+            ox, oy = ox * t, oy * t
+            if ox == 0.0 and oy == 0.0:
+                continue
+            v.co.x -= ox
+            v.co.y -= oy
+            m = moved[nm]
+            m[0] = max(m[0], math.hypot(ox, oy))
+            m[1] += math.hypot(ox, oy)
+            m[2] += 1
+        for nm in leg_segs:
+            m = moved[nm]
+            d = _diag[nm]
+            log(f'  LEGRECEN {nm}: {m[2]} verts moved, max offset '
+                f'{m[0]*1000:.1f} mm, mean {m[1]/max(m[2],1)*1000:.1f} mm '
+                f'(dx med {d[0]*1000:+.1f}, dy med {d[1]*1000:+.1f}, rows {d[2]})')
+
     # ── candidates and their weights ────────────────────────────────────────
     cand = {}
     # The inherited human mesh joins the thighs with a crotch sheet.  It is
@@ -7518,15 +7628,24 @@ def sever_thigh_bridge_faces(body, shell):
             _rim_verts = {v for e in _edges for v in e.verts}
             _new_faces = []
             try:
-                _res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=_edges)
-                _new_faces = [g for g in _res.get('geom', []) if isinstance(g, bmesh.types.BMFace)]
-                if not _new_faces:
-                    _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
-                    _new_faces = list(_r2.get('faces', []))
-            except Exception as _e:
-                log(f'  triangle_fill failed ({_e}); contextual_create')
+                # slot 269: contextual_create FIRST — triangle_fill(beauty)
+                # segfaults Blender (rc 139, reproducible) on the re-centred
+                # sever loop (LEGS 2c moved the ring verts in y); the
+                # contextual n-gon is the safe closer and the membrane
+                # refinement below re-smooths it either way.
                 _r2 = bmesh.ops.contextual_create(bm, geom=_edges)
                 _new_faces = list(_r2.get('faces', []))
+                if not _new_faces:
+                    _res = bmesh.ops.triangle_fill(bm, use_beauty=True,
+                                                   use_dissolve=False, edges=_edges)
+                    _new_faces = [g for g in _res.get('geom', [])
+                                  if isinstance(g, bmesh.types.BMFace)]
+            except Exception as _e:
+                log(f'  contextual_create failed ({_e}); triangle_fill')
+                _res = bmesh.ops.triangle_fill(bm, use_beauty=True,
+                                               use_dissolve=False, edges=_edges)
+                _new_faces = [g for g in _res.get('geom', [])
+                              if isinstance(g, bmesh.types.BMFace)]
             # Membrane refinement (Fable): a fan/beauty fill across a 28 cm
             # ring is a sheet of long slivers. Subdivide the patch's interior
             # edges and relax the interior verts so the patch becomes a smooth
