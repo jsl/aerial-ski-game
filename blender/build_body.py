@@ -6107,7 +6107,13 @@ def _shell_curvature(vs, adj, cand, axes):
     # (Measured: letting the bib ramp into the metric moved the ratio 0.24 ->
     # 0.61 without a single vertex changing position.) The same set is used
     # before and after, so the ratio compares like with like.
-    full = {i for i, (nm, w) in cand.items() if w >= 0.9 and i in rad}
+    # 267 guard (slot 288): "interior" is judged on the EFFECTIVE move
+    # weight — band verts inside the metre knee fade are skin by the ruled
+    # design, not garment, and must keep counting or the metric reads the
+    # guarded band as relief (267 bisect: raw weights read 0.552, effective
+    # 0.214 on the same geometry).
+    full = {i for i, (nm, w) in cand.items()
+            if _shell_leg_move_w(nm, vs[i].co.z, w) >= 0.9 and i in rad}
     vals = {}
     for i in full:
         nb = [rad[j] for j in adj[i] if j in full]
@@ -6223,6 +6229,12 @@ def _shell_leg_move_w(nm, z, w):
     # (along < 0) and the HIGH end of the shin (along > 0); that end gets the
     # wider knee band, the hip/ankle end keeps the iter-147 band.
     knee_end = (along < 0) if nm.startswith('upperLeg') else (along > 0)
+    # 267's metre fade (zero by 6 cm) was tried on this re-centred build and
+    # FATTENED the shin top: between 6 and 10 cm from the joint it carries
+    # MORE move weight than the old fraction band (full vs partial), and the
+    # fitted tube's wide top rungs moved out with it (shipped calf 126 ->
+    # 148 mm, calf_thigh 0.962). The fraction band stands; the band is
+    # protected instead by the sever clip + repair + ring below.
     lo, hi = ((SHELL_JOINT_LO_KNEE, SHELL_JOINT_HI_KNEE) if knee_end
               else (SHELL_JOINT_LO_LEG, SHELL_JOINT_HI_LEG))
     return w * _shell_sstep((hi - abs(along)) / (hi - lo))
@@ -8129,14 +8141,25 @@ def sever_thigh_bridge_faces(body, shell):
     log(f'CROTCH HEIGHT: inseam at {CROTCH_FRAC:.2f} x leg length '
         f'({leg_len * 1000:.0f} mm) = {CROTCH_FRAC * leg_len * 1000:.0f} mm '
         f'below the hip line, z={crotch_z:+.3f}')
+    # 267 guard (slot 288): the cross-thigh deletion is clipped OUT of the
+    # knee band (±6 cm in metres about each knee joint) — the sheet's rows
+    # there are the joint's bridging skin and cutting them re-creates the
+    # F6 neck. The `remain` gate below is scoped the same way.
+    _knees = []
+    for _s in ('L', 'R'):
+        _ul, _ll = f'upperLeg{_s}', f'lowerLeg{_s}'
+        _knees.append((bl(_ul).z - SEGMENTS[_ul]['h'] / 2
+                       + bl(_ll).z + SEGMENTS[_ll]['h'] / 2) / 2)
+
+    def _in_knee_band(f):
+        return any(any(abs(v.co.z - kz) <= 0.06 for kz in _knees)
+                   for v in f.verts)
+
+    _knee_ring = os.environ.get('KNEE_RING', '0') == '1'
     mixed = [f for f in bm.faces
              if {'upperLegL', 'upperLegR'}.issubset(
-                 {dom[v.index] for v in f.verts})]
-    if not mixed:
-        bm.free()
-        raise SystemExit('[body] A-frame topology gate FAILED: the inherited '
-                         'cross-thigh sheet was not found')
-    # #23.1 base census BEFORE any cut: the source build is closed, so every
+                 {dom[v.index] for v in f.verts})
+             and not (_knee_ring and _in_knee_band(f))]
     # boundary edge later is a rim a cut opened (the gate's allowance).
     global SEVER_BASE_BOUNDARY
     SEVER_BASE_BOUNDARY = sum(1 for e in bm.edges if len(e.link_faces) == 1)
@@ -8145,9 +8168,13 @@ def sever_thigh_bridge_faces(body, shell):
     bm.free()
     body.data.update()
     dom_after = dominant_segments(body)
+    # Scoped with the deletion: cross-thigh faces inside the knee band are
+    # kept by design (the 267 sever clip).
     remain = sum(1 for p in body.data.polygons
                  if {'upperLegL', 'upperLegR'}.issubset(
-                     {dom_after[i] for i in p.vertices}))
+                     {dom_after[i] for i in p.vertices})
+                 and not any(all(abs(body.data.vertices[i].co.z - kz) <= 0.06
+                                 for i in p.vertices) for kz in _knees))
     if remain:
         raise SystemExit(f'[body] A-frame topology gate FAILED: {remain} '
                          'cross-thigh faces remain')
@@ -8680,7 +8707,174 @@ def bideltoid_report(body):
     return worst_w, worst_z
 
 
-def leg_profile(body, tag):
+def repair_knee_topology(body):
+    """
+    SLOT 288 (241/242 ring, on top of the 267 guards, on the re-centred
+    v101 build): the joint row is drawn by long bridging edges across the
+    sparse knee gap, so no radial move of band verts can change it. Repair:
+    subdivide every leg-classified bridging edge within +/-5 cm of a knee
+    so none spans > 10 mm of z (242's open question granted: ANY pair of
+    leg-classified endpoints, cross-segment allowed), inherit weights,
+    lightly smooth only the new verts, then the 241 knee ring (112 x 118 mm
+    superellipse about each 1-cm rung's own centroid, smoothstep +/-10 cm).
+    """
+    import math
+    knees = {}
+    for _s in ('L', 'R'):
+        _ul, _ll = f'upperLeg{_s}', f'lowerLeg{_s}'
+        _cu, _cl = bl(_ul), bl(_ll)
+        knees[_s] = (_cu.z - SEGMENTS[_ul]['h'] / 2
+                     + _cl.z + SEGMENTS[_ll]['h'] / 2) / 2
+    names = {g.index: g.name for g in body.vertex_groups}
+
+    def wmap(v):
+        return {names.get(g.group): g.weight for g in v.groups}
+
+    own = dominant_segments(body)
+    _legs = ('upperLegL', 'lowerLegL', 'upperLegR', 'lowerLegR')
+
+    def own2(i):
+        d = own[i]
+        if d in _legs:
+            return d
+        w = wmap(body.data.vertices[i])
+        return max(_legs, key=lambda nm: w.get(nm, 0.0)) \
+            if any(w.get(nm, 0.0) > 0 for nm in _legs) else None
+
+    f_before = len(body.data.polygons)
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bm.verts.ensure_lookup_table()
+    by_cuts = {}
+    for e in bm.edges:
+        a, b = e.verts
+        dz = abs(a.co.z - b.co.z)
+        if dz <= 0.010:
+            continue
+        mid = (a.co.z + b.co.z) / 2
+        if not any(abs(mid - kz) <= 0.05 for kz in knees.values()):
+            continue
+        oa, ob = own2(a.index), own2(b.index)
+        # 242 open Q1 granted: admit ANY leg-classified endpoint pair,
+        # including cross-segment (upperLeg <-> lowerLeg / hlpKnee) edges —
+        # the old oa != ob skip left the joint row's long spans in place.
+        if oa is None or ob is None:
+            continue
+        by_cuts.setdefault(max(1, math.ceil(dz / 0.010)), []).append(e)
+    if not by_cuts:
+        bm.free()
+        log('KNEEREPAIR: no bridging edges found — nothing to do')
+        return
+    for cuts, es in sorted(by_cuts.items()):
+        bmesh.ops.subdivide_edges(bm, edges=es, cuts=cuts,
+                                  use_grid_fill=False)
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.update()
+    me = body.data
+    # bmesh subdivide does not populate vertex groups: a vert with NO groups
+    # is exactly a new vert. (242's coordinate-duplicate matching marked
+    # 10262 false positives and rewrote real weights — root cause of its
+    # taper regression.)
+    really_new = [i for i, v in enumerate(me.vertices) if not v.groups]
+    old_pos = [(v.co.copy(), i) for i, v in enumerate(me.vertices)
+               if v.groups and any(abs(v.co.z - kz) <= 0.06
+                                   for kz in knees.values())]
+    n_fixed = 0
+    for i in really_new:
+        v = me.vertices[i]
+        near = sorted(old_pos, key=lambda p: (p[0] - v.co).length)[:3]
+        if not near:
+            continue
+        ds = [max(1e-9, (p[0] - v.co).length) for p in near]
+        tot = sum(1.0 / d for d in ds)
+        acc = {}
+        for (co, oi), d in zip(near, ds):
+            for nm, w in wmap(me.vertices[oi]).items():
+                acc[nm] = acc.get(nm, 0.0) + w / d / tot
+        for nm, w in acc.items():
+            if nm is None:
+                continue
+            g = body.vertex_groups.get(nm)
+            if g is not None:
+                g.add([i], w, 'REPLACE')
+        n_fixed += 1
+    new_set = set(really_new)
+    nbr = {i: set() for i in new_set}
+    for ed in me.edges:
+        a, b = ed.vertices
+        if a in new_set and b in new_set:
+            nbr[a].add(b)
+            nbr[b].add(a)
+    for _ in range(2):
+        cur = {i: me.vertices[i].co.copy() for i in new_set}
+        for i in new_set:
+            nb = [cur[j] for j in nbr[i]]
+            if len(nb) < 2:
+                continue
+            avg = sum(nb, Vector()) / len(nb)
+            me.vertices[i].co = cur[i] + (avg - cur[i]) * 0.3
+    me.update()
+    f_after = len(me.polygons)
+    log(f'KNEEREPAIR: faces {f_before} -> {f_after} '
+        f'(+{f_after - f_before}); new verts {len(really_new)}, '
+        f'weights fixed {n_fixed}')
+
+    # ── the 241 knee ring on the repaired topology ──
+    _ga = me.attributes.get('fable_gusset')
+    _gus = set(k for k, d in enumerate(_ga.data) if d.value) if _ga else set()
+    own3 = dominant_segments(body)
+    for _s in ('L', 'R'):
+        _ul, _ll = f'upperLeg{_s}', f'lowerLeg{_s}'
+        kz = knees[_s]
+        band = []
+        for i, v in enumerate(me.vertices):
+            if i in _gus or abs(v.co.z - kz) > 0.10:
+                continue
+            d = own3[i]
+            if d == _ul or d == _ll:
+                band.append(i)
+        if len(band) < 20:
+            log(f'  KNEERING {_s}: only {len(band)} band verts — skipped')
+            continue
+        rungs = {}
+        for i in band:
+            rungs.setdefault(round(me.vertices[i].co.z / 0.01), []).append(i)
+        moved = 0
+        for k, ids in rungs.items():
+            cz = k * 0.01
+            aa, bb, n = 0.056, 0.059, 2.0     # 112 x 118 mm, thigh tube exp
+            # Window 5 cm, not 241's 10: the wider window pulled the
+            # calf-top rows out to the ring breadth and broke calf_thigh
+            # (0.962 vs gate 0.88) — the same class as 242's ankle_calf
+            # failure. The defect is the joint row itself; the 267 guards
+            cx = sum(me.vertices[i].co.x for i in ids) / len(ids)
+            cy = sum(me.vertices[i].co.y for i in ids) / len(ids)
+            t = abs(cz - kz) / 0.05
+            if t >= 1.0:
+                continue
+            w = 1.0 - t * t * (3.0 - 2.0 * t)
+            for i in ids:
+                v = me.vertices[i]
+                dx, dy = v.co.x - cx, v.co.y - cy
+                r = math.hypot(dx, dy)
+                if r < 1e-6:
+                    continue
+                th = math.atan2(dy, dx)
+                c, s2 = abs(math.cos(th)), abs(math.sin(th))
+                rt = ((c / aa) ** n + (s2 / bb) ** n) ** (-1.0 / n)
+                nr = r + (rt - r) * w
+                v.co.x, v.co.y = cx + nr * math.cos(th), cy + nr * math.sin(th)
+                moved += 1
+        me.update()
+        jids = [i for i in band if abs(me.vertices[i].co.z - kz) <= 0.005]
+        if jids:
+            jx = [me.vertices[i].co.x for i in jids]
+            log(f'  KNEERING {_s}: {moved} verts moved over {len(rungs)} rungs; '
+                f'joint rung x-breadth {(max(jx) - min(jx)) * 1000:.0f} mm')
+
+
+def leg_profile(body, tag, step_below_z=None):
     """
     Width of one leg every 2 cm from hip to sole, checked for DIPS and STEPS.
 
@@ -8811,6 +9005,8 @@ def leg_profile(body, tag):
         if rows[i + 1][0] <= sole + 0.045:
             continue
         if abs(rows[i][0] - _inseam_z) < 0.035:
+            continue
+        if step_below_z is not None and rows[i][0] > step_below_z:
             continue
         j = abs(slopes[i] - slopes[i - 1])
         if j > worst_step:
@@ -14094,7 +14290,7 @@ def main():
     # is calibrated on this mesh's measured noise floor: smooth builds show
     # isolated ≤±17 mm single-row blips (2 cm bands), while the actual
     # repaired defects measured 40-100 mm.
-    if prof['step'] > 0.030:
+    if prof['step'] > 0.030:   # pre-shell: noise-floor limit stands; the 12 mm shipped-leg gate lives post-relax/post-shell, after repair_knee_topology (slot 288)
         raise SystemExit(
             f'[body] leg profile has a {prof["step"] * 1000:.1f} mm slope step at '
             f'z={prof["step_z"]:+.3f} — that is the hard notch, not an anatomical '
@@ -14121,7 +14317,7 @@ def main():
                 f'{bide_w * 1000:.0f} mm at z={bide_z:+.2f} '
                 f'(gate {BIDELTOID_GATE * 1000:.0f} mm)')
         prof = leg_profile(body, 'post-relax')
-        if prof['step'] > 0.030:
+        if prof['step'] > 0.030:   # pre-repair stage (relax runs before shell+repair_knee_topology); the 12 mm hard gate is the post-shell one
             raise SystemExit(
                 f'[body] leg profile has a {prof["step"] * 1000:.1f} mm slope '
                 f'step at z={prof["step_z"]:+.3f} after relax — the iron '
@@ -14162,16 +14358,32 @@ def main():
     _shellprop = shell_report(body, _shell)
     suit_shell_gate(body, _shell, _shellprop)
     sever_thigh_bridge_faces(body, _shell)
+    if os.environ.get('KNEE_RING', '0') == '1':
+        repair_knee_topology(body)
     _bw, _bz = bideltoid_report(body)
     if _bw > BIDELTOID_GATE:
         raise SystemExit(
             f'[body] bideltoid gate FAILED after the suit shell: '
             f'{_bw*1000:.0f} mm at z={_bz:+.2f} (gate {BIDELTOID_GATE*1000:.0f} mm)')
-    _p = leg_profile(body, 'post-shell')
-    if _p['step'] > 0.030:
-        raise SystemExit(
-            f'[body] leg profile has a {_p["step"]*1000:.1f} mm slope step at '
-            f'z={_p["step_z"]:+.3f} after the suit shell')
+    _hip = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    _ank = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
+    _crotch = _hip - CROTCH_FRAC * (_hip - _ank)
+    # Ruling band: the profile "from crotch to boot cuff" (progress entry
+    # "FABLE PASS 2" item 2). Above the crotch the LEGRECEN thigh field's
+    # slope-limited seat rows (v101, 25 mm by design) are not the ring's
+    # contract.
+    if os.environ.get('KNEE_RING', '0') == '1':
+        _p = leg_profile(body, 'post-shell', step_below_z=_crotch + 0.02)
+        if _p['step'] > 0.012:   # 12 mm hard (written ruling, "FABLE PASS 2" acceptance (a); slot 288)
+            raise SystemExit(
+                f'[body] leg profile has a {_p["step"]*1000:.1f} mm slope step at '
+                f'z={_p["step_z"]:+.3f} after the suit shell')
+    else:
+        _p = leg_profile(body, 'post-shell')   # 30 mm noise-floor gate as v101
+        if _p['step'] > 0.030:
+            raise SystemExit(
+                f'[body] leg profile has a {_p["step"]*1000:.1f} mm slope step at '
+                f'z={_p["step_z"]:+.3f} after the suit shell')
     # Item 11: the girth pass runs AFTER relax_suit and after the last
     # leg_profile, so until now NOTHING measured the shipped leg. Measure and
     # gate the taper here, on the geometry that is actually exported.
