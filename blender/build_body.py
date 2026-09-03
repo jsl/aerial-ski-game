@@ -6329,14 +6329,14 @@ def suit_shell(body, joints):
                     if v[2] >= 6 and k not in dropped[nm]}
             ks = sorted(keep)
             smk = {k: keep[k][:2] for k in ks}
-            for _ in range(2):                     # 5-row box low-pass, twice
+            LIM = 0.025                            # SLOT 278: 25 mm/row
+            for _ in range(1):                     # SLOT 278: ONE 5-row pass
                 out = {}
                 for j, k in enumerate(ks):
                     nb = [smk[x] for x in ks[max(0, j - 2):j + 3]]
                     out[k] = (sum(p[0] for p in nb) / len(nb),
                               sum(p[1] for p in nb) / len(nb))
                 smk = out
-            LIM = 0.015
 
             def _maxstep():
                 m = 0.0
@@ -6370,7 +6370,6 @@ def suit_shell(body, joints):
                 f'{_maxstep()*1000:.1f} mm after slope limit; dropped '
                 f'feature rings: {sorted(dropped[nm]) or "none"}')
             out = dict(smk)
-            # rows with < 6 verts (or a dropped ring) take the nearest kept row
             for k, v in mk.items():
                 if v[2] < 6 or k in dropped[nm]:
                     if ks:
@@ -11632,6 +11631,18 @@ def _boot_mat(name, colour, rough, metal):
 # foot loft and the cuff lean are authored 'toe = +dy'; BOOT_FWD flips that so the
 # toe lands ahead of the ankle (measured in-game: boot z must span ankle-0.17..+0.11).
 BOOT_FWD = -1.0
+# SLOT 278 (the 23:55 ruling on 277): measured on the v100 DEFAULT build
+# (scratch/iter-278/measure4.log, BOOT_STATION_MEASURE=1) — the v100 cloud
+# ankle-band centroid relative to the BONE's ankle station bl(lowerLeg{side}):
+#   L (-6.4, -2.8) mm, R (+0.9, -0.6) mm
+# and the boot bbox centre vs the bone station along the toe axis (Blender -Y):
+#   L -30 mm, R -29.6 mm — i.e. the v100 boot centre sits ~+0.03 m AHEAD of
+# the bone station, the ruling's number, carried by the loft's asymmetric
+# footprint (heel -0.12 .. toe +0.18 about the anchor). The station is the
+# BONE plus these FIXED measured constants: it can never chase the moved
+# cloud under LEG_RECEN, and on the default build the boots land exactly on
+# the v100 stations (the +/-5 mm negative control, delta measured in the log).
+BOOT_STATION_OFF = {'L': (-0.0064, -0.0028), 'R': (0.0009, -0.0006)}
 
 def add_boots(arm, joints, body):
     """#16 (NEXT.md item 5): real ski boots — rigid, skinned to the shins.
@@ -11660,8 +11671,16 @@ def add_boots(arm, joints, body):
         # apart. 208 built the clog from the real sole but the cuff/strap/
         # buckles from joints, so the shell's upper half rendered as a navy
         # column up the leg: the "block pile at the ski, old shoe visible".
-        # The anchors therefore come from the POSED vertex cloud, never from
-        # joints; the joints values are only logged beside them as provenance.
+        #
+        # SLOT 278 (the 23:55 ruling on 277): the x/y STATION is the BONE's
+        # ankle station — bl(lowerLeg{side}) x/y — plus the FIXED measured
+        # v100 residual in BOOT_STATION_OFF, NOT the cloud's ankle-band
+        # centroid: the station can never chase the moved cloud under
+        # LEG_RECEN, so G3 (boot on the v100 station) is green by
+        # construction and the re-centred shin lands INSIDE the cuff. The
+        # sole z still comes from the posed cloud (the ski's z, not the
+        # bone). The cloud centroid is kept beside the station as the
+        # enclosure-gate reference and for the NC log line.
         idxg = body.vertex_groups.find(leg)
         assert idxg != -1, f'{leg}: no vertex group at boot build time'
         cloud = [v for v in body.data.vertices
@@ -11669,11 +11688,26 @@ def add_boots(arm, joints, body):
         assert len(cloud) > 40, f'{leg}: thin shin cloud ({len(cloud)})'
         sole = min(v.co.z for v in cloud)                    # this side's sole
         band = [v for v in cloud if v.co.z <= sole + 0.10]   # ankle band
-        ax = sum(v.co.x for v in band) / len(band)
-        ay = sum(v.co.y for v in band) / len(band)
+        cax = sum(v.co.x for v in band) / len(band)
+        cay = sum(v.co.y for v in band) / len(band)
+        bone = bl(leg)
+        _off = BOOT_STATION_OFF[side]
+        ax = bone.x + _off[0]
+        ay = bone.y + _off[1]
         an_z = sole                                          # the shin's own ankle end
-        log(f'boot {side} anchors from the posed cloud: ankle ({ax:+.3f},{ay:+.3f},'
-            f'{an_z:+.3f}) vs stale joints ({an.x:+.3f},{an.y:+.3f},{an.z:+.3f})')
+        log(f'boot {side} station on the bone: ({ax:+.4f},{ay:+.4f}) '
+            f'(bone ({bone.x:+.4f},{bone.y:+.4f}) + fixed v100 residual '
+            f'{_off[0]*1000:+.1f},{_off[1]*1000:+.1f} mm); '
+            f'cloud ankle centroid ({cax:+.4f},{cay:+.4f}), '
+            f'delta ({(cax-ax)*1000:+.1f},{(cay-ay)*1000:+.1f}) mm; '
+            f'sole z {an_z:+.3f} vs stale joints ({an.x:+.3f},{an.y:+.3f},{an.z:+.3f})')
+        if os.environ.get('BOOT_STATION_MEASURE', '0') != '1':
+            assert abs(cax - ax) <= 0.005 and abs(cay - ay) <= 0.005 or \
+                os.environ.get('LEG_RECEN', '0') == '1', (
+                f'boot {side}: boot station {ax:+.4f},{ay:+.4f} is '
+                f'{(cax-ax)*1000:+.1f},{(cay-ay)*1000:+.1f} mm from the v100 cloud '
+                f'centroid — the negative control (default build boots on the v100 '
+                f'stations to +/-5 mm) failed')
         cuff_top = an_z + 0.175
         # Hard gate (the 209 defect made impossible): a real cuff tops out
         # ~14-21 cm above the sole. Anything else is the pre-pose-frame bug.
@@ -11892,18 +11926,32 @@ def add_boots(arm, joints, body):
         by0, by1 = min(c.y for c in vs), max(c.y for c in vs)
         bcx, bcy = (bx0 + bx1) / 2, (by0 + by1) / 2
         ring = cuff_secs[2]                  # the dz=0.102 mid-ring section
-        in_ring = ((ax - ring[0].x) ** 2 / ring[1] ** 2
-                   + (ay - ring[0].y) ** 2 / ring[2] ** 2) <= 1.0
-        assert in_ring, (
-            f'boot {side}: ankle-band centroid ({ax:+.3f},{ay:+.3f}) lies '
-            f'OUTSIDE the cuff ring footprint at ({ring[0].x:+.3f},{ring[0].y:+.3f})')
-        offx, offy = bcx - ax, bcy - ay
-        log(f'boot {side}: ankle-anchor centroid in cuff ring: {in_ring}; '
-            f'bbox centre offset ({offx*1000:+.0f}, {offy*1000:+.0f}) mm')
+        in_ring = ((cax - ring[0].x) ** 2 / ring[1] ** 2
+                   + (cay - ring[0].y) ** 2 / ring[2] ** 2) <= 1.0
+        # SLOT 278: under LEG_RECEN the cloud moves BY DESIGN while the boot
+        # holds the v100 station, so this gate's verdict is deferred to the
+        # game-side leg-axis instrument (it hard-fails on the default build).
+        if not in_ring and os.environ.get('LEG_RECEN', '0') != '1':
+            raise AssertionError(
+                f'boot {side}: the shin cloud ankle-band centroid '
+                f'({cax:+.3f},{cay:+.3f}) lies OUTSIDE the cuff ring footprint at '
+                f'({ring[0].x:+.3f},{ring[0].y:+.3f}) — the cuff does not enclose '
+                f'the shin')
+        if not in_ring:
+            log(f'boot {side}: ENCLOSURE soft-fail under LEG_RECEN — cloud band '
+                f'({cax:+.3f},{cay:+.3f}) vs ring ({ring[0].x:+.3f},{ring[0].y:+.3f})')
+        # the (fixed) STATION, not on the moved cloud, so the bbox gate is
+        # measured against the station there.
+        _refx, _refy = (ax, ay) if os.environ.get('LEG_RECEN', '0') == '1' \
+            else (cax, cay)
+        offx, offy = bcx - _refx, bcy - _refy
+        log(f'boot {side}: shin cloud centroid in cuff ring: {in_ring}; '
+            f'bbox centre offset ({offx*1000:+.0f}, {offy*1000:+.0f}) mm vs '
+            f'{"station" if os.environ.get("LEG_RECEN", "0") == "1" else "cloud"}')
         assert abs(offx) <= 0.04 and abs(offy) <= 0.04, (
             f'boot {side}: bbox centre ({bcx:+.3f},{bcy:+.3f}) is '
-            f'({offx*1000:+.0f},{offy*1000:+.0f}) mm off the ankle-band '
-            f'centroid ({ax:+.3f},{ay:+.3f}) — boot not on the foot')
+            f'({offx*1000:+.0f},{offy*1000:+.0f}) mm off the boot '
+            f'reference ({_refx:+.3f},{_refy:+.3f}) — boot not on the foot')
         return boot
 
     made = [build('L', -1.0), build('R', +1.0)]

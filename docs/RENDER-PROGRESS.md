@@ -3,6 +3,7 @@
 Branch `render-realism-glm`. Plan: `docs/RENDER-PLAN.md`. Each iteration appends an entry.
 Keep entries short and factual: what changed, how it was verified (numbers), what is open.
 
+
 ## Reviewer feedback (read first; the reviewer edits this section)
 
 - **ORDER OF WORK for the next iterations (reviewer, 2026-08-26 — the author is watching the live tree):**
@@ -1807,6 +1808,62 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 278 — LEGS RE-CENTRE v4 (the 23:55 ruling's slot): boots re-stationed on
+the BONE's ankle station + the faster field — G3 GREEN BY CONSTRUCTION
+(boots exactly on v100), R ALL GREEN, sliver 0.52%; L G1 −0.033 vs 0.03 (3 mm
+over, sign flipped) — env-gated default-off again, asset NOT shipped, ASSET_V
+stays 100
+
+**What changed.** `blender/build_body.py` only. (a) `add_boots`: the boot x/y
+STATION is now the BONE's ankle station `bl(lowerLeg{side})` plus a FIXED
+measured v100 residual — `BOOT_STATION_OFF = {'L': (-6.4, -2.8) mm, 'R':
+(+0.9, -0.6) mm}`, the v100 cloud-band-centroid-vs-bone delta measured on the
+default build (`BOOT_STATION_MEASURE=1`, scratch/iter-278/). The ruling's
+forward offset, written down: the v100 boot CENTRE sits **+28–30 mm AHEAD of
+the bone station along the toe axis** (bbox y −27/−29 mm about the anchor) —
+carried by the loft's own asymmetric footprint (heel −0.12 .. toe +0.18), so
+no extra y offset was added. The cloud's ankle band is no longer read for the
+station; it is kept only as the 258 enclosure/bbox gate reference. The
+enclosure and bbox gates are measured against the STATION under LEG_RECEN
+(the cloud moves by design there) and hard-fail on the default build. (b)
+`LEG_RECEN` field: ONE 5-row box pass (was two) and the slope limit raised to
+25 mm/row (was 15), exactly per the ruling.
+
+**Build numbers (ship-res `LEG_RECEN=1 LEG_AXIS_PIN=1 KNEE_BLEND_FIX=1 --boots
+on`, scratch).** Max row step: upperLeg 28.8/27.1 -> 25.0 mm, lowerLeg
+37.0/36.7 -> 25.0 mm. SLIVER final 51/9805 = 0.5201% <= 0.65% GREEN. Shin dy
+med −113.2/−110.1 mm. The moved cloud's ankle band reads +59/+54 mm off the
+station in the BUILD frame (soft-fail logged) — but see the game-side
+numbers, which are the verdict.
+
+**Game-side (leg-axis.spec on the shipped flag-on probe, then reverted).**
+**G3 GREEN by construction, exactly as the ruling predicted:** boot centre
+along −0.530/−0.540 = the v100 stations to the millimetre. **R: ALL GATES
+GREEN** (G1 −0.023, bands −0.018..−0.027). L: all four bands GREEN
+(−0.0178..−0.0295 vs ±0.035) but **G1 −0.033 vs 0.03 — 3 mm over**, and the
+sign has FLIPPED (+0.042 on v3 -> −0.033): the faster field now carries the
+cuff rows ~7 cm back, slightly PAST the cuff centre. Deterministic across two
+runs. NC fires. So: 4 of 5 gate-arms green, L G1 red by 3 mm — not shippable
+under "ship only on green leg-axis"; asset reverted, assets/ + ASSET_V 100 +
+index.html byte-identical to v100.
+
+**Negative control (the ruling's requirement).** Default ship-res build with
+the new code: boot stations land on the v100 cloud centroids at **±0.0 mm**
+(L −0.0814,−0.0108; R +0.0759,+0.0074), enclosure True, all build gates
+green, rc 0. The default asset is unchanged.
+
+**Verification (default tree, v100).** unit **81/81**, golden **30/30** (no
+recapture), boots drive spec green, look NOT regenerated (no asset/scene
+change shipped; 277's shots stand).
+
+**Open.** The L/R asymmetry is the last defect: R's cuff rows settle at
+−0.023, L's at −0.033 — same field, same limits, so the residual is in the L
+cloud's own profile (or its skinning). The v4 mechanism is exhausted as
+specified; closing L G1 needs either a small cuff-band counter-fade (a design
+addition for the reviewer to rule on) or LEGS 3/4's re-station of the MEASURE
+side. Queue unchanged: 279 = BOOTS/SUIT POLISH per the 22:30 ruling unless
+re-cut.
 
 ### 277 — LEGS RE-CENTRE v3 (the 23:40 ruling's slot): the field is now SMOOTH
 and the sliver gate PASSES (0.52% vs 0.65%) — but leg-axis is still RED
