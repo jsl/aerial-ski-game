@@ -467,12 +467,12 @@ test('NC1b: the old-shoe classifier fires on exposed neutral-dark at the ankle',
     expect(good.oldShoeFrac).toBeLessThanOrEqual(0.05);
 });
 
-// ── #16 v2 (b) FACE-ZONE GATE (iteration 219; four zones since 257) ────────
+// ── #16 v2 (b) FACE-ZONE GATE (iteration 219; four zones since 257,
+// five since 292: + the strap zone) ────────────────────────────────────────
 // "Texture every face": the boot must ship its material zones (shell, sole,
-// cuff, liner lip) so no face zone reads as bare unpainted shell. Reads the
-// shipped GLB's materials + primitives. (258: toe/strap/buckle details
-// return on this shell in slot 261.)
-const BOOT_ZONE_MATS = ['bootShell', 'bootSole', 'bootCuff', 'bootLip'];
+// cuff, liner lip, strap) so no face zone reads as bare unpainted shell.
+// Reads the shipped GLB's materials + primitives.
+const BOOT_ZONE_MATS = ['bootShell', 'bootSole', 'bootCuff', 'bootLip', 'bootStrap'];
 
 function bootZoneFails(j) {
     const fails = [];
@@ -493,7 +493,157 @@ function bootZoneFails(j) {
     return fails;
 }
 
-test('FACE ZONES: the boot carries all four material zones, every face assigned', () => {
+// ── SLOT 292 item 1: STRAP/BUCKLE CONTRAST (the 271 spec item 2) ──────────
+// The reference photo reads LIGHT-GREY straps and buckles on the navy shell;
+// the straps shipped in the near-black sole material and vanished. Gate: the
+// bootStrap material's luminance must contrast the shell's by >= 0.25
+// (normalised |ΔL|), read straight off the shipped GLB's baseColorFactor so
+// the gate is deterministic and cannot be fooled by lighting. The rendered
+// side close-up proof is the STRAP RENDERED test below.
+test('STRAP CONTRAST: bootStrap is >= 0.25 brighter than the navy shell', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const glb = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'athlete_body.glb'));
+    const jsonLen = glb.readUInt32LE(12);
+    const j = JSON.parse(glb.slice(20, 20 + jsonLen).toString());
+    const lum = m => {
+        const c = (m.pbrMetallicRoughness || {}).baseColorFactor || [0, 0, 0, 1];
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const byName = {};
+    for (const m of (j.materials || [])) byName[m.name] = lum(m);
+    const ls = byName.bootStrap, lsh = byName.bootShell;
+    expect(ls, 'bootStrap material missing from the shipped GLB').toBeDefined();
+    expect(lsh, 'bootShell material missing from the shipped GLB').toBeDefined();
+    const contrast = Math.abs(ls - lsh) / Math.max(ls, lsh, 1e-6);
+    expect(contrast, `strap/shell luminance contrast ${contrast.toFixed(3)} < 0.25`)
+        .toBeGreaterThanOrEqual(0.25);
+});
+
+// RENDERED side close-up: the straps must READ as light against the navy
+// shell where the strap geometry projects — not just exist as a material.
+// Samples the front-facing strap-primitive vertices projected to screen on a
+// side boot close-up (radius 1.0 m) vs the front-facing shell-primitive
+// vertices (MEAN luminance per class, the spec's letter; snow-bright edge
+// leaks dropped; directional: the strap mean must EXCEED the shell mean by
+// >= 0.25 normalised). Fires on the pre-292 asset (no bootStrap primitive: strapPx
+// 0). Classifier ranges were set from the measured populations (292 debug:
+// shell verts shade to neutral 32s in shadow, straps hold a 192 sunlit
+// population — narrow navy/neutral classes miss both).
+test('STRAP RENDERED: light-grey straps read on the side close-up', async ({ page }) => {
+    await bootReady(page);
+    const m = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const engine = scene.getEngine();
+        const canvas = engine.getRenderingCanvas();
+        // Side close-up on the LEFT boot: target its centre, 1.0 m out.
+        const boots = scene.meshes.filter(m =>
+            m.name && m.name.indexOf('athleteBootL') === 0 && m.getTotalVertices() > 0);
+        let mn = new BABYLON.Vector3(1e9, 1e9, 1e9);
+        let mx = new BABYLON.Vector3(-1e9, -1e9, -1e9);
+        for (const b of boots) {
+            b.refreshBoundingInfo(true); b.computeWorldMatrix(true);
+            const bi = b.getBoundingInfo().boundingBox;
+            mn = BABYLON.Vector3.Minimize(mn, bi.minimumWorld);
+            mx = BABYLON.Vector3.Maximize(mx, bi.maximumWorld);
+        }
+        const cam = scene.activeCamera;
+        cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 200;
+        cam.setTarget(mn.add(mx).scale(0.5));
+        cam.radius = 1.0; cam.fov = 0.8;
+        cam.beta = Math.PI / 2.2; cam.alpha = 0;
+        scene.render();
+        const w = canvas.width, h = canvas.height;
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const strap = boots.filter(b => b.material && /bootStrap/.test(b.material.name));
+        const shell = boots.filter(b => b.material && /bootShell/.test(b.material.name));
+        if (!strap.length || !shell.length) {
+            return { strapPx: 0, shellPx: 0, strapMean: 0, shellMean: 0, contrast: 0,
+                note: `strap prims ${strap.length}, shell prims ${shell.length}` };
+        }
+        const eye = cam.position.clone();
+        // Face-centre sampling: a face whose flat normal points at the eye
+        // is the surface the camera sees there (verts alone over-sample
+        // shared corners and grazing ring edges). pickWithRay is unusable:
+        // the boots are skeleton-linked, so CPU picking tests the
+        // bind-pose geometry against skinning-aware bounds and misses.
+        const sample = (meshes) => {
+            const pts = [];
+            const A = new BABYLON.Vector3(), Bv = new BABYLON.Vector3(),
+                C = new BABYLON.Vector3(), N = new BABYLON.Vector3(),
+                T = new BABYLON.Vector3();
+            for (const b of meshes) {
+                const pos = b.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                const idx = b.getIndices();
+                if (!pos) continue;
+                const W = b.getWorldMatrix();
+                const tri = (a, c2, d) => {
+                    A.set(pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]);
+                    Bv.set(pos[c2 * 3], pos[c2 * 3 + 1], pos[c2 * 3 + 2]);
+                    C.set(pos[d * 3], pos[d * 3 + 1], pos[d * 3 + 2]);
+                    const Aw = BABYLON.Vector3.TransformCoordinates(A, W);
+                    const Bw = BABYLON.Vector3.TransformCoordinates(Bv, W);
+                    const Cw = BABYLON.Vector3.TransformCoordinates(C, W);
+                    Bw.subtractInPlace(Aw); Cw.subtractInPlace(Aw);
+                    BABYLON.Vector3.CrossToRef(Bw, Cw, N);
+                    if (N.lengthSquared() < 1e-12) return;
+                    N.normalize();
+                    T.copyFrom(Aw).addInPlace(Bw.scale(1 / 3)).addInPlace(Cw.scale(1 / 3));
+                    const toEye = eye.subtract(T); toEye.normalize();
+                    if (BABYLON.Vector3.Dot(N, toEye) < 0.5) return; // turned away
+                    const co = BABYLON.Vector3.Project(T, BABYLON.Matrix.Identity(),
+                        scene.getTransformMatrix(), cam.viewport.toGlobal(w, h));
+                    const x = Math.round(co.x), y = Math.round(co.y);
+                    if (x < 0 || y < 0 || x >= w || y >= h) return;
+                    pts.push((h - 1 - y) * w + x);
+                };
+                if (idx && idx.length) {
+                    for (let i = 0; i + 2 < idx.length; i += 3) tri(idx[i], idx[i + 1], idx[i + 2]);
+                } else {
+                    for (let i = 0; i + 2 < pos.length / 3; i += 3) tri(i, i + 1, i + 2);
+                }
+            }
+            return pts;
+        };
+        const lum = (o) => (0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]) / 255;
+        // Snow leak: a projected face centre at a silhouette edge can land
+        // on snow behind the boot — drop snow-bright pixels from BOTH
+        // classes (conservative: it also drops the brightest strap
+        // highlights, making this gate harder, not easier).
+        const notSnow = (o) => Math.max(px[o], px[o + 1], px[o + 2]) <= 215;
+        const med = (arr) => {
+            if (!arr.length) return 0;
+            return arr.reduce((a, b) => a + b, 0) / arr.length;
+        };
+        const strapLums = [];
+        for (const p of sample(strap)) {
+            const o = p * 4;
+            if (notSnow(o)) strapLums.push(lum(o));
+        }
+        const shellLums = [];
+        for (const p of sample(shell)) {
+            const o = p * 4;
+            if (notSnow(o)) shellLums.push(lum(o));
+        }
+        const strapMean = med(strapLums), shellMean = med(shellLums);
+        const contrast = (strapLums.length && shellLums.length)
+            ? (strapMean - shellMean) / Math.max(strapMean, 1e-6) : 0;
+        return { strapPx: strapLums.length, shellPx: shellLums.length,
+            strapMean: +strapMean.toFixed(3), shellMean: +shellMean.toFixed(3),
+            contrast: +contrast.toFixed(3), note: '' };
+    });
+    console.log('STRAPREAD', JSON.stringify(m));
+    expect(m.strapPx, `no strap pixels on the side close-up ${m.note || ''}`)
+        .toBeGreaterThanOrEqual(20);
+    expect(m.shellPx, 'no shell pixels sampled — framing broken').toBeGreaterThanOrEqual(20);
+    expect(m.contrast, `rendered strap/shell contrast ${m.contrast} ` +
+        `(strap ${m.strapMean} over ${m.strapPx}px, shell ${m.shellMean} over ${m.shellPx}px) < 0.25`)
+        .toBeGreaterThanOrEqual(0.25);
+});
+
+test('FACE ZONES: the boot carries all five material zones, every face assigned', () => {
     const fs = require('fs');
     const path = require('path');
     const glb = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'athlete_body.glb'));

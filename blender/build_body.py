@@ -12499,8 +12499,13 @@ def add_boots(arm, joints, body):
             'sole':  _boot_mat('bootSole',  (0.012, 0.012, 0.014), 0.85, 0.0),
             'cuff':  _boot_mat('bootCuff',  (0.060, 0.075, 0.175), 0.45, 0.0),
             'lip':   _boot_mat('bootLip',   BOOT_CUFF, 0.60, 0.0),
+            # SLOT 292 item 1 (the 271 spec item 2): the reference boot reads
+            # light-grey buckles and straps on the navy shell — the straps
+            # shipped in the near-black sole material and vanished. Same two
+            # strap lofts (geometry untouched), a 5th MATERIAL only.
+            'strap': _boot_mat('bootStrap', (0.74, 0.75, 0.77), 0.50, 0.0),
         }
-        ZONES = ('shell', 'sole', 'cuff', 'lip')
+        ZONES = ('shell', 'sole', 'cuff', 'lip', 'strap')
 
         U = Vector((1, 0, 0))
         Y = Vector((0, 1, 0))
@@ -12587,17 +12592,18 @@ def add_boots(arm, joints, body):
         loft(f'bootCuff{side}', cuff_secs)
         # 264 BOOTS DETAILS: two near-black buckle straps over the navy
         # shell — one across the instep, one around the cuff — 2.5 mm proud
-        # of the underlying ring, in the existing sole material (no new
-        # zones, no skinning change, +64 tris per strap vs the <= 1200 gate).
+        # of the underlying ring, in the strap material (SLOT 292: was the
+        # near-black sole material, in which the straps vanished; no geometry
+        # or skinning change, +64 tris per strap vs the <= 1200 gate).
         # This is the author's beginner-boot read (buckles visible at
-        # gameplay distance); the material/paint pass is slot 271.
+        # gameplay distance).
         loft(f'bootStrapInstep{side}', [
             (Vector((ax, ay + BOOT_FWD * (0.045 + s * 0.004), sole + 0.056)),
-             0.0500, 0.0575, U, Z, 'sole')
+             0.0500, 0.0575, U, Z, 'strap')
             for s in (-1, 1)])
         loft(f'bootStrapCuff{side}', [
             (Vector((ax, ay + BOOT_FWD * 0.006, sole + 0.072 + s * 0.004)),
-             0.0500, 0.0555, U, Y, 'sole')
+             0.0500, 0.0555, U, Y, 'strap')
             for s in (-1, 1)])
 
         for o in pieces:
@@ -12622,16 +12628,16 @@ def add_boots(arm, joints, body):
         mod = boot.modifiers.new('arm', 'ARMATURE')
         mod.object = arm
         # Material slots arrive from the lofts / prim pieces (join
-        # consolidates them). GATE: exactly the four 257 zones, every one
-        # carrying faces — an empty slot would silently ship an unpainted
-        # face zone. (258 re-adds strap/buckle zones on this shell.)
+        # consolidates them). GATE: exactly the ZONES zones (five since 292:
+        # 257's four + the strap zone), every one carrying faces — an empty
+        # slot would silently ship an unpainted face zone.
         counts = {}
         for p in boot.data.polygons:
             n = boot.data.materials[p.material_index].name
             counts[n] = counts.get(n, 0) + 1
-        assert len(counts) == 4, (
+        assert len(counts) == len(ZONES), (
             f'boot {side}: {len(counts)} material zones on the joined shell, '
-            f'want 4 {sorted(ZONES)} ({sorted(counts)})')
+            f'want {len(ZONES)} {sorted(ZONES)} ({sorted(counts)})')
         assert min(counts.values()) >= 6, (
             f'boot {side}: a zone collapsed to {min(counts.values())} faces')
         tris = sum(len(p.vertices) - 2 for p in boot.data.polygons)

@@ -746,6 +746,122 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     }
 });
 
+// ── SLOT 292 item 2: CRASH-REST FRAMING (the 271 spec item 3) ───────────────
+// On `crashed && atRest` the follow camera eases its radius in (game.js,
+// radius only — the 252 target-ease and the free-look stand-down guard are
+// untouched) plus a one-shot alpha ease to broadside of the body's long
+// axis, so the rested body reads at rest framing instead of a speck at the
+// locked 10 m. HARD gate: the mechanism contract (radius converged to the
+// 1.9 m goal in every world; the disabled NC holds 10 m). The body's frame
+// fraction is a LOGGED readout, deliberately not gated: the rest POSE is
+// untouchable crash physics and varies run to run (single 0.459–0.597,
+// double 0.420–0.494, triple 0.210–0.568 across the slot's runs), and a
+// curled triple ball spans ~0.4 m — no sane radius reaches 0.45 on it
+// (needs r < 0.9 m, inside the body). The 45 % bar vs curled rests is an
+// open reviewer question with screenshots; the instrument below reports it.
+// Vertex-span of athleteBody+athleteBoot over canvas height after a 3.5 s
+// settle (both eases converge in ~2 s).
+async function driveCrashRest(page, world, framingDisabled) {
+    await page.goto('/index.html?world=' + world);
+    await page.waitForFunction(() => typeof window._getGameState === 'function');
+    await page.waitForFunction(() => window._surfacesApplied !== undefined);
+    await page.waitForFunction(() => window._bodyLinked > 0, null, { timeout: 60_000 });
+    await page.waitForTimeout(400);
+    await page.evaluate((dis) => {
+        window._crashWalkoffDisabled = true;
+        if (dis) window._crashRestFramingDisabled = true;
+    }, framingDisabled);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(() => window._getGameState().readyState === false,
+        null, { timeout: 90_000 });
+    await page.evaluate(() => {
+        window._pump = { down: false, tuck: false, armed: false, stop: false };
+        const send = (type, code) => window.dispatchEvent(
+            new KeyboardEvent(type, { code, bubbles: true }));
+        const tick = () => {
+            if (window._pump.stop) return;
+            const g = window._getGameState();
+            if (g.crashed) {
+                if (window._pump.down) send('keyup', 'ArrowDown');
+                if (window._pump.tuck) send('keyup', 'Space');
+                window._pump.stop = true;
+                return;
+            }
+            if (!g.grounded && g.posZ >= g.KICKER_END_Z && !window._pump.armed) {
+                window._pump.armed = true;
+                window._debugTriggerCrash();
+            }
+            if (g.grounded && !window._pump.down && g.flipPower < 0.999) {
+                window._pump.down = true; send('keydown', 'ArrowDown');
+            } else if (window._pump.down && (g.flipPower >= 0.999 || !g.grounded)) {
+                window._pump.down = false; send('keyup', 'ArrowDown');
+            }
+            if (!g.grounded && !window._pump.tuck) {
+                window._pump.tuck = true; send('keydown', 'Space');
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window._getGameState().crashed,
+        null, { timeout: 90_000 });
+    await page.waitForFunction(() => {
+        const p = window._ragdollProbe && window._ragdollProbe();
+        return p && p.resting;
+    }, null, { timeout: 90_000 });
+    await page.waitForTimeout(3500);
+    return page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const cam = scene.activeCamera;
+        scene.render();
+        const canvas = scene.getEngine().getRenderingCanvas();
+        const w = canvas.width, h = canvas.height;
+        let lo = 1e9, hi = -1e9, n = 0;
+        for (const m of scene.meshes) {
+            if (!m.name || !/^(athleteBody|athleteBoot)/.test(m.name)) continue;
+            if (!m.isEnabled() || !m.isVisible) continue;
+            if (!m.getTotalVertices || m.getTotalVertices() === 0) continue;
+            const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            if (!pos) continue;
+            const W = m.getWorldMatrix();
+            const T = scene.getTransformMatrix(), V = cam.viewport.toGlobal(w, h);
+            for (let i = 0; i < pos.length; i += 9) {
+                const co = BABYLON.Vector3.Project(
+                    BABYLON.Vector3.TransformCoordinates(
+                        new BABYLON.Vector3(pos[i], pos[i + 1], pos[i + 2]), W),
+                    BABYLON.Matrix.Identity(), T, V);
+                if (co.x < -50 || co.y < -50 || co.x > w + 50 || co.y > h + 50) continue;
+                if (co.y < lo) lo = co.y;
+                if (co.y > hi) hi = co.y;
+                n++;
+            }
+        }
+        return { radius: +cam.radius.toFixed(2),
+            lower: +cam.lowerRadiusLimit.toFixed(2),
+            frac: n ? +(((hi - lo) / h).toFixed(3)) : 0, n };
+    });
+}
+
+for (const world of ['single', 'double', 'triple']) {
+    test(`crash-rest framing (${world}): the eased rest radius reads at rest framing`, async ({ page }) => {
+        test.setTimeout(240_000);
+        const m = await driveCrashRest(page, world, false);
+        // RESTFRAME frac is the reviewer's 45 % readout (see header: gated
+        // by reviewer ruling, not here — rest pose varies run to run).
+        console.log('RESTFRAME', world, JSON.stringify(m));
+        expect(m.radius, `${world}: rest radius ${m.radius} did not ease in`).toBeLessThanOrEqual(2.1);
+        expect(m.radius, `${world}: rest radius ${m.radius} over-shot the goal`).toBeGreaterThanOrEqual(1.5);
+    });
+}
+
+test('crash-rest framing NC: with the ease disabled the camera stays at 10 m', async ({ page }) => {
+    test.setTimeout(240_000);
+    const m = await driveCrashRest(page, 'single', true);
+    console.log('RESTFRAME-NC', JSON.stringify(m));
+    expect(m.radius, 'NC must hold the locked follow distance').toBeGreaterThanOrEqual(8);
+    expect(m.frac, 'NC: speck framing must read small').toBeLessThan(0.30);
+});
+
 // ── NEGATIVE CONTROL (NEXT 2026-08-29) ──────────────────────────────────────
 // With the roll phase disabled (window._crashRollDisabled before the crash)
 // the old behaviour — an exponential stop ~1 s after the freeze, wherever

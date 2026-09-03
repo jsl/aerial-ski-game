@@ -2498,7 +2498,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=102";   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=103";   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -8039,6 +8039,14 @@ void main(void) {
         return CAM_BETA_SIDE;
     }
     let _camTargetAlpha = null;
+    // SLOT 292 item 2 (broadside rest framing): one-shot state for the
+    // rest-onset alpha ease. _wasCrashRest tracks the resting edge;
+    // _preRestAlpha / _crashRestAlphaLast restore the follow-behind angle
+    // when the rest ends into the walk-off iff the user never orbited away.
+    let _wasCrashRest = false;
+    let _preRestAlpha = null;
+    let _crashRestAlphaGoal = null;
+    let _crashRestAlphaLast = null;
     function _snapCamera(mode) {
         if (mode === 0)      { _camTargetAlpha = Math.PI;         }
         else if (mode === 1) { _camTargetAlpha = Math.PI / 2;     }
@@ -10758,6 +10766,99 @@ void main(void) {
                 camera.target.z = _target.z + _dz * _s;
             }
         }
+        // SLOT 292 item 2 (the 271 spec item 3): crash-rest framing. Once the
+        // ragdoll has settled (R.resting), ease the follow radius in so the
+        // body reads at rest framing instead of a speck at the locked 10 m.
+        // Radius ONLY: the 252 target-ease above and the free-look stand-down
+        // guard are untouched, and the ease runs inward only (radius > goal)
+        // so a user's wheel zoom-in is never fought. The next run's
+        // free-look-exit branch resets radius/limits, so nothing leaks into
+        // live play. `window._crashRestFramingDisabled = true` is the
+        // negative-control override (the gate must stay at 10 m with it set);
+        // `window._crashRestRadius` overrides the 2.2 m goal in tests.
+        // (NOT gated on !_freeLookActive: at rest free-look is auto-allowed,
+        // so that condition would never fire on the default path.)
+        // Goal calibration (292 probes, drive viewport 320x220, fov 0.9):
+        // vertex-span fraction of frame height 0.135 @ 10 m (the speck),
+        // 0.294 @ 3.8 m, 0.364 @ 3.0 m. Rest POSE varies run to run
+        // (untouchable crash physics): at 1.9 m the slot measured single
+        // 0.459–0.597, double 0.420–0.494, triple 0.210–0.568 — a curled
+        // ball spans ~0.4 m and no sane radius reaches 0.45 on it, so the
+        // fraction stays a readout (crash-ragdoll RESTFRAME log) and the
+        // 45 % bar vs curled rests is an open reviewer question. (Radii
+        // below the free-look 3 m floor read back clamped; the ease lowers
+        // the floor to the goal itself.)
+        if (window._crashRestFramingDisabled !== true && state.crashed
+                && window._ragdollProbe && window._ragdollProbe()
+                && window._ragdollProbe().resting) {
+            const _goal = window._crashRestRadius || 1.9;
+            if (camera.lowerRadiusLimit > _goal) camera.lowerRadiusLimit = _goal;
+            if (camera.radius > _goal) {
+                camera.radius += (_goal - camera.radius) * Math.min(1, 2.5 * dt);
+                if (camera.radius - _goal < 0.01) camera.radius = _goal;
+            }
+        }
+        // Broadside rest framing: a fixed radius cannot meet the 45 % gate
+        // when the body rests END-ON to the follow camera (measured: triple
+        // 0.282 at 1.9 m, same run single 0.459 — rest orientation varies run
+        // to run). At rest onset, ease alpha ONE-SHOT to broadside of the
+        // body's long axis (head-minus-torso drivers, XZ-projected), same
+        // 5/s shortest-arc pattern as the C-key lerp above (converges, then
+        // stops fighting the mouse). When the rest ends into the walk-off
+        // (still crashed), the pre-rest angle is handed back iff the user
+        // never orbited away — so nothing leaks into the walk-off or, via
+        // the free-look-exit branch, into live play.
+        const _restProbeNow = window._ragdollProbe && window._ragdollProbe();
+        const _restNow = !!(state.crashed && _restProbeNow && _restProbeNow.resting);
+        const _restFramingOff = window._crashRestFramingDisabled === true;
+        if (_restNow && !_wasCrashRest && !_restFramingOff) {
+            _preRestAlpha = camera.alpha;
+            _crashRestAlphaGoal = null;
+            _crashRestAlphaLast = null;
+            try {
+                const _tn0 = character && character.meshes && character.meshes['torso'];
+                const _hn0 = character && character.meshes && character.meshes['head'];
+                const _tn = _tn0 && (_tn0.mesh || _tn0);
+                const _hn = _hn0 && (_hn0.mesh || _hn0);
+                if (_tn && _hn && _tn.getAbsolutePosition && _hn.getAbsolutePosition) {
+                    const _tp = _tn.getAbsolutePosition(), _hp = _hn.getAbsolutePosition();
+                    let _ax = _hp.x - _tp.x, _az = _hp.z - _tp.z;
+                    const _al = Math.hypot(_ax, _az);
+                    if (_al > 0.2) {
+                        _ax /= _al; _az /= _al;
+                        let _g = Math.atan2(-_ax, _az);
+                        while (_g - camera.alpha > Math.PI) _g -= 2 * Math.PI;
+                        while (_g - camera.alpha < -Math.PI) _g += 2 * Math.PI;
+                        _crashRestAlphaGoal = _g;
+                        _crashRestAlphaLast = _g;
+                    }
+                }
+            } catch (_e) { /* framing nicety only */ }
+        }
+        if (_crashRestAlphaGoal !== null) {
+            if (!_restNow || _restFramingOff) {
+                _crashRestAlphaGoal = null;
+            } else {
+                let _da = _crashRestAlphaGoal - camera.alpha;
+                while (_da > Math.PI) _da -= 2 * Math.PI;
+                while (_da < -Math.PI) _da += 2 * Math.PI;
+                camera.alpha += _da * Math.min(1, 5 * dt);
+                if (Math.abs(_da) < 0.005) {
+                    camera.alpha = _crashRestAlphaGoal;
+                    _crashRestAlphaGoal = null;
+                }
+            }
+        }
+        if (!_restNow && _wasCrashRest && state.crashed && !_restFramingOff
+                && _preRestAlpha !== null && _crashRestAlphaLast !== null) {
+            let _dh = camera.alpha - _crashRestAlphaLast;
+            while (_dh > Math.PI) _dh -= 2 * Math.PI;
+            while (_dh < -Math.PI) _dh += 2 * Math.PI;
+            if (Math.abs(_dh) < 0.05) camera.alpha = _preRestAlpha;
+            _preRestAlpha = null;
+            _crashRestAlphaLast = null;
+        }
+        _wasCrashRest = _restNow;
         if (!_freeLookActive && !state.crashed) {
             camera.target.y = _visRootY;
             camera.target.z = state.posZ;

@@ -59,12 +59,16 @@ const { chromium, devices } = require('../node_modules/playwright');
         const p2 = window._ragdollProbe && window._ragdollProbe();
         return window._getGameState().crashed && p2 && p2.resting;
     }, null, { timeout: 90000 }).catch(() => {});
-    await p.waitForTimeout(1500);
+    await p.waitForTimeout(3500);
+    // SLOT 292 item 2: NO forced radius any more — the game's crash-rest
+    // framing ease owns the radius once the ragdoll rests. Read it as-is;
+    // the gate is radius <= 2.1 (goal 1.9 m) so the body reads at rest
+    // framing on the iPhone viewport too.
     const rest = await p.evaluate(() => {
         const g = window._getGameState();
         const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
-        cam.lowerRadiusLimit = 4; cam.radius = 4;
-        return { crashed: g.crashed, posZ: +g.posZ.toFixed(1) };
+        return { crashed: g.crashed, posZ: +g.posZ.toFixed(1),
+            radius: +cam.radius.toFixed(2) };
     });
     await p.screenshot({ path: `${out}/mobile_crash_rest_4m.png` });
     console.log('flight:', JSON.stringify(fl), 'rest:', JSON.stringify(rest));
