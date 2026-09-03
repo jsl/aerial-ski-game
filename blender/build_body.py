@@ -3273,8 +3273,17 @@ def leg_taper_gate(body):
 # far as leg_taper_gate's calf/thigh <= 0.80 demands (a slimmer thigh would
 # otherwise break that band from below).
 FRONT_TAPER_GATE = {'upper_knee': 1.35}
-TAPER_TARGET = 1.30          # ship a little inside the gate
-CALTHIGH_SHIP = 0.85   # Fable 2026-09-01: the shipped calf/thigh of a garment TUBE (was 0.78); the widened taper band tops at 0.88
+if os.environ.get('LEGS4', '0') == '1':
+    # Slot 291 (LEGS 4) mechanism, DEFAULT OFF (watertight rim regression +
+    # knee-triplet infeasibility, see entry 291): 1.34 x knee 112 = 150, the
+    # 239 band's lower edge; gate stays 1.35.
+    TAPER_TARGET = 1.34
+    # Slot 291: 239 value; the 2-iteration loop under-converges, so 0.80 lands
+    # ~125 not 120 (probe A).
+    CALTHIGH_SHIP = 0.80
+else:
+    TAPER_TARGET = 1.30          # ship a little inside the gate
+    CALTHIGH_SHIP = 0.85   # Fable 2026-09-01: the shipped calf/thigh of a garment TUBE (was 0.78); the widened taper band tops at 0.88
 
 
 def _clamp01(x):
@@ -3353,6 +3362,10 @@ def thigh_taper_pass(body):
         return
     r = front_taper_report(body, 'taper in')
     t = leg_taper_report(body, 'taper in')
+    # Slot 291 (LEGS 4, probe B): fk=1.0 retired the knee-up but deflated the
+    # knee-median 110 -> 104, and the thigh ratio loop followed it 148 -> 139
+    # (thigh = TAPER_TARGET x knee-median by construction). The knee-up is
+    # load-bearing for the median until the ring is redesigned flat-top; kept.
     fk = 1.15                                   # knee radius UP
     thigh_target = TAPER_TARGET * r['knee'] * fk
     fu = min(1.0, thigh_target / r['thigh'])    # upper radius DOWN
