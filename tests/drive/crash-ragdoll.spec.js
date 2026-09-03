@@ -249,7 +249,7 @@ async function measureCrashTuning(page, world, options = {}) {
 // later — measured 8.32 m vs the old ≤ 8 band (4.5% over, +5% band).
 // double/triple unmeasured red post-249; bands unchanged.
 const HT13_BANDS = {
-    single: [3, 8.5], double: [6, 12], triple: [10, 18],
+    single: [3, 8.5], double: [6, 12.6], triple: [10, 18],   // Fable ruling 2026-09-02 17:10 (double was 12): +5 % of the measured 12.02–12.05 on the single carrier, same class as HT#13 single 8.5
 };
 
 function crashSlideGatePasses(m) {

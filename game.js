@@ -7266,6 +7266,7 @@ void main(void) {
                 }
                 _lieFoldStep(R, dt);
                 for (const pt of R.parts) {
+                    if (R.looseGroundRest) break;   // Fable 20:30: the #20 negative control lowers NOTHING
                     const _tY = _crashFloorY(pt.p.z) + pt.r;
                     const _rate = /^ankle/.test(pt.name) ? 0.5 : /^knee/.test(pt.name) ? 0.35
                                 : /^(head|neck)/.test(pt.name) ? 0.3          // head/neck lever ~0.3 m: 0.4 m/s measured a 1.60 rad/s neck rate — over the ruled 90 deg/s post-window limit; 0.3 clears it
