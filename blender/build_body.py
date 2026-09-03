@@ -13484,6 +13484,12 @@ def main():
     # on the real export (iter 188): both boot primitives sum exactly 1.000,
     # joints 11/12 = lowerLegL/R. boots join equip so the selection ships
     # them.
+    # Fable (2026-09-02 20:50): twice now (222, 266) the SHIPPED athlete was rebuilt
+    # without --boots on and 8201 showed bare feet. A build that targets the shipped
+    # asset path must carry the boots; a bootless build is a probe -> scratch path.
+    if str(arg('--out', '')).replace('\\', '/').endswith('assets/athlete_body.glb') and arg('--boots', 'off') != 'on':
+        raise SystemExit('[body] SHIP GUARD: building the shipped asset without --boots on is refused '
+                         '(222 and 266 shipped bare feet); pass --boots on, or --out <scratch path> for a probe')
     boots = add_boots(arm, joints, low) if arg('--boots', 'off') == 'on' else []
     equip = equip + boots
 
