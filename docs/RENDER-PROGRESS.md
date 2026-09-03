@@ -511,6 +511,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 **Open questions for the reviewer:** none new.
 ## Status board
 | — | Iteration 276 | **LEGS RE-CENTRE v2 (the 23:30 ruling's slot): the acceptance instrument `tests/drive/leg-axis.spec.js` LANDED and is RED on v100 exactly as mandated (G1 +0.072/+0.073, G2 bands fire, NC +0.07 fires); the v2 mechanism as specced (clamp removed, nearest-row fill, ankle-follow) FAILS the build's SLIVER gate (103/9864 = 1.04% vs 0.65%) — shear at the cuff/sole feature rings where adjacent-row offsets step ~60 mm; landed env-gated DEFAULT-OFF with the numbers, asset NOT shipped, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: feature-ring exclusion or 2-row blend at the ankle station for a v3.** |
+| — | Iteration 277 | **LEGS RE-CENTRE v3 (the 23:40 ruling's slot): feature-ring + boot/sole exclusion from the population, 5-row box ×2, 15 mm/row slope limit — the field is SMOOTH and the SLIVER gate PASSES (49/9464 = 0.5178% ≤ 0.65% WITHOUT re-banding; 276 was 1.0442%); max row step capped at 15.0 mm; dropped rings logged. leg-axis still RED on the shipped probe: G1 +0.042/+0.044 (v100 +0.072 — real progress, gate 0.03), G2 bands 0.041–0.055, G3 −0.075/−0.071 (boot block-shift guard) ⇒ per the fallback rule landed env-gated DEFAULT-OFF, asset reverted, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: smooth-field class exhausted; G1 vs G3 needs a different mechanism (LEGS 3/4 ruling).** | entry 277. |
 | — | Iteration 274 | **ULTRA pass (272 spec verbatim): all three re-centre gates resolved AT SOURCE in `blender/build_body.py`, mechanism stays env-gated, NO asset shipped. (1) KNEE_BLEND_FIX was an algebraic no-op (weight-flip + lerp-flip cancel — both branches identical, blend inverted in both modes); corrected under the flag. (2) LEG_AXIS_PIN's lateral median was candidate-skewed −41 mm vs the cloud's −19 mm (near-axis exclusion eats the moved tube's centre); pin now uses the re-centre's own median when LEG_RECEN ran. Taper 0.938 → thigh 163 / calf 126 = 0.776, front 1.300 — bands untouched. (3) Locality 36 → 0 by written ruling (rigid w≥0.999 weights rotate exactly, zero smear; bands/limits/NC premise untouched). (4) NM variance 3.98 → 5.93 ≥ 5.9 with no bake change (balloon UV dilution). Ship-res flag-on build exports green (probe.glb in scratch, deleted after numbers). Default ship-res build = HEAD by the build's own numbers (taper 125/103, slivers 63/9742, NM 6.15, locality 0; 51/930672 bytes 1-ulp BIN noise). unit 81/81, golden 30/30 (no recapture). NOT done: ASSET_V stays 100; LEG-AXIS build gate + leg-axis.spec.js still to be created; boots.spec/look/close-ups BLOCKED (chromium SIGTRAPs at launch in this sandbox).** | entry 274. |
 | — | Iteration 270 (review) | **REVIEW-ONLY (capped form, the 22:00 ruling's slot) + MOBILE SHOTS: unit 81/81, golden 30/30, look 7/7 — shots regenerated + inspected by eye. Mobile (iPhone 13, `tools/mobile_shots.js` extended with flight + crash-rest captures): ready 10 m/4 m, in-run 10 m/4 m, flight 4 m (airborne z 23.9, inverted, coherent), crash rest 4 m (ragdoll resting z 81.5, on-snow) — described in entry 270. Grey ramp holds (corridor 203–216 vs flanks 213–216, −6 % worst band). Loudest athlete debts by eye: magenta bib-hem patch (measured front ≈66×24 px @ x516–582/y408–432, side present) then the suit shell's lumpy chest/hip folds; crash-rest mobile framing leaves the body tiny in frame. No source/asset change, ASSET_V stays 100.** | entry 270. |
 | — | Iteration 267 | **LEGS 2 attempted and REVERTED per the 13:00 plan's revert-and-bisect rule: the ruled knee-band guards (move fade zero by 6 cm in metres, sever clipped out of `knee_z ± 6 cm`, curvature metric on effectively-shelled verts) improved the ring step 24.0 → 16.9 mm @ z −0.655 but did NOT meet the ruled 12 mm (the collar above the ring is the bridge window / shin top half-ring — needs 241's ring), and the ao_flatten bite gate rejected the guarded geometry (0.738 vs ≤ 0.70; cause not isolated in budget). No source/asset change; ASSET_V stays 99. unit 81/81, golden 30/30 on the reverted tree. Bisect table in the entry.** | entry 267. |
@@ -1370,6 +1371,12 @@ forest.
   Both gate intents unchanged — confirm.
 
 ## Open questions for the reviewer
+- **Entry 277 (re-centre v3):** the C1-smooth field class is exhausted — the
+  same smoothness that passes the sliver gate under-moves the cuff rows
+  (+42 mm vs the 30 mm gate) while the mid-shin's −113 mm medians carry the
+  boots 7 cm back (G3 guard 6 cm). Closing G1 without breaking G3 needs a
+  mechanism ruling: per-row axis refit, or re-stationing the boots to the
+  moved shin (which changes the G3 contract). LEGS 3/4 call.
 - **Entry 217 (get-up roll travel):** the whole-chain rise cap fixed the pop
   (peaks 8.01 → 1.20 m/s), but in world `triple` the contact-paced roll still
   raises the root +2.9 m IN TOTAL — the tuck-crouch pose's feet land far
@@ -1798,6 +1805,52 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 277 — LEGS RE-CENTRE v3 (the 23:40 ruling's slot): the field is now SMOOTH
+and the sliver gate PASSES (0.52% vs 0.65%) — but leg-axis is still RED
+(shin-at-cuff +0.042/+0.044 vs 0.03; bands 0.041–0.055 vs 0.035; G3
+−0.075/−0.071 vs 0.06) — landed env-gated default-off per the fallback rule;
+asset NOT shipped, ASSET_V stays 100
+
+**What changed.** `blender/build_body.py` `LEG_RECEN` block only, per the slot
+277 spec: (a) the row-median POPULATION now excludes the legacy hidden
+boot/sole verts (everything below the ankle station) and any ring whose row
+median jumps > 25 mm from BOTH neighbours (logged per segment); the
+crotch-sheet/near-axis exclusions are unchanged. (b) The offset profile is
+made C1-smooth BEFORE use: 5-row box low-pass twice, then a 15 mm/row slope
+limit by forward-backward clamping (iterated to convergence). (c) unchanged:
+the field applies to every suit vert of the leg by z (feature rings move
+coherently), rows below the ankle ride the ankle row, the knee-bridge fade
+(KNEE BRIDGE window, smoothstep) to zero into the thigh stays. Fore-aft only
+and the LEG_AXIS_PIN are untouched.
+
+**Build numbers (ship-res flag-on `LEG_RECEN=1 LEG_AXIS_PIN=1 KNEE_BLEND_FIX=1
+--boots on`, scratch output).** Max row step before -> after the slope limit:
+upperLegL 21.1 -> 15.0 mm, upperLegR 19.6 -> 15.0, lowerLegL 14.9 -> 14.9,
+lowerLegR 14.7 -> 14.7 (the shin field was already under the limit; the v2
+60 mm steps came from the rings, now dropped: upperLegL 12 rings, upperLegR
+14, lowerLeg 2 each). Shin dy med −113.2/−110.1 mm — the un-bow is real.
+SLIVER at suit_shell 47/10590 = 0.4438%, final 49/9464 = 0.5178% <= 0.65%
+WITHOUT re-banding (276: 1.0442% FAIL) — the sliver red is closed.
+
+**Game-side (shipped probe, then reverted).** leg-axis: G1 shin-at-cuff
++0.042/+0.044 (v100 +0.072/+0.073, v2-era +0.082 — real progress, still over
+the 0.03 gate); G2 bands 0.041–0.055 vs ±0.035; G3 boot station
+−0.075/−0.071 vs ±0.06 — the smooth field moves shin AND boot back together
+~7 cm, still past the block-shift guard. NC fires. RED on three gates ⇒ per
+the slot's fallback rule the mechanism lands default-off with the numbers and
+the asset was reverted (assets/, game.js ASSET_V, index.html tags all back to
+v100 byte-identical).
+
+**Verification (default tree, v100).** unit 81/81, golden 30/30 (no
+recapture), boots 14/14, look 7/7. ASSET_V stays 100; assets/ untouched.
+
+**Open.** The smooth-field class is exhausted as designed: C1 across the cuff
+necessarily under-moves the cuff rows while the mid-shin's −113 mm medians
+drag the boot past the station guard. Closing the last 12 mm to G1 while
+holding G3 needs a DIFFERENT mechanism (e.g. move the shin about its own
+per-row axis with a girth-neutral refit, or re-station the boots to the moved
+shin) — reviewer's call for LEGS 3/4.
 
 ### 174 — 172-ruling step 1: the hand pipeline is FRAME-INDEPENDENT —
 relax_hands/hand_spread_gate + all five dependencies re-measured along the

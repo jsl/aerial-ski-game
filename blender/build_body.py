@@ -6289,34 +6289,93 @@ def suit_shell(body, joints):
             # the median is robust anyway, this keeps the rows honest)
             if v.co.x * c.x < 0 or math.hypot(v.co.x - c.x, v.co.y - c.y) < 0.02:
                 continue
+            # v3 (SLOT 277, the 23:40 ruling on 276): the legacy hidden
+            # boot/sole pieces below the ankle station are geometry, not a
+            # tube cross-section — they never enter the row population (their
+            # rows ride the ankle row below anyway).
+            if v.co.z < bl('lowerLeg' + nm[-1]).z - SEGMENTS['lowerLeg' + nm[-1]]['h'] / 2 + 0.02:
+                continue
             rows[nm].setdefault(int(math.floor(v.co.z / SHELL_DZ)), []).append(
                 (v.co.x - c.x, v.co.y - c.y))
-        # v2 (SLOT 276, the 23:30 ruling on 274): the 40 mm contaminated-row
-        # clamp is GONE — the row offsets are the signal, and the clamp was
-        # what turned the move into the 11 cm whole-block shift. Keep the
-        # 3-row low-pass; rows with < 6 verts take the NEAREST kept row; rows
-        # BELOW the ankle station (the foot inside the boot) use the ankle
-        # row's offset — the foot moves with the ankle, not to its own median.
+        # v3 (SLOT 277, the 23:40 ruling on 276): a SMOOTH offset field.
+        # (a) feature rings are dropped from the population: any ring whose
+        # row median jumps > 25 mm from BOTH neighbours is a geometry edge
+        # (boot-liner/sole ring), not a tube cross-section — dropped and
+        # logged; those rows then take the nearest kept row. (b) the profile
+        # o(z) is made C1-smooth BEFORE use: 5-row box low-pass twice, then
+        # a slope limit |o(k) - o(k-1)| <= 15 mm per SHELL_DZ row enforced
+        # by a forward-backward pass (clamp toward the neighbour), so no
+        # adjacent rows can shear a face. Max step logged before/after.
         med = {}
         for nm, rk in rows.items():
             med[nm] = {k: (_st.median(p[0] for p in rk[k]),
                            _st.median(p[1] for p in rk[k]),
                            len(rk[k]))
                        for k in rk}
+        dropped = {}
+        for nm, mk in med.items():
+            ks_raw = sorted(mk)
+            drop = set()
+            for j in range(1, len(ks_raw) - 1):
+                k, pk, nk = ks_raw[j], ks_raw[j - 1], ks_raw[j + 1]
+                d_prev = math.hypot(mk[k][0] - mk[pk][0], mk[k][1] - mk[pk][1])
+                d_next = math.hypot(mk[k][0] - mk[nk][0], mk[k][1] - mk[nk][1])
+                if d_prev > 0.025 and d_next > 0.025:
+                    drop.add(k)
+            dropped[nm] = drop
         sm = {}
         for nm, mk in med.items():
-            keep = {k: v for k, v in mk.items() if v[2] >= 6}
+            keep = {k: v for k, v in mk.items()
+                    if v[2] >= 6 and k not in dropped[nm]}
             ks = sorted(keep)
-            out = {}
-            for j, k in enumerate(ks):
-                nb = [keep[x][:2] for x in ks[max(0, j - 1):j + 2]]
-                out[k] = (sum(p[0] for p in nb) / len(nb),
-                          sum(p[1] for p in nb) / len(nb))
-            # rows with < 6 verts take the nearest kept row
+            smk = {k: keep[k][:2] for k in ks}
+            for _ in range(2):                     # 5-row box low-pass, twice
+                out = {}
+                for j, k in enumerate(ks):
+                    nb = [smk[x] for x in ks[max(0, j - 2):j + 3]]
+                    out[k] = (sum(p[0] for p in nb) / len(nb),
+                              sum(p[1] for p in nb) / len(nb))
+                smk = out
+            LIM = 0.015
+
+            def _maxstep():
+                m = 0.0
+                for a, b in zip(ks, ks[1:]):
+                    m = max(m, math.hypot(smk[b][0] - smk[a][0],
+                                          smk[b][1] - smk[a][1]))
+                return m
+
+            _pre = _maxstep()
+            for _sweep in range(100):
+                changed = False
+                for j in range(1, len(ks)):        # forward
+                    k, kp = ks[j], ks[j - 1]
+                    dx, dy = smk[k][0] - smk[kp][0], smk[k][1] - smk[kp][1]
+                    d = math.hypot(dx, dy)
+                    if d > LIM:
+                        smk[k] = (smk[kp][0] + dx * LIM / d,
+                                  smk[kp][1] + dy * LIM / d)
+                        changed = True
+                for j in range(len(ks) - 2, -1, -1):   # backward
+                    k, kn = ks[j], ks[j + 1]
+                    dx, dy = smk[k][0] - smk[kn][0], smk[k][1] - smk[kn][1]
+                    d = math.hypot(dx, dy)
+                    if d > LIM:
+                        smk[k] = (smk[kn][0] + dx * LIM / d,
+                                  smk[kn][1] + dy * LIM / d)
+                        changed = True
+                if not changed:
+                    break
+            log(f'  LEGRECEN {nm}: max row step {_pre*1000:.1f} -> '
+                f'{_maxstep()*1000:.1f} mm after slope limit; dropped '
+                f'feature rings: {sorted(dropped[nm]) or "none"}')
+            out = dict(smk)
+            # rows with < 6 verts (or a dropped ring) take the nearest kept row
             for k, v in mk.items():
-                if v[2] < 6 and ks:
-                    kk = min(ks, key=lambda x: abs(x - k))
-                    out[k] = keep[kk][:2]
+                if v[2] < 6 or k in dropped[nm]:
+                    if ks:
+                        kk = min(ks, key=lambda x: abs(x - k))
+                        out[k] = smk[kk]
             # rows below the ankle station follow the ankle row (the foot
             # rides with the ankle; its own row medians measure the foot's
             # forward reach, not a tube offset)
