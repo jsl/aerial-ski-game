@@ -20,6 +20,11 @@ async function forensics(page, world, opts) {
     if (o.lieDisabled) {
         await page.evaluate(() => { window._crashLieDisabled = true; });
     }
+    // SLOT 293 (lie-down v4, ruling on 262): window._crashLieV4 keeps the
+    // ragdoll integrating through the roll instead of freezing the crumple.
+    if (o.lieV4) {
+        await page.evaluate(() => { window._crashLieV4 = true; });
+    }
     await page.waitForTimeout(400);
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window._getGameState().readyState === false,
@@ -344,3 +349,71 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
             `afterLieN=${afterLie.length} maxClearAfter=${maxAfter} ` + `disabled=${isNC}`);
     });
 }
+
+// ── 293 SLIDE LIE-DOWN v4 (ruling on 262, 18:15) ─────────────────────
+// The ragdoll keeps falling through the roll (no freeze at 0.6 s). This
+// slot lands the mechanism env-gated: these runs assert the MACHINE still
+// holds under v4 (no tick exception, rest declared, walk starts — 256's
+// attempt-2 failure mode was rest never coming) and LOG the lie-down
+// profile plus the chain readings for the reviewer. The <= 8 cm lie gate
+// itself stays log-only here; 294 earns it.
+for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')) {
+    test(`lie-v4 ${world}: keep falling, machine holds, profile logged`, async ({ page }) => {
+        const run = () => forensics(page, world, {
+            tuck: process.env.FG_TUCK !== '0', lieV4: true,
+        });
+        let m = await run();
+        if (!m.frames.some((f) => f.phase === 'tumble' || f.phase === 'roll')) {
+            console.log(`[lie-v4] ${world}: degenerate run, retrying once`);
+            m = await run();
+        }
+        expect(m.error).toBeNull();
+        expect(m.crashErr).toBeNull();
+        expect(m.nFrames).toBeGreaterThan(60);
+        const tRest = (m.frames.find((f) => f.phase === 'stopped') || {}).t;
+        const fWalk = m.frames.find((f) => f.walkPhase === 'walk' || f.walkPhase === 'done');
+        expect(tRest).toBeDefined();
+        expect(fWalk).toBeDefined();
+        const getupS = (fWalk.t - tRest) / 1000;
+        expect(getupS).toBeLessThan(6.0);
+        const roll = m.frames.filter((f) => f.phase === 'roll');
+        const lieFrames = roll.filter((f) => f.rT != null && f.rollAt != null);
+        const afterLie = lieFrames.filter((f) => f.rT - f.rollAt >= 1.0);
+        const lieDur = (lieFrames.find((f) => f.lieDur != null) || {}).lieDur;
+        const maxAfter = afterLie.length
+            ? Math.max(...afterLie.map((f) => f.maxClear || 0)) : null;
+        const lc = roll.map((f) => f.lowClear).filter((v) => v != null);
+        console.log(`[lie-v4] ${world} lieDur=${lieDur} ` +
+            `afterLieN=${afterLie.length} maxClearAfter=${maxAfter} ` +
+            `lowClear[min=${Math.min(...lc)} max=${Math.max(...lc)}] ` +
+            `restAt=${tRest} getupS=${getupS.toFixed(2)} ` +
+            `maxSep=${m.maxSep.d} maxBootSep=${m.maxBootSep.d} ` +
+            `maxLLJump=${m.maxLLJump.d} maxTargetSep=${m.maxTargetSep.d}`);
+        require('fs').writeFileSync(
+            path.join(OUT, `forensics_liev4_${world}.json`), JSON.stringify(m, null, 1));
+    });
+}
+
+// v4 NEGATIVE CONTROL: v4 + _crashLieDisabled freezes the propped crumple
+// at hand-over — it must FAIL the <= 8 cm lie bar (double world: 256
+// measured the rigid profile at 0.58-0.90 m).
+test('lie-v4 negative control: frozen crumple fails the 8 cm bar', async ({ page }) => {
+    const run = () => forensics(page, 'double', {
+        tuck: process.env.FG_TUCK !== '0', lieV4: true, lieDisabled: true,
+    });
+    let m = await run();
+    if (!m.frames.some((f) => f.phase === 'tumble' || f.phase === 'roll')) {
+        console.log('[lie-v4-nc] double: degenerate run, retrying once');
+        m = await run();
+    }
+    expect(m.error).toBeNull();
+    const roll = m.frames.filter((f) => f.phase === 'roll');
+    const lieFrames = roll.filter((f) => f.rT != null && f.rollAt != null);
+    const afterLie = lieFrames.filter((f) => f.rT - f.rollAt >= 1.0);
+    const maxAfter = afterLie.length
+        ? Math.max(...afterLie.map((f) => f.maxClear || 0)) : null;
+    console.log(`[lie-v4-nc] double lieDur=${(lieFrames.find((f) => f.lieDur != null) || {}).lieDur} ` +
+        `afterLieN=${afterLie.length} maxClearAfter=${maxAfter}`);
+    expect(maxAfter).not.toBeNull();
+    expect(maxAfter).toBeGreaterThan(0.08);
+});

@@ -6739,6 +6739,220 @@ void main(void) {
             R.foldDoneAt = R.t; R.lieDur = R.foldDoneAt - R.foldT0;
         }
     };
+    // SLIDE LIE-DOWN v4 (ruling on 262, 18:15; slots 293-294): "the ragdoll
+    // keeps falling" — at the 0.6 s hand-over the roll keeps integrating
+    // (gravity, contact, hard sticks, angular limits) with heavy
+    // centre-relative damping (x0.85/frame) instead of freezing the crumple,
+    // so limbs FALL onto the snow. The ruling lists gravity, contact, hard
+    // sticks and angular limits — NOT shape retention, which is exactly what
+    // propped the frozen crumple up. Judged reimplementation of the dead
+    // 263 session's patch (~/aerial-agents/scratch/iter-263/wip.patch) with
+    // one correction: 263 refactored the shared PBD with a spine formula
+    // that reads 180 deg for the tumble (HEAD: 40 deg) — the tumble path
+    // below is therefore NOT refactored and runs byte-identical; v4 carries
+    // its own lean integrator. Env-gated: window._crashLieV4 === true;
+    // default off (HEAD v2 behaviour exactly).
+    const _crashLieV4 = function () {
+        return typeof window !== 'undefined' && window._crashLieV4 === true;
+    };
+    const _crashLieNC = function () {
+        return typeof window !== 'undefined' && window._crashLieDisabled === true;
+    };
+    const _crashLieV4Step = function (R, dt) {
+        const nSub = dt > 0.026 ? 3 : 2;
+        const h = dt / nSub;
+        const _relD = Math.pow(0.85, 1 / nSub);
+        const _hardPass = function () {
+            for (const hp of R.hard) {
+                const a = hp.a.p, b = hp.b.p;
+                const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                const k = (l - hp.rest) / l * 0.5;
+                a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+            }
+        };
+        const _contactPass = function () {
+            const eps = 0.05;
+            const slope = Math.min(1.2, Math.abs(terrainRootY(R.torso.z + eps) - terrainRootY(R.torso.z - eps)) / (2 * eps));
+            for (const pt of R.parts) {
+                const surf = _crashFloorY(pt.p.z) + pt.r;
+                if (pt.p.y < surf) {
+                    pt.p.y = surf;
+                    const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
+                    const vH = Math.sqrt(vx * vx + vz * vz);
+                    if (vH / h < 0.5) {
+                        pt.prev.x = pt.p.x;
+                        pt.prev.z = pt.p.z;
+                    } else {
+                        const f = Math.min(0.5, (3.5 + 4.5 * slope) * h * 10);
+                        let k = 1 - f;
+                        if (vH * (1 - k) / h < 0.9) k = 0.25;
+                        pt.prev.x = pt.p.x - vx * k;
+                        pt.prev.z = pt.p.z - vz * k;
+                    }
+                    if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                }
+            }
+        };
+        const _angClamp = function (j, a, b, lo, hi) {
+            const u = _crashVSub(a.p, j.p), v = _crashVSub(b.p, j.p);
+            const lu = _crashVLen(u), lv = _crashVLen(v);
+            const c = Math.max(-1, Math.min(1, (u.x * v.x + u.y * v.y + u.z * v.z) / (lu * lv)));
+            const ang = Math.acos(c);
+            if (ang >= lo && ang <= hi) return;
+            const target = ang < lo ? lo : hi;
+            const ax = (u.y * v.z - u.z * v.y) / (lu * lv);
+            const ay = (u.z * v.x - u.x * v.z) / (lu * lv);
+            const az = (u.x * v.y - u.y * v.x) / (lu * lv);
+            if (ax * ax + ay * ay + az * az < 1e-8) return;
+            const q = _crashQAxis(ax, ay, az, target - ang);
+            const nb = _crashQRotV(q, _crashV(v.x / lv, v.y / lv, v.z / lv));
+            b.p.x = j.p.x + nb.x * lv; b.p.y = j.p.y + nb.y * lv; b.p.z = j.p.z + nb.z * lv;
+        };
+        for (let s = 0; s < nSub; s++) {
+            let _cx = 0, _cy = 0, _cz = 0;
+            for (const pt of R.parts) {
+                _cx += pt.p.x - pt.prev.x; _cy += pt.p.y - pt.prev.y; _cz += pt.p.z - pt.prev.z;
+            }
+            _cx /= R.parts.length; _cy /= R.parts.length; _cz /= R.parts.length;
+            for (const pt of R.parts) {
+                let vx = (pt.p.x - pt.prev.x) * 0.99;
+                let vy = (pt.p.y - pt.prev.y) * 0.99;
+                let vz = (pt.p.z - pt.prev.z) * 0.99;
+                vx = _cx + (vx - _cx) * _relD;
+                vy = _cy + (vy - _cy) * _relD;
+                vz = _cz + (vz - _cz) * _relD;
+                pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                pt.p.x += vx; pt.p.y += vy - _CRASH_GRAV * h * h; pt.p.z += vz;
+            }
+            for (let it = 0; it < 6; it++) {
+                for (const st of R.sticks) {
+                    const d = _crashVSub(st.b.p, st.a.p);
+                    const len = _crashVLen(d);
+                    const diff = (len - st.rest) / len * 0.5;
+                    st.a.p.x += d.x * diff; st.a.p.y += d.y * diff; st.a.p.z += d.z * diff;
+                    st.b.p.x -= d.x * diff; st.b.p.y -= d.y * diff; st.b.p.z -= d.z * diff;
+                }
+                _angClamp(R.byName.neck, R.byName.torsoBottom, R.byName.headTop,
+                    Math.PI - R.ang.headMax, Math.PI);
+                _angClamp(R.byName.kneeL, R.byName.hipL, R.byName.ankleL, R.ang.kneeL[0], R.ang.kneeL[1]);
+                _angClamp(R.byName.kneeR, R.byName.hipR, R.byName.ankleR, R.ang.kneeR[0], R.ang.kneeR[1]);
+                _angClamp(R.byName.elbowL, R.byName.shL, R.byName.wristL, R.ang.elbL[0], R.ang.elbL[1]);
+                _angClamp(R.byName.elbowR, R.byName.shR, R.byName.wristR, R.ang.elbR[0], R.ang.elbR[1]);
+                _hardPass();
+                _contactPass();
+            }
+            for (let it = 0; it < 4; it++) { _hardPass(); _contactPass(); }
+            if (!R.limp) _hardPass();
+            const _tA = _crashVSub(R.byName.torsoTop.p, R.byName.torsoBottom.p);
+            const _tL = _crashVLen(_tA);
+            if (_tL > 1e-6) {
+                const _k = R.neckOff / _tL;
+                const _nk = R.byName.neck;
+                _nk.p.x = R.byName.torsoTop.p.x - _tA.x * _k;
+                _nk.p.y = R.byName.torsoTop.p.y - _tA.y * _k;
+                _nk.p.z = R.byName.torsoTop.p.z - _tA.z * _k;
+                _nk.prev.x = _nk.p.x; _nk.prev.y = _nk.p.y; _nk.prev.z = _nk.p.z;
+                const _hx = R.byName.headTop.p;
+                const _hdx = _hx.x - _nk.p.x, _hdy = _hx.y - _nk.p.y, _hdz = _hx.z - _nk.p.z;
+                const _hl = Math.sqrt(_hdx * _hdx + _hdy * _hdy + _hdz * _hdz) || 1e-9;
+                const _hs = R.headRest / _hl;
+                _hx.x = _nk.p.x + _hdx * _hs;
+                _hx.y = _nk.p.y + _hdy * _hs;
+                _hx.z = _nk.p.z + _hdz * _hs;
+                const _hsurf = _crashFloorY(_hx.z) + _hx.r;
+                if (_hx.y < _hsurf) {
+                    const _Lh = R.headRest;
+                    const _ux = (_hx.x - _nk.p.x) / _Lh;
+                    const _uy = (_hx.y - _nk.p.y) / _Lh;
+                    const _uz = (_hx.z - _nk.p.z) / _Lh;
+                    const _need = (_hsurf - _nk.p.y) / _Lh;
+                    const _phi = Math.asin(Math.max(-1, Math.min(1, _uy)));
+                    const _phiT = Math.asin(Math.max(-1, Math.min(1, _need)));
+                    const _axL = Math.sqrt(_ux * _ux + _uz * _uz);
+                    if (_axL > 1e-6 && _phiT > _phi) {
+                        const _q = _crashQAxis(-_uz / _axL, 0, _ux / _axL, _phiT - _phi);
+                        const _nd = _crashQRotV(_q, _crashV(_ux, _uy, _uz));
+                        _hx.x = _nk.p.x + _nd.x * _Lh;
+                        _hx.y = _nk.p.y + _nd.y * _Lh;
+                        _hx.z = _nk.p.z + _nd.z * _Lh;
+                    }
+                }
+            }
+        }
+    };
+    // Bounded fall: a crumple propped on its own sticks is statically
+    // supported — gravity alone never collapses it (263 measured maxClear
+    // stuck at 0.40-0.44 through a 1.1 s roll on PBD alone). Drive the fall
+    // at the joint-gate ceiling instead: every propped particle descends at
+    // 0.8 x gate-omega x its shortest stick (the lever it rotates about),
+    // 200 deg/s in the ruled first-1.0 s window, 90 deg/s after. The hard
+    // sticks re-project below keep the joints within 2 cm.
+    const _crashLieDrain = function (R, dt, wCapDeg) {
+        if (!R._leverDone) {
+            R._leverDone = true;
+            for (const hp of R.hard) {
+                hp.a._lever = Math.min(hp.a._lever || 9, hp.rest);
+                hp.b._lever = Math.min(hp.b._lever || 9, hp.rest);
+            }
+        }
+        const _wCap = wCapDeg * Math.PI / 180;
+        for (const pt of R.parts) {
+            const _tY = _crashFloorY(pt.p.z) + pt.r;
+            const _gap = pt.p.y - _tY;
+            if (_gap <= 0.005 || R.looseGroundRest) continue;
+            const _rate = Math.min(1.2, 0.8 * _wCap * (pt._lever || 0.3));
+            pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
+        }
+        for (const hp of R.hard) {
+            const a = hp.a.p, b = hp.b.p;
+            const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+            const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+            const k = (l - hp.rest) / l * 0.5;
+            a.x += dx * k; a.y += dy * k; a.z += dz * k;
+            b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+        }
+    };
+    // Freeze only when EVERY joint rate holds under 30 deg/s for 0.6 s
+    // continuously (and never before 0.6 s into the roll) — a single quiet
+    // tick at hand-over, while the carried velocities are still building, is
+    // NOT rest (263 measured a premature freeze at 0.46 s with the torso
+    // still 0.4 m propped). _rootLie is captured after this freeze.
+    const _crashLieCalm = function (R, dt) {
+        const B = R.byName;
+        const _angAt = function (j, a, b) {
+            const ux = B[a].p.x - B[j].p.x, uy = B[a].p.y - B[j].p.y, uz = B[a].p.z - B[j].p.z;
+            const vx = B[b].p.x - B[j].p.x, vy = B[b].p.y - B[j].p.y, vz = B[b].p.z - B[j].p.z;
+            const lu = Math.hypot(ux, uy, uz) || 1e-9;
+            const lv = Math.hypot(vx, vy, vz) || 1e-9;
+            const c = Math.max(-1, Math.min(1, (ux * vx + uy * vy + uz * vz) / (lu * lv)));
+            return Math.acos(c);
+        };
+        const _ja = {
+            neck: _angAt('neck', 'torsoBottom', 'headTop'),
+            kneeL: _angAt('kneeL', 'hipL', 'ankleL'),
+            kneeR: _angAt('kneeR', 'hipR', 'ankleR'),
+            elbL: _angAt('elbowL', 'shL', 'wristL'),
+            elbR: _angAt('elbowR', 'shR', 'wristR'),
+        };
+        let _w = 0;
+        if (R._liePrevAng) {
+            for (const k of Object.keys(_ja)) {
+                _w = Math.max(_w, Math.abs(_ja[k] - R._liePrevAng[k]) / Math.max(dt, 1e-4));
+            }
+        }
+        R._liePrevAng = _ja;
+        if (_w < 30 * Math.PI / 180) {
+            R._lieCalm = (R._lieCalm || 0) + dt;
+        } else {
+            R._lieCalm = 0;
+        }
+        if (R._lieCalm >= 0.6 && R.t - R.rollAt >= 0.6) {
+            R._lieFrozen = true;
+            R.lieDur = R.t - R.rollAt;
+        }
+    };
     function _crashRagdollTick(R, dt) {
 
 
@@ -6752,6 +6966,8 @@ void main(void) {
         // the out-run (measured: rendered torso speed 10.1 m/s with a naive
         // full freeze). Once frozen the pose is never re-solved: only the
         // rigid slide step and the transform write-back execute.
+        // (v4 exception: with window._crashLieV4 the roll keeps integrating
+        // until the lie freeze; the frozen tail then rides as above.)
         if (R.phase === 'tumble') {
         // ── Verlet integrate (2 substeps for stability at clamped dt) ─────
         const nSub = dt > 0.026 ? 3 : 2;
@@ -7060,8 +7276,21 @@ void main(void) {
                 _sz += (pt.p.z - pt.prev.z) / Math.max(dt, 1e-4);
             }
             R.slideV = { x: _sx / R.parts.length, z: _sz / R.parts.length };
+            // v4: keep each particle's INTERNAL velocity (its velocity minus
+            // the body centre's) — the tumble's fall carries INTO the roll
+            // and damps down onto the snow. Half strength: the full tumble
+            // velocity snapped joints at hand-over (263 measured an 11.1
+            // rad/s knee spike vs the 3.49 rad/s window gate). Default off:
+            // the rigid freeze zeroes everything, exactly as before.
+            const _cdx = R.slideV.x * dt, _cdz = R.slideV.z * dt;
             for (const pt of R.parts) {
-                pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                if (_crashLieV4() && !_crashLieNC()) {
+                    pt.prev.x = pt.p.x - ((pt.p.x - pt.prev.x) - _cdx) * 0.5;
+                    pt.prev.y = pt.p.y - (pt.p.y - pt.prev.y) * 0.5;
+                    pt.prev.z = pt.p.z - ((pt.p.z - pt.prev.z) - _cdz) * 0.5;
+                } else {
+                    pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                }
             }
             // Force the roll DOWNHILL: the tumble's mean velocity can end
             // pointing uphill (a caught edge kills vz while verlet jitter
@@ -7093,6 +7322,12 @@ void main(void) {
             }
             R.phase = 'roll';
             R.rollAt = R.t;
+            // v4 NC (window._crashLieDisabled): freeze at hand-over — the
+            // propped crumple rides the slide and only the bounded settle
+            // drains it, which must FAIL the <= 8 cm gate.
+            if (_crashLieV4() && _crashLieNC()) {
+                R._lieFrozen = true; R.lieDur = 0;
+            }
             R.maxSpeed = Math.hypot(R.slideV.x, R.slideV.z);
         } else if (R.phase === 'roll') {
             // ── Roll-to-the-flat phase (NEXT, 2026-08-29) ────────────────
@@ -7227,6 +7462,7 @@ void main(void) {
                 // vertical and the body went airborne (measured lowClear
                 // 0.23 → 1.62 m within 5 roll frames).
                 const _dy = _slope * R.slideV.z * dt;
+                if (!_crashLieV4()) {
                 let _lift = 0;
                 for (const pt of R.parts) {
                     pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
@@ -7282,6 +7518,43 @@ void main(void) {
                     b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
                 }
                 R.maxSpeed = _vH;
+                } else if (R._lieFrozen) {
+                    // v4 frozen tail: the pose is set (every joint rate went
+                    // under 30 deg/s, or the lieDisabled NC froze at
+                    // hand-over) — the rigid piece just rides the slide.
+                    let _lift = 0;
+                    for (const pt of R.parts) {
+                        pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
+                        pt.p.x += _dx; pt.p.y += _dy; pt.p.z += _dz;
+                        const _short = (_crashFloorY(pt.p.z) + pt.r) - pt.p.y;
+                        if (_short > _lift) _lift = _short;
+                    }
+                    if (_lift > 0) {
+                        for (const pt of R.parts) pt.p.y += _lift;
+                    }
+                    R.maxSpeed = _vH;
+                } else {
+                    // v4 KEEPS FALLING: the slide translation moves the whole
+                    // (p, prev) pair — position without touching the stored
+                    // velocities — then the integrator runs (gravity,
+                    // terrain contact, hard sticks, angular limits) with the
+                    // heavy centre-relative damping, so limbs fall onto the
+                    // snow while the body slides. Shape retention is OFF.
+                    let _lift = 0;
+                    for (const pt of R.parts) {
+                        pt.prev.x += _dx; pt.prev.y += _dy; pt.prev.z += _dz;
+                        pt.p.x += _dx; pt.p.y += _dy; pt.p.z += _dz;
+                        const _short = (_crashFloorY(pt.p.z) + pt.r) - pt.p.y;
+                        if (_short > _lift) _lift = _short;
+                    }
+                    if (_lift > 0) {
+                        for (const pt of R.parts) { pt.p.y += _lift; pt.prev.y += _lift; }
+                    }
+                    _crashLieV4Step(R, dt);
+                    _crashLieDrain(R, dt, (R.t - R.rollAt) <= 1.0 ? 200 : 90);
+                    _crashLieCalm(R, dt);
+                    R.maxSpeed = _vH;
+                }
             }
         } else if (R.phase === 'settling') {
             // Bounded post-stop settle: lower non-contacting parts at the
@@ -7296,13 +7569,26 @@ void main(void) {
             // rendered 8 cm gate).
             // The fold keeps running through settling — the slide can stop
             // well inside its 1.0 s window (it ends with the window).
-            _lieFoldStep(R, dt);
+            // v4 never starts the fold (foldT0 stays undefined, so the call
+            // below is a no-op for it) — skip it explicitly.
+            if (!_crashLieV4()) _lieFoldStep(R, dt);
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
                 const _gap = pt.p.y - _tY;
                 if (_gap > _above) _above = _gap;
-                if (_gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+                if (!_crashLieV4() && _gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
+            }
+            if (_crashLieV4() && !R.looseGroundRest) {
+                // v4: same lever-ceiling fall as the roll (90 deg/s — the
+                // post-window joint gate), not the old flat 0.3 m/s.
+                for (const pt of R.parts) {
+                    const _tY = _crashFloorY(pt.p.z) + pt.r;
+                    if (pt.p.y - _tY > 0.02) {
+                        const _rate = Math.min(1.2, 0.8 * 90 * Math.PI / 180 * (pt._lever || 0.3));
+                        pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
+                    }
+                }
             }
             // Alternate exact segment lengths with terrain projection.  The
             // former settle ran only the length pass, so its final pass could
@@ -7342,8 +7628,15 @@ void main(void) {
             R.maxSpeed = 0;
             const _settled = R.looseGroundRest
                 ? (_above <= 0.5 || R.t - R.settleT0 > 2)
-                : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025) ||
-                    R.t - R.settleT0 > 10);   // hang guard only — arms come down first (ruling on 256)
+                : ((_segmentAbove <= 0.025 && _hipAbove <= 0.025 &&
+                    // v4: the WHOLE body must be down, not just one end of
+                    // every segment — the min-end test declared rest with
+                    // parts still 0.26 m propped (263 measured, stopped
+                    // dump). 5 cm internal headroom keeps the rendered
+                    // <= 8 cm gate clear of the knife edge. Default off:
+                    // the HEAD condition, unchanged.
+                    (!_crashLieV4() || _above <= 0.075)) ||
+                    R.t - R.settleT0 > (_crashLieV4() ? 3.0 : 10));   // hang guard only — arms come down first (ruling on 256)
             if (_settled) {
                 for (let _i = 0; _i < 12; _i++) {
                     for (const hp of R.hard) {
@@ -7827,11 +8120,13 @@ void main(void) {
             rp.z = R.torso.z;
             if (R.phase === 'tumble') {
                 rp.y = R.torso.y;
-            } else if (R.foldT0 !== undefined && !R._lieFoldDone) {
+            } else if (_crashLieV4() ? !R._lieFrozen : (R.foldT0 !== undefined && !R._lieFoldDone)) {
                 // LIE-DOWN v2: during the fold window the lie height is not
                 // final — follow the torso particle itself, and only CAPTURE
                 // _rootLie once the fold is done (the ruling: captured
-                // after the fold).
+                // after the fold). v4: same, but the window ends at the
+                // lie freeze (every joint rate < 30 deg/s), not the fold.
+                // Default off: the HEAD condition, unchanged.
                 rp.y = R.torso.y;
             } else {
                 if (R._rootLie === undefined) {
