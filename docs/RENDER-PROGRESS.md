@@ -1812,6 +1812,56 @@ still stands from entry 83.
 
 ## Iterations
 
+### 279 — LEGS RE-CENTRE v5 (the 00:25 ruling's slot): the field's TARGET is
+the bone −15 mm along the toe axis — **LEG-AXIS GREEN (G1 −0.018 L / −0.014 R,
+bands ≤ ±0.015), NC fires — but boots.spec ANKLE-ANCHOR is RED on the flag-on
+asset (8 cm lateral boot-vs-ankle-band), so NO SHIP**; ASSET_V stays 100,
+asset NOT shipped, change stays env-gated default-off
+
+**What changed.** `blender/build_body.py` only: in the LEG_RECEN apply loop
+the subtracted offset is now `o(z) − T` with `T = 0.015` — half the cuff's
+measured ~+30 mm forward offset, per the ruling — applied to every shin row
+including the ankle-riding rows; the knee-bridge fade is unchanged (the
+target fades with the field). Measured sign note for the next slot: the
+build frame's toe axis is **−y** — a first probe with the shift applied the
+other way moved G1 by exactly T in the WRONG direction (L −0.033 → −0.047);
+with the sign as shipped G1 moves −0.015 as designed.
+
+**Build numbers (ship-res `LEG_RECEN=1 LEG_AXIS_PIN=1 KNEE_BLEND_FIX=1
+--boots on`, scratch/iter-279/).** Applied shin offsets now max 115.1/111.0
+mm, mean 52.4/49.2 mm (v4: 145.1/141.0, 81.0/77.8 — the 15 mm target shift
+plus the smaller |o−T| at the cuff rows). Max row step 25.0 mm (unchanged).
+SLIVER after loosen_suit 55/10590 = 0.5194% ≤ 0.65% GREEN, no re-banding.
+Boot stations still exactly on the bone + v100 residual (G3 by construction).
+
+**Game-side (leg-axis.spec, 2/2 GREEN).** L: G1 **−0.018** (was −0.033, gate
+±0.03), bands −0.0075/−0.0127/−0.0145/−0.0073 (gate ±0.035), G3 boot centre
+−0.530 = the v100 station. R: G1 **−0.014** (was −0.023), bands
+−0.0116/−0.0116/−0.0082/−0.0024, G3 −0.540 = station. Both G1s land inside
+the ruling's predicted −0.01..−0.02 band. NC (synthetic +0.07) fires.
+
+**Why no ship.** The ruling's ship gate requires boots.spec green; on the
+flag-on asset **ANKLE-ANCHOR fails both sides ~8 cm LATERAL** (L boot bbox x
+−0.041 vs ankle-band centroid +0.041; R −0.023 vs +0.056; fore-aft deltas
+0.2–0.3 cm — fine). 13/14 boots tests pass, NC6 fires. The 8 cm cannot come
+from the field's fore-aft-only move (dx med −19.3/+8.4 mm unchanged) and the
+boot is anchored on the bone station, so the mismatch is between the spec's
+bottom-10 cm CLOUD band and the boot's footprint in game pose — either the
+ankle-riding rows' full-row offset now sits the bottom band outside the
+boot's x–z footprint (a real visual defect: shin hanging at the cuff BOTTOM
+even though the CUFF rows read −0.018), or the band's vert population changed
+composition when the below-ankle rows moved. Needs the reviewer's eye (the
+three 280 close-ups will show it) or a band-population fix before ship.
+
+**Verification (default tree, v100).** unit **81/81**, golden **30/30** (no
+recapture); assets/, game.js ASSET_V and index.html byte-identical to v100
+(md5-checked). Flag-on build artifacts for 280's close-ups:
+`scratch/iter-279/athlete_body.glb` + `build3.log`.
+
+**Open.** (1) The ankle-band-vs-boot 8 cm lateral question above — the last
+gate between v5 and ship. (2) 280 = REVIEW (capped) + close-ups per the
+queue; queue otherwise unchanged.
+
 ### 278 — LEGS RE-CENTRE v4 (the 23:55 ruling's slot): boots re-stationed on
 the BONE's ankle station + the faster field — G3 GREEN BY CONSTRUCTION
 (boots exactly on v100), R ALL GREEN, sliver 0.52%; L G1 −0.033 vs 0.03 (3 mm

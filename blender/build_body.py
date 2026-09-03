@@ -6427,7 +6427,16 @@ def suit_shell(body, joints):
             # lateral jog into the knee band. The defect the author sees is
             # the +110 mm forward sweep (dy).
             ox = 0.0
-            # F8: the fade uses the KNEE BRIDGE's own blend window
+            # SLOT 279 (v5, the 00:25 ruling on 278): the field's TARGET is
+            # o(z) - T with T = +15 mm along the toe axis (half the cuff's
+            # measured ~+30 mm forward offset — the shin's natural forward
+            # lean inside an alpine boot), applied to the shin rows and the
+            # rows riding the ankle row alike; the knee-bridge fade below is
+            # unchanged (the target fades with the field). Expected: G1
+            # ~-0.01..-0.02 both sides, bands within +/-0.035, G3 unchanged.
+            T = -0.015
+            oy -= T   # NOTE: the toe axis is -y in the build frame (measured:
+            # +y T moved G1 the wrong way by exactly T on the 279 probe).
             # [ring - 0.10, ring + 0.07] with its smoothstep, so the moved
             # verts and the bridge's blended tube target agree through the
             # band (a +/-7 cm window about knee_z left a 12-18 mm belly).
