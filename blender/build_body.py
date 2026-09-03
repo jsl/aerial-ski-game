@@ -7925,8 +7925,14 @@ def _suit_deoverlap(bm, lay, tag):
     default v100 build is untouched.
     """
     _EPS = 0.03
-    _X0, _X1 = -0.06, 0.02
-    _Z0, _Z1 = -0.37, -0.27
+    # SLOT 289 (05:20 ruling): the WHOLE suit hem double wall at the left hip
+    # is deleted as a whole, not flipped — not just the faces under the fill
+    # disk (284's junction box). The band spans the full left-hip hem region;
+    # the opposed-normal 30 mm pair test is the discriminator (the suit is
+    # single-walled everywhere else), so widening the box cannot touch
+    # legitimate geometry.
+    _X0, _X1 = -0.12, 0.04
+    _Z0, _Z1 = -0.45, -0.20
     cand = []
     for f in bm.faces:
         if f[lay]:
@@ -8008,7 +8014,14 @@ def _winding_repair(bm):
     later face in index order), then apply all reversals in ONE batched
     bmesh.ops.reverse_faces call (mutation inside a live bmesh iteration
     invalidates the iterators). Deterministic. Returns (before, after).
+
+    SLOT 289: geometric (centroid-ordered) tie-breaking — index order can
+    shift between builds (entry-174 class float noise renumbers faces), so
+    ties in the repair descend on centroid order, not face index.
     """
+    def _ckey(f):
+        c = f.calc_center_median()
+        return (round(c.x, 4), round(c.y, 4), round(c.z, 4))
     before = _winding_conflicts(bm)
     # Phase 1: 282's batched local repair (283 fix: actually APPLY the flips).
     for _ in range(12):
@@ -8024,13 +8037,13 @@ def _winding_repair(bm):
         flip = set()
         for e in bad:
             f0, f1 = e.link_faces
-            pick = f0 if (conf.get(f0, 0), f0.index) >= (conf.get(f1, 0), f1.index) else f1
+            pick = f0 if (conf.get(f0, 0), _ckey(f0)) >= (conf.get(f1, 0), _ckey(f1)) else f1
             flip.add(pick)
         bmesh.ops.reverse_faces(bm, faces=list(flip))
     # Phase 2 (SLOT 283): when the welded double-wall band stalls the batched
     # pass (simultaneous flips oscillate), fall back to a deterministic
     # sequential descent — flip one candidate face, keep it only if the
-    # conflict count drops, else flip it back.
+    # conflict count drops, else flip it back. 289: descend in centroid order.
     cur = _winding_conflicts(bm)
     if cur:
         for _ in range(48):
@@ -8044,7 +8057,7 @@ def _winding_repair(bm):
                 for f in e.link_faces:
                     conf[f] = conf.get(f, 0) + 1
             improved = False
-            for f in sorted(conf, key=lambda x: x.index):
+            for f in sorted(conf, key=_ckey):
                 bmesh.ops.reverse_faces(bm, faces=[f])
                 nxt = _winding_conflicts(bm)
                 if nxt < cur:
@@ -8057,8 +8070,9 @@ def _winding_repair(bm):
             if cur == 0:
                 break
         # pair moves: some welded complexes need TWO simultaneous flips
-        for i, f1 in enumerate(sorted(conf, key=lambda x: x.index)):
-            for f2 in sorted(conf, key=lambda x: x.index)[i + 1:]:
+        _ordered = sorted(conf, key=_ckey)
+        for i, f1 in enumerate(_ordered):
+            for f2 in _ordered[i + 1:]:
                 bmesh.ops.reverse_faces(bm, faces=[f1, f2])
                 nxt = _winding_conflicts(bm)
                 if nxt < cur:
@@ -8155,7 +8169,7 @@ def sever_thigh_bridge_faces(body, shell):
         return any(any(abs(v.co.z - kz) <= 0.06 for kz in _knees)
                    for v in f.verts)
 
-    _knee_ring = os.environ.get('KNEE_RING', '0') == '1'
+    _knee_ring = os.environ.get('KNEE_RING', '1') == '1'
     mixed = [f for f in bm.faces
              if {'upperLegL', 'upperLegR'}.issubset(
                  {dom[v.index] for v in f.verts})
@@ -14358,7 +14372,7 @@ def main():
     _shellprop = shell_report(body, _shell)
     suit_shell_gate(body, _shell, _shellprop)
     sever_thigh_bridge_faces(body, _shell)
-    if os.environ.get('KNEE_RING', '0') == '1':
+    if os.environ.get('KNEE_RING', '1') == '1':
         repair_knee_topology(body)
     _bw, _bz = bideltoid_report(body)
     if _bw > BIDELTOID_GATE:
@@ -14372,7 +14386,7 @@ def main():
     # "FABLE PASS 2" item 2). Above the crotch the LEGRECEN thigh field's
     # slope-limited seat rows (v101, 25 mm by design) are not the ring's
     # contract.
-    if os.environ.get('KNEE_RING', '0') == '1':
+    if os.environ.get('KNEE_RING', '1') == '1':
         _p = leg_profile(body, 'post-shell', step_below_z=_crotch + 0.02)
         if _p['step'] > 0.012:   # 12 mm hard (written ruling, "FABLE PASS 2" acceptance (a); slot 288)
             raise SystemExit(

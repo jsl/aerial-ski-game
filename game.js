@@ -2498,7 +2498,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=101";   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=102";   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
