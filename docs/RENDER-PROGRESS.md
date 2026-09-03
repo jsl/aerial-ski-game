@@ -534,6 +534,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 290 (review) | **REVIEW + BATCH CLOSE (capped): ONE code change — `tests/unit/tag-parity.test.js` (index.html `?v=` must equal `ASSET_V`, red on mismatch; ends the 272/289 stale-tag class). unit 82/82, golden 30/30 no recapture, boots 14/14, leg-axis GREEN (shin −0.020/−0.016, fails none — identical to the ruling's numbers), look 7/7; shots regenerated 05:43 + inspected (meanLum 180.8/178.3/192.5 — unchanged from pre-ship). Knee reads fixed, boots seated, no regressions found; loudest open debts: magenta bib band (author call), B-net lattice, P6 cone-peak horizon, face/goggle band (Opus lane). ASSET_V stays 102.** | entry 290. |
 | — | Iteration 289 | **SHIPPED v102 (the 05:20 ruling's slot): the suit hem double wall at the left hip deleted AS A WHOLE — `_suit_deoverlap` widened from 284's junction box to the full left-hip hem band (x −0.12…0.04, z −0.45…−0.20; same 30 mm opposed-normal centroid-grid test), `_winding_repair` tie-breaking moved from face index to centroid order (289 robustness clause); delivered-mesh WINDING 0/0 on BOTH builds (default: 9 inner suit faces deleted, 27.8 cm²; `KNEE_RING=1`: 7 faces, 35.6 cm²), no Möbius weld. Ship set: `KNEE_RING` default ON (`=0` NC reads STEP 25.3 mm at z −0.655 — the v101 24 mm class), ship STEP 9.5 mm ≤ 12 hard, leg-axis GREEN (shin −0.020/−0.016, fails none), boots 14/14, look 7/7, unit 81/81, golden 30/30 no recapture; assets rebuilt, ASSET_V 101→102. Shots: figure/figure_front/scene inspected — hem intact, no hip gap, knees read; meanLum 178.3/192.5/180.8.** | entry 289. |
 | — | Iteration 285 (review) | **REVIEW-ONLY (capped form): tip = v100 (284 reverted). unit 81/81, golden 30/30, look 7/7, boots 14/14; leg-axis gates RED as mandated on v100 (G1 +0.072/+0.073, G2 bands 0.059–0.091, NC green) — instrument state, not a regression. Shots inspected: bib 30 legible, feet seated per v100, cone peaks still the loudest scene gap; grey ramp HOLDS (corridor 212.9 ≥ flanks 205.4/191.3). Magenta bib-hem patch RE-MEASURED bigger: front 790 px @ x515–583/y406–432 (280: x540–562). No source/asset change, ASSET_V 100. Next: 286 v6e per the 03:25 ruling.** | entry 285. |
 | — | Iteration 288 | **LEGS 3 (the 04:55 ruling's slot): knee joint fixed at source on the `KNEE_RING=1` build — sever clip + curvature metric re-landed, 242's repair ported (extended edge filter, exact new-vert detection), 241 ring at breadth 116 mm, banded STEP 12 mm reads 9.5 mm at the joint (was 24.0), taper gates green; SHIP BLOCKED by the hem-winding knife-edge (3 conflict edges, the 283 non-orientable complex re-triggered by index shifts) → env-gated default-off, ASSET_V stays 101, NO SHIP. unit 81/81, golden 30/30, default probe v101-inert.** | entry 288. |
@@ -1833,6 +1834,28 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 290 — REVIEW + BATCH CLOSE (the 05:45 ruling's slot): tag-parity unit check landed, all caps GREEN on shipped v102, shots inspected, batch review written
+
+**What changed.** One code change, the ruled one: new `tests/unit/tag-parity.test.js` — parses `const ASSET_V = "?v=N"` out of `game.js` and asserts every literal `?v=` tag in `index.html` equals it (red build on mismatch, so the 272/289 stale-tag class ends mechanically). No source, asset, engine, DoF, or scene change; ASSET_V stays 102, assets untouched.
+
+**Verification (the capped set).**
+- unit **82/82** (was 81 + the new tag-parity check); golden **30/30**, no recapture (no physics/display change); `boots` 14/14 + `leg-axis` GREEN — leg-axis on the tip reads shin −0.020/−0.016, bootCentreAlong −0.53/−0.54, bands −0.0186…−0.0065, `fails: []` (matches the ruling's own reviewer numbers, no drift since ship); look **7/7**.
+- Shots regenerated 05:43 and INSPECTED. Measurements: `scene` meanLum **180.8**, `figure` **178.3**, `figure_front` **192.5** — identical to 283's reading of the unchanged-camera shots (180.8/178.2/192.3), confirming v102 did not move the scene.
+
+**Critical review of the batch (286–290, v100 → v102).**
+1. **The knee is genuinely fixed** — in `figure_front` the joint now reads as a defined knee over the cuff; the v101 "lumps" class is gone by eye. Residual debt: a slight crumple band ABOVE the ring (the 289 ruling already notes it); not a blocker.
+2. **The legs read seated**: front view shows shin entering the cuff, side view shows the boot down on the ski with toe forward — the 258-era "legs behind boots" defect stays closed. Suit hem/hip crease at the left hip (the deoverlap neighbourhood) is visible as a fabric fold but no longer as a doubled membrane — acceptable.
+3. **The magenta sponsor band under bib "30"** is prominent front AND side (the 04:55 ruling confirms it is DESIGNED; stay/no-stay is the AUTHOR's call) — listed for the morning, not re-litigated here.
+4. **Face reads worst-up-close**: in `figure_front` the mouth line paints a grimace-like stripe and the goggle band is paper-thin. Athlete-lane territory (Opus brief); reported, not touched.
+5. **Scene debts, re-prioritised** (unchanged ranks, measured): (a) B-net fencing reads as a regular saturated-blue lattice — too procedural and too blue vs the footage's muted netting; (b) distant mountain cones are flat grey cones with hard silhouettes — the P6 horizon gap, loudest at the `scene` framing (peaks ≈ 145 luminance vs sky ≈ 152); (c) the grey ramp HOLDS (run reads as the brightest surface, no corridor regression on v102); (d) bare deciduous trees still read twiggy-sparse near camera.
+6. **Regression check: none found.** Golden untouched, leg-axis numbers identical to the reviewer's, luminances identical, look 7/7. The batch close is clean.
+
+**Re-prioritised list for the next batch.** (1) AUTHOR DECISION pending: magenta bib band keep/remove — gates everything else in suit polish. (2) B-net material/colour rework (biggest scene-side realism win per effort). (3) P6 horizon: replace cone silhouettes with a ridgeline silhouette card or noise-displaced far range. (4) Above-knee crumple band (athlete lane or ruled slot). (5) Face/goggle-band polish (Opus lane, report-only from here).
+
+**Open questions for the reviewer.**
+1. Magenta sponsor band: keep (designed) or remove? Blocks suit-polish slots.
+2. 283's byte-identity question (default-pipeline membrane topology changed by the no-subdivide fix) — answered implicitly by the v102 ship on gate-equivalence; confirm the clause relaxation is now permanent so future ships don't re-derive it.
 
 
 ### 289 — SHIPPED v102 (the 05:20 ruling's slot): the suit hem double wall at the left hip deleted AS A WHOLE (not flipped), `_winding_repair` tie-breaking made geometric, `KNEE_RING` default ON, asset rebuilt
