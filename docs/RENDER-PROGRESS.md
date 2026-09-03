@@ -1826,6 +1826,39 @@ still stands from entry 83.
 
 ## Iterations
 
+### 286 — LEGS RE-CENTRE v6e (the 03:25/03:30 rulings' slot): foot seated on
+the EXPLICIT target, ANKLE-ANCHOR gate restored to the 283 cloud form, 284's
+winding machinery re-landed — SHIPPED as v101
+
+**What changed.** (a) `blender/build_body.py`: rows below the ankle station no
+longer keep their "own medians" (the raw foot population is the SOCK/sole
+geometry that sits behind the bone, so own medians slid the foot heel-ward);
+they now get an explicit LEG_FOOT_DY target (default 0.100 m toe-ward in oy,
+band rows [ankle_k, ankle_k+5] full, ≤25 mm/row ramp carried by the field's
+slope limit; per-row offsets sole→cuff logged, stripe gate 25 mm/row PASS).
+284's suit-deoverlap + winding machinery re-landed unchanged (flags default
+ON). (b) `tests/drive/boots.spec.js`: ANKLE-ANCHOR restored to the 283 form
+(boot bbox centre within 4 cm of the posed ankle-band cloud centroid; NC6
+fires); the bone-station reading is gone as a gate. (c) Assets rebuilt
+(--boots on, 2048/96) + ASSET_V 100 → 101 in game.js AND index.html (both tag
+files; 284's stale-tag mistake not repeated).
+
+**Verification.** Probe (`tools/probe_leg_axis.js`): foot band centre
+**−0.039/−0.035** m vs boot centre along the toe axis (target band
+−0.07…−0.03, v100 reference −0.043; 284's ship read −0.130/−0.128); shin-at-
+cuff −0.020/−0.016 GREEN. Drive: boots 14/14 (restored cloud gate + NC6),
+leg-axis 16/16 GREEN with `=0` NC firing (+0.072 as mandated), look 7/7
+(fresh shots inspected: shin enters the cuff, no heel behind the shell, no
+toes under the sole at the side camera). Winding 0/0 + watertight 0 loops on
+the flag-on build (log: suit-deoverlap ran, 0 conflict edges, local repair
+0→0); the default (`LEG_RECEN=0`) build is byte-identical in behaviour to
+284's verified default (the foot-target block sits inside the LEG_RECEN gate)
+— not rebuilt this slot [INFERENCE from gate placement]. Unit 81/81, golden
+30/30 (no recapture).
+
+**Open questions for the reviewer:** none new — the lane moves on per the
+queue (287 = BOOTS/SUIT POLISH, 288 = LEGS 3, 289 = LEGS 4, 290 = REVIEW).
+
 ### 285 — REVIEW-ONLY (capped form, the queue's "285 = REVIEW" slot): tip = v100 after 284's
 revert; instruments verified in the mandated state; shots regenerated + inspected; magenta
 bib-hem patch re-measured (front 790 px, larger than 280's reading); grey ramp HOLDS
