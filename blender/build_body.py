@@ -1605,7 +1605,17 @@ def weight_locality_report(obj, arm, tag, verbose=True):
             nm, a, b, reach = segs[g.group]
             r = _seg_dist(v.co, a, b) / reach
             ds.append(r)
-            if r > LOCALITY_MAX_R:
+            # 274: a rigid (w >= 0.999) weight rotates exactly with its bone
+            # no matter how far past the segment it sits, so it cannot smear
+            # or fling — the defect this gate exists for (calibration: leg on
+            # chest 0.68, ribcage partials; the NC skips localise, also
+            # partials). The re-centred foot is pinned 1.0 to the shin by
+            # rigid_boots and moves as one rigid piece with it (boot builder
+            # anchors from the moved cloud; the 258 ankle-anchor gate holds),
+            # so its 1.70-1.75 x reach reads past the ankle-truncated segment
+            # without any blended pull. Rigid weights stay in the ds
+            # distribution but do not count as offenders.
+            if r > LOCALITY_MAX_R and g.weight < 0.999:
                 worst.append((r, nm, g.weight, v.co.copy()))
                 per_group[nm] = per_group.get(nm, 0) + 1
     ds.sort()
@@ -6217,6 +6227,12 @@ def _shell_leg_move_w(nm, z, w):
     return w * _shell_sstep((hi - abs(along)) / (hi - lo))
 
 
+# 274: the LEG_RECEN block stashes the legs' lateral medians here for the
+# LEG_AXIS_PIN below (module level so the fit loop can read them; one build
+# = one call, empty unless LEG_RECEN=1 ran).
+_LEG_RECEN_LAT = {}
+
+
 def suit_shell(body, joints):
     """
     Replace the suit surface with a fitted garment shell (author #12 items 1+4).
@@ -6360,6 +6376,11 @@ def suit_shell(body, joints):
             log(f'  LEGRECEN {nm}: {m[2]} verts moved, max offset '
                 f'{m[0]*1000:.1f} mm, mean {m[1]/max(m[2],1)*1000:.1f} mm '
                 f'(dx med {d[0]*1000:+.1f}, dy med {d[1]*1000:+.1f}, rows {d[2]})')
+        # 274: the lateral medians above are translation-invariant in y (the
+        # field moves y only), so they stay valid after the move. Stash them
+        # for the LEG_AXIS_PIN below.
+        _LEG_RECEN_LAT.update({nm: _diag[nm][0] for nm in leg_segs
+                               if nm in _diag and _diag[nm][2]})
 
     # ── candidates and their weights ────────────────────────────────────────
     cand = {}
@@ -6485,7 +6506,19 @@ def suit_shell(body, joints):
             # Pinning x to the bone as well fitted the left shin's lateral
             # semi-axis at 87 mm (calf 145 mm) because the cloud sits 19 mm
             # off the bone's x.
-            _mx = statistics.median(o[1] for o in obs)
+            # 274: the rung-obs median is NOT that quantity once the cloud
+            # has moved: the candidate set's near-axis exclusion (< 20 mm
+            # from the bone) eats the moved tube's centre and skews the obs
+            # median 22 mm outboard (-41 mm L), so the pinned axis misses
+            # the cloud, inboard verts read r ~ 90-101 mm, the trim drops
+            # them, and the bridge's rmax env (99.5 mm) ratchets rows
+            # -0.675..-0.755 out +18..+49 mm in x — the taper failure. Use
+            # the re-centre's own lateral median (translation-invariant,
+            # measured on the un-excluded rows) when the re-centre ran in
+            # this process; else the obs median as before.
+            _mx = (_LEG_RECEN_LAT.get(nm, statistics.median(o[1] for o in obs))
+                   if os.environ.get('LEG_RECEN', '0') == '1'
+                   else statistics.median(o[1] for o in obs))
             cx, cy = (_mx, 0.0, 0.0), (0.0, 0.0, 0.0)
             log(f'  LEGAXIS {nm}: axis pinned straight at (bone x {_mx*1000:+.1f} mm, bone y) '
                 f'({c.x:+.3f}, {c.y:+.3f})')
@@ -6892,11 +6925,21 @@ def suit_shell(body, joints):
             # KNEE_BLEND_FIX=1 enables the corrected orientation; the default
             # keeps 199's (the flipped DEFAULT build trips the SLIVER gate at
             # 0.655 % vs 0.65 % — a re-band question for the LEGS slot).
+            # 274: F8's attempt flipped the weight AND the lerp together —
+            # cx = lx+(ux-lx)*(1-S) = ux+(lx-ux)*S — so the flag was an
+            # algebraic no-op and the blend stayed inverted in both modes
+            # (proven: identical expressions; the re-centred shin read
+            # rmax 154-156 mm about the thigh-station axis and the bridge
+            # ratcheted rows -0.675..-0.755 out +18..+49 mm in x, which the
+            # taper's calf window cannot trim — calf/thigh 0.938). The
+            # thigh weight is 0 at the bottom (shin side) and 1 at the top
+            # (thigh side): sB = S(t) with the thigh-side lerp. Default
+            # (flag off) keeps 199's exact expressions.
             _fix = os.environ.get('KNEE_BLEND_FIX', '0') == '1'
-            sB = (1.0 - _shell_sstep(t)) if _fix else _shell_sstep(t)
+            sB = _shell_sstep(t)
             ux, uy = _shell_axis_at(pu, z)
             lx, ly = _shell_axis_at(pl, z)
-            if _fix:   # sB = thigh weight
+            if _fix:   # sB = thigh weight: shin axis/radius at the bottom
                 cx, cy = lx + (ux - lx) * sB, ly + (uy - ly) * sB
             else:      # 199: sB = shin weight (inverted along z)
                 cx, cy = ux + (lx - ux) * sB, uy + (ly - uy) * sB
@@ -8123,11 +8166,18 @@ def leg_profile(body, tag):
                 if abs(dz) < 1e-8:
                     if abs(a.z - z) < 1e-5:
                         cand.extend((a.x, b.x))
+                        if _kspan_dbg is not None and any(abs(z - kz) <= 0.17
+                                                          for kz in _kspan_dbg['knees']):
+                            for _xx in (a.x, b.x):
+                                _kspan_dbg['edges'].append({
+                                    'row': z, 'own': (own[ia], own[ib]),
+                                    'zgap': 0.0, 'xspan': 0.0, 'x': _xx,
+                                })
                     continue
                 t = (z - a.z) / dz
                 if 0.0 <= t <= 1.0:
                     cand.append(a.x + t * (b.x - a.x))
-                    if _kspan_dbg is not None and any(abs(z - kz) <= 0.05
+                    if _kspan_dbg is not None and any(abs(z - kz) <= 0.17
                                                       for kz in _kspan_dbg['knees']):
                         _kspan_dbg['edges'].append({
                             'row': z, 'own': (own[ia], own[ib]),
@@ -8192,8 +8242,9 @@ def leg_profile(body, tag):
             worst_step, step_z = j, rows[i][0]
     if _kspan_dbg is not None:
         # Ruling on 241, step 1: what is the joint row MADE of?  For the
-        # rows within +/-5 cm of the knee, report the row width and the
-        # edges that SET its min/max x, with each edge's endpoint z-gap
+        # rows within +/-17 cm of the knee (274: down through the calf band),
+        # report the row width and the edges that SET its min/max x, with
+        # each edge's endpoint z-gap
         # (long spans across the sparse knee gap = the bridging-edge
         # mechanism), plus knee-band face z-extents. Env-gated: costs
         # nothing on normal builds.
