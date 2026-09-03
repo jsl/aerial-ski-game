@@ -175,6 +175,7 @@ SABOTAGE_BIBBANDS = os.environ.get('BODY_SABOTAGE_BIBBANDS') == '1'
 # latitude — the rib wrap that put floating pink lobes at the hips in side
 # view — which the bounded-region clause must reject.
 SABOTAGE_BIBBANDWRAP = os.environ.get('BODY_SABOTAGE_BIBBANDWRAP') == '1'
+SABOTAGE_GUSSET_BAND = os.environ.get('BODY_SABOTAGE_GUSSET_BAND') == '1'
 WAIST      = (0.08, 0.11, 0.20)      # dark navy waistband under the bib
 GLOVE      = (0.13, 0.14, 0.16)
 
@@ -7387,7 +7388,7 @@ def _gusset_region_finish(bm, tag, inseam_z, hip_z):
             _n += 1
     log(f'  gusset[{tag}]: {_n} faces (|x|<70 mm, z {_zlo:+.3f}..{_zhi:+.3f}) -> single free texel ({_tex.x:.3f},{_tex.y:.3f}), smooth-shaded')
 
-def close_boundary(mesh, tag):
+def close_boundary(mesh, tag, albedo_px=None):
     """Close small rim loops on the SHIPPED low-poly mesh (#23.1).
 
     finish_lowpoly's decimation re-opens local rims (measured: 24 rims)
@@ -7439,12 +7440,87 @@ def close_boundary(mesh, tag):
             f'z[{min(_lz):+.3f},{max(_lz):+.3f}] y[{min(_ly):+.3f},{max(_ly):+.3f}]')
         _edges = list(loop)
         _rim = {v for e in _edges for v in e.verts}
-        _uvl = bm.loops.layers.uv.active or (bm.loops.layers.uv[0] if len(bm.loops.layers.uv) else None)
         _rim_l = sorted(_rim, key=lambda v: (abs(v.co.x) * 4.0 + v.co.z))
-        _anchor = _rim_l[0] if _rim_l else None
+        _uvl = bm.loops.layers.uv.active or (bm.loops.layers.uv[0] if len(bm.loops.layers.uv) else None)
+        # ITERATION 287 (the 285 measurement's root cause): the anchor's ONE
+        # texel is what the whole membrane renders. After 283/284's
+        # de-overlap the geometrically-deepest inseam rim vertex could carry
+        # a UV over the MAGENTA SPONSOR BAND (or the numeral ink), and the
+        # hem membrane shipped as the "pink patch under the bib hem" (the
+        # stray magenta chip at atlas (0.86, 0.77) on v101). The anchor now
+        # walks the rim in the same order and takes the first candidate whose
+        # baked texel is a PLAIN suit tone — not band-magenta, not numeral
+        # ink. BODY_SABOTAGE_GUSSET_BAND=1 forces the first BAND texel found
+        # — the negative control the gate below rejects.
+        _band_uv = None
+        _px = None; _pw = _ph = 0
+        if albedo_px is not None:
+            _px, _pw, _ph = albedo_px
+
+        def _texel(uv):
+            if _px is None:
+                return None
+            _x = min(_pw - 1, max(0, int(uv.x * _pw)))
+            _y = min(_ph - 1, max(0, int(uv.y * _ph)))
+            _o = 4 * (_y * _pw + _x)
+            return (_px[_o], _px[_o + 1], _px[_o + 2])
+
+        def _special(c):
+            # band magenta (BIB_WAIST) or numeral ink (NUM_INK, near-black):
+            # anything else is plain suit/bib tone and safe for a gusset.
+            if c is None:
+                return False
+            _r, _g, _b = c
+            return (_r > _g + 0.25 and _r > _b + 0.15) or \
+                (0.2126 * _r + 0.7152 * _g + 0.0722 * _b) < 0.12
+
+        _anchor = None
+        import mathutils
+        if SABOTAGE_GUSSET_BAND:
+            for _v in _rim_l:
+                for _lp in _v.link_loops:
+                    _t = _texel(_lp[_uvl].uv)
+                    if _t and _t[0] > _t[1] + 0.25 and _t[0] > _t[2] + 0.15:
+                        _anchor = _v
+                        _band_uv = _lp[_uvl].uv.copy()
+                        break
+                if _anchor is not None:
+                    break
+            if _anchor is None and _px is not None:
+                # No rim candidate rides the band island in this build —
+                # sample the first band texel in the atlas so the negative
+                # control still lands the membrane on it and the gate fires.
+                for _y in range(0, _ph, 4):
+                    for _x in range(0, _pw, 4):
+                        _o = 4 * (_y * _pw + _x)
+                        _r, _g, _b = _px[_o], _px[_o + 1], _px[_o + 2]
+                        if _r > _g + 0.25 and _r > _b + 0.15:
+                            _band_uv = mathutils.Vector((_x / _pw, _y / _ph))
+                            break
+                    if _band_uv is not None:
+                        break
+        if _anchor is None:
+            for _v in _rim_l:
+                if not _v.link_loops:
+                    continue
+                _t = _texel(_v.link_loops[0][_uvl].uv)
+                if not _special(_t):
+                    _anchor = _v
+                    break
+            _anchor = _anchor or (_rim_l[0] if _rim_l else None)
         _auv = None; _apos = None
         if _uvl is not None and _anchor is not None and _anchor.link_loops:
             _auv = _anchor.link_loops[0][_uvl].uv.copy(); _apos = _anchor.co.copy()
+            if SABOTAGE_GUSSET_BAND and _band_uv is not None:
+                _auv = _band_uv.copy()
+            _t = _texel(_auv)
+            if _special(_t):
+                raise SystemExit(
+                    f'[body] close_boundary[{tag}]: membrane anchor texel at '
+                    f'uv ({_auv.x:.3f},{_auv.y:.3f}) is a band/ink tone '
+                    f'{tuple(round(c, 3) for c in _t)} — the hem membrane '
+                    f'would render as the pink bib-hem patch (ITERATION 287 '
+                    f'gate)')
         try:
             _res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=_edges)
             _patch = {g for g in _res.get('geom', []) if isinstance(g, bmesh.types.BMFace)}
@@ -14372,6 +14448,9 @@ def main():
     # measured the LOSSLESS bake; the delivery encode and the maps manifest
     # follow the repair, so the WebP the browser downloads is the repaired map.
     stats['stripe_leak'] = round(stripe_texel_ownership(low, out_dir), 5)
+    _alb_img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
+    _alb_px = (_alb_img.pixels[:], _alb_img.size[0], _alb_img.size[1])
+    bpy.data.images.remove(_alb_img)
     packed = pack_delivery_maps(out_dir)
     with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
         json.dump({
@@ -14395,7 +14474,7 @@ def main():
     # plate's sampled ink out of band when run before them). The caps are
     # hidden interior geometry; the bake and the gates measure exactly what
     # they measured before, the delivered mesh is closed.
-    close_boundary(low, 'pre-export')
+    close_boundary(low, 'pre-export', albedo_px=_alb_px)
     orient_consistent(low, 'delivered mesh (pre-export)')
     watertight_gate(low, 'delivered mesh (pre-export)')
     bpy.ops.export_scene.gltf(

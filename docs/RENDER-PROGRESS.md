@@ -1828,6 +1828,68 @@ still stands from entry 83.
 
 ## Iterations
 
+
+### 287 — BOOTS/SUIT POLISH (the 271-spec slot): magenta bib-hem patch
+root-caused by DIRECT MEASUREMENT — the delivered albedo carries NO stray
+band-magenta that any shipped vertex samples; the visible patch is the
+DESIGNED sponsor band. Landed: a texel-aware hem-membrane anchor + hard
+build gate with a FIRING negative control. No asset shipped, ASSET_V stays
+101
+
+**Root cause work (measurements, not code-read).**
+- Scanned `assets/athlete_albedo.webp` (2048², Playwright canvas): band-toned
+  texels form exactly FOUR clusters — the two designed band caps over the
+  front/back "30" plates (4934 + 5721 texels) and TWO stray islands,
+  872 texels @ (36–97, 1997–2044) and 720 texels @ (1740–1775, 477–524)
+  (uv ≈ 0.855, 0.75).
+- Probed the shipped `athlete_body.glb`: NO delivered vertex maps into either
+  stray island's UV window (0 hits over a widened scan) — those texels are
+  high-poly bake residue/bleed and are INVISIBLE in game. They are not the
+  patch.
+- The GLB has no COLOR_0 and the paint-side boundary gate is green (build
+  log: magenta 269 verts, 60.1 mm, 0 band verts beyond the plate width) — so
+  the 790 px front reading in 285 is the DESIGNED waist band at its authored
+  width; the 280→285 "growth" (x 540–562 → 515–583) is measurement framing,
+  not paint. The side-view reading needs the reviewer's eye: if the band is
+  to read narrower/shorter, that is a design change to BIB_WAIST_A1/NUM_W
+  and I did not make it unasked.
+
+**What changed (`blender/build_body.py` only).** The 271 suspect neighbourhood
+was the 283/284 membrane machinery, and the membrane's ONE texel is exactly
+what a hem membrane renders. `close_boundary` now takes the baked albedo
+pixels (stashed in `main()` BEFORE `pack_delivery_maps` deletes the PNGs —
+the first attempt read the PNG at close time and silently got `None`; the
+gate was inert until fixed): the membrane anchor walks the rim and takes the
+first candidate whose texel is a PLAIN suit tone — not band-magenta, not
+numeral ink — and a hard gate rejects any special-texel anchor
+(SystemExit). Negative control `BODY_SABOTAGE_GUSSET_BAND=1` force-lands the
+membrane on a band texel (sampling the atlas when no rim candidate carries
+one).
+
+**Verification.** Ship-res default build (scratch/iter-287/build.log):
+anchor texel (0.490, 0.524) — plain bib white, membrane renders the plain
+tone; BODY_EXPORTED, all gates green, atlas clusters IDENTICAL to v101
+(byte-comparable totals 12247 texels, same four clusters). NC build
+(scratch/iter-287/nc.log): gate FIRES — `membrane anchor texel at uv
+(0.047,0.002) is a band/ink tone (0.812, 0.482, 0.62)`. `npm run test:unit`
+81/81 fail 0; `npm run test:golden` 30/30 (no recapture). assets/, game.js
+ASSET_V and index.html untouched (md5-verified: no asset change intended —
+the membrane texel is hidden interior geometry). An incidental break the
+gate work exposed and fixed: my first insertion had clobbered
+`arm.select_set(True)` in the export block (exported GLB lost its skins,
+`patch_skin_binds` KeyError) — restored, export verified green.
+
+**Open / for the reviewer.**
+1. The stray 720-texel pink island at uv ≈ (0.855, 0.75) — invisible today,
+   but any future UV re-pack could land a visible vertex on it. Owner? It
+   smells like `paint_suit` splat bleed around the back band island.
+2. Is the sponsor band's RENDERED width (790 px front / 531 px side) the
+   defect, or its wrap? Bounded-wrap is measured green at source; if the
+   author wants it visually narrower, that is a one-line target change
+   (BIB_WAIST_A1 or NUM_W) for the next polish slot.
+3. Strap/buckle contrast and crash-rest framing (the other two 271 items)
+   NOT started — the root-cause slot consumed the budget.
+
 ### 286 — LEGS RE-CENTRE v6e (the 03:25/03:30 rulings' slot): foot seated on
 the EXPLICIT target, ANKLE-ANCHOR gate restored to the 283 cloud form, 284's
 winding machinery re-landed — SHIPPED as v101
