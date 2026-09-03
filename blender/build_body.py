@@ -5970,7 +5970,7 @@ SHELL_SLIM_DEPTH = {}   # Fable v3 experiment (shin depth x0.88) REVERTED: it op
 SHELL_SMOOTH_ITERS = 32        # Jacobi passes of the radius-field Laplacian (HT#23.3: was 20)
 SHELL_SMOOTH_LAMBDA = 0.60   # HT#23.3: was 0.55
 SHELL_COVER_GATE = 0.65        # of the full-weight suit region, actually shelled
-KNEE_BELLY_GATE = 0.008 if os.environ.get('LEG_RECEN', '1') == '1' else 0.006
+KNEE_BELLY_GATE = 0.008 if os.environ.get('LEG_RECEN', '0') == '1' else 0.006
 # m: knee-band belly p95 over the blended tube. Fable F8 ruling (2026-09-02 23:00): 8 mm
 # for the RE-CENTRED shin only (LEG_RECEN=1): the band's class changed (shin moved 110 mm
 # onto the bone), the bridge's +6/-8 mm travel cannot reach a 7.3 mm p95 (4 of 74 verts),
@@ -6273,7 +6273,7 @@ def suit_shell(body, joints):
     # segfault (rc 139) in the AFRAME sever-ring closer, and the partial
     # (sever-faded) move fattens the fitted tube (taper 0.994 vs the 0.88
     # band) — see the 269 entry. Default build = HEAD behaviour.
-    if os.environ.get('LEG_RECEN', '1') == '1':
+    if os.environ.get('LEG_RECEN', '0') == '1':
         import statistics as _st
         leg_segs = ('upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR')
         knee_z = (bl('upperLegL').z - SEGMENTS['upperLegL']['h'] / 2
@@ -6583,7 +6583,7 @@ def suit_shell(body, joints):
         # the cuff with no lean. Pin BEFORE the rung/ab refit so the radius
         # polynomials are fitted about the bone line and the tube still
         # encloses the calf. Negative control: LEG_AXIS_PIN=0 skips the pin.
-        if nm in ('lowerLegL', 'lowerLegR') and os.environ.get('LEG_AXIS_PIN', '1') == '1':
+        if nm in ('lowerLegL', 'lowerLegR') and os.environ.get('LEG_AXIS_PIN', '0') == '1':
             # Fable F8 (22:55): a STRAIGHT axis — fore-aft ON the bone (the
             # re-centre put the cloud there), laterally at the shin's OWN
             # median offset (the A-frame's continuation: -19 mm L / +8 mm R).
@@ -6601,7 +6601,7 @@ def suit_shell(body, joints):
             # measured on the un-excluded rows) when the re-centre ran in
             # this process; else the obs median as before.
             _mx = (_LEG_RECEN_LAT.get(nm, statistics.median(o[1] for o in obs))
-                   if os.environ.get('LEG_RECEN', '1') == '1'
+                   if os.environ.get('LEG_RECEN', '0') == '1'
                    else statistics.median(o[1] for o in obs))
             cx, cy = (_mx, 0.0, 0.0), (0.0, 0.0, 0.0)
             log(f'  LEGAXIS {nm}: axis pinned straight at (bone x {_mx*1000:+.1f} mm, bone y) '
@@ -7019,7 +7019,7 @@ def suit_shell(body, joints):
             # thigh weight is 0 at the bottom (shin side) and 1 at the top
             # (thigh side): sB = S(t) with the thigh-side lerp. Default
             # (flag off) keeps 199's exact expressions.
-            _fix = os.environ.get('KNEE_BLEND_FIX', '1') == '1'
+            _fix = os.environ.get('KNEE_BLEND_FIX', '0') == '1'
             sB = _shell_sstep(t)
             ux, uy = _shell_axis_at(pu, z)
             lx, ly = _shell_axis_at(pl, z)
@@ -7378,10 +7378,6 @@ def close_boundary(mesh, tag):
     if _bverts:
         bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
     log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after fill_small_rims+weld')
-    # SLOT 284: the suit's own double wall at the left-hip junction must be
-    # cut BEFORE the pelvis fill so the disk welds to a single wall.
-    if os.environ.get("SUIT_DEOVERLAP", "1") == "1":
-        _suit_deoverlap(bm, _mem_lay, tag)
     _hip_z = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
     _ank_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
     _inseam = _hip_z - CROTCH_FRAC * (_hip_z - _ank_z)
@@ -7534,12 +7530,7 @@ def close_boundary(mesh, tag):
     _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
     if _bverts:
         bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
-        # SLOT 284: the suit-deoverlap rim can leave small loops that only
-        # close after a weld/fill interleaving — sweep until no small loop
-        # closes (max 4 sweeps, deterministic).
-        for _sweep in range(4):
-            if _fill_small_rims(bm, f'{tag}/post-hem{_sweep}') == 0:
-                break
+        _fill_small_rims(bm, tag + '/post-hem')
         # a 1-2 edge 'loop' is a dangling boundary edge (the two hem membranes
         # interpenetrate where the double-walled hem overlaps): collapse it.
         _tiny = [e for l in _boundary_loops(bm) if len(l) <= 2 for e in l if e.is_valid]
@@ -7547,18 +7538,6 @@ def close_boundary(mesh, tag):
             log(f'  close_boundary[{tag}] collapsing {len(_tiny)} dangling boundary edge(s) '
                 f'({", ".join(f"{(e.verts[0].co - e.verts[1].co).length*1000:.0f} mm" for e in _tiny)})')
             bmesh.ops.collapse(bm, edges=_tiny, uvs=True)
-    # SLOT 284: any small rim that survived the weld/fill interleaving is
-    # non-manifold (contextual_create fails silently on it) — collapse it
-    # deterministically (rims <= RIM_LOOP_MAX are 41-48 mm here, inside the
-    # junction overlap that the gusset texel shades as one matte patch).
-    _stub = [l for l in _boundary_loops(bm) if _loop_span(l) <= RIM_LOOP_MAX]
-    if _stub:
-        log(f'  close_boundary[{tag}] collapsing {len(_stub)} non-manifold small rim(s) '
-            f'({", ".join(f"{_loop_span(l)*1000:.0f} mm" for l in _stub)})')
-        for l in _stub:
-            _le = [e for e in l if e.is_valid]
-            if _le:
-                bmesh.ops.collapse(bm, edges=_le, uvs=True)
     _gusset_region_finish(bm, tag, _inseam, _hip_z)
     bm.to_mesh(mesh.data)
     bm.free()
@@ -7784,90 +7763,6 @@ def _membrane_deoverlap(bm, lay, tag):
                 _own.append((e.index, sorted((f[lay], f.index) for f in e.link_faces)))
     log(f'  close_boundary[{tag}] deoverlap: {_winding_conflicts(bm)} conflict edge(s); '
         f'owners (mem_pass, face): {_own[:16]}')
-
-
-def _suit_deoverlap(bm, lay, tag):
-    """SLOT 284 (02:45 ruling): the pelvis fill's disk pins through the SUIT's
-    own pre-existing double wall at the left hip junction (283's residual
-    3 conflict edges at x -0.030..-0.014, z -0.320..-0.337) — a non-orientable
-    weld no flip can fix. Same 30 mm centroid-grid test as _membrane_deoverlap,
-    but SUIT faces only (mem_pass == 0) and only inside the junction region:
-    a pair of suit faces whose centroids are within 30 mm AND whose normals
-    are opposed is a double wall; the inner face (closer to the spine axis)
-    is deleted BEFORE the pelvis fill so the disk welds to a single wall.
-    Rims are re-closed deterministically (weld, small-rim fill, dangling-edge
-    collapse). Logs ids and area; a no-op when no double wall exists, so the
-    default v100 build is untouched.
-    """
-    _EPS = 0.03
-    _X0, _X1 = -0.06, 0.02
-    _Z0, _Z1 = -0.37, -0.27
-    cand = []
-    for f in bm.faces:
-        if f[lay]:
-            continue
-        c = f.calc_center_median()
-        if _X0 <= c.x <= _X1 and _Z0 <= c.z <= _Z1:
-            cand.append((f, c))
-    if len(cand) < 2:
-        log(f'  close_boundary[{tag}] suit-deoverlap: {len(cand)} candidate face(s) '
-            f'in the junction region — no pair, no-op')
-        return
-    cell = _EPS
-    grid = {}
-    for i, (f, c) in enumerate(cand):
-        k = (int(c.x // cell), int(c.y // cell), int(c.z // cell))
-        grid.setdefault(k, []).append(i)
-    _ax = bl('spine')
-    _ay = _ax.y
-    deleted = []
-    gone = set()
-    for i, (f, c) in enumerate(cand):
-        if i in gone or not f.is_valid:
-            continue
-        k = (int(c.x // cell), int(c.y // cell), int(c.z // cell))
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for dz in (-1, 0, 1):
-                    for j in grid.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
-                        if j <= i or j in gone:
-                            continue
-                        g, c2 = cand[j]
-                        if not g.is_valid or (c - c2).length > _EPS:
-                            continue
-                        if f.normal.dot(g.normal) >= 0.0:
-                            continue   # same-facing neighbours are a fold, not a wall
-                        inner = g if ((c2.x - _ax.x) ** 2 + (c2.y - _ay) ** 2
-                                      <= (c.x - _ax.x) ** 2 + (c.y - _ay) ** 2) else f
-                        fi, ci = (j, c2) if inner is g else (i, c)
-                        deleted.append((fi, ci))
-                        gone.add(fi)
-                        break
-                    else:
-                        continue
-                    break
-                else:
-                    continue
-                break
-    if not deleted:
-        log(f'  close_boundary[{tag}] suit-deoverlap: {len(cand)} candidate face(s), '
-            f'no opposed pair within 30 mm — no double wall, no-op')
-        return
-    _faces = [cand[i][0] for i, _ in deleted if cand[i][0].is_valid]
-    _area = sum(f.calc_area() for f in _faces)
-    log(f'  close_boundary[{tag}] suit-deoverlap: {len(_faces)}/{len(cand)} inner suit face(s) '
-        f'deleted in the junction region, area {_area * 1e4:.1f} cm2, face ids '
-        f'{sorted(i for i, _ in deleted)} — keeping the outer wall')
-    bmesh.ops.delete(bm, geom=_faces, context='FACES')
-    _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
-    if _bverts:
-        bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
-    _fill_small_rims(bm, tag + '/suit-deoverlap')
-    _tiny = [e for l in _boundary_loops(bm) if len(l) <= 2 for e in l if e.is_valid]
-    if _tiny:
-        log(f'  close_boundary[{tag}] suit-deoverlap: collapsing {len(_tiny)} dangling edge(s)')
-        bmesh.ops.collapse(bm, edges=_tiny, uvs=True)
-    log(f'  close_boundary[{tag}] suit-deoverlap: {_winding_conflicts(bm)} conflict edge(s) after re-close')
 
 
 def _winding_repair(bm):
@@ -12092,7 +11987,7 @@ def add_boots(arm, joints, body):
             f'sole z {an_z:+.3f} vs stale joints ({an.x:+.3f},{an.y:+.3f},{an.z:+.3f})')
         if os.environ.get('BOOT_STATION_MEASURE', '0') != '1':
             assert abs(cax - ax) <= 0.005 and abs(cay - ay) <= 0.005 or \
-                os.environ.get('LEG_RECEN', '1') == '1', (
+                os.environ.get('LEG_RECEN', '0') == '1', (
                 f'boot {side}: boot station {ax:+.4f},{ay:+.4f} is '
                 f'{(cax-ax)*1000:+.1f},{(cay-ay)*1000:+.1f} mm from the v100 cloud '
                 f'centroid — the negative control (default build boots on the v100 '
@@ -12320,7 +12215,7 @@ def add_boots(arm, joints, body):
         # SLOT 278: under LEG_RECEN the cloud moves BY DESIGN while the boot
         # holds the v100 station, so this gate's verdict is deferred to the
         # game-side leg-axis instrument (it hard-fails on the default build).
-        if not in_ring and os.environ.get('LEG_RECEN', '1') != '1':
+        if not in_ring and os.environ.get('LEG_RECEN', '0') != '1':
             raise AssertionError(
                 f'boot {side}: the shin cloud ankle-band centroid '
                 f'({cax:+.3f},{cay:+.3f}) lies OUTSIDE the cuff ring footprint at '
@@ -12331,7 +12226,7 @@ def add_boots(arm, joints, body):
                 f'({cax:+.3f},{cay:+.3f}) vs ring ({ring[0].x:+.3f},{ring[0].y:+.3f})')
         # the (fixed) STATION, not on the moved cloud, so the bbox gate is
         # measured against the station there.
-        _refx, _refy = (ax, ay) if os.environ.get('LEG_RECEN', '1') == '1' \
+        _refx, _refy = (ax, ay) if os.environ.get('LEG_RECEN', '0') == '1' \
             else (cax, cay)
         offx, offy = bcx - _refx, bcy - _refy
         log(f'boot {side}: shin cloud centroid in cuff ring: {in_ring}; '
