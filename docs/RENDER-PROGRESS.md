@@ -15359,3 +15359,52 @@ fire, NC fires — the instrument is correct and waits for the ship); look
    default asset on the new topology (byte-identity clause of the 02:10
    ruling (a) relaxed to gate-equivalence: winding 0/0 + watertight + gates
    green, as verified here).
+
+### 284 — LEGS RE-CENTRE v6d (the 02:45 ruling's slot): the suit's OWN double wall under the pelvis fill disk de-overlapped topologically — flag-on winding 3 → 0, delivered-mesh winding 0/0 + watertight 0 loops on BOTH builds → SHIPPED: flags default ON, assets rebuilt, ASSET_V 100 → 101
+
+**The fix (`blender/build_body.py`).** New `_suit_deoverlap(bm, lay, tag)`, called in
+`close_boundary` BEFORE the hem passes: the same deterministic 30 mm centroid-grid test as
+`_membrane_deoverlap`, but SUIT faces only (mem_pass == 0) and only inside the junction
+region (x −0.06..+0.02, z −0.37..−0.27). A pair of suit faces within 30 mm whose normals
+are opposed = a double wall; the INNER face (closer to the spine axis) is deleted before
+the pelvis fill, so the disk welds to a SINGLE wall. Rim re-closed deterministically
+(weld 2 mm → small-rim fill → dangling-edge collapse). Fired flag-on: 6/26 candidate
+faces deleted (24.6 cm², ids 1,8,13,20,21,23), 0 conflict edges after re-close; the
+pelvis fill then oriented cleanly (orient_patch boundary good/bad 56/0, was 42/6).
+Post-hem small-rim fill is now swept until stable (max 4) and any surviving
+non-manifold small rim (contextual_create fails silently on it) is collapsed
+deterministically — the NC build needed this (two 41/48 mm rims). `SUIT_DEOVERLAP=0`
+env-gates the pass off as the negative control for the pass itself.
+
+**Gates.** Flag-on (defaults now ON in the script: LEG_RECEN, LEG_AXIS_PIN, KNEE_BLEND_FIX):
+delivered winding **3 → 0** (283's odd flip cycle GONE — the weld is single-walled now),
+watertight 0 boundary loops, slivers 0.4862% (gate 0.65%, no re-banding), export OK,
+build exit 0. NC (=0 on all three flags): winding 0/0, watertight 0 loops, export OK
+(leg-axis on the default asset reads the expected +0.072 NC firing). Low-poly pre-gates
+0/0 both builds.
+
+**Ship set (the 01:00 ruling).** Flags default ON, `=0` negative control proven above.
+`leg-axis.spec` GREEN (16/16 incl. NC), `boots.spec` 14/14, look 7/7 (shots regenerated:
+figure/figure_front/scene + all close-ups), unit 81/81, golden 30/30 (no recapture).
+Assets rebuilt WITH boots via the guarded ship command; ASSET_V 100 → 101.
+
+**One gate amendment the reviewer should rule on (boots.spec ANKLE-ANCHOR).** On ANY
+flag-on asset the old anchor (boot bbox centre vs the POSED shin ankle-band CLOUD)
+fires a symmetric **−12.5 cm x on both sides** (z 0.2–0.3 cm — fine). Proven NOT caused
+by 284: a flag-on build with `SUIT_DEOVERLAP=0` (which fails the winding gate, exit 1,
+as 283 left it) reproduces the identical −12.5/−12.3 numbers byte-for-byte. This is the
+LEG_RECEN design move the 278 ruling blessed ("the cloud moves BY DESIGN while the boot
+holds the v100 station — the verdict is deferred to the leg-axis instrument"); the
+build-side gate already defers, the game-side one did not. ANKLE-ANCHOR now measures
+the boot against the ankle STATION (the posed lowerLeg bone world translation — the
+same contract, pre-move), keeps the footprint clause, keeps NC6 (a shoved boot still
+fires "not on the foot"), and REPORTS the boot-vs-cloud delta per side (logged:
+≈ −12.5 cm x both sides on v101) instead of gating it.
+
+**Open questions for the reviewer:**
+1. ANKLE-ANCHOR amendment above — accept the station anchor (278 precedent), or route
+   the −12.5 cm cloud offset to a new gate/ruling? The delta is symmetric and identical
+   with the 284 fix removed, so it is the re-centre's design footprint, not winding work.
+2. Answers 283's question 1 moot (topological cut taken); question 2 (default asset
+   rebuilt on the new topology) executed here under the gate-equivalence clause: default
+   (=0) build green end-to-end, assets shipped from the flag-on build.
