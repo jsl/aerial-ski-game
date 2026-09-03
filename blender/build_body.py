@@ -7363,6 +7363,9 @@ def close_boundary(mesh, tag):
         return
     bm = bmesh.new()
     bm.from_mesh(mesh.data)
+    # SLOT 283: tag every hem-membrane face with its pass so the nested
+    # membranes can be de-overlapped from the torso-side (pass-0) wall.
+    _mem_lay = bm.faces.layers.int.get('mem_pass') or bm.faces.layers.int.new('mem_pass')
     _fill_small_rims(bm, tag)
     # Fable (2026-09-01): (1) decimation leaves DEGENERATE 2-edge rims
     # (coincident boundary edges) that no fill can close — weld them;
@@ -7412,15 +7415,22 @@ def close_boundary(mesh, tag):
             if _patch:
                 _r2t = bmesh.ops.triangulate(bm, faces=list(_patch))
                 _patch = {f for f in _r2t.get('faces', []) if f.is_valid}
+        # SLOT 283: NO subdivide here. Subdividing the beauty-triangulated
+        # fill splits rim/interior edges under T-junction verts, leaving the
+        # patch edge-NON-MANIFOLD (283 probe: BFS orientation reached only
+        # 108/212 faces and the delivered band shipped non-orientable). The
+        # plain fill is a clean manifold disk sharing only the rim loop with
+        # the suit; _orient_patch then makes it consistent at the source.
+        # Interior smoothing keeps the dome; the region renders one matte
+        # single-texel gusset.
         if _patch and _span > 0.12:
-            _pe = {e for f in _patch for e in f.edges}
-            _r3 = bmesh.ops.subdivide_edges(bm, edges=list(_pe), cuts=1, use_grid_fill=True)
-            _patch = {g for g in _r3.get('geom_inner', []) if isinstance(g, bmesh.types.BMFace)} | {f for f in _patch if f.is_valid}
             _inner = {v for f in _patch if f.is_valid for v in f.verts} - _rim
             for _sm in range(6):
                 bmesh.ops.smooth_vert(bm, verts=list(_inner), factor=0.5,
                                       use_axis_x=True, use_axis_y=True, use_axis_z=True)
         _patch = {f for f in _patch if f.is_valid}
+        for f in _patch:
+            f[_mem_lay] = _pass + 1
         # bmesh ops invalidate the python refs held in _rim: re-derive the rim
         # as the patch verts shared with a non-patch face.
         _rim = {v for f in _patch for v in f.verts if any(ff not in _patch for ff in v.link_faces)}
@@ -7443,6 +7453,7 @@ def close_boundary(mesh, tag):
         _before = {f: f.normal.copy() for f in _patch}
         bmesh.ops.recalc_face_normals(bm, faces=list(_ring))
         _flipped = sum(1 for f in _patch if f.normal.dot(_before[f]) < 0)
+        _orient_patch(bm, _patch, tag, _mem_lay, _pass)
         if not _patch:
             # SLOT 281: a 1-2 edge 'loop' (a dangling boundary edge, e.g.
             # where the double-walled hem interpenetrates) fills to nothing —
@@ -7512,6 +7523,7 @@ def close_boundary(mesh, tag):
             f'{_flipped} faces re-wound')
         log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after pass {_pass}')
     log(f'  close_boundary[{tag}] trace: {_winding_conflicts(bm)} conflict edge(s) after hem passes')
+    _membrane_deoverlap(bm, _mem_lay, tag)
     _wtr_before, _wtr_after = _winding_repair(bm)
     log(f'  close_boundary[{tag}] local winding repair: {_wtr_before} -> {_wtr_after} conflict edge(s)')
     # the fills can leave a degenerate 2-edge rim (coincident boundary edges): weld once more
@@ -7594,6 +7606,165 @@ def _winding_conflicts(bm):
     return bad
 
 
+def _orient_patch(bm, patch, tag, lay, _pass):
+    """SLOT 283: make a newly filled hem membrane internally CONSISTENT, then
+    align it with its surroundings.
+
+    283's ownership trace proved the band's 11 conflict edges are born inside
+    the pass-0 membrane: triangle_fill assigns each new face an arbitrary
+    winding and recalc_face_normals' volume heuristic is unreliable on a
+    near-flat disk, so the disk ships internally inconsistent — no flip-based
+    GLOBAL repair can recover it (282's finding), but a disk is orientable,
+    so orient it AT THE SOURCE: BFS across the patch only, flipping each face
+    whose loop winding disagrees with its already-oriented neighbour (batched
+    reverse_faces); then count boundary edges against non-patch faces and
+    reverse the WHOLE patch if the majority disagree. Deterministic (seed =
+    lowest face index; neighbour order = edge order).
+    Returns the number of faces flipped.
+    """
+    patch = {f for f in patch if f.is_valid}
+    if len(patch) < 2:
+        return 0
+    adjf = {}
+    for f in patch:
+        for e in f.edges:
+            if len(e.link_faces) != 2:
+                continue
+            g = next(g for g in e.link_faces if g is not f)
+            if g in patch:
+                adjf.setdefault(f, []).append((g, e))
+    seed = min(patch, key=lambda f: f.index)
+    seen = {seed}
+    flip = set()
+    stack = [seed]
+    while stack:
+        f = stack.pop()
+        fflip = f in flip
+        for g, e in adjf.get(f, []):
+            if g in seen:
+                continue
+            l0 = next(l for l in f.loops if l.edge == e)
+            l1 = next(l for l in g.loops if l.edge == e)
+            same = (l0.vert == l1.vert)
+            if same ^ fflip:
+                flip.add(g)
+            seen.add(g)
+            stack.append(g)
+    if len(seen) != len(patch):
+        log(f'  close_boundary[{tag}] orient_patch[pass {_pass}]: BFS reached '
+            f'{len(seen)}/{len(patch)} faces (welded non-manifold edge) — partial')
+    if flip:
+        bmesh.ops.reverse_faces(bm, faces=list(flip))
+    # boundary alignment: a patch/suit edge is consistent when the two loops
+    # traverse the edge in OPPOSITE directions.
+    good = bad = 0
+    for f in patch:
+        if not f.is_valid:
+            continue
+        for e in f.edges:
+            if len(e.link_faces) != 2:
+                continue
+            g = next(g for g in e.link_faces if g is not f)
+            if g in patch:
+                continue
+            l0 = next(l for l in f.loops if l.edge == e)
+            l1 = next(l for l in g.loops if l.edge == e)
+            if l0.vert == l1.vert:
+                bad += 1
+            else:
+                good += 1
+    _own = sum(1 for e in bm.edges if len(e.link_faces) == 2
+               and all(f in patch for f in e.link_faces)
+               and e.link_loops[0].vert == e.link_loops[1].vert)
+    log(f'  close_boundary[{tag}] orient_patch[pass {_pass}]: {len(flip)} face(s) '
+        f'BFS-flipped, boundary good/bad {good}/{bad} '
+        f'({"patch flipped" if bad > good else "kept"}), {_own} residual conflict edge(s) on this patch')
+    return len(flip)
+
+
+def _membrane_deoverlap(bm, lay, tag):
+    """SLOT 283 (02:10 ruling): the hem band is NON-ORIENTABLE because the
+    pass-0 (torso-side) membrane and the nested pass>=1 membranes overlap as
+    a double wall; the 2 mm welds merge their verts into shared edges with
+    opposed winding, which no flip-based repair can fix (282's bisect).
+    Detect the overlap deterministically (any nested-membrane face whose
+    centroid lies within _MEMBRANE_EPS of a pass-0 membrane face centroid)
+    and keep ONE wall — the torso-side pass-0 membrane per the original hem
+    design — deleting the duplicate faces here, BEFORE _winding_repair /
+    orient_consistent, then re-closing the rims the deletion opens (weld,
+    small-rim fill, dangling-edge collapse). Logs ids and area.
+    """
+    _EPS = 0.03
+    groups = {}
+    for f in bm.faces:
+        p = f[lay]
+        if p:
+            groups.setdefault(p, []).append(f)
+    if 1 not in groups or len(groups) < 2:
+        log(f'  close_boundary[{tag}] deoverlap: '
+            f'{"no membranes" if 1 not in groups else "no nested membranes"}')
+        return
+    base = groups[1]
+    cell = _EPS
+    grid = {}
+    for f in base:
+        c = f.calc_center_median()
+        k = (int(c.x // cell), int(c.y // cell), int(c.z // cell))
+        grid.setdefault(k, []).append(c)
+    dup = []
+    for p in sorted(groups):
+        if p == 1:
+            continue
+        for f in groups[p]:
+            if not f.is_valid:
+                continue
+            c = f.calc_center_median()
+            k = (int(c.x // cell), int(c.y // cell), int(c.z // cell))
+            near = False
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        for q in grid.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
+                            if (c - q).length <= _EPS:
+                                near = True
+                                break
+                        if near:
+                            break
+                    if near:
+                        break
+                if near:
+                    break
+            if near:
+                dup.append(f)
+    if not dup:
+        log(f'  close_boundary[{tag}] deoverlap: nested membranes do not '
+            f'overlap the torso-side wall ({len(base)} base faces kept)')
+        return
+    _nested = sum(len(v) for k, v in groups.items() if k != 1)
+    _area = sum(f.calc_area() for f in dup)
+    _ids = sorted(f.index for f in dup)[:24]
+    log(f'  close_boundary[{tag}] deoverlap: {len(dup)}/{_nested} duplicate '
+        f'nested face(s) inside the torso-side wall, area {_area * 1e4:.0f} cm2, '
+        f'face ids {_ids} — keeping the pass-0 wall')
+    bmesh.ops.delete(bm, geom=list(dup), context='FACES')
+    _bverts = [v for v in bm.verts if any(len(e.link_faces) == 1 for e in v.link_edges)]
+    if _bverts:
+        bmesh.ops.remove_doubles(bm, verts=_bverts, dist=0.002)
+    _fill_small_rims(bm, tag + '/deoverlap')
+    _tiny = [e for l in _boundary_loops(bm) if len(l) <= 2 for e in l if e.is_valid]
+    if _tiny:
+        log(f'  close_boundary[{tag}] deoverlap: collapsing {len(_tiny)} dangling edge(s)')
+        bmesh.ops.collapse(bm, edges=_tiny, uvs=True)
+    _own = []
+    for e in bm.edges:
+        if len(e.link_faces) == 2:
+            l0, l1 = e.link_loops[0], e.link_loops[1]
+            if l0.vert == l1.vert:
+                _own.append((e.index, sorted((f[lay], f.index) for f in e.link_faces)))
+    log(f'  close_boundary[{tag}] deoverlap: {_winding_conflicts(bm)} conflict edge(s); '
+        f'owners (mem_pass, face): {_own[:16]}')
+
+
 def _winding_repair(bm):
     """SLOT 282: deterministic LOCAL winding repair.
 
@@ -7609,14 +7780,11 @@ def _winding_repair(bm):
     invalidates the iterators). Deterministic. Returns (before, after).
     """
     before = _winding_conflicts(bm)
+    # Phase 1: 282's batched local repair (283 fix: actually APPLY the flips).
     for _ in range(12):
-        bad = []
-        for e in bm.edges:
-            if len(e.link_faces) != 2:
-                continue
-            l0, l1 = e.link_loops[0], e.link_loops[1]
-            if l0.vert == l1.vert:
-                bad.append(e)
+        bad = [e for e in bm.edges
+               if len(e.link_faces) == 2
+               and e.link_loops[0].vert == e.link_loops[1].vert]
         if not bad:
             break
         conf = {}
@@ -7628,8 +7796,48 @@ def _winding_repair(bm):
             f0, f1 = e.link_faces
             pick = f0 if (conf.get(f0, 0), f0.index) >= (conf.get(f1, 0), f1.index) else f1
             flip.add(pick)
-        if not flip:
-            break
+        bmesh.ops.reverse_faces(bm, faces=list(flip))
+    # Phase 2 (SLOT 283): when the welded double-wall band stalls the batched
+    # pass (simultaneous flips oscillate), fall back to a deterministic
+    # sequential descent — flip one candidate face, keep it only if the
+    # conflict count drops, else flip it back.
+    cur = _winding_conflicts(bm)
+    if cur:
+        for _ in range(48):
+            bad = [e for e in bm.edges
+                   if len(e.link_faces) == 2
+                   and e.link_loops[0].vert == e.link_loops[1].vert]
+            if not bad:
+                break
+            conf = {}
+            for e in bad:
+                for f in e.link_faces:
+                    conf[f] = conf.get(f, 0) + 1
+            improved = False
+            for f in sorted(conf, key=lambda x: x.index):
+                bmesh.ops.reverse_faces(bm, faces=[f])
+                nxt = _winding_conflicts(bm)
+                if nxt < cur:
+                    cur = nxt
+                    improved = True
+                    break
+                bmesh.ops.reverse_faces(bm, faces=[f])
+            if not improved:
+                break
+            if cur == 0:
+                break
+        # pair moves: some welded complexes need TWO simultaneous flips
+        for i, f1 in enumerate(sorted(conf, key=lambda x: x.index)):
+            for f2 in sorted(conf, key=lambda x: x.index)[i + 1:]:
+                bmesh.ops.reverse_faces(bm, faces=[f1, f2])
+                nxt = _winding_conflicts(bm)
+                if nxt < cur:
+                    cur = nxt
+                    improved = True
+                    break
+                bmesh.ops.reverse_faces(bm, faces=[f1, f2])
+            if improved:
+                break
     return before, _winding_conflicts(bm)
 
 

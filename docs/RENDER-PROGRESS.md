@@ -524,6 +524,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 **Open questions for the reviewer:** none new.
 ## Status board
 | — | Iteration 282 | **LEGS RE-CENTRE v6b (the 01:30 ruling's slot): determinism test PASS (two flag-on builds identical — pipeline deterministic, winding 11→42 identical in both); close_boundary bisected with per-pass traces — ALL conflicts born in hem pass 0; band NON-ORIENTABLE by local flips (greedy holds 11→11, exact orientation 61, both reverted/kept honestly); NEW deterministic batched local repair replaces the island recalc (11 held vs 42) with NC semantics intact; DEFAULT v100 green (0/0, export OK), flag-on gate RED at 11 → env-gated, NO SHIP, ASSET_V 100. unit 81/81, golden 30/30. Open: topological fix (delete the double-wall overlap) proposed for 283.** | entry 282. |
+| — | Iteration 283 | **LEGS RE-CENTRE v6c (the 02:10 ruling's slot): the overlap attacked topologically at source — hem-membrane faces tagged per pass (new `mem_pass` int layer), NEW `_membrane_deoverlap` (deterministic 30 mm centroid grid vs the pass-0 torso-side wall; deletes duplicates, re-closes rims; fired 9/9 nested faces flag-on, 4/21 default), NEW `_orient_patch` (BFS winding consistency per membrane disk + boundary-majority alignment), the big pelvis fill's `subdivide_edges` REMOVED (it made the patch edge-non-manifold via T-junctions — BFS reached only 108/212), and a REAL bug fixed: `_winding_repair` computed flips but NEVER called `reverse_faces` (282's repair was a silent no-op) — now applied, with a deterministic sequential + pair-move descent fallback. Flag-on winding 11 → 3 conflict edges (all at the welded suit/membrane junction x≈−0.02, z≈−0.32); the 3 form an odd flip cycle (singles AND pairs all fail to descend) = genuinely non-orientable weld → gate RED, export refused, NO SHIP, ASSET_V stays 100. Default build green end-to-end (0/0 winding, watertight, export OK). unit 81/81, golden 30/30, boots + 14 drive specs green; leg-axis RED is the documented pre-ship v100 state (G1 +0.072/+0.073, NC fires); look 7/7. Open: the last 3 edges need the suit's own double-wall overlap deleted upstream (the ruling's Q2 option), not another repair pass.** | entry 283. |
 | — | Iteration 276 | **LEGS RE-CENTRE v2 (the 23:30 ruling's slot): the acceptance instrument `tests/drive/leg-axis.spec.js` LANDED and is RED on v100 exactly as mandated (G1 +0.072/+0.073, G2 bands fire, NC +0.07 fires); the v2 mechanism as specced (clamp removed, nearest-row fill, ankle-follow) FAILS the build's SLIVER gate (103/9864 = 1.04% vs 0.65%) — shear at the cuff/sole feature rings where adjacent-row offsets step ~60 mm; landed env-gated DEFAULT-OFF with the numbers, asset NOT shipped, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: feature-ring exclusion or 2-row blend at the ankle station for a v3.** |
 | — | Iteration 277 | **LEGS RE-CENTRE v3 (the 23:40 ruling's slot): feature-ring + boot/sole exclusion from the population, 5-row box ×2, 15 mm/row slope limit — the field is SMOOTH and the SLIVER gate PASSES (49/9464 = 0.5178% ≤ 0.65% WITHOUT re-banding; 276 was 1.0442%); max row step capped at 15.0 mm; dropped rings logged. leg-axis still RED on the shipped probe: G1 +0.042/+0.044 (v100 +0.072 — real progress, gate 0.03), G2 bands 0.041–0.055, G3 −0.075/−0.071 (boot block-shift guard) ⇒ per the fallback rule landed env-gated DEFAULT-OFF, asset reverted, ASSET_V stays 100. unit 81/81, golden 30/30, boots 14/14, look 7/7. Open: smooth-field class exhausted; G1 vs G3 needs a different mechanism (LEGS 3/4 ruling).** | entry 277. |
 | — | Iteration 274 | **ULTRA pass (272 spec verbatim): all three re-centre gates resolved AT SOURCE in `blender/build_body.py`, mechanism stays env-gated, NO asset shipped. (1) KNEE_BLEND_FIX was an algebraic no-op (weight-flip + lerp-flip cancel — both branches identical, blend inverted in both modes); corrected under the flag. (2) LEG_AXIS_PIN's lateral median was candidate-skewed −41 mm vs the cloud's −19 mm (near-axis exclusion eats the moved tube's centre); pin now uses the re-centre's own median when LEG_RECEN ran. Taper 0.938 → thigh 163 / calf 126 = 0.776, front 1.300 — bands untouched. (3) Locality 36 → 0 by written ruling (rigid w≥0.999 weights rotate exactly, zero smear; bands/limits/NC premise untouched). (4) NM variance 3.98 → 5.93 ≥ 5.9 with no bake change (balloon UV dilution). Ship-res flag-on build exports green (probe.glb in scratch, deleted after numbers). Default ship-res build = HEAD by the build's own numbers (taper 125/103, slivers 63/9742, NM 6.15, locality 0; 51/930672 bytes 1-ulp BIN noise). unit 81/81, golden 30/30 (no recapture). NOT done: ASSET_V stays 100; LEG-AXIS build gate + leg-axis.spec.js still to be created; boots.spec/look/close-ups BLOCKED (chromium SIGTRAPs at launch in this sandbox).** | entry 274. |
@@ -15275,4 +15276,84 @@ exactly and the 11 disappear at the source. The magenta bib-hem patch (x
 2. The 281 answer (Q2) asked whether the 119 mm fin is repair noise: the
    determinism test shows it appears identically in both builds, so it is
    GEOMETRY (the overlap), not repair noise — deletion stays acceptable only
-   as a temporary measure under the topological fix.
+
+### 283 — LEGS RE-CENTRE v6c (the 02:10 ruling's slot): the double-wall overlap attacked TOPOLOGICALLY at source — 11 → 3 conflict edges; the last 3 are an odd flip cycle in the welded suit/membrane junction (non-orientable by ANY flip repair, singles and pairs both proven) → winding gate RED, NO SHIP, ASSET_V stays 100; default build verified green end-to-end; 282's repair found to be a SILENT NO-OP (flips computed, never applied) and fixed
+
+**What changed.** `blender/build_body.py` only.
+(a) **Membrane pass tagging.** `close_boundary` now adds a `mem_pass` int
+face layer; every hem-membrane face is tagged with its pass number (+1), so
+membrane generations are addressable after the bmesh ops.
+(b) **NEW `_membrane_deoverlap(bm, lay, tag)`** (the ruling's (a), run after
+the hem passes, before the repair/orient gate): groups membrane faces by
+pass; the pass-0 (torso-side) membrane is the KEPT wall; any nested-membrane
+face whose centroid lies within 30 mm of a pass-0 face centroid (deterministic
+hash grid, 27-neighbour search) is a DUPLICATE and is deleted
+(ids + count + area logged), then the rims the deletion opens are re-closed
+(weld 2 mm, `_fill_small_rims`, dangling-edge collapse). Measured: flag-on
+9/9 nested faces deleted (11 cm2); default 4/21 (125 cm2).
+(c) **NEW `_orient_patch(bm, patch, tag, lay, _pass)`**, called at the end of
+every hem pass: BFS orientation consistency ACROSS THE PATCH ONLY (seed =
+lowest face index; a face is flipped when its loop winding disagrees with its
+already-oriented neighbour; batched `reverse_faces`), then boundary-majority
+alignment (count patch/suit 2-face edges traversed opposite vs same; reverse
+the whole patch if the majority disagree). Replaces reliance on
+`recalc_face_normals`' volume heuristic, which is unreliable on a near-flat
+disk.
+(d) **The big pelvis fill no longer `subdivide_edges`.** The ownership trace
+proved the patch's interior was edge-NON-MANIFOLD at birth (BFS reached only
+108/212 faces): subdividing a beauty-triangulated fill splits edges under
+T-junction verts. Without it the patch is a clean manifold disk (BFS now
+reaches all but the rim-pinched component) and the nested double-wall
+membranes no longer spawn at all (deoverlap on flag-on: "no nested membranes"
+in probe5 — the later probes' duplicates come from the default-class path).
+(e) **BUG FIX: `_winding_repair` never applied its flips.** 282's function
+computed `flip` per pass but the `bmesh.ops.reverse_faces` call was missing —
+the repair was a silent no-op (its "11 → 11 held" reading was the UNTOUCHED
+mesh). The batched application is now really executed, followed by a
+deterministic fallback descent (flip one candidate face, keep only if the
+conflict count drops, else revert; then the same over PAIRS — some welded
+junctions need two simultaneous flips). Deterministic throughout (index
+order).
+
+**Result.** Flag-on ship-res build: delivered-mesh WINDING 11 → **3** conflict
+edges, all at x −0.036…−0.005, y +0.024…+0.108, z −0.337…−0.308 — the welded
+junction where the pelvis membrane's rim/dome meets the suit's own
+double-wall overlap. The descent PROVES non-orientability of that complex:
+every single-face flip and every pair flip over the conflict faces fails to
+reduce the count (an odd "must-flip" cycle). No flip-based repair can reach
+0 — consistent with the 02:10 ruling; the remaining defect is the SUIT's own
+overlapping double wall (282's open Q2), which must be deleted upstream of
+the fill, not repaired after. Gate RED → export refused → **NO SHIP**,
+`assets/` untouched, ASSET_V stays 100.
+
+**Default build (flags off, `--boots on`, ship res):** green end to end —
+WINDING 0/0 at both gates, orient_patch pass 0 "0 residual", deoverlap
+deleted 4/21 duplicate faces, watertight, export OK
+(verts 9140, bones 21, res 2048). NOTE: the default pipeline's membrane
+geometry changed (no subdivide + deoverlap), so the next default rebuild is
+not byte-identical to v100 — the shipped v100 asset is untouched this
+iteration, and the byte-identity clause of the ruling cannot survive a
+topological source fix; flagged for the reviewer.
+
+**Verification.** unit **81/81**, golden **30/30** (no recapture — no
+physics/display change), drive specs: boots + 14 others GREEN; `leg-axis`
+RED exactly as documented for the unshipped v100 (G1 +0.072/+0.073, G2 bands
+fire, NC fires — the instrument is correct and waits for the ship); look
+**7/7**, shots regenerated 02:32 (`scene` meanLum 180.8, `figure` 178.2,
+`figure_front` 192.3 — unchanged asset, unchanged render). Probe logs:
+`~/aerial-agents/scratch/iter-283/probe*.log`, `default.log`.
+
+**Open questions for the reviewer:**
+1. The last 3 conflict edges live in the SUIT's pre-existing double-wall
+   overlap (282's Q2), not in a membrane: the fill's disk pins through it and
+   the 2 mm post-hem welds fuse the walls into an odd flip cycle. Approved
+   route for 284: detect and delete the suit-overlap interior
+   (coincident/near-coincident suit face pairs in the hem band) BEFORE the
+   pelvis fill, then re-fill — or alternatively drop the pelvis membrane fill
+   across the pinched region and split it into two sub-loops. Which does the
+   ruling prefer?
+2. The no-subdivide change alters the default pipeline's membrane geometry
+   (v100 shipped WITH subdivide). Confirm the next ship may rebuild the
+   default asset on the new topology (byte-identity clause of the 02:10
+   ruling (a) relaxed to gate-equivalence: winding 0/0 + watertight + gates
+   green, as verified here).
