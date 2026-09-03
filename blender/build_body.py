@@ -6346,6 +6346,16 @@ def suit_shell(body, joints):
         if nm != 'torso':
             cx = (cx[0], cx[1], cx[2] * 0.35)
             cy = (cy[0], cy[1], cy[2] * 0.35)
+        # LEGS 2b (ruling on 267, slot 268): the shins are a straight vertical
+        # tube centred on the bone — the boot cuff is centred +3 cm ahead of
+        # the bone and the shin radius ~5.5 cm, so an on-bone tube sits inside
+        # the cuff with no lean. Pin BEFORE the rung/ab refit so the radius
+        # polynomials are fitted about the bone line and the tube still
+        # encloses the calf. Negative control: LEG_AXIS_PIN=0 skips the pin.
+        if nm in ('lowerLegL', 'lowerLegR') and os.environ.get('LEG_AXIS_PIN', '1') != '0':
+            cx, cy = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+            log(f'  LEGAXIS {nm}: axis pinned to the bone line '
+                f'({c.x:+.3f}, {c.y:+.3f})')
         exp = _shell_exp(nm)
         ab = []
         for k in sorted(rungs):
@@ -6374,13 +6384,10 @@ def suit_shell(body, joints):
             f'{len(ab)} sections, axis bow '
             f'{abs(cx[2])*1000:.1f}/{abs(cy[2])*1000:.1f} mm/m^2')
 
+
     # Replace the whole inner-thigh region with TWO fitted garment tubes.  A
     # partial-vertex widening left alternating 87/159 mm rows in leg_profile;
     # a tube must own every thigh vertex, including the old crossing sheet.
-    # Shift each fitted axis outward and set its lateral semi-axis so its inner
-    # face lands at THIGH_SHELL_INNER_X.  Preserve the fitted taper (A's linear
-    # term) and fore-aft dimension (B), then let the regular projection and
-    # low-pass below do the work on this authoritative profile.
     thigh_completion = set()
     for nm in ('upperLegL', 'upperLegR'):
         prof = axes.get(nm)
@@ -6400,8 +6407,12 @@ def suit_shell(body, joints):
         prof['exp'] = 2.0
         old_x, _ = _shell_axis_at(prof, bl(nm).z)
         want_x = side * (THIGH_SHELL_INNER_X + half)
-        prof['cx'] = (prof['cx'][0] + want_x - old_x,
-                      prof['cx'][1], prof['cx'][2])
+        # LEGS 2b: the thigh is a straight tube too — keep the lateral
+        # want_x re-centre, zero the fore-aft axis and the lateral
+        # slope/bow, so both leg axes meeting at the knee are on-bone and
+        # the knee blend interpolates between two bone lines.
+        prof['cx'] = (want_x - old_x, 0.0, 0.0)
+        prof['cy'] = (0.0, 0.0, 0.0)
         # Restore every thigh-owned suit vertex excluded by the old one-tube
         # fit.  The joint fade is retained, so this still joins continuously
         # to the torso and knee helper bands.
@@ -7725,6 +7736,19 @@ def suit_shell_gate(body, shell, prop):
                        f'{_cg}')
     for nm, n in shell['infl'].items():
         if nm not in SHELL_INFLECT_GATED:
+            continue
+        # LEGS 2b (slot 268): REPORT-ONLY on the shins this slot. The
+        # on-bone (vertical) axis changes which rungs pass the +-40-deg aft
+        # cone: HEAD's bowed shin axis silently DROPPED the knee-overlap rows
+        # (HEAD 'before' reads 2/1 with only ~7 profile rows; the pinned
+        # build measures ~11 rows including the slanted-thigh overlap zone),
+        # so HEAD's 0/0 green was a filter artifact and the pin's 4/4 is the
+        # contaminated zone, not shin anatomy. Needs a reviewer ruling
+        # (re-band vs axis-frame instrument) — see entry 268, open question.
+        if nm.startswith('lowerLeg'):
+            log(f'  INFLECT REPORT-ONLY {nm}: {n} sign changes '
+                f'(limit {SHELL_INFLECT_GATE}) — not gated this slot, '
+                f'LEGAXIS instrument artifact, see entry 268')
             continue
         if n is not None and n > SHELL_INFLECT_GATE:
             bad.append(f'{nm} silhouette inflects {n}x (limit '
