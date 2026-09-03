@@ -15108,3 +15108,30 @@ Reading: the F6 "shin halves its rows" signature is GONE at the fit — the shin
 1. **The v2 shear is at the cuff/sole feature rings, not the tube.** Proposal for 277 (or a v3 ruling): exclude the boot-liner/sole feature rings from the row-median population (they are geometry edges, not tube cross-sections — the same class as the crotch-sheet exclusion already in the block) or blend the offset field across the ankle station over ~2 rows instead of the hard `k <= _ka` copy. The bow numbers above say the un-bow is real and worth one more mechanism pass.
 2. **G2's band deltas on v100 (0.059–0.091) exceed G1's +0.072 at some heights** — the shin is not just translated ahead of the cuff, it is bowed. Confirm G2's ±0.035 band is the intended tolerance for the ship gate (272's wording), or re-aim after the re-centre lands.
 
+
+### 280 — REVIEW (capped, per the 279-ruling queue): tree audited on shipped v100; 279's env-gated mechanism verified inert; leg-axis instrument RED as mandated; grey ramp holds; magenta bib-hem patch unchanged — no regressions, no fixes needed
+
+**Scope:** no `docs/NEXT.md`; 280 = REVIEW (capped) in the queue from the 01:00 ruling on 279. No code, asset, or scene changes this iteration. ASSET_V stays 100; `assets/` untouched; `engine/` untouched; nothing added to the scene. Tree was clean at start.
+
+**Verification (capped set, per the ruling — no run-all):**
+- unit **81/81**; golden **30/30** (no recapture — tree identical to 279's committed tree, no physics/display change).
+- look suite **7/7** (shots regenerated, `POSESHOT pike side frac 0.3088` — matches 270/274's reading exactly).
+- boots.spec **14/14** (the ankle-anchor NC family on the SHIPPED v100 asset stays green; the reviewer's 01:00 ruling fixes the ankle-anchor red on the flag-on 279 build, which is not the shipped asset).
+- leg-axis.spec: gate arm **RED on v100 exactly as mandated** — G1 +0.072 (L) / +0.073 (R), G2 bands L 0.059–0.091 / R 0.065–0.088, G3 green (boot stations −0.530/−0.540), **NC fires**. This is the instrument's designed state until 281 ships; recorded, not a regression. (Env note: drive ports 8099 was squatted by a stale server — use `DRIVE_PORT=<free>`; the config already supports it.)
+
+**Shots, inspected by eye + measured (PIL, 2-px sample):**
+- `scene.png`: grey ramp HOLDS and slightly improved vs 270 — corridor low 216 / corridor high 209 vs flank left 207 / flank right 216 (worst band −3 %, was −6 % in 270; near corridor at parity with the right flank). Sky top band measured 110 at y 5–20 this pass (270 read 148 — different sample row/framing; not comparable, no defect claimed).
+- `figure.png` (side): boots seated on the skis, shin line enters the cuff region, no neck-over-collar at the knee; soft fold band above the cuff remains (accepted class). **Magenta bib-hem patch still visible at the hip: 90 sampled px, bbox x 540–562 / y 370–400 — same defect, same place as 270's x 540–562 / y 368–400.**
+- `figure_front.png`: bib "30" legible, correct orientation; boots navy with straps; suit shell still lumpy (chest creases, hip/thigh folds — the trunk-lumpiness observation from 270 stands). **Magenta patch measured under a looser threshold: bbox x 538–570 / y 408–420 — 270 read x 516–582 / y 408–432 on v98; the defect class is unchanged on v100 and is the loudest paint defect.**
+
+**Regressions found: none.** 279's env-gated hunks in `blender/build_body.py` are inert at defaults (golden + boots + look all green on the untouched v100).
+
+**Re-prioritised queue (from the 01:00 ruling, confirmed by this review):**
+1. **281 = LEGS RE-CENTRE v6 + SHIP** (the ruling's spec: foot rows keep their own medians, slope-limited carry from the ankle row; then flags default-on, `leg-axis.spec` G1/G2/G3 green, `LEG_RECEN=0` NC reads +0.072, boots 14/14, slivers ≤ 0.65 %, assets + ASSET_V 100 → 101 + tag files in one commit).
+2. 282 = BOOTS/SUIT POLISH (271 spec) — and the **magenta bib-hem patch root-cause** belongs here: it has now survived three reviews (265 v98 → 270/280 v100) at a fixed bbox on the front and side shots; it is a texture/paint defect, not geometry.
+3. 283 = LEGS 3 (knee guards + ring, STEP ≤ 12 mm); 284 = LEGS 4 (proportions, wrist-line crotch) — and note 270's trunk-lumpiness observation as the candidate after it.
+4. 285 = REVIEW; 286–287 = SLIDE LIE-DOWN v4; 288–289 = crash physics remainder; 290 = REVIEW + close.
+
+**Open questions for the reviewer:**
+1. Port hygiene: a stale `http.server` squats 8099 in this sandbox; the drive suite needs `DRIVE_PORT` set to a free port. Should the driver scripts (`ops/run_batch*.sh`) export a per-iteration `DRIVE_PORT` so a squatted default never fakes a webServer failure?
+2. The 01:00 ruling's ship step expects `LEG_RECEN=0` to read +0.072 on leg-axis as the negative control after defaults flip — confirmed this iteration that v100 reads exactly +0.072/+0.073, so the NC anchor is valid. No question beyond confirming the ship-slot acceptance list stands as written.
