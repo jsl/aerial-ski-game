@@ -44,6 +44,8 @@ iteration and act on it before anything else.
 ## Priorities (work top-down; one coherent unit per iteration)
 
 ### P0 — Athlete rig frame fix (root cause of the shoulder hump)
+
+**STATUS (reviewer, 2026-09-02): DONE long ago — the rig frame fix landed in August; the athlete work now runs from the SLOT specs in `docs/RENDER-PROGRESS.md` Reviewer feedback. Do not execute this heading.**
 The body mesh is skinned in a frame yawed 90° from its drivers and bind ≠ driver. Preferred
 fix is in `blender/build_body.py`: `bl()` must map Babylon (x, y, z) = Blender (x, z, −y)
 (lateral on Blender X, chest facing Blender +Y, up Z); drop the "game L ↔ metarig .R" side
