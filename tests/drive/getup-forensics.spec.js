@@ -121,6 +121,9 @@ async function forensics(page, world, opts) {
                     // lie-down t→clearance curve.
                     coreClear: R ? R.coreClear : null,
                     hinge: R ? R.hinge : null,
+                    // 296: whip-governor engagement + scheduled-ease peak.
+                    whipHit: R ? R.whipHit : null,
+                    easePeak: R ? R.easePeak : null,
                     slope: +slope.toFixed(4),
                     maxSpeed: R ? R.maxSpeed : null,
                 });
@@ -438,9 +441,14 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
         // OFF per the slot's fallback. Next slot owns the whip.)
         const downBy2 = lieFrames.find((f) => f.rT - f.rollAt <= 2.0 &&
             f.coreClear != null && f.coreClear <= 0.08);
+        // 296: governor engagement (peak pre-damp per-tick hinge rate)
+        // + scheduled-ease peak rate, max over the roll.
+        const whipHit = Math.max(...lieFrames.map((f) => f.whipHit || 0));
+        const easePeak = Math.max(...lieFrames.map((f) => f.easePeak || 0));
         console.log(`[lie-v4-bar] ${world} coreDownBy2s=${downBy2 ? (downBy2.rT - downBy2.rollAt).toFixed(2) + 's' : 'MISS'} ` +
             `jointEarly=${m.jointRates ? m.jointRates.early.toFixed(2) + '/' + m.jointRates.earlyJ : 'n/a'} ` +
-            `jointLate=${m.jointRates ? m.jointRates.late.toFixed(2) + '/' + m.jointRates.joint : 'n/a'}`);
+            `jointLate=${m.jointRates ? m.jointRates.late.toFixed(2) + '/' + m.jointRates.joint : 'n/a'} ` +
+            `whipHit=${whipHit.toFixed(2)} easePeak=${easePeak.toFixed(2)}`);
     });
 }
 

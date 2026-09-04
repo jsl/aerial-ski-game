@@ -3344,6 +3344,10 @@ void main(void) {
                     return +(_my - (_crashFloorY(_mz) + (_a.r + _b.r) / 2)).toFixed(4);
                 })(),
                 hinge: ragdoll._lieHinge || null,
+                // 296: whip-governor engagement (peak pre-damp per-tick
+                // hinge rate) + scheduled-ease peak rate. Read-only.
+                whipHit: ragdoll._lieWhipHit != null ? +ragdoll._lieWhipHit.toFixed(3) : null,
+                easePeak: ragdoll._lieEasePeak != null ? +ragdoll._lieEasePeak.toFixed(3) : null,
                  // HT#13 (2026-08-30): ski rest offsets from the eject point.
                  skis: (ragdoll.skis || []).map((s) => ({
                      dx: s.pos.x - (s.eject ? s.eject.x : s.pos.x),
@@ -6930,10 +6934,25 @@ void main(void) {
             kneeL: _hinge('kneeL', 'ankleL'), kneeR: _hinge('kneeR', 'ankleR'),
             elbL: _hinge('elbowL', 'wristL'), elbR: _hinge('elbowR', 'wristR'),
         };
+        // 296: the ease is SCHEDULED to the roll-out — the ruled 0.5 m/s
+        // is the settled rate (at rest, past the break); while the body
+        // still translates the ease runs faster (0.5 + 0.2·vH) so the
+        // conform keeps up with the slide instead of pivoting on the
+        // grounded middle (294 finding 2: the 0.5 flat was outrun ~8:1
+        // at slide speed). The faster rate is capped by the gate-safe
+        // lever ceiling — the drain's proven 0.8·gate·lever formula with
+        // the same two-phase gate — so the joint-rate gate holds; and it
+        // never drops below the ruled 0.5 even where that ceiling binds
+        // (the tail measured clean at 0.5 flat in 294).
+        const _vH = R.slideV ? Math.hypot(R.slideV.x, R.slideV.z) : 0;
+        const _gate296 = ((R.t - R.rollAt) <= 1.0 ? 200 : 90) * Math.PI / 180;
         for (const pt of R.parts) {
             const _tY = _crashFloorY(pt.p.z) + pt.r;
             if (pt.p.y - _tY <= 0.02) continue;
-            pt.p.y = Math.max(_tY, pt.p.y - 0.5 * dt);
+            const _cap296 = Math.min(1.2, 0.8 * _gate296 * (pt._lever || 0.3));
+            const _rate296 = Math.min(0.5 + 0.2 * _vH, Math.max(_cap296, 0.5));
+            pt.p.y = Math.max(_tY, pt.p.y - _rate296 * dt);
+            if (_rate296 > (R._lieEasePeak || 0)) R._lieEasePeak = _rate296;
         }
         for (const hp of R.hard) {
             const a = hp.a.p, b = hp.b.p;
@@ -6957,7 +6976,12 @@ void main(void) {
             const _tY = _crashFloorY(pt.p.z) + pt.r;
             const _gap = pt.p.y - _tY;
             if (_gap <= 0.005 || R.looseGroundRest) continue;
-            const _rate = Math.min(1.2, 0.8 * _wCap * (pt._lever || 0.3));
+            let _rate = Math.min(1.2, 0.8 * _wCap * (pt._lever || 0.3));
+            // 296 drain-side half of the whip cap (set by _crashLieWhipDamp
+            // last tick; seeded 1.0 at hand-over). Rate limit, not clamp.
+            if (R._lieDrainScale && R._lieDrainScale[pt.name] !== undefined) {
+                _rate *= R._lieDrainScale[pt.name];
+            }
             pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
         }
         for (const hp of R.hard) {
@@ -7006,6 +7030,112 @@ void main(void) {
         if (R._lieCalm >= 0.6 && R.t - R.rollAt >= 0.6) {
             R._lieFrozen = true;
             R.lieDur = R.t - R.rollAt;
+        }
+    };
+    // 296 (v4 part 3, the knee whip): per-hinge angular-rate governor for
+    // the keep-falling phase. 294 measured an in-window knee whip of
+    // 12.98/12.73 rad/s on double/triple. Two drivers, one cap (3.5
+    // rad/s, inside the ruled 220 deg/s = 3.84 window gate): (a) the
+    // handed-over internal velocity unfolds the tucked legs
+    // ballistically — met with DAMPING on the hinge→distal particle
+    // pair (the distal's relative verlet displacement scaled by
+    // cap/rate); (b) the drain's own constant-speed yank on a deeply
+    // folded hinge (1.2 m/s on a 9 cm moment arm is 13 rad/s) — met by
+    // scaling that particle's NEXT-tick drain drop by the same cap/rate.
+    // Measured: velocity damping alone fires (pre-damp peaks 34+) yet
+    // the frame rate sits unmoved at 12.87 — the drain re-applies the
+    // same position delta every tick regardless of velocity, so the
+    // drain-side half is required. Both halves are RATE operations:
+    // positions are never clamped — the hard sticks, contacts and angle
+    // clamps keep full authority. Skipped for the #20 NC
+    // (looseGroundRest).
+    const _LIE_WHIP_CAP = 3.5;
+    // The neck is NOT governed: it is kinematically pinned (glued to the
+    // torso, headTop re-seated to headRest every substep) — damping the
+    // head's velocity makes it lag the translating torso, so the pin's
+    // position projection does MORE work per tick and the neck whips
+    // harder (measured: single in-window neck 5.63 with it governed vs
+    // 1.79 without, plus a 0.43 tail transient from the earlier freeze).
+    // The free chains (knees, elbows) are what 294's 12.98/12.73 whip
+    // lives in.
+    const _crashLieWhipPairs = [
+        ['kneeL', 'hipL', 'ankleL'],
+        ['kneeR', 'hipR', 'ankleR'],
+        ['elbowL', 'shL', 'wristL'],
+        ['elbowR', 'shR', 'wristR'],
+    ];
+    const _crashLieWhipAng = function (R, j, a, b) {
+        const B = R.byName;
+        const ux = B[a].p.x - B[j].p.x, uy = B[a].p.y - B[j].p.y, uz = B[a].p.z - B[j].p.z;
+        const vx = B[b].p.x - B[j].p.x, vy = B[b].p.y - B[j].p.y, vz = B[b].p.z - B[j].p.z;
+        const lu = Math.hypot(ux, uy, uz) || 1e-9;
+        const lv = Math.hypot(vx, vy, vz) || 1e-9;
+        const c = Math.max(-1, Math.min(1, (ux * vx + uy * vy + uz * vz) / (lu * lv)));
+        return Math.acos(c);
+    };
+    const _crashLieWhipInit = function (R, dt) {
+        R._lieWhipPrev = {};
+        R._lieDrainScale = {};
+        const _h = Math.max(dt, 1e-4);
+        for (const _pr of _crashLieWhipPairs) {
+            const _J = R.byName[_pr[0]], _B = R.byName[_pr[2]];
+            R._lieWhipPrev[_pr[0]] = _crashLieWhipAng(R, _pr[0], _pr[1], _pr[2]);
+            if (!_J || !_B) continue;
+            // Prospective: the handed-over (half-carry) relative velocity
+            // ALREADY spins folded hinges faster than the cap — the first
+            // tick would bank the whole spike before the per-tick governor
+            // converges (measured pre-damp peaks of 34–41 rad/s). Scale
+            // the distal's carried relative displacement to the cap now.
+            // Still damping only (prev touched, positions untouched).
+            const _dx = _B.p.x - _J.p.x, _dy = _B.p.y - _J.p.y, _dz = _B.p.z - _J.p.z;
+            const _lv = Math.sqrt(_dx * _dx + _dy * _dy + _dz * _dz) || 1e-9;
+            const _rvx = ((_B.p.x - _B.prev.x) - (_J.p.x - _J.prev.x)) / _h;
+            const _rvy = ((_B.p.y - _B.prev.y) - (_J.p.y - _J.prev.y)) / _h;
+            const _rvz = ((_B.p.z - _B.prev.z) - (_J.p.z - _J.prev.z)) / _h;
+            const _west = Math.sqrt(_rvx * _rvx + _rvy * _rvy + _rvz * _rvz) / _lv;
+            if (_west > _LIE_WHIP_CAP) {
+                const _s = _LIE_WHIP_CAP / _west;
+                const _jvx = _J.p.x - _J.prev.x, _jvy = _J.p.y - _J.prev.y, _jvz = _J.p.z - _J.prev.z;
+                _B.prev.x = _B.p.x - (_jvx + ((_B.p.x - _B.prev.x) - _jvx) * _s);
+                _B.prev.y = _B.p.y - (_jvy + ((_B.p.y - _B.prev.y) - _jvy) * _s);
+                _B.prev.z = _B.p.z - (_jvz + ((_B.p.z - _B.prev.z) - _jvz) * _s);
+                R._lieWhipHit = Math.max(R._lieWhipHit || 0, _west);
+                // Seed the drain-side scale too: tick 1's drain would
+                // otherwise run full-strength on the folded hinge and bank
+                // the whole spike in one frame before the per-tick loop
+                // converges (double's 12.86 reproduced identically across
+                // every velocity-only variant).
+                R._lieDrainScale[_pr[2]] = _s;
+            }
+        }
+        if (R._lieWhipHit === undefined) R._lieWhipHit = 0;
+    };
+    const _crashLieWhipDamp = function (R, dt) {
+        if (!R._lieWhipPrev) _crashLieWhipInit(R, dt);
+        R._lieDrainScale = {};
+        for (const _pr of _crashLieWhipPairs) {
+            const _J = R.byName[_pr[0]], _B = R.byName[_pr[2]];
+            if (!_J || !_B) continue;
+            const _th = _crashLieWhipAng(R, _pr[0], _pr[1], _pr[2]);
+            const _pv = R._lieWhipPrev[_pr[0]];
+            R._lieWhipPrev[_pr[0]] = _th;
+            if (_pv === undefined) continue;
+            const _w = Math.abs((_th - _pv) / Math.max(dt, 1e-4));
+            if (_w > (R._lieWhipHit || 0)) R._lieWhipHit = _w;
+            if (_w <= _LIE_WHIP_CAP) continue;
+            // Drain-side half of the cap: this hinge is over rate, so the
+            // distal's next-tick drain drop is scaled by cap/rate. A rate
+            // limit, not a clamp — it recovers toward 1 as the hinge
+            // quiets, settling at the fastest drain that holds the cap.
+            R._lieDrainScale[_pr[2]] = _LIE_WHIP_CAP / _w;
+            const _s = _LIE_WHIP_CAP / _w;
+            const _jvx = _J.p.x - _J.prev.x, _jvy = _J.p.y - _J.prev.y, _jvz = _J.p.z - _J.prev.z;
+            const _rx = ((_B.p.x - _B.prev.x) - _jvx) * _s;
+            const _ry = ((_B.p.y - _B.prev.y) - _jvy) * _s;
+            const _rz = ((_B.p.z - _B.prev.z) - _jvz) * _s;
+            _B.prev.x = _B.p.x - (_jvx + _rx);
+            _B.prev.y = _B.p.y - (_jvy + _ry);
+            _B.prev.z = _B.p.z - (_jvz + _rz);
         }
     };
     function _crashRagdollTick(R, dt) {
@@ -7347,6 +7477,10 @@ void main(void) {
                     pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
                 }
             }
+            // 296: seed the whip governor's angle baseline at hand-over so
+            // the first keep-falling tick is already governed (no one-tick
+            // blind window). Flag-on only — the default freeze is untouched.
+            if (_crashLieV4() && !_crashLieNC()) _crashLieWhipInit(R, dt);
             // Force the roll DOWNHILL: the tumble's mean velocity can end
             // pointing uphill (a caught edge kills vz while verlet jitter
             // leaves a small −z residue), fix the direction: downhill is +z.
@@ -7613,6 +7747,9 @@ void main(void) {
                     }
                     _crashLieV4Step(R, dt);
                     _crashLieDrain(R, dt, (R.t - R.rollAt) <= 1.0 ? 200 : 90);
+                    // 296: the knee-whip governor (damping only, never a
+                    // position clamp). Skipped for the #20 NC.
+                    if (!R.looseGroundRest) _crashLieWhipDamp(R, dt);
                     _crashLieCalm(R, dt);
                     R.maxSpeed = _vH;
                 }
