@@ -11,6 +11,9 @@ const OUT = path.join(__dirname, '..', '..', 'shots');
 
 async function forensics(page, world, opts) {
     const o = Object.assign({ tuck: true, flip: true }, opts || {});
+    // SLOT 298 (ruling on 297): the 5-frame averaged joint-rate instrument,
+    // installed in-page before any navigation (the sampler cannot require()).
+    await page.addInitScript({ path: path.join(__dirname, 'joint-rate-window.js') });
     await page.goto('/index.html?world=' + world);
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
@@ -127,24 +130,16 @@ async function forensics(page, world, opts) {
                     slope: +slope.toFixed(4),
                     maxSpeed: R ? R.maxSpeed : null,
                 });
-                // 294: joint-rate accumulator on the SIM clock (the ruled
-                // two-phase gate: 220°/s in the 1.0 s window after the
-                // tumble→roll hand-over, then 90°/s). Summary only — the
-                // per-frame angles stay out of the dump.
+                // 294: joint-rate accumulator on the SIM clock. 298 (ruling
+                // on 297): the keep-falling-phase gate is evaluated on a
+                // 5-frame moving average per hinge (window._JointRateWindow,
+                // installed above); the raw single-frame peak is kept next
+                // to it. Summary only — the per-frame angles stay out of
+                // the dump.
                 if (R && R.ang && R.rollAt != null && R.t != null) {
                     const J = window._fgDump.jr || (window._fgDump.jr =
-                        { prev: null, early: 0, earlyJ: '', late: 0, joint: '' });
-                    if (J.prev) {
-                        const dts = Math.max(1e-3, R.t - J.prev.t);
-                        const early = (R.t - R.rollAt) <= 1.0;
-                        for (const k of Object.keys(R.ang)) {
-                            const w = Math.abs(R.ang[k] - (J.prev.ang[k] || 0)) / dts;
-                            if (early) {
-                                if (w > J.early) { J.early = w; J.earlyJ = k; }
-                            } else if (w > J.late) { J.late = w; J.joint = k; }
-                        }
-                    }
-                    J.prev = { t: R.t, ang: Object.assign({}, R.ang) };
+                        window._JointRateWindow.createJointRateWindow());
+                    J.push(R.t, R.ang, (R.t - R.rollAt) <= 1.0);
                 }
                 const started = Wp && (Wp.phase === 'walk' || Wp.phase === 'done');
                 if ((started && F.frames.length > F.walkStart + 30) ||
@@ -256,9 +251,17 @@ async function forensics(page, world, opts) {
         }
         return { world: window._getGameState().world || null,
             impactSpeed: window._crashImpactSpeed(),
-            jointRates: F.jr ? { early: +F.jr.early.toFixed(3),
-                earlyJ: F.jr.earlyJ || '', late: +F.jr.late.toFixed(3),
-                joint: F.jr.joint || '' } : null,
+            jointRates: F.jr ? (function () {
+                // 298: raw single-frame peak next to the ruled 5-frame
+                // averaged peak (field rename from 294's early/earlyJ/late:
+                // early == rawEarly, same numbers, same basis).
+                const s = F.jr.summary();
+                const r3 = (v) => +v.toFixed(3);
+                return { rawEarly: r3(s.rawEarly), rawEarlyJ: s.rawEarlyJ,
+                    rawLate: r3(s.rawLate), rawLateJ: s.rawLateJ,
+                    avgEarly: r3(s.avgEarly), avgEarlyJ: s.avgEarlyJ,
+                    avgLate: r3(s.avgLate), avgLateJ: s.avgLateJ, n: s.n };
+            })() : null,
             nFrames: F.frames.length,
             walkStartIndex: F.walkStart ?? null,
             jump, top5, slideStats, byWalk,
@@ -446,8 +449,10 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
         const whipHit = Math.max(...lieFrames.map((f) => f.whipHit || 0));
         const easePeak = Math.max(...lieFrames.map((f) => f.easePeak || 0));
         console.log(`[lie-v4-bar] ${world} coreDownBy2s=${downBy2 ? (downBy2.rT - downBy2.rollAt).toFixed(2) + 's' : 'MISS'} ` +
-            `jointEarly=${m.jointRates ? m.jointRates.early.toFixed(2) + '/' + m.jointRates.earlyJ : 'n/a'} ` +
-            `jointLate=${m.jointRates ? m.jointRates.late.toFixed(2) + '/' + m.jointRates.joint : 'n/a'} ` +
+            `jointRaw=${m.jointRates ? m.jointRates.rawEarly.toFixed(2) + '/' + m.jointRates.rawEarlyJ : 'n/a'} ` +
+            `jointAvg=${m.jointRates ? m.jointRates.avgEarly.toFixed(2) + '/' + m.jointRates.avgEarlyJ : 'n/a'} ` +
+            `jointLateRaw=${m.jointRates ? m.jointRates.rawLate.toFixed(2) + '/' + m.jointRates.rawLateJ : 'n/a'} ` +
+            `jointLateAvg=${m.jointRates ? m.jointRates.avgLate.toFixed(2) + '/' + m.jointRates.avgLateJ : 'n/a'} ` +
             `whipHit=${whipHit.toFixed(2)} easePeak=${easePeak.toFixed(2)}`);
     });
 }

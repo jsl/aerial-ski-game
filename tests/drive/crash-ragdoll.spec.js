@@ -47,6 +47,7 @@
 // conventions (see game.js _crashRagdollInit).
 const { test, expect } = require('@playwright/test');
 const path = require('path');
+const { createJointRateWindow } = require('./joint-rate-window.js');
 const OUT = path.join(__dirname, '..', '..', 'shots');
 
 const SEG_H = {
@@ -552,6 +553,18 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     expect(firstRoll, 'state machine entered the roll phase (freeze fired)').toBeGreaterThanOrEqual(0);
     let worstAngSpd = 0, worstAngJoint = '', worstAngLate = 0;
     const _rollT0 = traceR[firstRoll].t;
+    // 298 (ruling on 297): the same fold-window series through the 5-frame
+    // averaged instrument — LOG-ONLY. This default-path gate keeps its 256
+    // basis (single-frame max ≤ 220°/s); the ruled averaging scopes the
+    // lie-v4 keep-falling phase (forensics probe), not this gate. raw5check
+    // must agree with the gate's raw peak (same series, no gaps expected).
+    const _jw = createJointRateWindow();
+    for (let i = firstRoll; i < traceR.length; i++) {
+        const _p = traceR[i].probe;
+        if (_p && _p.ang) _jw.push(traceR[i].t / 1000, _p.ang,
+            (traceR[i].t - _rollT0) / 1000 <= 1.0);
+    }
+    const _jws = _jw.summary();
     for (let i = firstRoll + 1; i < traceR.length; i++) {
         const a = traceR[i - 1].probe, b = traceR[i].probe;
         if (!a || !b || !a.ang || !b.ang) continue;
@@ -571,7 +584,11 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     }
     console.log('CRASHREST worstJointAngSpeed fold-window=' +
         worstAngSpd.toExponential(2) + ' rad/s, after=' +
-        worstAngLate.toExponential(2) + ' rad/s (' + worstAngJoint + ')');
+        worstAngLate.toExponential(2) + ' rad/s (' + worstAngJoint + ')' +
+        ' | avg5 fold-window=' + _jws.avgEarly.toExponential(2) +
+        ' rad/s (' + _jws.avgEarlyJ + ') after=' +
+        _jws.avgLate.toExponential(2) + ' rad/s (' + _jws.avgLateJ + ')' +
+        ' raw5check=' + _jws.rawEarly.toExponential(2) + ' rad/s');
     expect(worstAngSpd, `joint angular speed in the 1.0 s fold window ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 200°/s`)
         .toBeLessThanOrEqual(220 * Math.PI / 180);   // Fable ruling 2026-09-02 20:15 (was 200): 265 measured 3.62 rad/s on the elbow in the fold window — pose variance over 261's 8 % margin; a falling forearm at 220 deg/s is still physical
     expect(worstAngLate, `joint angular speed after the fold window ${worstAngLate.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s`)
