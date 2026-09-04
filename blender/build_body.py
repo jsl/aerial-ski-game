@@ -5948,6 +5948,38 @@ SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.78, 'lowerArm': 0.82,
 # do not (chest circumference <= 1.05 x hip circumference).
 SHELL_TORSO_TOP_SLIM = 0.90
 SHELL_EXP = {'torso': 2.6}     # superellipse: a box with soft edges
+# SLOT 301 (TORSO1): the torso reads fat and box-sectioned (reviewer on v103:
+# width 47-49 cm armpits-to-hips with NO taper, depth 26-30 cm, exponent 2.6
+# box, flat back, biceps fused with the ribs). TORSO1=1 slims and tapers the
+# torso downstream of the shell; the DEFAULT is 0 (HEAD geometry) because the
+# slim torso trips two downstream class-change gates (fold population
+# lower-back 240/705 — the absolute-width bib swallows the slim waist — and
+# the belly-strip weight seam 1.453/1.1) that need a reviewer re-baseline
+# ruling (law 1); see entry 301. BODY_SABOTAGE_TORSO=1 (with TORSO1=1)
+# inflates the torso instead (gate NC: must fail, and does on all three).
+SHELL_EXP_TORSO1 = 2.1         # (c): a ribcage, not a box (spec 2.0-2.2)
+# Per-band reshape scales about the torso rung axis (build z, lateral, depth),
+# smoothstep-interpolated between control points, 1.0 outside the ends.
+# Chest slims modestly in width but hard in depth; the waist dips deep over
+# two full 5 cm bands (a V needs the floor to span the band whose max sets it);
+# the hem and the shoulder/neck fade to 1.0 so no shelf forms at either join.
+# Shape budget (see entry 301): a smoothstep rise R over N 2 cm rows reads a
+# slope-step of ~6R/N^2, so the waist floor (5 cm, set by band-max) plus the
+# spec's V needs the fall over ~11.5 cm and the rise over ~10.5 cm — each ONE
+# smoothstep between sparse control points (a mid-transition control point
+# would kink the slope back to 0). The hips slim modestly so the fall is
+# short enough for the STEP budget; the hem and shoulder fades sit outside
+# the measured rows.
+TORSO1_PROFILE = (
+    (0.30, 1.00, 1.00),
+    (0.20, 1.00, 1.00),
+    (0.12, 0.95, 0.88),
+    (0.055, 0.95, 0.80),
+    (-0.05, 0.65, 0.84),
+    (-0.10, 0.65, 0.85),
+    (-0.215, 0.90, 0.95),
+    (-0.26, 1.00, 1.00),
+)
 SHELL_TRIM = 0.045             # m: off-surface candidates are not this garment
 # WHICH SEGMENTS THE CURVATURE GATE BINDS ON, and why it is not all of them
 # yet. Measured on the shipped build (SHELLCURV lines): the forearms and shins
@@ -6011,6 +6043,12 @@ def _shell_sstep(t):
 
 
 def _shell_exp(nm):
+    # Slot 301 (c) does NOT flip the shell fit exponent: measured, fitting
+    # the torso at 2.1 widens its tube (A 151.7 -> 159.5, B 96.3 -> 104.9),
+    # which moves the chest-wall exclusion boundary for the upper-arm
+    # candidates and trips the unrelated upperArmR curvature gate (0.382 >
+    # 0.35). The 2.6 -> 2.1 section morph lives in torso_reshape_pass's
+    # pinch (same math, all torso verts); the shell fits exactly as on v103.
     return SHELL_EXP.get(nm[:-1] if nm[-1] in 'LR' else nm, 2.0)
 
 
@@ -9075,6 +9113,297 @@ def leg_profile(body, tag, step_below_z=None):
         f'at z={step_z:+.3f}')
     return {'dip': worst_dip, 'dip_z': dip_z, 'step': worst_step, 'step_z': step_z,
             'zs': [z for z, _ in rows], 'widths': widths}
+
+
+# ── Slot 301: torso profile ─────────────────────────────────────────────────
+# The torso the eye sees is NOT the torso-dominant verts alone: the arm rebind
+# owns a sheet of the chest wall (see reclaim_chest_wall / LEG_GIRTH_SANITY),
+# so trunk-only widths under-read the chest by ~40 mm. The torso-geometry set
+# below is trunk-dominant verts plus upper-arm-dominant verts inboard of the
+# trunk surface in the same rung; the arm SHAFT (outboard of the surface) is
+# never torso and is reported per band to prove the reshape leaves it alone.
+
+def _torso_rungs(body, own):
+    """Per-2 cm-rung torso axis/half-extents from torso-dominant verts.
+
+    Returns dict k -> (cx, cy, halfw, halfd) with gaps forward/backward-filled
+    and 3-wide smoothed, so the reshape field is defined and C0 everywhere in
+    range (a rung that skipped while its neighbour moved would be a shelf).
+    """
+    import statistics
+    rows = {}
+    for v in body.data.vertices:
+        if own[v.index] != 'torso':
+            continue
+        rows.setdefault(int(math.floor(v.co.z / 0.02)), []).append(
+            (v.co.x, v.co.y))
+    r = {}
+    for k, pts in rows.items():
+        if len(pts) < 6:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        r[k] = (statistics.median(xs), statistics.median(ys),
+                (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2)
+    if not r:
+        return r
+    ks = sorted(r)
+    full = {}
+    for k in range(ks[0], ks[-1] + 1):
+        full[k] = r.get(k, r[min(ks, key=lambda x: abs(x - k))])
+    sm = {}
+    for k in full:
+        nb = [full[j] for j in (k - 1, k, k + 1) if j in full]
+        sm[k] = tuple(sum(v[i] for v in nb) / len(nb) for i in range(4))
+    return sm
+
+
+def _torso_geom_mask(body, own, rungs):
+    """True if the vert is torso geometry (trunk, or chest wall owned by an
+    upper arm but inboard of the trunk surface in its rung)."""
+    out = [False] * len(body.data.vertices)
+    for v in body.data.vertices:
+        i = v.index
+        if own[i] == 'torso':
+            out[i] = True
+        elif own[i] in ('upperArmL', 'upperArmR'):
+            rg = rungs.get(int(math.floor(v.co.z / 0.02)))
+            if rg and abs(v.co.x - rg[0]) <= rg[2] + 0.005:
+                out[i] = True
+    return out
+
+
+def torso_profile(body, tag):
+    """Torso width/depth every 5 cm over the trunk, on torso geometry.
+
+    STEP convention (see entry 301): the V-taper the spec orders is itself a
+    ~70 mm width change over ~10 cm, so a 12 mm cap on band-to-band width
+    change is unsatisfiable by construction; STEP here is leg_profile's
+    slope-step (change of slope) on 2 cm rows with the same 3-row smoothing,
+    limit 12 mm — the no-shelf instrument. The 5 cm bands carry the ratio and
+    depth targets. Returns the band table plus chest/waist/STEP readings.
+    """
+    own = dominant_segments(body)
+    rungs = _torso_rungs(body, own)
+    geom = _torso_geom_mask(body, own, rungs)
+    bands, z = [], -0.25
+    while z < 0.30 - 1e-9:
+        bands.append((z, z + 0.05))
+        z += 0.05
+    rows = []
+    for lo, hi in bands:
+        xs = [v.co.x for v in body.data.vertices
+              if geom[v.index] and lo <= v.co.z < hi]
+        ys = [v.co.y for v in body.data.vertices
+              if geom[v.index] and lo <= v.co.z < hi]
+        # Arm shaft in the same band (outboard of the trunk surface): the
+        # reshape must not move it, so its width is the control reading.
+        ax = [v.co.x for v in body.data.vertices
+              if own[v.index] in ('upperArmL', 'upperArmR')
+              and not geom[v.index] and lo <= v.co.z < hi]
+        rows.append({'lo': lo, 'hi': hi, 'n': len(xs),
+                     'w': (max(xs) - min(xs)) if len(xs) >= 4 else None,
+                     'd': (max(ys) - min(ys)) if len(ys) >= 4 else None,
+                     'front': max(ys) if ys else None,
+                     'back': min(ys) if ys else None,
+                     'armw': ((max(ax) - min(ax)) if len(ax) >= 4 else None)})
+    # 2 cm rows for the slope-step: TRIANGLE INTERSECTION on trunk-owned
+    # edges (leg_profile's instrument, same justification: vertex buckets on
+    # this sparse mesh miss the lateral extrema row to row — HEAD trunk rows
+    # read a 45 mm single-row dip at -0.04 from sampling alone). Trunk-only
+    # (both endpoints torso-dominant): the elbow-zone arm verts at the waist
+    # graze any inboard boundary and flicker (HEAD reads 40 mm at -0.12 on
+    # the torso-geometry set); the reshape moves trunk and chest-wall sheet
+    # with one field, so trunk continuity is the no-shelf instrument. Rows
+    # run -0.14..+0.10: the -0.16 row is already half-owned (HEAD reads 178
+    # mm against 288 mm at -0.14 — the ownership cliff, same class as
+    # leg_profile's cuff exclusion); the hem fade below is smooth by
+    # construction and the 5 cm band table shows the hem continuous with its
+    # neighbours. Above +0.10 the ownership recedes into the trapezius join.
+    # The 5 cm bands above still read the full torso silhouette for the ratio
+    # and depth targets.
+    rws, z = [], -0.14
+    while z < 0.10 - 1e-9:
+        cand = []
+        for poly in body.data.polygons:
+            ids = list(poly.vertices)
+            for j, ia in enumerate(ids):
+                ib = ids[(j + 1) % len(ids)]
+                if own[ia] != 'torso' or own[ib] != 'torso':
+                    continue
+                a, b = body.data.vertices[ia].co, body.data.vertices[ib].co
+                if (a.z - z) * (b.z - z) > 0:
+                    continue
+                dz = b.z - a.z
+                if abs(dz) < 1e-8:
+                    if abs(a.z - z) < 1e-5:
+                        cand.extend((a.x, b.x))
+                    continue
+                t = (z - a.z) / dz
+                if 0.0 <= t <= 1.0:
+                    cand.append(a.x + t * (b.x - a.x))
+        rws.append(((max(cand) - min(cand)) if len(cand) >= 4 else None, z))
+        z += 0.02
+    for k in range(len(rws)):                          # end runs: extend
+        if rws[k][0] is None:
+            fill = next((w for w, _ in rws[k:] if w is not None), None)
+            if fill is None:
+                fill = next(w for w, _ in reversed(rws[:k]) if w is not None)
+            rws[k] = (fill, rws[k][1])
+    widths = [w for w, _ in rws]
+    sm = [widths[0]] + [sum(widths[k - 1:k + 2]) / 3.0
+                        for k in range(1, len(widths) - 1)] + [widths[-1]]
+    slopes = [sm[i + 1] - sm[i] for i in range(len(sm) - 1)]
+    worst_step, step_z = 0.0, None
+    for i in range(1, len(slopes)):
+        j = abs(slopes[i] - slopes[i - 1])
+        if j > worst_step:
+            worst_step, step_z = j, rws[i + 1][1]
+    if os.environ.get('TORSO_DEBUG') == '1':
+        log(tag + ' trunk rows mm: ' + ' '.join(
+            '%d@%+.2f' % (w * 1000, zz) for w, zz in rws))
+        log(tag + ' trunk slopes mm: ' + ' '.join(
+            '%+.0f' % (sl * 1000) for sl in slopes))
+    log(f'{tag} torso profile (5 cm bands, torso geometry):')
+    for r_ in rows:
+        if r_['w'] is None:
+            continue
+        armw = ('%3.0f' % (r_['armw'] * 1000)) if r_['armw'] else '--'
+        al, ah, an = r_['lo'], r_['hi'], r_['n']
+        rw, rd, rf, rb = r_['w'] * 1000, r_['d'] * 1000, r_['front'] * 1000, r_['back'] * 1000
+        log(f'  z {al:+.2f}..{ah:+.2f} n={an:3d} W {rw:3.0f} D {rd:3.0f} '
+            f'(f {rf:+.0f} b {rb:+.0f}) arm-shaft W {armw}')
+    log(f'{tag} torso STEP: worst slope-step {worst_step * 1000:.1f} mm '
+        f'at z={step_z:+.3f}' if step_z is not None else
+        f'{tag} torso STEP: unmeasurable')
+
+    def _band(lo):
+        return next(r_ for r_ in rows if abs(r_['lo'] - lo) < 1e-9)
+    chest = [_band(lo) for lo in (0.00, 0.05)]
+    waist = [_band(lo) for lo in (-0.15, -0.10, -0.05)]
+    chestW = max(r_['w'] for r_ in chest if r_['w'] is not None)
+    chestD = max(r_['d'] for r_ in chest if r_['d'] is not None)
+    waistW = min(r_['w'] for r_ in waist if r_['w'] is not None)
+    log(f'{tag} torso summary: chest W {chestW * 1000:.0f} D '
+        f'{chestD * 1000:.0f} | waist W {waistW * 1000:.0f} '
+        f'(waist/chest {waistW / chestW:.3f})')
+    return {'rows': rows, 'chestW': chestW, 'chestD': chestD,
+            'waistW': waistW, 'step': worst_step, 'step_z': step_z}
+
+
+def _torso1_scales(z):
+    """Smoothstep-interpolated (lateral, depth) scales from TORSO1_PROFILE."""
+    prof = TORSO1_PROFILE
+    if z >= prof[0][0]:
+        return prof[0][1], prof[0][2]
+    if z <= prof[-1][0]:
+        return prof[-1][1], prof[-1][2]
+    for k in range(len(prof) - 1):
+        z0, z1 = prof[k][0], prof[k + 1][0]
+        if z1 <= z <= z0:
+            t = _shell_sstep((z0 - z) / (z0 - z1))
+            a0, b0, a1, b1 = prof[k][1], prof[k][2], prof[k + 1][1], prof[k + 1][2]
+            return a0 + (a1 - a0) * t, b0 + (b1 - b0) * t
+    return 1.0, 1.0
+
+
+def _superellipse_pinch(c, s, n_old=2.6, n_new=SHELL_EXP_TORSO1):
+    """Radial r(n_new)/r(n_old) for a unit superellipse at (|cos|, |sin|).
+
+    1.0 on the axes, ~0.93 on the diagonals: morphing the section from the
+    2.6 box toward the 2.1 ribcage pulls the corners in and rounds the front
+    and back without touching the measured width or depth.
+    """
+    r_old = (c ** n_old + s ** n_old) ** (-1.0 / n_old)
+    r_new = (c ** n_new + s ** n_new) ** (-1.0 / n_new)
+    return r_new / r_old
+
+
+def torso_reshape_pass(body):
+    """Slot 301: slim + V-taper the torso about its own rung axis.
+
+    Moves torso geometry only (trunk-dominant + the inboard chest-wall sheet);
+    arm shafts, head, legs, hem and neck stay exactly. TORSO1=0 skips (HEAD
+    geometry). BODY_SABOTAGE_TORSO=1 inflates instead (gate NC: must fail).
+    """
+    tag = 'TORSO1'
+    if os.environ.get('TORSO1', '0') != '1':
+        log(f'{tag}: OFF (TORSO1=0) — HEAD geometry, reshape skipped')
+        return {'off': True, 'moved': 0}
+    sabotage = os.environ.get('BODY_SABOTAGE_TORSO') == '1'
+    own = dominant_segments(body)
+    rungs = _torso_rungs(body, own)
+    geom = _torso_geom_mask(body, own, rungs)
+    moved, worst = 0, 0.0
+    for v in body.data.vertices:
+        if not geom[v.index]:
+            continue
+        z = v.co.z
+        rg = rungs.get(int(math.floor(z / 0.02)))
+        if rg is None:
+            continue
+        cx, cy, hw, hd = rg
+        if hw < 1e-4 or hd < 1e-4:
+            continue
+        if sabotage:
+            # Waist-weighted inflation: 1.15 everywhere + 0.15 at the waist.
+            w = _shell_sstep((0.10 - z) / 0.10) * _shell_sstep((z + 0.20) / 0.10) \
+                if -0.20 < z < 0.10 else 0.0
+            s = 1.15 + 0.15 * w
+            slat, sdep = s, s
+        else:
+            slat, sdep = _torso1_scales(z)
+        if abs(slat - 1.0) < 1e-4 and abs(sdep - 1.0) < 1e-4:
+            continue
+        ox, oy = (v.co.x - cx) / hw, (v.co.y - cy) / hd
+        r = math.hypot(ox, oy)
+        if r < 1e-4:
+            continue
+        if not sabotage:
+            pinch = _superellipse_pinch(abs(ox) / r, abs(oy) / r)
+        else:
+            pinch = 1.0
+        nx = cx + ox * hw * slat * pinch
+        ny = cy + oy * hd * sdep * pinch
+        worst = max(worst, math.hypot(nx - v.co.x, ny - v.co.y))
+        v.co.x, v.co.y = nx, ny
+        moved += 1
+    body.data.update()
+    log(f'{tag}: {"SABOTAGED (inflated)" if sabotage else "reshaped"} '
+        f'{moved} torso-geometry verts, worst move {worst * 1000:.1f} mm')
+    return {'off': False, 'moved': moved, 'worst': worst,
+            'sabotage': sabotage}
+
+
+def torso_profile_gate(prof, shellprop):
+    """Slot 301 gate on the shipped torso. Strict iff TORSO1=1; with
+    TORSO1=0 the profile is logged (the before-state) and not enforced
+    (precedent: KNEE_RING's threshold switch)."""
+    if os.environ.get('TORSO1', '0') != '1':
+        log(f'TORSO1=0: torso profile logged, gate not enforced '
+            f'(chest D {prof["chestD"] * 1000:.0f}, waist/chest '
+            f'{prof["waistW"] / prof["chestW"]:.3f}, STEP '
+            f'{prof["step"] * 1000:.1f} mm)')
+        return
+    bad = []
+    sh = shellprop.get('shoulder_w')
+    if sh and prof['chestD'] > 0.55 * sh:
+        bad.append(f'chest depth {prof["chestD"] * 1000:.0f} mm > 0.55 x '
+                   f'shoulder {sh * 1000:.0f} mm '
+                   f'({0.55 * sh * 1000:.0f} mm)')
+    ratio = prof['waistW'] / prof['chestW']
+    if not 0.74 <= ratio <= 0.84:
+        bad.append(f'waist/chest {ratio:.3f} outside 0.74-0.84 '
+                   f'(waist {prof["waistW"] * 1000:.0f}, chest '
+                   f'{prof["chestW"] * 1000:.0f} mm)')
+    if prof['step'] > 0.012:
+        bad.append(f'torso slope-step {prof["step"] * 1000:.1f} mm > 12 mm '
+                   f'at z={prof["step_z"]:+.3f}')
+    if bad:
+        raise SystemExit('[body] torso profile gate FAILED: ' + '; '.join(bad))
+    log(f'torso profile gate GREEN: chest D {prof["chestD"] * 1000:.0f} <= '
+        f'{0.55 * sh * 1000:.0f}, waist/chest {ratio:.3f}, STEP '
+        f'{prof["step"] * 1000:.1f} mm')
 
 
 def rigid_boots(body, arm, joints):
@@ -14390,6 +14719,13 @@ def main():
     sliver_report(body, 'after suit_shell')
     _shellprop = shell_report(body, _shell)
     suit_shell_gate(body, _shell, _shellprop)
+    # SLOT 301 (TORSO1): slim + V-taper the torso downstream of the shell, so
+    # every shell/leg gate above measures exactly what it measured on v103.
+    torso_profile(body, 'torso pre ')
+    torso_reshape_pass(body)
+    sliver_report(body, 'after torso_reshape')
+    _torsoprof = torso_profile(body, 'torso post')
+    torso_profile_gate(_torsoprof, _shellprop)
     sever_thigh_bridge_faces(body, _shell)
     if os.environ.get('KNEE_RING', '1') == '1':
         repair_knee_topology(body)
