@@ -1148,7 +1148,7 @@ BLEND_RING_RATE = 0.5
 BLEND_RING_FALLOFF = (1.00, 0.78, 0.52, 0.28, 0.10)
 
 
-def smooth_blend_rings(obj, locality=None):
+def smooth_blend_rings(obj, locality=None, zone=None):
     """
     Spread each ownership seam across >= 4 rings of vertices.
 
@@ -1164,6 +1164,12 @@ def smooth_blend_rings(obj, locality=None):
     diffusion equilibrates against instead of a cut applied after it, and the
     fixed point is a field that is smooth ACROSS the boundary and still zero
     beyond it.
+
+    `zone` (slot 302) scopes the repair: a callable co -> bool; only edges
+    with both endpoints in-zone seed, and rings grow only into in-zone verts.
+    The post-strip re-smooth uses it to stay off the frozen knee band (an
+    unscoped re-run would re-converge the weights knee_band_restore has just
+    inherited). None reproduces the original global call exactly.
     """
     ng = len(obj.vertex_groups)
     names = {g.index: g.name for g in obj.vertex_groups}
@@ -1182,8 +1188,13 @@ def smooth_blend_rings(obj, locality=None):
     # gradient over).
     ring = [None] * nv
     frontier = []
+    in_zone = None
+    if zone is not None:
+        in_zone = [zone(obj.data.vertices[v].co) for v in range(nv)]
     for e in obj.data.edges:
         a, b = e.vertices
+        if in_zone is not None and not (in_zone[a] and in_zone[b]):
+            continue
         wa, wb = W[a], W[b]
         d = sum(abs(wa.get(k, 0.0) - wb.get(k, 0.0)) for k in set(wa) | set(wb))
         da = max(wa, key=wa.get) if wa else None
@@ -1198,7 +1209,7 @@ def smooth_blend_rings(obj, locality=None):
         nxt = []
         for v in frontier:
             for u in adj[v]:
-                if ring[u] is None:
+                if ring[u] is None and (in_zone is None or in_zone[u]):
                     ring[u] = k
                     nxt.append(u)
         frontier = nxt
@@ -9825,6 +9836,31 @@ def segment_frame(co, force=None):
     return name, along, radial, out, front, (x - c.x, y - c.y, z - c.z)
 
 
+# SLOT 302 fix (1) — the bib is a garment element and scales with the chest
+# (ruling on 301): the bib plate width = 0.60 x the chest width at the
+# plate's height; the number "30" (NUM_W) and the sponsor band (bounded to
+# the plate's wrap) scale with it. _BIB_S is the plate/legacy factor, set
+# from the post-reshape torso profile under TORSO1=1 only; None keeps the
+# legacy absolute widths (v103-exact, the TORSO1=0 negative control). The
+# pre-reshape bib uses (loosen_suit, suit_shell) run before it is set, so
+# they keep the absolute widths their fat-torso geometry was tuned on.
+_BIB_S = None
+
+
+def _num_w():
+    """Number-plate half-width: NUM_W scaled with the bib plate (slot 302)."""
+    return NUM_W * _BIB_S if _BIB_S else NUM_W
+
+
+def _bib_set_scale(chestW):
+    """Slot 302: plate = 0.60 x post-reshape chest; store plate/legacy."""
+    global _BIB_S
+    _BIB_S = (0.60 * chestW) / 0.18
+    log(f'BIB plate scaled to the slim chest: chest {chestW * 1000:.0f} mm '
+        f'-> plate {0.60 * chestW * 1000:.0f} mm '
+        f'(factor {_BIB_S:.3f}; number patch + sponsor band follow)')
+
+
 def bib_mask(name, along, front, lat):
     """
     1 inside the competition bib, 0 outside, with a short ramp at the border.
@@ -9840,10 +9876,11 @@ def bib_mask(name, along, front, lat):
     if not (-0.68 < along < 0.52):
         return 0.0
     edge = min(along + 0.68, 0.52 - along) / 0.12
+    s = _BIB_S or 1.0
     if front > 0:
-        wrap = 1.0 - max(0.0, (abs(lat) - 0.09) / 0.05)
+        wrap = 1.0 - max(0.0, (abs(lat) - 0.09 * s) / (0.05 * s))
     else:
-        wrap = 1.0 - max(0.0, (abs(lat) - 0.06) / 0.04)
+        wrap = 1.0 - max(0.0, (abs(lat) - 0.06 * s) / (0.04 * s))
     return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
 
 
@@ -9991,7 +10028,7 @@ def in_number_patch(name, along, front, lx):
         return False
     if not (NUM_A0 < along < NUM_A1):
         return False
-    return abs(lx) < NUM_W
+    return abs(lx) < _num_w()
 
 
 def number_uv(front, lx, along):
@@ -10015,10 +10052,10 @@ def number_uv(front, lx, along):
     SAME way in lx, which mirrors the back plate to its viewer.
     """
     if front > 0:
-        u = (NUM_W + lx) / (2 * NUM_W)
+        u = (_num_w() + lx) / (2 * _num_w())
     else:
-        u = ((NUM_W - lx) if not SABOTAGE_BIBMIRROR
-             else (NUM_W + lx)) / (2 * NUM_W)
+        u = ((_num_w() - lx) if not SABOTAGE_BIBMIRROR
+             else (_num_w() + lx)) / (2 * _num_w())
     return u, (along - NUM_A0) / (NUM_A1 - NUM_A0)
 
 
@@ -10806,7 +10843,7 @@ def paint_suit(obj, lm):
             # clause rejects. SABOTAGE_BIBBANDS still restores the flat
             # powder-blue panel of session 29.
             if (along < BIB_WAIST_A1 and not SABOTAGE_BIBBANDS
-                    and (abs(lx) < NUM_W or SABOTAGE_BIBBANDWRAP)):
+                    and (abs(lx) < _num_w() or SABOTAGE_BIBBANDWRAP)):
                 col, tag = BIB_WAIST, 'bibwaist'
             else:
                 col, tag = (BIB_OLD if SABOTAGE_BIBBANDS else BIB), 'bib'
@@ -11211,7 +11248,7 @@ def bib_band_gate(obj):
             # the band's wrap is bounded to the plate's own width. A small
             # tolerance covers the frame's quantisation; the unbounded wrap
             # (BODY_SABOTAGE_BIBBANDWRAP=1) blows far past it.
-            if abs(local[0]) > NUM_W + 0.005:
+            if abs(local[0]) > _num_w() + 0.005:
                 band_wide_bad += 1
         elif is_tone(c, BIB):
             yoke_z.append(v.co.z)
@@ -11233,8 +11270,8 @@ def bib_band_gate(obj):
     bad = []
     if band_wide_bad:
         bad.append(f'{band_wide_bad} magenta band vertices lie beyond the '
-                   f'plate width (|lat| > {NUM_W}) — the sponsor band has '
-                   f'wrapped round the ribs (BOUNDARY clause)')
+                   f'plate width (|lat| > {_num_w():.3f}) — the sponsor band '
+                   f'has wrapped round the ribs (BOUNDARY clause)')
     for nm, n in (('yoke', len(yoke_z)), ('white plate', len(plate_z)),
                   ('magenta waist band', len(band_z))):
         if n < BIB_BAND_VERTS:
@@ -11843,7 +11880,7 @@ def bib_number_gate(low, out_dir):
     # ASPECT. A digit cell is 0.47 of the plate width by the ink band's share
     # of its height. At 0.33 the "30" renders as two vertical bars; a drawn
     # numeral is near 0.58.
-    cell_w = NUM_CELL_W * 2 * NUM_W
+    cell_w = NUM_CELL_W * 2 * _num_w()
     cell_h = (NUM_DV1 - NUM_DV0) * (NUM_A1 - NUM_A0) * (SEGMENTS['torso']['h'] / 2)
     aspect = cell_w / cell_h
     log(f'bib digit cell: {cell_w * 100:.1f} x {cell_h * 100:.1f} cm, '
@@ -14726,6 +14763,17 @@ def main():
     sliver_report(body, 'after torso_reshape')
     _torsoprof = torso_profile(body, 'torso post')
     torso_profile_gate(_torsoprof, _shellprop)
+    if os.environ.get('TORSO1', '0') == '1':
+        # SLOT 302 fix (1) — the bib plate scales with the slim chest
+        # (ruling on 301: plate = 0.60 x chest at the plate's height).
+        _bib_set_scale(_torsoprof['chestW'])
+        # SLOT 302 fix (2) attempted + reverted same slot: re-running
+        # reclaim_chest_wall here (both sides, posed-frame surface test,
+        # |x|/arm-floor backstops) took the belly-strip seam 18 -> 4 hot
+        # but its ownership churn knifed the atlas UV-zone gate by 1 texel
+        # (arm/trunk share; max 0) — the zones are keyed to dominance. The
+        # post-strip scoped re-smooth below mops the strip's hinges without
+        # touching ownership, so the re-run is deleted, not kept.
     sever_thigh_bridge_faces(body, _shell)
     if os.environ.get('KNEE_RING', '1') == '1':
         repair_knee_topology(body)
@@ -15017,6 +15065,21 @@ def main():
     # #26 front half: the minority-arm belly weights go too (after the weld,
     # before the stripe repair — nothing re-opens either).
     strip_arm_from_belly(low, joints)
+    if os.environ.get('TORSO1', '0') == '1':
+        # SLOT 302 fix (2), second half — the seam smoothing AFTER the last
+        # weight op (ruling on 301): the strip is the last pass that cuts,
+        # and on the slim torso its ramp leaves a 1.40 gradient hinge over
+        # resampled low verts (measured) that no pre-decimation ownership
+        # pass can prevent. The projected relax erases boundary gradients;
+        # the strip's uniform core has no gradient to diffuse, and the zone
+        # keeps the frozen knee band (and the head) out of reach.
+        _tc, _half = bl('torso'), SEGMENTS['torso']['h'] / 2
+        _shz = max(joints['shoulderL'].z, joints['shoulderR'].z)
+        _strip_zone = lambda co: (abs(co.x) < 0.17 and
+                                  _tc.z - _half - 0.05 < co.z < _shz + 0.02)
+        smooth_blend_rings(low, locality=_locality_factors(low, arm),
+                           zone=_strip_zone)
+        log('TORSO1: post-strip scoped re-smooth done (strip zone only)')
     weight_seam_gate(low, 'shipped skin, after the belly arm-strip')
     weight_locality_gate(low, arm, 'shipped skin, after the belly arm-strip')
 
