@@ -298,6 +298,25 @@ test('crash #13 negative control: root-carried ejected skis fail the brake gate'
         'negative control: previous root-carried skis must FAIL offset/uphill gate').toBe(false);
 });
 
+// 299 (ruling on 298, 15:10): the fold-window gate's negative control —
+// the synthetic sustained 300°/s rotation over 0.3 s MUST fire on the
+// 5-frame averaged instrument (threshold 220°/s unchanged). Reuses the
+// unit-tested window (tests/drive/joint-rate-window.js, same module the
+// in-page sampler uses); no browser needed — this is the instrument's
+// own contract, also covered in tests/unit/joint-rate-window.test.js.
+test('crash fold-window NC: synthetic sustained 300 deg/s fires the averaged gate', () => {
+    const w = createJointRateWindow();
+    const rate = 300 * Math.PI / 180; // 5.236 rad/s
+    const dt = 1 / 60;
+    const n = Math.round(0.3 / dt) + 1; // 19 samples over 0.3 s
+    for (let i = 0; i < n; i++) w.push(i * dt, { kneeR: rate * i * dt }, true);
+    const s = w.summary();
+    const GATE = 220 * Math.PI / 180;
+    console.log(`FOLDWIN-NC sustained300 raw=${s.rawEarly.toFixed(2)} avg=${s.avgEarly.toFixed(2)} gate=${GATE.toFixed(2)}`);
+    expect(s.avgEarly, `NC: sustained 300°/s must fire the averaged gate (avg ${s.avgEarly.toFixed(2)} > ${GATE.toFixed(2)})`)
+        .toBeGreaterThan(GATE);
+});
+
 for (const world of ['single', 'double', 'triple']) {
     test(`crash #20: ${world} grounded rest contacts every body segment`, async ({ page }) => {
         test.setTimeout(240_000);
@@ -553,11 +572,12 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     expect(firstRoll, 'state machine entered the roll phase (freeze fired)').toBeGreaterThanOrEqual(0);
     let worstAngSpd = 0, worstAngJoint = '', worstAngLate = 0;
     const _rollT0 = traceR[firstRoll].t;
-    // 298 (ruling on 297): the same fold-window series through the 5-frame
-    // averaged instrument — LOG-ONLY. This default-path gate keeps its 256
-    // basis (single-frame max ≤ 220°/s); the ruled averaging scopes the
-    // lie-v4 keep-falling phase (forensics probe), not this gate. raw5check
-    // must agree with the gate's raw peak (same series, no gaps expected).
+    // 299 (ruling on 298, 15:10): the 14:45 scoping APPLIES to this gate —
+    // the same physical quantity in the same window. The fold-window gate
+    // is evaluated on the 5-frame average (threshold UNCHANGED at 220°/s);
+    // the raw single-frame peak is logged beside it and stays visible but
+    // does not gate. raw5check must agree with the raw peak (same series,
+    // no gaps expected). Post-window 90°/s gate unchanged.
     const _jw = createJointRateWindow();
     for (let i = firstRoll; i < traceR.length; i++) {
         const _p = traceR[i].probe;
@@ -589,7 +609,10 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         ' rad/s (' + _jws.avgEarlyJ + ') after=' +
         _jws.avgLate.toExponential(2) + ' rad/s (' + _jws.avgLateJ + ')' +
         ' raw5check=' + _jws.rawEarly.toExponential(2) + ' rad/s');
-    expect(worstAngSpd, `joint angular speed in the 1.0 s fold window ${worstAngSpd.toExponential(2)} rad/s (${worstAngJoint}) ≤ 200°/s`)
+    // 299: the fold-window gate reads the 5-frame AVERAGE (ruling on 298;
+    // threshold unchanged 220°/s). worstAngSpd (raw single-frame max) is
+    // log-only — single-frame solver spikes are not what the gate is for.
+    expect(_jws.avgEarly, `joint angular speed (5-frame avg) in the 1.0 s fold window ${_jws.avgEarly.toExponential(2)} rad/s (${_jws.avgEarlyJ}; raw ${worstAngSpd.toExponential(2)} rad/s ${worstAngJoint}) ≤ 220°/s`)
         .toBeLessThanOrEqual(220 * Math.PI / 180);   // Fable ruling 2026-09-02 20:15 (was 200): 265 measured 3.62 rad/s on the elbow in the fold window — pose variance over 261's 8 % margin; a falling forearm at 220 deg/s is still physical
     expect(worstAngLate, `joint angular speed after the fold window ${worstAngLate.toExponential(2)} rad/s (${worstAngJoint}) ≤ 90°/s`)
         .toBeLessThanOrEqual(Math.PI / 2);

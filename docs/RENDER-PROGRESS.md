@@ -551,6 +551,7 @@ pink waist smear in figure.png remains the athlete-banned paint debt
 
 **Open questions for the reviewer:** none new.
 ## Status board
+| — | Iteration 299 | **SLIDE LIE-DOWN v4 part 6 (ruling on 298): flip ATTEMPTED and REVERTED — coherence on the flipped default reads fold-window avg5 6.15/elbL (raw 8.90) vs the rescoped 3.84 gate AND post-window raw 1.86/elbL vs the unchanged 90°/s gate (double red; 298's flipped run read 2.99/1.31 — the averaged instrument wanders ±1.6+ here, and 6.15 is a real sustained elbow whip). Lands with default OFF: crash-ragdoll fold-window gate rescoped to the 5-frame average (threshold unchanged) + synthetic 300°/s NC (fires at 5.24) + forensics `= false` NC (pre-v4 SLOW class: coreDown 1.46 s, maxAfter 0.33). unit 87/87, golden 30/30 (recaptured mid-slot, reverted with the flip; final 0+0 diffs), parity PASS, forensics 8/8, crash-ragdoll 15/15 (#13 single 8.44 green). Flip diff at `scratch/iter-299/wip.patch`. ASSET_V stays 103.** | entry 299. |
 | — | Iteration 298 | **SLIDE LIE-DOWN v4 part 5 (ruling on 297): the 5-frame averaged joint-rate instrument lands (`tests/drive/joint-rate-window.js`, one source for node + in-page; threshold unchanged 3.84, raw logged next to it) with the ruling's negative control as a unit test (sustained 300°/s fires averaged at 5.24; single-frame 8 spike fires raw at 8.0, reads 2.0 averaged). The flip bar is EARNED on the averaged instrument — avg peak ≤ 3.84 in 3/3 worlds on 3/3 forensics reruns (worst 2.95 triple; single wanders 2.45/1.50/1.21), core ≤ 0.08 in 2 s holds 3/3 every run, both NCs fire — but the flip does NOT ship: a default-ON experiment trips crash-ragdoll's unchanged raw fold-window gate at 8.11/elbR (avg5 2.99 would be green; re-scoping that gate needs a ruling, asked Q1). Flip reverted, patch at `scratch/iter-298/wip.patch`. unit 87/87, golden 30/30 no recapture, parity PASS, forensics 7/7 ×3, crash-ragdoll 14/14 (#13 single 8.40 green after 297's 8.56–8.63 red ×3). ASSET_V stays 103.** | entry 298. |
 | — | Iteration 297 | **SLIDE LIE-DOWN v4 part 4 (ruling on 296): the hinge-rate governor covers EVERY hinge (neck/head + hips/shoulders added to the 4 free hinges; same 3.5 rad/s cap, same velocity-damping + drain-side halves, never a position clamp), env-gated `_crashLieV4`, default stays OFF — the flip bar is NOT earned. Final-tree lie-v4: single 3.29/neck (coreDown 0.09 s), double 8.42/kneeR (0.20 s), triple 5.52/neck (0.40 s); NC fires at 0.8552; whipHit 31.78/42.52/14.33 (governor engages, frame rate unmoved — position-side drivers re-apply). Two same-slot findings: (1) the shoulder whip PRE-EXISTS the governor (4-pair diagnostic single 6.27/shoL on the new instrument) and the in-window peak WANDERS run-to-run (double kneeR 8.42 vs 5.69/shoR vs 9.46/kneeL; single shoL 9.59→6.41) — rAF-sampled instrument on a chaotic tumble, ±3 rad/s; (2) hips/shoulders were added to the drive probe and REVERTED same slot — they newly gate the DEFAULT-path fold's proximal rotation at hipL 1.94 rad/s after the window vs the hard 90°/s gate (default fold rotates about proximal joints by design, 261); re-band needs a ruling. unit 82/82, golden 30/30 no recapture, parity PASS, forensics 7/7 (default 3/3 + 3 v4 machine-hold + NC), coherence green post-revert (late 1.22/elbL). crash #13 single red 8.56–8.63 vs [3,8.5] on BOTH trees (HEAD A/B 8.63) = pre-existing drift, not this diff. ASSET_V stays 103.** | entry 297. |
 | — | Iteration 296 | **SLIDE LIE-DOWN v4 part 3 (knee whip): hinge-rate governor (3.5 rad/s, velocity-damping + drain-side halves, prospective at hand-over, neck deliberately excluded) + scheduled floor ease (0.5 floor, 0.5+0.2·vH boost, lever-ceiling cap) land env-gated `_crashLieV4` (default OFF = HEAD-identical on the default path) — the 297 flip bar is NOT earned. Spec'd kneeR whip 12.98/12.73 GONE (tick-1 drain seed was the driver); remaining in-window leaders 4.20/elbL single, 5.70/elbL double, 6.03/neck triple (neck pin-side, ungoverned by design). Core ≤ 0.08 in 2 s HOLDS 3/3 (0.16/0.09/0.40 s), NC fires at 0.8552, late rates ≤ 1.12. unit 82/82, golden 30/30 no recapture, parity PASS, forensics 7/7 (default 3/3 + 3 v4 machine-hold + NC). crash-ragdoll 14/14 green (8.2 min, full file, committed tree). Single elbow transient worsened under the flag (1.79→4.20) — reported. ASSET_V stays 103.** | entry 296. |
@@ -1859,6 +1860,95 @@ No `assets/` change → no `ASSET_V` bump.
 still stands from entry 83.
 
 ## Iterations
+
+### 299 — SLIDE LIE-DOWN v4 part 6 (ruling on 298): flip ATTEMPTED and reverted — coherence reads avg5 6.15 + post-window raw 1.86 on the flipped default; rescoped gate + NCs land with default OFF
+
+**Slot:** 299 = (a) scope crash-ragdoll's fold-window gate to the 5-frame
+average (threshold 220°/s unchanged; raw logged beside; post-window 90°/s
+unchanged); (b) flip `_crashLieV4` default ON with `= false` as the NC;
+(c) three full reruns crash-ragdoll + forensics green, parity PASS,
+`looseGroundRest` NC firing, walk-off after rest in band, `engine/`
+untouched. Physics/`engine/` untouched; invariants hold; no recapture
+(traces reverted — see below); no asset change, ASSET_V stays 103; look
+suite not run (no skinned-geometry/material change — game.js comment +
+specs only, same basis as 296–298).
+
+**What changed (default OFF = HEAD-identical behaviour, proven below):**
+1. `game.js` — one-line flip attempted (`=== true` → `!== false`) and
+   REVERTED same slot; the kept diff is a comment recording the failing
+   numbers. All v4 call sites read through `_crashLieV4()`.
+2. `tests/drive/crash-ragdoll.spec.js` — the fold-window gate now reads the
+   5-frame average `_jws.avgEarly ≤ 220°/s` (raw single-frame max log-only;
+   post-window 90°/s gate untouched); NEW node-side NC test reusing the
+   unit-tested window (sustained 300°/s over 0.3 s must fire averaged —
+   fires at avg 5.24, threshold 3.84).
+3. `tests/drive/getup-forensics.spec.js` — NEW `lieV4Off` option
+   (`window._crashLieV4 = false`) + NEW NC test "default-off restores the
+   pre-v4 class": worst particle stays propped > 0.08 AND core comes down
+   SLOW (≥ 0.8 s; v4 reads 0.08–0.40 s). Two same-slot corrections, both
+   measured: the pre-v4 v2 fold DOES bring the core down (double 1.40 s),
+   so "never-down" was falsified and replaced by the SLOW class.
+4. Golden traces: recaptured mid-slot for the flipped default (13
+   crash-ending scenarios, display-node-only per `audit-physics-state`: 0
+   physics-state diffs / 5408 frames), then REVERTED
+   (`git checkout -- tests/golden/traces/`) with the flip — final tree has
+   0 physics + 0 display diffs.
+
+**Why the default stays OFF (exact failing numbers vs the flip bar):**
+coherence crash on the flipped default (`scratch/iter-299/crash_runA.log`,
+sequential run): fold-window **raw 8.90/elbL, avg5 6.15/elbL** vs the
+rescoped 3.84 gate, AND **post-window raw 1.86/elbL** vs the unchanged
+1.5708 gate — a double red. The 298 flipped experiment on the same test
+read avg5 2.99/kneeR (after 1.31): the averaged instrument itself wanders
+±1.6+ run-to-run on this path, and 6.15 averaged over 5 wall frames (≈70°
+of elbow in ≈0.2 s) is a real sustained whip, not a 1-frame spike (a
+one-frame 8.9 spike reads ≈2.2 averaged). The v4 keep-falling genuinely
+whips the elbow faster than both gates on the coherence path — a damping
+governor cannot hold it (297's finding stands). Flip reverted; the one-line
+experiment diff is saved at `/home/justin/aerial-agents/scratch/iter-299/wip.patch`.
+Forensics on the flipped default WAS green on the bar (run2: single
+coreDown 0.19 s avg 3.06; double 0.10 s avg 2.97/raw 9.46; triple 0.40 s
+avg 2.95; frozen NC 0.8552; rest→walk 3.45/3.32/3.57 s) — the bar holds on
+the forensics path but the coherence path is red, so per the ruling ("if
+any rerun is red, leave OFF") the flip does not ship. Only ONE flipped
+crash round was run (the red decides it; further rounds cannot change the
+disposition).
+
+**Verification (real numbers, final tree):** unit 87/87; golden 30/30;
+`audit-physics-state` 0 physics + 0 display diffs / 5408 frames; parity
+30/30 PASS (twist/gamepad family full-state maxdiff 0 vs HEAD).
+- getup-forensics 8/8 (3.9 min): default rest→walk 3.05/3.07/3.13 s;
+  lie-v4 single coreDown 0.09 s avg 1.37/neck (raw 5.80), double 0.09 s avg
+  3.04/kneeR (raw 8.86), triple 0.40 s avg 2.95/kneeL (raw 5.52);
+  frozen-crumple NC 0.8552 fires; =false NC fires (coreDown 1.46 s ≥ 0.8,
+  maxAfter 0.3335 > 0.08, raw 3.63/avg 2.74 — the pre-v4 SLOW class).
+- crash-ragdoll 15/15 (7.9 min): coherence fold raw 3.52/avg5 2.06/kneeL
+  (≤ 3.84 holds on the rescoped gate), after 1.22/elbL ≤ 1.5708; #20 3/3
+  (maxClear 0.028/0.030/0.027, looseGroundRest NC 0.420 fires); #13
+  single past 8.44 (≤ 8.5 green), double 11.99, triple 16.06; framing 3/3
+  + NC; roll/limp NCs fire; synthetic NC 5.24 fires.
+- walkoff.spec NOT re-run (budget; #14 re-scope moved to the next
+  authorization by the ruling; walk-off-after-rest covered by forensics
+  rest→walk < 6 s gates above).
+Logs: `scratch/iter-299/{forensics_run1,forensics_run2,forensics_final,crash_runA,crash_final}.log`
+(run1 discarded — forensics + crash run in parallel under box load 24 gave
+wall-cap truncations, not signal; all counting runs sequential).
+
+**Open questions for the reviewer:**
+1. The flip needs a re-spec, not another rerun: the coherence path whips
+   the elbow at 6+ rad/s sustained under v4 (governor pre-damp peaks
+   20–119 rad/s single, 35 double — position drivers re-apply). Options:
+   (a) a drain/ease-side rate treatment for the elbow chain, (b) scope the
+   coherence fold-window gate differently from the forensics keep-falling
+   gate (different crashes, different regimes), or (c) accept default-OFF
+   until friction-by-orientation re-tunes the slide.
+2. The post-window 90°/s raw gate tripped at 1.86/elbL on the flipped
+   default (298's flipped run: 1.31) — same wander class; does it need the
+   averaging scoping too, or is it a second symptom of the elbow whip?
+3. Crash-ragdoll rounds B/C were not run (one red decides per the ruling);
+   forensics was verified 8/8 on the final tree but only one clean full
+   round — is a second confirmation round wanted in 300, or does 300 stay
+   review-only?
 
 ### 298 — SLIDE LIE-DOWN v4 part 5 (ruling on 297): 5-frame averaged joint-rate instrument lands; the flip bar is EARNED on the averaged instrument but the flip does NOT ship — default-ON trips crash-ragdoll's unchanged raw gate at 8.11
 

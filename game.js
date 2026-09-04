@@ -6775,7 +6775,12 @@ void main(void) {
     // that reads 180 deg for the tumble (HEAD: 40 deg) — the tumble path
     // below is therefore NOT refactored and runs byte-identical; v4 carries
     // its own lean integrator. Env-gated: window._crashLieV4 === true;
-    // default off (HEAD v2 behaviour exactly).
+    // default off (HEAD v2 behaviour exactly). 299 ATTEMPTED the flip
+    // (ruling on 298) and REVERTED it same slot: on the flipped default
+    // the coherence crash reads fold-window avg5 6.15/elbL (raw 8.90) vs
+    // the rescoped 3.84 gate AND post-window raw 1.86/elbL vs the
+    // unchanged 90°/s gate — the v4 keep-falling genuinely whips the
+    // elbow faster than both gates on that path (see entry 299).
     const _crashLieV4 = function () {
         return typeof window !== 'undefined' && window._crashLieV4 === true;
     };

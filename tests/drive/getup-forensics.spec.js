@@ -25,8 +25,14 @@ async function forensics(page, world, opts) {
     }
     // SLOT 293 (lie-down v4, ruling on 262): window._crashLieV4 keeps the
     // ragdoll integrating through the roll instead of freezing the crumple.
+    // 299: default stays OFF (flip reverted) — o.lieV4 opts in explicitly;
+    // o.lieV4Off (window._crashLieV4 = false) is the negative control that
+    // pins the pre-v4 v2-fold class even if the default ever flips.
     if (o.lieV4) {
         await page.evaluate(() => { window._crashLieV4 = true; });
+    }
+    if (o.lieV4Off) {
+        await page.evaluate(() => { window._crashLieV4 = false; });
     }
     await page.waitForTimeout(400);
     await page.keyboard.press('ArrowUp');
@@ -383,12 +389,12 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
 }
 
 // ── 293 SLIDE LIE-DOWN v4 (ruling on 262, 18:15) ─────────────────────
-// The ragdoll keeps falling through the roll (no freeze at 0.6 s). This
-// slot lands the mechanism env-gated: these runs assert the MACHINE still
-// holds under v4 (no tick exception, rest declared, walk starts — 256's
-// attempt-2 failure mode was rest never coming) and LOG the lie-down
-// profile plus the chain readings for the reviewer. The <= 8 cm lie gate
-// itself stays log-only here; 294 earns it.
+// The ragdoll keeps falling through the roll (no freeze at 0.6 s).
+// 299: the flip was attempted and REVERTED same slot (coherence avg5 6.15
+// + post-window raw 1.86 on the flipped default) — v4 stays explicitly
+// opted-in via window._crashLieV4 (default path is the v2 fold). These
+// runs assert the MACHINE holds under v4 with the profile + chain
+// readings logged; the <= 8 cm / averaged-rate bar in [lie-v4-bar].
 for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')) {
     test(`lie-v4 ${world}: keep falling, machine holds, profile logged`, async ({ page }) => {
         const run = () => forensics(page, world, {
@@ -436,12 +442,10 @@ for (const world of (process.env.FG_WORLDS || 'single,double,triple').split(',')
         console.log(`[lie-v4-curve] ${world} ` + curve.join(' '));
         require('fs').writeFileSync(
             path.join(OUT, `forensics_liev4_${world}.json`), JSON.stringify(m, null, 1));
-        // ── 294 PROFILE (ruling on 293; log-only — the bar is NOT earned:
-        // the in-window knee whip below lives in the pre-freeze
-        // keep-falling phase (293 code, sim-identical by construction —
-        // both spikes sit inside windows ending before their freeze:
-        // double freeze +4.08 s, triple +1.63 s), so the default stays
-        // OFF per the slot's fallback. Next slot owns the whip.)
+        // ── 299 BAR (ruling on 298; the flip condition): the joint-rate
+        // bar is the 5-frame AVERAGE ≤ 3.84 rad/s in-window (raw logged
+        // beside it) with core ≤ 0.08 m within 2.0 s of the tumble end —
+        // evaluated across the slot's three reruns, in [lie-v4-bar] below.
         const downBy2 = lieFrames.find((f) => f.rT - f.rollAt <= 2.0 &&
             f.coreClear != null && f.coreClear <= 0.08);
         // 296: governor engagement (peak pre-damp per-tick hinge rate)
@@ -479,4 +483,43 @@ test('lie-v4 negative control: frozen crumple fails the 8 cm bar', async ({ page
         `afterLieN=${afterLie.length} maxClearAfter=${maxAfter}`);
     expect(maxAfter).not.toBeNull();
     expect(maxAfter).toBeGreaterThan(0.08);
+});
+
+// 299 NEGATIVE CONTROL (ruling on 298 (b)): window._crashLieV4 = false must
+// return the raw/averaged/core numbers to the PRE-v4 class (293: at
+// tumble-end + 1.0 s the body-centre clearance reads 0.516 single / 0.593
+// double / 0.093 triple — the single and double are not down). Double
+// world: the core must NOT reach <= 8 cm within 2.0 s of the tumble end
+// and the worst particle must stay propped above the bar afterwards.
+test('lie-v4 negative control: default-off restores the pre-v4 class', async ({ page }) => {
+    const run = () => forensics(page, 'double', {
+        tuck: process.env.FG_TUCK !== '0', lieV4Off: true,
+    });
+    let m = await run();
+    if (!m.frames.some((f) => f.phase === 'tumble' || f.phase === 'roll')) {
+        console.log('[lie-v4-off-nc] double: degenerate run, retrying once');
+        m = await run();
+    }
+    expect(m.error).toBeNull();
+    expect(m.crashErr).toBeNull();
+    const roll = m.frames.filter((f) => f.phase === 'roll');
+    const lieFrames = roll.filter((f) => f.rT != null && f.rollAt != null);
+    const afterLie = lieFrames.filter((f) => f.rT - f.rollAt >= 1.0);
+    const maxAfter = afterLie.length
+        ? Math.max(...afterLie.map((f) => f.maxClear || 0)) : null;
+    // 299 correction (measured run1/run2): the pre-v4 v2 fold DOES bring
+    // the core down, just SLOWLY — double coreDown 1.40 s (v4: 0.08–0.40 s)
+    // and the worst particle stays propped at 0.33 (v4 rest: ~0.03). Gate
+    // the SLOW class on both readings (margins 2x/4x).
+    const downBy2 = lieFrames.find((f) => f.rT - f.rollAt <= 2.0 &&
+        f.coreClear != null && f.coreClear <= 0.08);
+    const downEl = downBy2 ? downBy2.rT - downBy2.rollAt : null;
+    console.log(`[lie-v4-off-nc] double coreDownBy2s=${downEl != null ? downEl.toFixed(2) + 's' : 'MISS'} ` +
+        `maxClearAfter=${maxAfter} ` +
+        `jointRaw=${m.jointRates ? m.jointRates.rawEarly.toFixed(2) + '/' + m.jointRates.rawEarlyJ : 'n/a'} ` +
+        `jointAvg=${m.jointRates ? m.jointRates.avgEarly.toFixed(2) + '/' + m.jointRates.avgEarlyJ : 'n/a'}`);
+    expect(maxAfter).not.toBeNull();
+    expect(maxAfter, 'NC: default-off worst particle stays propped (pre-v4 class ~0.33)').toBeGreaterThan(0.08);
+    expect(downEl).not.toBeNull();
+    expect(downEl, 'NC: default-off core comes down SLOW (pre-v4 class ~1.4 s, v4 <= 0.40 s)').toBeGreaterThanOrEqual(0.8);
 });
