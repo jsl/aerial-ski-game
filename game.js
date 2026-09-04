@@ -3309,6 +3309,15 @@ void main(void) {
                      kneeR: ang(B.kneeR, B.hipR, B.ankleR),
                      elbL: ang(B.elbowL, B.shL, B.wristL),
                      elbR: ang(B.elbowR, B.shR, B.wristR),
+                     // 297 NOTE: hips/shoulders were added here and
+                     // REVERTED the same slot — they newly subject the
+                     // DEFAULT-path fold's proximal rotation to the hard
+                     // 90°/s post-window gate (measured hipL 1.94 rad/s
+                     // after the window vs ≤ 1.5708; the default fold
+                     // rotates about the proximal joints by design, 261).
+                     // Re-banding that gate needs a written ruling, so
+                     // the instrument stays at the 296 basis; hip/shoulder
+                     // engagement under the flag is read from whipHit.
                  },
                  // 236 #24(a): the slide-phase terrain-conform gate needs the
                  // TRUE lowest rendered body point — the min clearance over
@@ -7050,19 +7059,26 @@ void main(void) {
     // clamps keep full authority. Skipped for the #20 NC
     // (looseGroundRest).
     const _LIE_WHIP_CAP = 3.5;
-    // The neck is NOT governed: it is kinematically pinned (glued to the
-    // torso, headTop re-seated to headRest every substep) — damping the
-    // head's velocity makes it lag the translating torso, so the pin's
-    // position projection does MORE work per tick and the neck whips
-    // harder (measured: single in-window neck 5.63 with it governed vs
-    // 1.79 without, plus a 0.43 tail transient from the earlier freeze).
-    // The free chains (knees, elbows) are what 294's 12.98/12.73 whip
-    // lives in.
+    // 297 (ruling on 296): the governor covers EVERY hinge — the four
+    // free hinges (knees, elbows) plus neck/head and hips/shoulders. Same
+    // cap (3.5 rad/s), same two halves (distal relative-velocity damping
+    // + drain-side scaling), never a position clamp. Note the 296
+    // finding stands as a risk: the neck is kinematically pinned (glued
+    // to the torso, headTop re-seated to headRest every substep), so
+    // damping the head's velocity can make the pin's position projection
+    // do MORE work per tick (single in-window neck measured 5.63 with it
+    // governed vs 1.79 without). The numbers below decide; the flip bar
+    // (3/3 in-window <= 3.84 rad/s) is unchanged.
     const _crashLieWhipPairs = [
         ['kneeL', 'hipL', 'ankleL'],
         ['kneeR', 'hipR', 'ankleR'],
         ['elbowL', 'shL', 'wristL'],
         ['elbowR', 'shR', 'wristR'],
+        ['neck', 'torsoBottom', 'headTop'],
+        ['hipL', 'torsoBottom', 'kneeL'],
+        ['hipR', 'torsoBottom', 'kneeR'],
+        ['shL', 'torsoTop', 'elbowL'],
+        ['shR', 'torsoTop', 'elbowR'],
     ];
     const _crashLieWhipAng = function (R, j, a, b) {
         const B = R.byName;
