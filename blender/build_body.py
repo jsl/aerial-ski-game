@@ -77,6 +77,7 @@ import bpy
 import bmesh
 import json
 import math
+import statistics
 import os
 import sys
 
@@ -1903,6 +1904,8 @@ def weld_abdomen_hip_seam(low, arm):
         return None
 
     groups = list(low.vertex_groups)
+    _fe = _locality_factors(low, arm)
+    _n_far = [0]
     seam_edges = []
     # Seam edges form connected RINGS; welding edge-by-edge cascades (welding
     # (a,b) then (b,c) re-breaks a==b), so weld per CONNECTED COMPONENT:
@@ -1954,6 +1957,15 @@ def weld_abdomen_hip_seam(low, arm):
         # ≥ 0.05 beyond 1.70 x reach). Drop sub-0.10 keys — every member
         # gets the same vector either way, so the seam stays C0.
         mean = {k: w for k, w in mean.items() if w >= 0.10}
+        # Fable F9 (2026-09-05): a seam component can chain to a vertex far from
+        # the leg (a belly vertex received upperLegL w=0.11-0.15 at 1.7x reach
+        # once the slimmer thigh decimated differently). A bone beyond reach for
+        # ANY member is dropped from the shared vector, so the weld stays C0 and
+        # within reach by construction (the locality gate re-measures it).
+        _far = {k for k in mean if any(_fe[v].get(k, (1.0, None))[0] <= 0.0 for v in members)}
+        if _far:
+            _n_far[0] += len(_far)
+            mean = {k: w for k, w in mean.items() if k not in _far}
         if not mean:
             continue
         top = sorted(mean.items(), key=lambda kv: -kv[1])[:WEIGHT_SEAM_INFLUENCES]
@@ -3420,6 +3432,617 @@ def thigh_taper_pass(body):
         apply(fu2, fc2, fk_i=1.0)
     front_taper_report(body, 'taper out')
     leg_taper_report(body, 'taper out')
+
+
+# ── LEG SHEET (Fable direct pass F9, 2026-09-05): the lean leg as an AUTHORED
+# profile, not the sum of corrective passes. The author: "not especially
+# muscular or fat. generally aerialists are lean. suit is fairly heavy so it
+# smooths out some body shapes." Each leg becomes one smooth superellipse tube
+# whose breadth/depth follow LEG_SHEET (metres, by station from the crotch to
+# the boot cuff) around the leg's OWN centreline (the A-frame thigh line and the
+# re-centred shin, measured as row medians), so the axis work of v101/v102 is
+# kept and only the radius is authored. Projection is full inside the leg and
+# fades over LEG_SHEET_FADE at the crotch (into the seat) and at the cuff (into
+# the boot). LEG_SHEET=0 skips it (negative control: the taper gates must read
+# the pre-sheet leg). thigh_taper_pass is skipped when the sheet is on — the
+# two would fight.
+LEG_SHEET = [
+    # (z offset from the CROTCH station, negative = down; breadth; depth)
+    (+0.000, 0.146, 0.156),   # crotch: upper thigh (lean; front-taper gate thigh/knee <= 1.35)
+    (-0.060, 0.143, 0.152),
+    (-0.120, 0.137, 0.144),   # mid thigh
+    ('knee', +0.060, 0.126, 0.130),
+    ('knee', +0.000, 0.116, 0.122),   # knee (the 241 ring was 112 x 118; +2 mm for the front-taper margin)
+    ('knee', -0.060, 0.116, 0.124),   # below the knee: calf top starts
+    ('knee', -0.110, 0.118, 0.126),   # calf belly
+    ('cuff', +0.050, 0.094, 0.102),
+    ('cuff', +0.000, 0.078, 0.088),   # shin at the cuff top (cuff inner ~90 mm; a lean ankle)
+]
+LEG_SHEET_EXP = 2.2          # superellipse exponent: suit over muscle, slightly boxy
+LEG_SHEET_FADE = 0.08        # m: fade at the crotch end (into the seat)
+LEG_SHEET_FADE_CUFF = 0.05   # m: fade below the cuff top (into the boot)
+LEG_SHEET_MAX_DR = 0.035     # m: per-vertex radial move cap (sliver control)
+LEG_KNEE_BAND = 0.035        # m: half-height of the knee band rebuilt as a bridge
+
+
+def _sheet_stations(side):
+    up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+    hip = bl(up).z + SEGMENTS[up]['h'] / 2
+    knee = bl(up).z - SEGMENTS[up]['h'] / 2
+    ank = bl(lo).z - SEGMENTS[lo]['h'] / 2
+    # NOT CROTCH_FRAC: that constant is the sever plane (3 cm above the knee).
+    # The visible crotch on this rig is ~9 cm below the thigh segment's top
+    # (the single-leg silhouette opens from ~0.10 to ~0.146 m there).
+    crotch = hip - 0.09
+    cuff = bl(lo).z            # the ankle station = the boot cuff top (v100 loft)
+    out = []
+    for st in LEG_SHEET:
+        if len(st) == 3:
+            z = crotch + st[0]; b, d = st[1], st[2]
+        else:
+            base = {'knee': knee, 'cuff': cuff}[st[0]]
+            z = base + st[1]; b, d = st[2], st[3]
+        out.append((z, b, d))
+    out.sort(key=lambda t: -t[0])   # top (crotch) first
+    return out, crotch, knee, cuff, hip
+
+
+def _sheet_bd(stations, z):
+    """Breadth/depth at z by linear interpolation between stations (clamped)."""
+    if z >= stations[0][0]:
+        return stations[0][1], stations[0][2]
+    if z <= stations[-1][0]:
+        return stations[-1][1], stations[-1][2]
+    for (z1, b1, d1), (z2, b2, d2) in zip(stations, stations[1:]):
+        if z2 <= z <= z1:
+            t = (z1 - z) / (z1 - z2) if z1 != z2 else 0.0
+            return b1 + (b2 - b1) * t, d1 + (d2 - d1) * t
+    return stations[-1][1], stations[-1][2]
+
+
+def leg_sheet_pass(body):
+    """Project each leg's suit skin onto the LEG_SHEET superellipse tube."""
+    if os.environ.get('LEG_SHEET', '1') != '1':
+        log('  LEGSHEET: skipped (LEG_SHEET=0)')
+        return
+    _leg_sheet_reown(body)
+    if os.environ.get('LEG_SHEET_KNEE', '1') == '1':
+        _leg_sheet_rebuild_knee(body)
+    own = dominant_segments(body)
+    _ga = body.data.attributes.get('fable_gusset')
+    gus = set(k for k, d in enumerate(_ga.data) if d.value) if _ga else set()
+    n_exp = LEG_SHEET_EXP
+    vs = body.data.vertices
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        stations, crotch, knee, cuff, hip = _sheet_stations(side)
+        c_up = bl(up)
+        # row medians of the leg's own verts = the existing centreline
+        rows = {}
+        idx = []
+        c_lo_sel = bl(lo)
+        for i, v in enumerate(vs):
+            if i in gus:
+                continue
+            if own[i] not in (up, lo, f'hlpKnee{side}'):
+                # the knee bridge's new verts carry no dominant group yet; they
+                # are this leg's if they sit in the band near the centreline
+                if not (own[i] in ('', None) and abs(v.co.z - knee) < 0.07
+                        and math.hypot(v.co.x - c_lo_sel.x, v.co.y - c_lo_sel.y) < 0.10):
+                    continue
+            if v.co.x * c_up.x < 0:          # the crotch web / other leg
+                continue
+            if v.co.z > hip or v.co.z < cuff - LEG_SHEET_FADE_CUFF:
+                continue                     # seat rows / inside the boot
+            idx.append(i)
+        if os.environ.get('LEG_SHEET_DEBUG') == '1' and side == 'L':
+            # owner histogram of the two knee walls (inner r < 58 mm / outer)
+            _h = {}
+            for i2, v2 in enumerate(vs):
+                if abs(v2.co.z - knee) < 0.03 and v2.co.x < 0 and math.hypot(v2.co.x - bl(lo).x, v2.co.y - bl(lo).y) < 0.10:
+                    _r = math.hypot(v2.co.x - bl(lo).x, v2.co.y - bl(lo).y)
+                    _key = ('inner' if _r < 0.058 else 'outer', own[i2], i2 in gus)
+                    _h[_key] = _h.get(_key, 0) + 1
+            for k2 in sorted(_h):
+                log(f'    KNEE-WALLS L {k2}: {_h[k2]}')
+            rows.setdefault(int(math.floor(v.co.z / 0.02)), []).append((v.co.x, v.co.y))
+        med = {}
+        for k, pts in rows.items():
+            if len(pts) >= 4:
+                med[k] = (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts))
+        ks = sorted(med)
+        sm = {}
+        for j, k in enumerate(ks):
+            nb = [med[x] for x in ks[max(0, j - 1):j + 2]]
+            sm[k] = (sum(p[0] for p in nb) / len(nb), sum(p[1] for p in nb) / len(nb))
+
+        # Centreline from the BONES, not the row medians: the medians near the
+        # knee are skewed ~3 cm inboard by the inner-thigh/sever verts, which put
+        # the knee's inner face across the midline. Thigh: an A-frame line from
+        # the crotch station (inner face 30 mm from the midline) to the knee
+        # bone; shin: the lowerLeg bone (the v101 re-centre put the skin there).
+        c_lo = bl(lo)
+        sgn = -1.0 if c_up.x < 0 else 1.0
+        b_top, _ = _sheet_bd(stations, crotch)
+        x_top = sgn * (0.030 + b_top / 2)
+        # the boot cuff sits ~30 mm ahead of the bone (v100 loft); the shin is
+        # centred 15 mm toe-ward of the bone (build -y), as the v101 re-centre was
+        _sy = c_lo.y - 0.015
+        def centre(z):
+            if z >= knee:
+                t = _clamp01((crotch - z) / max(1e-6, crotch - knee)) if z <= crotch else 0.0
+                return (x_top + (c_lo.x - x_top) * t, c_up.y + (_sy - c_up.y) * t)
+            return (c_lo.x, _sy)
+        # Two tubes overlap at the knee (the thigh's tail reaches below the
+        # station, the shin's above). Label each vertex's shell by flood fill
+        # from far above (thigh) / far below (shin) over leg-only edges; the
+        # hidden tail of each shell is pulled 7 % inside the other so the
+        # visible surface hands over at the knee station with no rim.
+        idx_set = set(idx)
+        adj = {i: set() for i in idx}
+        for e in body.data.edges:
+            a, b2 = e.vertices
+            if a in idx_set and b2 in idx_set:
+                adj[a].add(b2); adj[b2].add(a)
+        def _flood(seed_pred, stop_pred):
+            seen = set(i for i in idx if seed_pred(vs[i].co.z))
+            stack = list(seen)
+            while stack:
+                i = stack.pop()
+                for j in adj[i]:
+                    if j not in seen and not stop_pred(vs[j].co.z):
+                        seen.add(j); stack.append(j)
+            return seen
+        thigh_shell = _flood(lambda z: z > knee + 0.10, lambda z: z < knee - 0.06)
+        shin_shell = _flood(lambda z: z < knee - 0.10, lambda z: z > knee + 0.06)
+        both = thigh_shell & shin_shell
+        log(f'  LEGSHEET {side}: knee shells thigh {len(thigh_shell)} shin {len(shin_shell)} both {len(both)}')
+        def _tail(i, z):
+            if i in both:
+                return 1.0
+            if i in thigh_shell and z < knee - 0.005:
+                return 0.93
+            if i in shin_shell and z > knee + 0.005:
+                return 0.93
+            return 1.0
+        moved = 0; dmax = 0.0; dsum = 0.0
+        for i in idx:
+            v = vs[i]
+            z = v.co.z
+            w = 1.0
+            if z > crotch:                         # fade into the seat
+                w = _clamp01((hip - z) / max(1e-6, (hip - crotch)))
+                w = _clamp01((crotch + LEG_SHEET_FADE - z) / LEG_SHEET_FADE)
+            if z < cuff:                           # fade into the boot
+                w = min(w, _clamp01((z - (cuff - LEG_SHEET_FADE_CUFF)) / LEG_SHEET_FADE_CUFF))
+            if w <= 0.0:
+                continue
+            cx, cy = centre(z)
+            b, d = _sheet_bd(stations, z)
+            a_, b_ = b / 2, d / 2
+            dx, dy = v.co.x - cx, v.co.y - cy
+            r = math.hypot(dx, dy)
+            if r < 1e-6:
+                continue
+            th = math.atan2(dy, dx)
+            cth, sth = abs(math.cos(th)), abs(math.sin(th))
+            rt = ((cth / a_) ** n_exp + (sth / b_) ** n_exp) ** (-1.0 / n_exp) * _tail(i, z)
+            cap = LEG_SHEET_MAX_DR * (2.0 if abs(z - knee) < 0.05 else 1.0)   # the ring band needs the full move
+            nr = r + max(-cap, min(cap, (rt - r) * w))
+            v.co.x = cx + dx / r * nr
+            v.co.y = cy + dy / r * nr
+            moved += 1; dmax = max(dmax, abs(nr - r)); dsum += abs(nr - r)
+        if os.environ.get('LEG_SHEET_DEBUG') == '1' and side == 'L':
+            _rows = {}
+            for i in idx:
+                v = vs[i]; k = int(math.floor(v.co.z / 0.02))
+                _rows.setdefault(k, []).append((v.co.x, v.co.y))
+            for k in sorted(_rows, reverse=True):
+                z = (k + 0.5) * 0.02
+                if -0.72 <= z <= -0.52:
+                    xs = [q[0] for q in _rows[k]]; ys = [q[1] for q in _rows[k]]
+                    cx, cy = centre(z); b, d = _sheet_bd(stations, z)
+                    if -0.62 <= z <= -0.58:
+                        _ii = [i for i in idx if int(math.floor(vs[i].co.z / 0.02)) == k]
+                        _ii.sort(key=lambda i: -abs(vs[i].co.x - cx))
+                        for i in _ii[:4]:
+                            _nf = sum(1 for pg in body.data.polygons if i in pg.vertices)
+                            _bad = sum(1 for pg in body.data.polygons if i in pg.vertices and any(own[j] not in ('upperLegL','lowerLegL','hlpKneeL') for j in pg.vertices))
+                            log(f'      widest v{i}: x {vs[i].co.x:+.3f} y {vs[i].co.y:+.3f} z {vs[i].co.z:+.3f} own {own[i]} gus {i in gus} faces {_nf} mixed-owner faces {_bad}')
+                    log(f'    LEGSHEET-DBG L z {z:+.3f}: n {len(xs):3d} x-extent {(max(xs)-min(xs))*1000:.0f} '
+                        f'y-extent {(max(ys)-min(ys))*1000:.0f} sheet {b*1000:.0f}x{d*1000:.0f} centre ({cx:+.3f},{cy:+.3f})')
+        # Tangential relax of the moved verts (2 x 0.35 Laplacian along the
+        # surface, then re-projection onto the sheet radius): spreads the mesh
+        # evenly around the new tube so painted seams and the silhouette do
+        # not inherit the base mesh's row-to-row azimuth jitter.
+        for _it in range(3):
+            newpos = {}
+            for i in idx:
+                nb = adj[i]
+                if len(nb) < 3:
+                    continue
+                v = vs[i]
+                mx = sum(vs[j].co.x for j in nb) / len(nb)
+                my = sum(vs[j].co.y for j in nb) / len(nb)
+                mz = sum(vs[j].co.z for j in nb) / len(nb)
+                newpos[i] = (v.co.x + (mx - v.co.x) * 0.5, v.co.y + (my - v.co.y) * 0.5, v.co.z + (mz - v.co.z) * 0.5)
+            for i, (x, y, z) in newpos.items():
+                v = vs[i]
+                w = 1.0
+                if z > crotch:
+                    w = _clamp01((crotch + LEG_SHEET_FADE - z) / LEG_SHEET_FADE)
+                if z < cuff:
+                    w = min(w, _clamp01((z - (cuff - LEG_SHEET_FADE_CUFF)) / LEG_SHEET_FADE_CUFF))
+                if w <= 0.0:
+                    continue
+                cx, cy = centre(z); b, d = _sheet_bd(stations, z)
+                dx, dy = x - cx, y - cy; r = math.hypot(dx, dy)
+                if r < 1e-6:
+                    continue
+                th = math.atan2(dy, dx); cth, sth = abs(math.cos(th)), abs(math.sin(th))
+                rt = ((cth / (b / 2)) ** n_exp + (sth / (d / 2)) ** n_exp) ** (-1.0 / n_exp) * _tail(i, z)
+                nr = r + (rt - r) * w
+                v.co.x = cx + dx / r * nr; v.co.y = cy + dy / r * nr; v.co.z = z
+        log(f'  LEGSHEET {side}: {moved} verts, mean |dr| {dsum / max(moved, 1) * 1000:.1f} mm, '
+            f'max {dmax * 1000:.1f} mm; stations crotch {crotch:+.3f} knee {knee:+.3f} cuff {cuff:+.3f}; '
+            f'rows {len(sm)}')
+    body.data.update()
+    if os.environ.get('LEG_SHEET_BRIDGE', '0') == '1':
+        _leg_sheet_knee_bridge(body)
+    _dump = os.environ.get('LEG_SHEET_DUMP')
+    if _dump:   # diagnostic export of the high-poly right after the sheet (no gates)
+        bpy.ops.object.select_all(action='DESELECT')
+        body.select_set(True); bpy.context.view_layer.objects.active = body
+        bpy.ops.wm.obj_export(filepath=_dump, export_selected_objects=True, export_materials=False, apply_modifiers=False)
+        log(f'  LEGSHEET: high-poly dumped to {_dump}')
+
+
+def _leg_sheet_reown(body):
+    """Cross-leg ownership at the knee (measured on v103: 25 outer-wall verts of
+    the LEFT knee are weighted to upperLegR): a vertex sitting on this leg is
+    this leg's skin — its leg weights move to this side (else it deforms with
+    the other leg). Runs before the knee rebuild and the projection."""
+    own = dominant_segments(body)
+    vs = body.data.vertices
+    vg = {g.name: g for g in body.vertex_groups}
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        knee = bl(up).z - SEGMENTS[up]['h'] / 2
+        other = 'R' if side == 'L' else 'L'
+        c_lo0 = bl(lo)
+        reowned = 0
+        for i, v in enumerate(vs):
+            o = own[i]
+            if o.startswith(('upperLeg', 'lowerLeg', 'hlpKnee')) and o.endswith(other) \
+                    and abs(v.co.z - knee) < 0.09 \
+                    and math.hypot(v.co.x - c_lo0.x, v.co.y - c_lo0.y) < 0.075:
+                for gname in (f'upperLeg{other}', f'lowerLeg{other}', f'hlpKnee{other}'):
+                    if gname not in vg:
+                        continue
+                    try:
+                        wgt = vg[gname].weight(i)
+                    except RuntimeError:
+                        continue
+                    if wgt > 0.0:
+                        tgt = gname[:-1] + side
+                        if tgt in vg:
+                            try:
+                                cur = vg[tgt].weight(i)
+                            except RuntimeError:
+                                cur = 0.0
+                            vg[tgt].add([i], cur + wgt, 'REPLACE')
+                        vg[gname].remove([i])
+                reowned += 1
+        if reowned:
+            log(f'  LEGSHEET {side}: re-owned {reowned} cross-leg knee verts from the {other} leg')
+
+
+def _leg_sheet_rebuild_knee(body):
+    """Rebuild the knee band's topology: the base/sever/repair history left the
+    outer knee as a shredded seam (a thin overhanging thigh flap over a V notch,
+    the shin's top disconnected, back-faces showing — F9 close renders), which
+    no radial projection can cure. Per leg: delete every face whose vertices
+    all lie within knee +/- LEG_KNEE_BAND of this leg (leg-owned, near the
+    centreline, arms/hands/gusset excluded), bridge the two largest boundary
+    loops that result (thigh bottom, shin top) with quads, subdivide the bridge
+    twice so the sheet projection can round it, and fill any small leftover
+    loops. If the loops are not two clean rings, the leg is left as it was
+    (logged) so the build still exports. LEG_SHEET_KNEE=0 skips it."""
+    import bmesh as _bmesh
+    own = dominant_segments(body)
+    _ga = body.data.attributes.get('fable_gusset')
+    gus = set(k for k, d in enumerate(_ga.data) if d.value) if _ga else set()
+    bm = _bmesh.new(); bm.from_mesh(body.data)
+    bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    report = []
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        knee = bl(up).z - SEGMENTS[up]['h'] / 2
+        c_lo, c_up = bl(lo), bl(up)
+        legs = (up, lo, f'hlpKnee{side}')
+        def band_v(v):
+            o = own[v.index]
+            if v.index in gus or o.startswith(('upperArm', 'lowerArm', 'hand')):
+                return False
+            if abs(v.co.z - knee) > LEG_KNEE_BAND or v.co.x * c_up.x < 0:
+                return False
+            return math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.11
+        # Cut the leg with two planes (knee +/- band) so the band is a clean
+        # annulus bounded by two planar rings — deleting faces by vertex
+        # membership left a one-ring patch (the medial faces are too large to
+        # fall inside the band), which cannot be bridged.
+        # verts created by the first leg's bisect have no entry in `own` (they are
+        # the leg's anyway); treat them as unowned, not arm
+        def _own(v):
+            return own[v.index] if v.index < len(own) else ''
+        hood_f = [f for f in bm.faces if f.is_valid and all(
+            (not _own(v).startswith(('upperArm', 'lowerArm', 'hand'))
+             and v.index not in gus and abs(v.co.z - knee) < 0.14
+             and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.13) for v in f.verts)]
+        if len(hood_f) < 8:
+            report.append(f'{side}: only {len(hood_f)} faces near the knee — skipped'); continue
+        for zc_ in (knee + LEG_KNEE_BAND, knee - LEG_KNEE_BAND):
+            geom = list({g for f in hood_f if f.is_valid for g in (list(f.verts) + list(f.edges) + [f])})
+            _bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=(0.0, 0.0, zc_), plane_no=(0.0, 0.0, 1.0),
+                                    use_snap_center=False, clear_outer=False, clear_inner=False)
+            bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+            hood_f = [f for f in bm.faces if f.is_valid and all(
+                abs(v.co.z - knee) < 0.14
+                and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.13 for v in f.verts)]
+        band_faces = [f for f in hood_f if f.is_valid and all(abs(v.co.z - knee) < LEG_KNEE_BAND + 1e-4 for v in f.verts)
+                      and abs(sum(v.co.z for v in f.verts) / len(f.verts) - knee) < LEG_KNEE_BAND - 1e-4]
+        if len(band_faces) < 8:
+            report.append(f'{side}: only {len(band_faces)} band faces after the cuts — skipped'); continue
+        _bmesh.ops.delete(bm, geom=band_faces, context='FACES')
+        bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+        bnd = [e for e in bm.edges if e.is_boundary and all(
+            abs(v.co.z - knee) < LEG_KNEE_BAND + 0.03
+            and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.12 for v in e.verts)]
+        vert_edges = {}
+        for e in bnd:
+            for v in e.verts:
+                vert_edges.setdefault(v.index, []).append(e)
+        loops, seen = [], set()
+        for e in bnd:
+            if e.index in seen:
+                continue
+            comp, stack = [], [e]; seen.add(e.index)
+            while stack:
+                cur = stack.pop(); comp.append(cur)
+                for v in cur.verts:
+                    for e2 in vert_edges.get(v.index, []):
+                        if e2.index not in seen:
+                            seen.add(e2.index); stack.append(e2)
+            loops.append(comp)
+        loops.sort(key=len, reverse=True)
+        if not (len(loops) >= 2 and len(loops[1]) >= 8) and loops and len(loops[0]) >= 16:
+            # One joined ring: the thigh-bottom and shin-top rings are still
+            # connected by vertical seam edges (a strip of faces the band
+            # missed). Delete the seam edges (and their faces) so the two
+            # rings separate, then re-find the loops.
+            seam = [e for e in loops[0] if abs(e.verts[0].co.z - e.verts[1].co.z) > 0.02]
+            report.append(f'{side}: one joined loop of {len(loops[0])}, {len(seam)} seam edges cut')
+            if seam:
+                _bmesh.ops.delete(bm, geom=seam, context='EDGES')
+                bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+                bnd = [e for e in bm.edges if e.is_boundary and all(
+                    abs(v.co.z - knee) < LEG_KNEE_BAND + 0.03
+                    and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.12 for v in e.verts)]
+                vert_edges = {}
+                for e in bnd:
+                    for v in e.verts:
+                        vert_edges.setdefault(v.index, []).append(e)
+                loops, seen = [], set()
+                for e in bnd:
+                    if e.index in seen:
+                        continue
+                    comp, stack = [], [e]; seen.add(e.index)
+                    while stack:
+                        cur = stack.pop(); comp.append(cur)
+                        for v in cur.verts:
+                            for e2 in vert_edges.get(v.index, []):
+                                if e2.index not in seen:
+                                    seen.add(e2.index); stack.append(e2)
+                    loops.append(comp)
+                loops.sort(key=len, reverse=True)
+        if len(loops) >= 2 and len(loops[1]) >= 8:
+            L1, L2 = loops[0], loops[1]
+        else:
+            report.append(f'{side}: loops {[len(l) for l in loops[:4]]} — bridge skipped (band deleted, holes remain!)'); continue
+        z1 = sum(v.co.z for e in L1 for v in e.verts) / (2 * len(L1))
+        z2 = sum(v.co.z for e in L2 for v in e.verts) / (2 * len(L2))
+        try:
+            res = _bmesh.ops.bridge_loops(bm, edges=L1 + L2)
+            new_faces = [f for f in res.get('faces', []) if f.is_valid]
+            new_edges = list({e for f in new_faces for e in f.edges if e.is_valid})
+            # subdivide the bridge's cross edges (those joining the two loops) twice
+            cross = [e for e in new_edges if abs(e.verts[0].co.z - e.verts[1].co.z) > 0.015]
+            if cross:
+                _bmesh.ops.subdivide_edges(bm, edges=cross, cuts=2, use_grid_fill=True)
+            bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+        except Exception as ex:
+            report.append(f'{side}: bridge failed ({ex})'); continue
+        small = [e for lp in loops[2:] if len(lp) < 16 for e in lp if e.is_valid]
+        if small:
+            try:
+                _bmesh.ops.contextual_create(bm, geom=small)
+            except Exception:
+                pass
+        report.append(f'{side}: deleted {len(band_faces)} band faces, loops {len(L1)}@{z1:+.3f} + {len(L2)}@{z2:+.3f} bridged ({len(new_faces)} faces, {len(cross)} cross edges x2), {len(loops) - 2} small loops')
+    bm.to_mesh(body.data); bm.free(); body.data.update()
+    # Weights for the bridge's new vertices: the subdivided rows between the
+    # thigh ring and the shin ring interpolate the two rings' weight vectors by
+    # height (an unweighted vertex would stay in bind pose under the bend and
+    # tear the knee; it is also invisible to every ownership-based instrument).
+    vs = body.data.vertices
+    groups = {g.index: g for g in body.vertex_groups}
+    def wvec(i):
+        return {g.group: g.weight for g in vs[i].groups}
+    fixed = 0
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        knee = bl(up).z - SEGMENTS[up]['h'] / 2
+        c_lo = bl(lo)
+        z1, z2 = knee + LEG_KNEE_BAND, knee - LEG_KNEE_BAND
+        ring1 = [i for i, v in enumerate(vs) if abs(v.co.z - z1) < 0.002 and len(v.groups) and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.12]
+        ring2 = [i for i, v in enumerate(vs) if abs(v.co.z - z2) < 0.002 and len(v.groups) and math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) < 0.12]
+        if not ring1 or not ring2:
+            continue
+        for i, v in enumerate(vs):
+            if len(v.groups) or not (z2 < v.co.z < z1) or math.hypot(v.co.x - c_lo.x, v.co.y - c_lo.y) > 0.12:
+                continue
+            th = math.atan2(v.co.y - c_lo.y, v.co.x - c_lo.x)
+            def nearest(ring):
+                return min(ring, key=lambda j: abs(math.atan2(vs[j].co.y - c_lo.y, vs[j].co.x - c_lo.x) - th) % (2 * math.pi))
+            a, b = wvec(nearest(ring1)), wvec(nearest(ring2))
+            t = (v.co.z - z2) / (z1 - z2)
+            acc = {}
+            for k, w in a.items():
+                acc[k] = acc.get(k, 0.0) + w * t
+            for k, w in b.items():
+                acc[k] = acc.get(k, 0.0) + w * (1.0 - t)
+            tot = sum(acc.values()) or 1.0
+            for k, w in acc.items():
+                if k in groups and w / tot > 0.01:
+                    groups[k].add([i], w / tot, 'REPLACE')
+            fixed += 1
+    body.data.update()
+    log('  LEGSHEET knee rebuild: ' + ' | '.join(report) + f' | {fixed} bridge verts weighted by height')
+
+
+def _leg_sheet_densify(body):
+    """The knee band has almost no lateral geometry (measured on v103: the
+    outer-lateral sector of the left knee has ZERO vertices between knee+45 mm
+    and knee-5 mm, then 1-2 per 5 mm below), so the silhouette there is a 5 cm
+    chord and the knee renders as a flat cut whatever radius the sheet asks
+    for. Subdivide the long edges of the band (both ends leg-owned, within
+    knee +/- 7 cm, longer than 18 mm; two cuts above 36 mm) BEFORE the sheet
+    projection places the new vertices on the tube. Weights interpolate."""
+    import bmesh as _bmesh
+    own = dominant_segments(body)
+    bm = _bmesh.new(); bm.from_mesh(body.data); bm.edges.ensure_lookup_table()
+    todo1, todo2 = [], []
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        knee = bl(up).z - SEGMENTS[up]['h'] / 2
+        legs = (up, lo, f'hlpKnee{side}')
+        for e in bm.edges:
+            a, b2 = e.verts
+            if own[a.index] not in legs or own[b2.index] not in legs:
+                continue
+            if abs(a.co.z - knee) > 0.07 or abs(b2.co.z - knee) > 0.07:
+                continue
+            L = (a.co - b2.co).length
+            if L > 0.036:
+                todo2.append(e)
+            elif L > 0.018:
+                todo1.append(e)
+    n = 0
+    if todo2:
+        _bmesh.ops.subdivide_edges(bm, edges=todo2, cuts=2, use_grid_fill=True); n += len(todo2)
+        bm.edges.ensure_lookup_table()
+    if todo1:
+        todo1 = [e for e in todo1 if e.is_valid]
+        _bmesh.ops.subdivide_edges(bm, edges=todo1, cuts=1, use_grid_fill=True); n += len(todo1)
+    nv0 = len(body.data.vertices)
+    bm.to_mesh(body.data); bm.free(); body.data.update()
+    log(f'  LEGSHEET densify: {n} knee-band edges subdivided, verts {nv0} -> {len(body.data.vertices)}')
+
+
+def _leg_sheet_knee_bridge(body):
+    """ONE surface across the knee: delete each tube's hidden tail inside the
+    band and bridge the thigh's bottom loop to the shin's top loop.
+
+    After leg_sheet_pass the visible skin at the knee is two overlapping tubes
+    (the thigh's tail reaching below the station, the shin's above), each tail
+    pulled 7 % inside the other. In the crouch the overlap reads as a cut with
+    a rim (F9 in-game close-ups). Here, per leg: faces whose vertices all sit
+    more than 3 mm inside the sheet radius within knee +/- 6 cm are deleted,
+    the two largest boundary loops that result (upper = thigh, lower = shin)
+    are bridged with quads, and small leftover holes are filled. If the loops
+    are not exactly two clean rings the leg is left as it was (logged), so the
+    build still exports. LEG_SHEET_BRIDGE=0 skips it.
+    """
+    import bmesh as _bmesh
+    own = dominant_segments(body)
+    bm = _bmesh.new(); bm.from_mesh(body.data)
+    bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    n_exp = LEG_SHEET_EXP
+    report = []
+    for side in ('L', 'R'):
+        up, lo = f'upperLeg{side}', f'lowerLeg{side}'
+        stations, crotch, knee, cuff, hip = _sheet_stations(side)
+        c_up, c_lo = bl(up), bl(lo)
+        sgn = -1.0 if c_up.x < 0 else 1.0
+        b_top, _ = _sheet_bd(stations, crotch)
+        x_top = sgn * (0.030 + b_top / 2)
+        # the boot cuff sits ~30 mm ahead of the bone (v100 loft); the shin is
+        # centred 15 mm toe-ward of the bone (build -y), as the v101 re-centre was
+        _sy = c_lo.y - 0.015
+        def centre(z):
+            if z >= knee:
+                t = _clamp01((crotch - z) / max(1e-6, crotch - knee)) if z <= crotch else 0.0
+                return (x_top + (c_lo.x - x_top) * t, c_up.y + (_sy - c_up.y) * t)
+            return (c_lo.x, _sy)
+        def inside(v):
+            z = v.co.z
+            if abs(z - knee) > 0.06 or v.co.x * c_up.x < 0:
+                return False
+            o = own[v.index]
+            if not o.startswith(('upperLeg', 'lowerLeg', 'hlpKnee')) or not o.endswith(side):
+                return False
+            cx, cy = centre(z); b, d = _sheet_bd(stations, z)
+            dx, dy = v.co.x - cx, v.co.y - cy; r = math.hypot(dx, dy)
+            if r > 0.10:
+                return False
+            th = math.atan2(dy, dx); cth, sth = abs(math.cos(th)), abs(math.sin(th))
+            rt = ((cth / (b / 2)) ** n_exp + (sth / (d / 2)) ** n_exp) ** (-1.0 / n_exp)
+            return r < rt - 0.003
+        tail_faces = [f for f in bm.faces if all(inside(v) for v in f.verts)]
+        if not tail_faces:
+            report.append(f'{side}: no tail faces'); continue
+        _bmesh.ops.delete(bm, geom=tail_faces, context='FACES')
+        bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table()
+        # boundary loops inside the band on this leg
+        bnd = [e for e in bm.edges if e.is_boundary and all(abs(v.co.z - knee) < 0.09 and v.co.x * c_up.x > 0 and math.hypot(v.co.x - centre(v.co.z)[0], v.co.y - centre(v.co.z)[1]) < 0.11 for v in e.verts)]
+        # group into loops by connectivity
+        loops = []; seen = set()
+        vert_edges = {}
+        for e in bnd:
+            for v in e.verts:
+                vert_edges.setdefault(v.index, []).append(e)
+        for e in bnd:
+            if e.index in seen:
+                continue
+            comp = []; stack = [e]; seen.add(e.index)
+            while stack:
+                cur = stack.pop(); comp.append(cur)
+                for v in cur.verts:
+                    for e2 in vert_edges.get(v.index, []):
+                        if e2.index not in seen:
+                            seen.add(e2.index); stack.append(e2)
+            loops.append(comp)
+        loops.sort(key=len, reverse=True)
+        if len(loops) < 2:
+            report.append(f'{side}: {len(loops)} loop(s) after tail delete — bridge skipped'); continue
+        L1, L2 = loops[0], loops[1]
+        z1 = sum(v.co.z for e in L1 for v in e.verts) / (2 * len(L1))
+        z2 = sum(v.co.z for e in L2 for v in e.verts) / (2 * len(L2))
+        try:
+            res = _bmesh.ops.bridge_loops(bm, edges=L1 + L2)
+            nf = len(res.get('faces', []))
+        except Exception as ex:
+            report.append(f'{side}: bridge failed ({ex}) — left as is'); continue
+        # fill any small leftover loops (< 12 edges) in the band
+        small = [e for lp in loops[2:] for e in lp if len(lp) < 12]
+        if small:
+            try:
+                _bmesh.ops.contextual_create(bm, geom=small)
+            except Exception:
+                pass
+        report.append(f'{side}: deleted {len(tail_faces)} tail faces, loops {len(L1)}@{z1:+.3f} + {len(L2)}@{z2:+.3f} bridged ({nf} faces), {len(loops) - 2} small loops')
+    bm.to_mesh(body.data); bm.free(); body.data.update()
+    log('  LEGSHEET knee bridge: ' + ' | '.join(report))
 
 
 def front_taper_gate(low):
@@ -8995,7 +9618,11 @@ def leg_profile(body, tag, step_below_z=None):
         # the silhouette the renderer actually draws. Ownership isolates the
         # left component; the A-frame topology gate proves it is disconnected.
         cand = []
-        left = ('upperLegL', 'lowerLegL')
+        # Fable F9 (2026-09-05, written instrument scoping): the knee band's verts are
+        # hlpKneeL-dominated (317 of them on v103 between z -0.68 and -0.58); leaving
+        # them out read the knee as 88-100 mm where the ring is 114 — the instrument
+        # was blind exactly at the joint it gates. They are the leg's silhouette.
+        left = ('upperLegL', 'lowerLegL', 'hlpKneeL')
         for poly in body.data.polygons:
             ids = list(poly.vertices)
             for j, ia in enumerate(ids):
@@ -14775,8 +15402,8 @@ def main():
         # post-strip scoped re-smooth below mops the strip's hinges without
         # touching ownership, so the re-run is deleted, not kept.
     sever_thigh_bridge_faces(body, _shell)
-    if os.environ.get('KNEE_RING', '1') == '1':
-        repair_knee_topology(body)
+    if os.environ.get('KNEE_RING', '1') == '1' and os.environ.get('LEG_SHEET', '1') != '1':
+        repair_knee_topology(body)   # superseded by the LEG_SHEET knee rebuild (F9)
     _bw, _bz = bideltoid_report(body)
     if _bw > BIDELTOID_GATE:
         raise SystemExit(
@@ -14789,7 +15416,11 @@ def main():
     # "FABLE PASS 2" item 2). Above the crotch the LEGRECEN thigh field's
     # slope-limited seat rows (v101, 25 mm by design) are not the ring's
     # contract.
-    if os.environ.get('KNEE_RING', '1') == '1':
+    if os.environ.get('LEG_SHEET', '1') == '1':
+        # F9: the 12 mm step gate moves AFTER the leg sheet (the geometry that
+        # ships); here the raw knee band is still the base mesh's.
+        _p = leg_profile(body, 'post-shell', step_below_z=_crotch + 0.02)
+    elif os.environ.get('KNEE_RING', '1') == '1':
         _p = leg_profile(body, 'post-shell', step_below_z=_crotch + 0.02)
         if _p['step'] > 0.012:   # 12 mm hard (written ruling, "FABLE PASS 2" acceptance (a); slot 288)
             raise SystemExit(
@@ -14807,7 +15438,15 @@ def main():
     leg_taper_gate(body)
     # NEXT #23 v2: the garment re-blend for the front-view taper, then the
     # taper bands are re-checked on the re-blended leg.
-    thigh_taper_pass(body)
+    if os.environ.get('LEG_SHEET', '1') == '1':
+        leg_sheet_pass(body)          # F9: the authored lean leg supersedes the re-blend
+        _ps = leg_profile(body, 'post-sheet', step_below_z=_crotch + 0.02)
+        if _ps['step'] > 0.012:   # the 288 ruling's 12 mm hard gate, now on the sheeted leg
+            raise SystemExit(
+                f'[body] leg profile has a {_ps["step"]*1000:.1f} mm slope step at '
+                f'z={_ps["step_z"]:+.3f} after the leg sheet (gate 12 mm)')
+    else:
+        thigh_taper_pass(body)
     leg_taper_gate(body)
     crown_cap_last(body, lm)
     sliver_report(body, 'after crown_cap_last')
@@ -14979,7 +15618,9 @@ def main():
     add_spine_chain(low, arm)
     weight_seam_report(low, 'after add_spine_chain')
     weight_locality_report(low, arm, 'after add_spine_chain')
-    _knee_freeze = None if (SABOTAGE_SEAM or SABOTAGE_LOCALITY) \
+    # F9: with LEG_SHEET the knee band is rebuilt topology (bridge); the freeze /
+    # restore / relax index the pre-repair band and would KeyError on it.
+    _knee_freeze = None if (SABOTAGE_SEAM or SABOTAGE_LOCALITY or os.environ.get('LEG_SHEET', '1') == '1') \
         else knee_band_snapshot(low)
     if SABOTAGE_SEAM:
         # NEGATIVE CONTROL, and a HISTORICAL one: skip the repair and let the

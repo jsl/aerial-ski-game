@@ -5,55 +5,55 @@
  "res": 2048,
  "stats": {
   "normal_flatten": {
-   "before": 15.52,
-   "after": 6.78,
-   "texels": 567599
+   "before": 13.12,
+   "after": 5.24,
+   "texels": 568459
   },
   "normal": {
    "p99": 1.0,
-   "mean": 0.6537,
+   "mean": 0.6532,
    "belowHalf": 0.0059,
    "srgb": false
   },
   "ao_flatten": {
-   "before": 23.53,
-   "after": 13.1,
-   "texels": 567599
+   "before": 21.11,
+   "after": 11.96,
+   "texels": 568459
   },
   "crotch_ao": {
-   "before": 188.33,
-   "after": 203.18,
-   "texels": 27814
+   "before": 187.64,
+   "after": 202.71,
+   "texels": 32389
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8827,
+   "mean": 0.8868,
    "belowHalf": 0.0,
    "srgb": false
   },
   "leg_ink": {
-   "texels": 365116,
-   "ink": 11869
+   "texels": 374493,
+   "ink": 12296
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7478,
-   "belowHalf": 0.1853,
+   "mean": 0.7411,
+   "belowHalf": 0.1979,
    "srgb": true
   },
   "face": {
-   "nose_out": 0.0255,
+   "nose_out": 0.0254,
    "chin_relief": 0.0342,
-   "rim_front": 0.0186,
+   "rim_front": 0.0184,
    "rim_side_h": 0.5538,
    "rim_back_h": 0.5574,
    "dome_off": 0.001,
-   "turn_deg": -0.2961,
-   "goggle_proud": 0.0439,
-   "goggle_push_mm": 6.369,
+   "turn_deg": -0.3666,
+   "goggle_proud": 0.0433,
+   "goggle_push_mm": 6.3654,
    "nose_tip_h": 0.3565,
    "temple_verts": [
-    15,
+    16,
     16
    ],
    "temple_push_mm": 2.5,
@@ -63,41 +63,41 @@
    ]
   },
   "faceForward": [
-   -0.0052,
+   -0.0064,
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.60849
+  "stripe_leak": 0.58525
  },
  "delivery": {
   "athlete_albedo": {
-   "mean_abs": 0.0038,
-   "p99_abs": 0.0314,
-   "png": 1292964,
-   "ratio": 3.08,
+   "mean_abs": 0.0037,
+   "p99_abs": 0.0275,
+   "png": 1208528,
+   "ratio": 3.05,
    "res": 2048,
-   "web": 419990
+   "web": 395862
   },
   "athlete_ao": {
-   "mean_abs": 0.0093,
-   "p99_abs": 0.0902,
-   "png": 1924765,
-   "ratio": 14.3,
+   "mean_abs": 0.0089,
+   "p99_abs": 0.0863,
+   "png": 1899218,
+   "ratio": 15.18,
    "res": 1024,
-   "web": 134558
+   "web": 125106
   },
   "athlete_normal": {
-   "mean_deg": 1.488,
-   "p95_deg": 4.866,
-   "png": 4962430,
-   "ratio": 7.7,
+   "mean_deg": 1.411,
+   "p95_deg": 4.461,
+   "png": 4817559,
+   "ratio": 7.93,
    "res": 2048,
-   "web": 644216
+   "web": 607726
   },
-  "total_web": 1198764
+  "total_web": 1128694
  },
  "faceForward": [
-  -0.0052,
+  -0.0064,
   0.0,
   -1.0
  ]
