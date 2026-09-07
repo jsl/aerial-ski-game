@@ -1347,6 +1347,16 @@ FOREARM_NAMES = ('lowerArmL', 'lowerArmR')
 FOREARM_HAND_T = 1.80
 
 
+def stripe_half_angle(name, radius):
+    # Once central waist vertices stop contaminating the arm-axis fit, the
+    # real sleeve needs a wider angular span to retain its 40 mm blue panel.
+    # Paint, relief, and the normal-map census use this same physical band.
+    upper = name.startswith('upperArm')
+    cap = 0.75 if upper else STRIPE_DPHI_MAX
+    half_width = 0.030 if upper else STRIPE_HALF_W
+    return min(half_width / max(radius, 1e-4), cap)
+
+
 def _group_segment(name):
     """
     (head, tail) in the driver frame for any skin group, spine included.
@@ -2479,6 +2489,73 @@ def strip_arm_from_belly(body, joints):
     body.data.update()
     log(f'BELLY ARM-STRIP: {n} torso-surface vert(s) ramped (minority '
         f'upperArm weight reduced, renormalised onto the remaining groups)')
+
+
+def repair_posed_torso_arm_weights(body):
+    """Remove remote arm influence inside the fitted, posed torso.
+
+    The earlier surface-normal classifier uses the source arm axis, which no
+    longer locates the arms after pose_onto_segments. In the delivered mesh,
+    inboard waist vertices still carried 67-78% upper-arm weight: a 31 mm edge
+    collapsed to 3 mm during the real stationary tuck. Classify this central
+    trunk region in the final body frame and feather into the sleeve/hip.
+    """
+    groups = {g.name: g for g in body.vertex_groups}
+    arms = [groups[n] for n in ('upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR',
+            'hlpShoulderL', 'hlpShoulderR', 'hlpElbowL', 'hlpElbowR') if n in groups]
+    centre = bl('torso')
+    half = SEGMENTS['torso']['h'] / 2
+    moved = 0
+    for v in body.data.vertices:
+        lateral = 1.0 - _shell_sstep((abs(v.co.x) - 0.090) / 0.030)
+        height = _shell_sstep((v.co.z + 0.260) / 0.080)
+        height *= 1.0 - _shell_sstep((v.co.z - 0.090) / 0.130)
+        take = lateral * height
+        if take < 0.001:
+            continue
+        ws = {g.group: g.weight for g in v.groups}
+        amount = sum(ws.get(g.index, 0.0) for g in arms) * take
+        if amount < 0.001:
+            continue
+        for g in arms:
+            if g.index in ws:
+                g.add([v.index], ws[g.index] * (1.0 - take), 'REPLACE')
+        along = max(0.0, min(1.0, (v.co.z - centre.z + half) / (2 * half)))
+        targets = list(zip(SPINE_NAMES, _spine_partition(along))) \
+            if all(n in groups for n in SPINE_NAMES) else [('torso', 1.0)]
+        for name, part in targets:
+            g = groups[name]
+            g.add([v.index], ws.get(g.index, 0.0) + amount * part, 'REPLACE')
+        moved += 1
+    sleeve = 0
+    spine_groups = [groups[n] for n in ('torso', *SPINE_NAMES) if n in groups]
+    leg_indices = {g.index for n, g in groups.items()
+                   if n.startswith(('upperLeg', 'lowerLeg', 'hlpHip', 'hlpKnee'))}
+    for v in body.data.vertices:
+        ws = {g.group: g.weight for g in v.groups}
+        arm_total = sum(ws.get(g.index, 0.0) for g in arms)
+        if arm_total < 0.15 or sum(ws.get(i, 0.0) for i in leg_indices) > 0.15:
+            continue
+        side = 'R' if v.co.x > 0 else 'L'
+        axis = bl('upperArm' + side)
+        lateral = _shell_sstep((abs(v.co.x) - 0.110) / 0.040)
+        depth = 1.0 - _shell_sstep((abs(v.co.y - axis.y) - 0.055) / 0.040)
+        height = _shell_sstep((v.co.z + 0.430) / 0.080)
+        height *= 1.0 - _shell_sstep((v.co.z + 0.020) / 0.130)
+        take = lateral * depth * height
+        amount = sum(ws.get(g.index, 0.0) for g in spine_groups) * take
+        if amount < 0.001:
+            continue
+        for g in spine_groups:
+            if g.index in ws:
+                g.add([v.index], ws[g.index] * (1.0 - take), 'REPLACE')
+        for g in arms:
+            if g.index in ws:
+                g.add([v.index], ws[g.index] * (1.0 + amount / arm_total), 'REPLACE')
+        sleeve += 1
+    body.data.update()
+    log(f'posed trunk ownership: {moved} waist/chest vertices transferred from arm to spine; '
+        f'{sleeve} sleeve vertices transferred from spine to arm')
 
 
 def _arm_cloud_dbg(body, tag):
@@ -9271,7 +9348,7 @@ BIDELTOID_TARGET = (0.38, 0.40)       # author's target band at standing 1.515
 CAP_OUTER_X = 0.198                   # post-fix outboard limit about the bone plane
 
 
-def narrow_shoulders(body):
+def narrow_shoulders(body, level=False):
     """
     Scale the outboard deltoid-cap / upper-arm residue onto the anatomical cap.
 
@@ -9367,6 +9444,20 @@ def narrow_shoulders(body):
         log(f'  narrow_shoulders {side}: moved {_side_moved} verts, worst move '
             f'{_maxd*1000:.1f} mm ' + (f'x {_maxco[0]:+.3f}->{_maxco[1]:+.3f} at '
             f'y={_maxco[2]:+.3f} z={_maxco[3]:+.3f}' if _maxco else ''))
+    if level:
+        # Raise the lateral shoulder crown gently, leaving the neckline and
+        # arm shaft alone. This changes the garment slope, never bone lengths.
+        raised = 0
+        for v in body.data.vertices:
+            lateral = _shell_sstep((abs(v.co.x) - 0.070) / 0.080)
+            lateral *= 1.0 - _shell_sstep((abs(v.co.x) - 0.180) / 0.045)
+            height = _shell_sstep((v.co.z - 0.110) / 0.070)
+            height *= 1.0 - _shell_sstep((v.co.z - 0.260) / 0.040)
+            dz = 0.015 * lateral * height
+            if dz > 0.00001:
+                v.co.z += dz
+                raised += 1
+        log(f'shoulder level: {raised} crown vertices lifted, maximum 15 mm')
     log(f'narrow_shoulders: {n_moved} outboard verts rescaled about the bone planes')
 
 
@@ -9965,7 +10056,7 @@ def torso_reshape_pass(body):
     geometry). BODY_SABOTAGE_TORSO=1 inflates instead (gate NC: must fail).
     """
     tag = 'TORSO1'
-    if os.environ.get('TORSO1', '0') != '1':
+    if os.environ.get('TORSO1', '1') != '1':
         log(f'{tag}: OFF (TORSO1=0) — HEAD geometry, reshape skipped')
         return {'off': True, 'moved': 0}
     sabotage = os.environ.get('BODY_SABOTAGE_TORSO') == '1'
@@ -10017,7 +10108,7 @@ def torso_profile_gate(prof, shellprop):
     """Slot 301 gate on the shipped torso. Strict iff TORSO1=1; with
     TORSO1=0 the profile is logged (the before-state) and not enforced
     (precedent: KNEE_RING's threshold switch)."""
-    if os.environ.get('TORSO1', '0') != '1':
+    if os.environ.get('TORSO1', '1') != '1':
         log(f'TORSO1=0: torso profile logged, gate not enforced '
             f'(chest D {prof["chestD"] * 1000:.0f}, waist/chest '
             f'{prof["waistW"] / prof["chestW"]:.3f}, STEP '
@@ -11154,7 +11245,7 @@ def displace_suit(obj, lm):
                 # company; and it now runs on the arms too.
                 if name.startswith(STRIPE_SEGMENTS):
                     rad = limb_radius(lx, ly, z, name, slices)
-                    halfphi = min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX)
+                    halfphi = stripe_half_angle(name, rad)
                     if dphi < halfphi:
                         d += 0.0009 * (1.0 - (dphi / halfphi) ** 6)
             if name == 'torso':
@@ -11436,7 +11527,7 @@ def paint_suit(obj, lm):
             outward = 0.0 if out > 0 else math.pi
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
             rad = limb_radius(lx, ly, z, name, paint_slices)
-            if dphi < min(STRIPE_HALF_W / max(rad, 1e-4), STRIPE_DPHI_MAX):
+            if dphi < stripe_half_angle(name, rad):
                 col, tag = STRIPE, 'stripe'
 
         # A real competition numeral: dark navy "30" on the white plate, on
@@ -12645,6 +12736,15 @@ def unwrap_zones(body, vzone):
             z = vzone[vi]
             c[z] = c.get(z, 0) + 1
         fzone.append(max(sorted(c), key=lambda z: c[z]))
+    # The inboard shoulder/armpit is a separate cloth surface from the
+    # sleeve. A single arm projection folded these surfaces onto each other:
+    # measured polygons at x90/102 mm overlapped the sleeve at x124 mm after
+    # final skin ownership, even though the outer arm chart itself was valid.
+    # Give that curved transition its own padded chart before the bake.
+    for poly in me.polygons:
+        if fzone[poly.index].startswith('arm') and abs(poly.center.x) < 0.115 \
+                and poly.center.z > 0.085:
+            fzone[poly.index] = 'shoulder' + fzone[poly.index][-1]
     zones = sorted(set(fzone))
 
     # Face select mode, everything off, before any flag is written by hand.
@@ -12756,6 +12856,10 @@ def finish_lowpoly(body, lm):
     after, counts = region_shares(body, lm)
     log(f'faces after:  head {after["head"]:.1%}, face {after["face"]:.1%}, '
         f'hand {after["hand"]:.1%}, suit {after["body"]:.1%}  ({counts})')
+
+    # Establish posed trunk ownership before zone classification. Final
+    # helpers reassert it later, but the atlas must already separate it.
+    repair_posed_torso_arm_weights(body)
 
     # UNWRAP FRESH, into 0-1.
     #
@@ -13344,11 +13448,11 @@ def _boot_mat(name, colour, rough, metal):
 
 
 
-# Fable (2026-09-02, after three GLM slots landed the boot BEHIND the ankle): in the
-# game's root frame the athlete faces -z and Blender's +y maps to +z = BEHIND. The
-# foot loft and the cuff lean are authored 'toe = +dy'; BOOT_FWD flips that so the
-# toe lands ahead of the ankle (measured in-game: boot z must span ankle-0.17..+0.11).
-BOOT_FWD = -1.0
+# Boot forward is established from the final skinned asset, not the source
+# mesh's pre-export axes: toe projection 180 mm, heel projection 70 mm.
+# The delivered glTF basis maps authored +Y to the ski-tip side (-Z).
+# Verified against the visible ski shovel and face in the GPU side view.
+BOOT_FWD = 1.0
 # SLOT 278 (the 23:55 ruling on 277): measured on the v100 DEFAULT build
 # (scratch/iter-278/measure4.log, BOOT_STATION_MEASURE=1) — the v100 cloud
 # ankle-band centroid relative to the BONE's ankle station bl(lowerLeg{side}):
@@ -13379,6 +13483,21 @@ def add_boots(arm, joints, body):
     recognises the meshes by the athleteBoot* name and gives them their own
     glossy shell material.
     """
+    # Independent sole frames share the shin's neutral bind. The lower shell
+    # stays with the ski while the cuff flexes with the athlete's shin.
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    for side in ('L', 'R'):
+        source = arm.data.edit_bones[f'lowerLeg{side}']
+        bone = arm.data.edit_bones.new(f'boot{side}')
+        bone.head = source.head
+        bone.tail = source.tail
+        bone.roll = source.roll
+        bone.parent = None
+    bpy.ops.object.mode_set(mode='OBJECT')
+
     def build(side, sgn):
         leg = f'lowerLeg{side}'
         an = joints[f'ankle{side}']
@@ -13412,6 +13531,19 @@ def add_boots(arm, joints, body):
         _off = BOOT_STATION_OFF[side]
         ax = bone.x + _off[0]
         ay = bone.y + _off[1]
+        # The old painted foot remains as the liner, not a second shoe behind
+        # the corrected heel. Compress its hidden forefoot into the shell,
+        # fading out below the visible calf. A smooth scale preserves topology
+        # and the baked calf silhouette; no faces are deleted or flattened.
+        for vertex in cloud:
+            h = vertex.co.z - sole
+            inside = 1.0 - _shell_sstep((h - 0.060) / 0.080)
+            if inside <= 0:
+                continue
+            vertex.co.x = ax + (vertex.co.x - ax) * (1.0 - 0.40 * inside)
+            vertex.co.y = ay + (vertex.co.y - ay) * (1.0 - 0.72 * inside)
+            vertex.co.z += (0.028 - 0.18 * h) * inside
+        body.data.update()
         an_z = sole                                          # the shin's own ankle end
         log(f'boot {side} station on the bone: ({ax:+.4f},{ay:+.4f}) '
             f'(bone ({bone.x:+.4f},{bone.y:+.4f}) + fixed v100 residual '
@@ -13472,14 +13604,14 @@ def add_boots(arm, joints, body):
             o.select_set(True)
             pieces.append(o)
         # 258 (14:45 ruling, clause a): the footprint is centred on the
-        # ankle-band centroid — heel ~0.12 m behind it, toe ~0.18 m ahead
+        # ankle-band centroid — heel 0.07 m behind it, toe 0.18 m ahead
         # (the binding stations toe +0.20 / heel -0.20 bracket the span).
-        prim('box', 'sole', w=0.102, d=0.300, h=0.018,
-             x=ax, y=ay + BOOT_FWD * 0.030, z=sole + 0.009)
+        prim('box', 'sole', w=0.102, d=0.250, h=0.018,
+             x=ax, y=ay + BOOT_FWD * 0.055, z=sole + 0.009)
         prim('box', 'ledge_toe', w=0.104, d=0.040, h=0.012,
              x=ax, y=ay + BOOT_FWD * 0.155, z=sole + 0.006)
         prim('box', 'ledge_heel', w=0.104, d=0.040, h=0.012,
-             x=ax, y=ay - BOOT_FWD * 0.095, z=sole + 0.006)
+             x=ax, y=ay - BOOT_FWD * 0.050, z=sole + 0.006)
 
         # 257 THE SHELL: one smooth closed loft per boot instead of the
         # cube/cylinder pile — a FOOT loft (heel 70 mm, ball 95 mm, rounded
@@ -13539,11 +13671,11 @@ def add_boots(arm, joints, body):
             pieces.append(o)
         # Foot loft: heel counter (70 mm) -> ball (95 mm) -> instep -> a
         # rounded toe box; 0.30 m nose to heel, ellipses in the x-z plane,
-        # spanning ay-0.12 (heel) .. ay+0.18 (toe).
+        # spanning ay-0.07 (heel) .. ay+0.18 (toe).
         foot_secs = [
             (Vector((ax, ay + BOOT_FWD * dy, sole + cz)), A, B, U, Z, 'shell')
-            for (dy, cz, A, B) in ((-0.120, 0.042, 0.035, 0.040),
-                                   (-0.098, 0.046, 0.038, 0.046),
+            for (dy, cz, A, B) in ((-0.070, 0.051, 0.035, 0.047),
+                                   (-0.066, 0.051, 0.038, 0.047),
                                    (-0.056, 0.050, 0.044, 0.050),
                                    (-0.010, 0.056, 0.0475, 0.056),
                                    (0.042, 0.056, 0.0475, 0.054),
@@ -13553,10 +13685,12 @@ def add_boots(arm, joints, body):
                                    (0.180, 0.028, 0.017, 0.014))]
         loft(f'bootFoot{side}', foot_secs)
 
-        # Cuff loft: starts buried inside the foot, 95 x 105 mm ring, leaning
-        # FORWARD 15 deg about the ankle (top shifts +y by
-        # (cuff_top-sole) * tan 15 deg), rolled liner lip at cuff_top.
-        lean = (cuff_top - sole) * math.tan(math.radians(15))
+        # Cuff loft: starts buried inside the foot, 95 x 105 mm ring, with
+        # a modest neutral forward lean and rolled liner lip at cuff_top.
+        # Neutral cuff surrounds the actual nearly upright shin. Runtime adds
+        # the athlete's forward flex; baking another 15° into the corrected
+        # toe-facing shell put the cuff 45 mm ahead of the calf at rest.
+        lean = (cuff_top - sole) * math.tan(math.radians(3))
         cuff_secs = [
             (Vector((ax, ay + BOOT_FWD * dy, sole + dz)), 0.0475, 0.0525, U, Y,
              'cuff' if dz >= 0.118 else 'shell')
@@ -13617,7 +13751,14 @@ def add_boots(arm, joints, body):
         bpy.ops.object.shade_smooth()
         bpy.ops.object.shade_smooth_by_angle(angle=math.radians(35))
         boot.vertex_groups.new(name=leg)
-        boot.vertex_groups[leg].add(list(range(len(boot.data.vertices))), 1.0, 'ADD')
+        sole_group = boot.vertex_groups.new(name=f'boot{side}')
+        for vertex in boot.data.vertices:
+            cuff = max(0.0, min(1.0, (vertex.co.z - sole - 0.080) / 0.075))
+            cuff = cuff * cuff * (3.0 - 2.0 * cuff)
+            if cuff > 0:
+                boot.vertex_groups[leg].add([vertex.index], cuff, 'REPLACE')
+            if cuff < 1:
+                sole_group.add([vertex.index], 1.0 - cuff, 'REPLACE')
         mod = boot.modifiers.new('arm', 'ARMATURE')
         mod.object = arm
         # Material slots arrive from the lofts / prim pieces (join
@@ -13672,7 +13813,10 @@ def add_boots(arm, joints, body):
         log(f'boot {side}: shin cloud centroid in cuff ring: {in_ring}; '
             f'bbox centre offset ({offx*1000:+.0f}, {offy*1000:+.0f}) mm vs '
             f'{"station" if os.environ.get("LEG_RECEN", "0") == "1" else "cloud"}')
-        assert abs(offx) <= 0.04 and abs(offy) <= 0.04, (
+        toe_extent = max(BOOT_FWD * (v.co.y - ay) for v in boot.data.vertices)
+        heel_extent = max(-BOOT_FWD * (v.co.y - ay) for v in boot.data.vertices)
+        assert abs(offx) <= 0.04 and abs(toe_extent - 0.180) <= 0.005 \
+            and abs(heel_extent - 0.070) <= 0.005, (
             f'boot {side}: bbox centre ({bcx:+.3f},{bcy:+.3f}) is '
             f'({offx*1000:+.0f},{offy*1000:+.0f}) mm off the boot '
             f'reference ({_refx:+.3f},{_refy:+.3f}) — boot not on the foot')
@@ -14317,6 +14461,9 @@ def patch_skin_binds(path):
         return m
 
     want = {nm: seg_matrix(nm).inverted() for nm in ANATOMY}
+    if arg('--boots', 'off') == 'on':
+        want.update({f'boot{side}': seg_matrix(f'lowerLeg{side}').inverted()
+                     for side in ('L', 'R')})
     want.update({nm: spine_matrix(nm).inverted() for nm in SPINE_NAMES})
     if not SABOTAGE_HELPERS:
         want.update({nm: helper_matrix(nm).inverted() for nm in JOINT_HELPERS})
@@ -14923,8 +15070,7 @@ def fold_region_mask(low):
                 dphi = abs(math.atan2(math.sin(azim - outward),
                                       math.cos(azim - outward)))
                 rad = limb_radius(lx, ly, co.z, name, slices)
-                if dphi < 1.6 * min(STRIPE_HALF_W / max(rad, 1e-4),
-                                    STRIPE_DPHI_MAX):
+                if dphi < 1.6 * stripe_half_angle(name, rad):
                     inband = False
             if inband and is_limb:
                 # ...and the panel seam groove up the outboard side.
@@ -15379,7 +15525,7 @@ def main():
     # deltoid corner outboard (bideltoid 401 -> 416 mm, gate 410). The clamp
     # that owns this measurement already exists and is idempotent, so it is
     # re-asked on the garment rather than a second one invented for it.
-    narrow_shoulders(body)
+    narrow_shoulders(body, level=True)
     sliver_report(body, 'after suit_shell')
     _shellprop = shell_report(body, _shell)
     suit_shell_gate(body, _shell, _shellprop)
@@ -15390,7 +15536,7 @@ def main():
     sliver_report(body, 'after torso_reshape')
     _torsoprof = torso_profile(body, 'torso post')
     torso_profile_gate(_torsoprof, _shellprop)
-    if os.environ.get('TORSO1', '0') == '1':
+    if os.environ.get('TORSO1', '1') == '1':
         # SLOT 302 fix (1) — the bib plate scales with the slim chest
         # (ruling on 301: plate = 0.60 x chest at the plate's height).
         _bib_set_scale(_torsoprof['chestW'])
@@ -15706,7 +15852,8 @@ def main():
     # #26 front half: the minority-arm belly weights go too (after the weld,
     # before the stripe repair — nothing re-opens either).
     strip_arm_from_belly(low, joints)
-    if os.environ.get('TORSO1', '0') == '1':
+    repair_posed_torso_arm_weights(low)
+    if os.environ.get('TORSO1', '1') == '1':
         # SLOT 302 fix (2), second half — the seam smoothing AFTER the last
         # weight op (ruling on 301): the strip is the last pass that cuts,
         # and on the slim torso its ramp leaves a 1.40 gradient hinge over

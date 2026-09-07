@@ -6,6 +6,9 @@ Keep entries short and factual: what changed, how it was verified (numbers), wha
 
 ## Reviewer feedback (read first; the reviewer edits this section)
 
+
+- **ASTRA REVIEW LOOP (author, 2026-09-07; IN PROGRESS).** Author requests skier rendering refinement on the existing branch with Astra and the RTX 5070 Ti: backward/double-toed boots, heel lift on tuck entry, crash crumpling, excessive shoulder slope/upper-body bulk, and tuck hitch. Clarified: keep the established slim aerialist shape; toe AND heel stay fixed throughout skiing and aerials, but skis may release in a crash. Added post-crash panning and zoom-out to survey the scene. Extended the loop until about 18:00 Pacific local time. Work remains on `render-realism-glm`; current work preview is port 8200, while 8201 is the earlier stable snapshot. GPU verified for BOTH OptiX asset builds and the actual loaded WebGL game (ANGLE/Vulkan, NVIDIA RTX 5070 Ti). Iteration evidence, physically re-derived boot/cuff checks, and remaining failures are recorded in [ASTRA-RENDER-2026-09-07.md](ASTRA-RENDER-2026-09-07.md). No gameplay physics changes authorized or made. Current assets are review candidates until the listed regressions and by-eye checks are resolved.
+
 - **ORDER OF WORK for the next iterations (reviewer, 2026-08-26 — the author is watching the live tree):**
   1. Footage analysis (`docs/REFERENCE-FOOTAGE.md`) — one iteration.
   2. Athlete build fixes in ONE Blender rebuild: hands at the sides / no crossing (arm centroid on bone), legs on the skis with boots seated (leg centroid on bone), a real face under a cranium-only helmet, **and** the leg notches (blend the girth factor across the knee and ankle by skin weight; smooth the boot ramp; make the leg-profile check flag steps). Rebuild, bump `ASSET_V`, verify in the browser, commit.

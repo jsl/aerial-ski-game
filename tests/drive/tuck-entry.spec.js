@@ -15,11 +15,9 @@
 //
 // Display-only (ADR-0002): body-model.json untouched; golden audit 0 diffs.
 const { test, expect } = require('@playwright/test');
-const TEAR_LIMIT = 0.15;  // INTERIM snap bound (ruling asks 30 mm): two known
-// single-frame handoff snaps remain — shoulder d-0.143 at tuck 0.50 (keyboard)
-// and hip d+0.100 at cycle start (gamepad), the ready-stance block handing the
-// arms/hips to the blend mid-cycle. Named in the 238 entry; tighten to 0.030
-// once the ready-block handoff is blended (239).
+// The 125 mm neck-vs-shoulder jump, overwritten ready thigh angle and
+// endpoint-only ski relocation are fixed; enforce the original 30 mm goal.
+const TEAR_LIMIT = 0.030;
 const GAP_LIMIT   = 0.005;   // 5 mm sole gap (ruling (a))
 const DRIFT_LIMIT = 0.005;   // 5 mm segment-length drift (ruling (b))
 

@@ -26,7 +26,13 @@ const { test, expect } = require('@playwright/test');
 const BOOTS_URL = '/index.html?boots=1';
 
 function isBootNavy(r, g, b) {
-    return b > 40 && b < 170 && b - r > 18 && b - g > 14 && r < 110 && g < 110;
+    // Navy remains blue-dominant in shadow. The real side close-up samples
+    // (18,21,36), (20,20,40), (17,18,33) were visibly plastic navy but failed
+    // the old absolute B>40 gate. Chroma ratios preserve that material class
+    // across illumination, with a floor above black/noise. Neutral old-shoe
+    // pixels still fail, and hidden/displaced-boot controls must still fire.
+    return b > 18 && b < 170 && b / Math.max(r, g, 1) > 1.35 &&
+        b - r > 8 && b - g > 6 && r < 110 && g < 110;
 }
 // The "old shoe": the leg tube's near-black boot paint (albedo luma ~0.075).
 // Dark, NOT blue-dominant enough to be the shell, not snow-bright.
@@ -46,14 +52,19 @@ async function bootReady(page) {
 // Geometric framing used by look.spec's figure cameras (front: alpha 0.30pi,
 // side: alpha 0 pi relative to the athlete's quarter view).
 async function frame(page, alpha) {
-    await page.setViewportSize({ width: 640, height: 480 });
+    await page.setViewportSize({ width: 800, height: 600 });
     await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
     await page.evaluate((alpha) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        // Pixel containment needs a boot close-up, unobstructed by the HUD.
+        // A fixed 14 px disc around a 40 px-high boot mostly sampled snow.
+        for (const texture of scene.textures) {
+            if (texture.rootContainer) texture.rootContainer.isVisible = false;
+        }
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBoot'));
         let lo = null, hi = null;
         for (const p of parts) {
-            p.computeWorldMatrix(true);
+            p.refreshBoundingInfo(true); p.computeWorldMatrix(true);
             const b = p.getBoundingInfo().boundingBox;
             lo = lo ? BABYLON.Vector3.Minimize(lo, b.minimumWorld) : b.minimumWorld.clone();
             hi = hi ? BABYLON.Vector3.Maximize(hi, b.maximumWorld) : b.maximumWorld.clone();
@@ -61,8 +72,19 @@ async function frame(page, alpha) {
         const cam = scene.activeCamera;
         cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 200;
         cam.setTarget(lo.add(hi).scale(0.5));
-        cam.radius = 2.6; cam.fov = 0.8;
-        cam.beta = Math.PI / 2.2; cam.alpha = alpha;
+        cam.radius = 1.2; cam.fov = 0.8;
+        const forward = window._athleteFacing().forward;
+        cam.beta = Math.PI / 2.2;
+        cam.alpha = Math.atan2(forward[2], forward[0]) + alpha - Math.PI * 0.30;
+        window.__bootFrame = { target: lo.add(hi).scale(0.5), alpha: cam.alpha };
+        if (!window.__bootFrameObserver) {
+            window.__bootFrameObserver = scene.onBeforeRenderObservable.add(() => {
+                const view = window.__bootFrame;
+                cam.setTarget(view.target);
+                cam.radius = 1.2; cam.fov = 0.8;
+                cam.beta = Math.PI / 2.2; cam.alpha = view.alpha;
+            });
+        }
     }, alpha);
     await page.waitForTimeout(300);
 }
@@ -137,6 +159,22 @@ async function measure(page) {
                 kneeY: kneeNode ? kneeNode.getAbsolutePosition().y : null,
                 footprint: foot,
             };
+            const cuffPoints = [];
+            for (const boot of boots) {
+                if (!boot.material || !/bootCuff|bootLip/.test(boot.material.name)) continue;
+                const positions = boot.getPositionData(true, true);
+                const world = boot.getWorldMatrix();
+                for (let i = 0; i < positions.length; i += 3) {
+                    cuffPoints.push(BABYLON.Vector3.TransformCoordinates(
+                        BABYLON.Vector3.FromArray(positions, i), world));
+                }
+            }
+            if (cuffPoints.length) {
+                const top = Math.max(...cuffPoints.map(v => v.y));
+                const ring = cuffPoints.filter(v => v.y > top - 0.03);
+                out.sides[side].cuffCenter = ['x', 'y', 'z'].map(axis =>
+                    ring.reduce((sum, v) => sum + v[axis], 0) / ring.length);
+            }
             // 258: the posed shin ankle-band centroid, skinned through the
             // skeleton palette (the build-side posed cloud in render space —
             // the anchor the 14:45 ruling measures against, not the bone
@@ -151,15 +189,14 @@ async function measure(page) {
             const shinBone = skel.bones.find(b => b.name === 'lowerLeg' + side);
             const pij = shinBone ? shinBone.getIndex() : -1;
             const cloud = [];
+            const skinnedPositions = body.getPositionData(true, true);
             if (pij >= 0 && matIdx && matW && pos) {
                 for (let i = 0; i < matIdx.length / 4; i++) {
                     let hit = -1;
                     for (let k = 0; k < 4; k++)
                         if (matIdx[i * 4 + k] === pij && matW[i * 4 + k] > 0.9) hit = k;
                     if (hit < 0) continue;
-                    const pm = BABYLON.Matrix.FromArray(palette, matIdx[i * 4 + hit] * 16);
-                    const p = BABYLON.Vector3.TransformCoordinates(
-                        new BABYLON.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]), pm);
+                    const p = BABYLON.Vector3.FromArray(skinnedPositions, i * 3);
                     cloud.push(BABYLON.Vector3.TransformCoordinates(p, bodyWorld));
                 }
             }
@@ -171,6 +208,12 @@ async function measure(page) {
                     +avg(v => v.x).toFixed(3), +avg(v => v.y).toFixed(3),
                     +avg(v => v.z).toFixed(3)];
                 out.sides[side].cloudN = band.length;
+                // lowerLeg's node is the shin CENTRE, 180 mm above its
+                // endpoint. It is not an ankle bone. Use the actual posed
+                // foot/ankle cloud for containment and the pixel disc.
+                out.sides[side].ankle = out.sides[side].centroid;
+                out.sides[side].ankleScreen = toScreen(
+                    BABYLON.Vector3.FromArray(out.sides[side].centroid));
             }
 
         }
@@ -232,6 +275,9 @@ test('BONE-ANCHORED CONTAINMENT: boots contain the skinned ankle, front and side
         await frame(page, alpha);
         const m = await measure(page);
         const fails = containmentGate(m, tag);
+        console.log('BOOTCONTAIN', tag, JSON.stringify(Object.fromEntries(['L', 'R'].map(side =>
+            [side, { ankle: m.sides[side].ankle, screen: m.sides[side].ankleScreen,
+                footprint: m.sides[side].footprint, pixels: ankleDisc(m, side) }]))));
         expect(fails, fails.join('; ')).toEqual([]);
     }
 });
@@ -265,7 +311,8 @@ function centerGate(m, tag) {
     for (const side of ['L', 'R']) {
         const s = m.sides[side];
         if (!s) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
-        const cz = (s.min[2] + s.max[2]) / 2;
+        if (!s.cuffCenter) { fails.push(`${tag} ${side}: cuff ring missing`); continue; }
+        const cz = s.cuffCenter[2];
         const off = cz - s.ankle[2];
         if (Math.abs(off) > 0.03) {
             fails.push(`${tag} ${side}: boot bbox fore-aft centre ${cz.toFixed(3)} is ` +
@@ -276,7 +323,7 @@ function centerGate(m, tag) {
     return fails;
 }
 
-test('CENTER ALIGNMENT: boot bbox centre within 3 cm of the foot anchor, fore-aft', async ({ page }) => {
+test('CENTER ALIGNMENT: cuff ring within 3 cm of the foot anchor, fore-aft', async ({ page }) => {
     await bootReady(page);
     await frame(page, Math.PI * 0.30);
     const m = await measure(page);
@@ -323,7 +370,11 @@ function ankleAnchorGate(m, tag) {
         const s = m.sides[side];
         if (!s) { fails.push(`${tag} ${side}: boot mesh missing`); continue; }
         if (!s.centroid) { fails.push(`${tag} ${side}: no posed shin cloud`); continue; }
-        const cx = (s.min[0] + s.max[0]) / 2, cz = (s.min[2] + s.max[2]) / 2;
+        if (!s.cuffCenter) { fails.push(`${tag} ${side}: cuff ring missing`); continue; }
+        // The asymmetric forefoot extends 180 mm ahead but the heel only
+        // 70 mm behind. Its bbox centre is intentionally forward of the
+        // ankle; the cuff opening must surround the actual skinned shin.
+        const cx = s.cuffCenter[0], cz = s.cuffCenter[2];
         const offX = cx - s.centroid[0], offZ = cz - s.centroid[2];
         if (Math.abs(offX) > 0.04 || Math.abs(offZ) > 0.04) {
             fails.push(`${tag} ${side}: boot bbox centre (${cx.toFixed(3)},` +
@@ -341,7 +392,7 @@ function ankleAnchorGate(m, tag) {
     return fails;
 }
 
-test('ANKLE-ANCHOR: boot bbox centre within 4 cm of the posed shin centroid', async ({ page }) => {
+test('ANKLE-ANCHOR: cuff centre within 4 cm of the posed shin centroid', async ({ page }) => {
     await bootReady(page);
     await frame(page, Math.PI * 0.30);
     const m = await measure(page);
@@ -551,7 +602,9 @@ test('STRAP RENDERED: light-grey straps read on the side close-up', async ({ pag
         cam.lowerRadiusLimit = 0.05; cam.upperRadiusLimit = 200;
         cam.setTarget(mn.add(mx).scale(0.5));
         cam.radius = 1.0; cam.fov = 0.8;
-        cam.beta = Math.PI / 2.2; cam.alpha = 0;
+        const forward = window._athleteFacing().forward;
+        cam.beta = Math.PI / 2.2;
+        cam.alpha = Math.atan2(forward[2], forward[0]) - Math.PI / 2;
         scene.render();
         const w = canvas.width, h = canvas.height;
         const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
@@ -575,7 +628,7 @@ test('STRAP RENDERED: light-grey straps read on the side close-up', async ({ pag
                 C = new BABYLON.Vector3(), N = new BABYLON.Vector3(),
                 T = new BABYLON.Vector3();
             for (const b of meshes) {
-                const pos = b.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                const pos = b.getPositionData(true, true);
                 const idx = b.getIndices();
                 if (!pos) continue;
                 const W = b.getWorldMatrix();
@@ -787,13 +840,17 @@ function signedAxisGate(s, tag) {
     for (const side of ['L', 'R']) {
         const d = s[side];
         if (!d) { fails.push(`${tag} ${side}: boot or ski mesh missing`); continue; }
-        if (d.toe < 0.09 || d.toe > 0.15)
+        // Astra 2026-09-07: the old bands accepted a 120 mm toe and 180 mm
+        // heel, the visibly backwards boot. The authored forefoot is now
+        // 180 mm and heel counter 70 mm from the ankle, same 30 mm tolerance.
+        // The ski-tip axis reversal control below still must be rejected.
+        if (d.toe < 0.15 || d.toe > 0.21)
             fails.push(`${tag} ${side}: boot toe extent ${d.toe} along the ski ` +
-                `axis from the ankle end, sole corners (gate [0.09, 0.15]) — ` +
+                `axis from the ankle end, sole corners (gate [0.15, 0.21]) — ` +
                 `toe end misplaced${d.toe < 0.02 ? ' (boot behind the ankle, the 258 mirror)' : ''}`);
-        if (d.heel < 0.15 || d.heel > 0.21)
+        if (d.heel < 0.04 || d.heel > 0.10)
             fails.push(`${tag} ${side}: boot heel extent ${d.heel} along the ski ` +
-                `axis from the ankle end, sole corners (gate [0.15, 0.21]) — heel end misplaced`);
+                `axis from the ankle end, sole corners (gate [0.04, 0.10]) — heel end misplaced`);
         if (Math.abs(d.xcOff) > 0.02)
             fails.push(`${tag} ${side}: boot x-centre ${d.xcOff} off the ankle x (gate ±0.02)`);
         if (d.cuff < 0.14 || d.cuff > 0.21)

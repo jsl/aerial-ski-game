@@ -539,6 +539,7 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
 
     // ── Gates over the whole recorded crash ─────────────────────────────
     const traceR = trace.trace;
+    require('fs').writeFileSync(test.info().outputPath('crash-motion.json'), JSON.stringify(trace));
     const tCrash = traceR[0].t;
     const settledBy = traceR.filter(r => r.t - tCrash <= 5000);
     let worstGap = 0, worstPen = -9, legacyFrames = 0, rootOffFrames = 0, bodyGone = 0;
@@ -600,6 +601,12 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
             (traceR[i].t - _rollT0) / 1000 <= 1.0);
     }
     const _jws = _jw.summary();
+    const simWindow = createJointRateWindow();
+    for (const r of traceR.slice(firstRoll)) if (r.probe && r.probe.ang) {
+        simWindow.push(r.probe.t, r.probe.ang, r.probe.t - r.probe.rollAt <= 1);
+    }
+    console.log('CRASHCLOCK simulation', JSON.stringify(simWindow.summary()));
+    let lateSample = null;
     for (let i = firstRoll + 1; i < traceR.length; i++) {
         const a = traceR[i - 1].probe, b = traceR[i].probe;
         if (!a || !b || !a.ang || !b.ang) continue;
@@ -614,9 +621,12 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
                 if (w > worstAngSpd) { worstAngSpd = w; worstAngJoint = k; }
             } else if (w > worstAngLate) {
                 worstAngLate = w; worstAngJoint = k;
+                lateSample = { joint: k, rate: w, dtWall: dts, dtSim: b.t - a.t,
+                    wallFoldAge: (traceR[i].t - _rollT0) / 1000, simFoldAge: b.t - b.rollAt };
             }
         }
     }
+    console.log('CRASHCLOCK worst wall late sample', JSON.stringify(lateSample));
     console.log('CRASHREST worstJointAngSpeed fold-window=' +
         worstAngSpd.toExponential(2) + ' rad/s, after=' +
         worstAngLate.toExponential(2) + ' rad/s (' + worstAngJoint + ')' +

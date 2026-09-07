@@ -72,6 +72,10 @@ async function settleCrash(page, world) {
         const p = window._freeLookProbe && window._freeLookProbe();
         return window._getGameState().crashed && p && p.active;
     }, null, { timeout: 120_000 });
+    // Take manual control before setting the review heading, just as a real
+    // orbit gesture does. Otherwise automatic crash framing can overwrite
+    // alpha between this assignment and the first vertical drag.
+    await page.locator('#renderCanvas').click();
     await page.evaluate(() => {
         const c = window._freeLookCam();
         // Eye downhill, view uphill. The behavior under test is the following
@@ -114,6 +118,7 @@ async function measure(page) {
             finalGap: ground.camY - ground.ground,
             samples: window._tiltSamples ? window._tiltSamples.samples : 0,
             tilt: window._freeLookProbe().tilt,
+            alpha: cam.alpha, beta: cam.beta, radius: cam.radius,
             targetY: cam.target.y, camY: cam.position.y,
         };
     });

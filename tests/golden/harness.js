@@ -128,7 +128,9 @@ function createSim(opts = {}) {
             // (spine_01 and spine_03 are themselves derived from
             // torso/head/upperLeg*), so a change in a helper shows up here
             // through its cause.
-            if (/^spine_\d+$/.test(name) || /^hlp[A-Z]/.test(name)) continue;
+            // Boot frames, like the spine/helpers, are derived equipment
+            // transforms. Existing shin/ski drivers and physics remain traced.
+            if (/^spine_\d+$/.test(name) || /^hlp[A-Z]/.test(name) || /^boot[LR]$/.test(name)) continue;
             const n = BABYLON._nodes.get(name);
             if (!n) continue;
             const rec = {};

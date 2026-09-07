@@ -7,6 +7,7 @@
 
 const { defineConfig } = require('@playwright/test');
 const path = require('node:path');
+const renderer = require('../../tools/browser-renderer');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 // Port for the static server; override with DRIVE_PORT so parallel lanes/worktrees do not collide on 8099.
@@ -15,6 +16,7 @@ const PORT = parseInt(process.env.DRIVE_PORT || '8099', 10);
 module.exports = defineConfig({
     testDir: __dirname,
     testMatch: /.*\.spec\.js/,
+    outputDir: path.join(ROOT, 'test-results', `drive-${PORT}`),
 
     // The game is a real-time simulation; a full run takes ~15 s of wall clock.
     timeout: 420_000,   // look.spec (12+ stills at 1100x850) measures ~5.2 min
@@ -44,16 +46,10 @@ module.exports = defineConfig({
         // frame and the simulation never advances. Fewer pixels gets frame times
         // back under 100ms so the game actually runs.
         viewport: { width: 320, height: 220 },
-        // WebGL in headless Chromium needs software rendering on a machine with
-        // no display server. SwiftShader is slower than the GPU but correct,
-        // which is what matters for a smoke test.
+        // DRIVE_GPU=1 uses headless Vulkan on the NVIDIA GPU for visual reviews.
+        // Default to software rendering for portable smoke tests.
         launchOptions: {
-            args: [
-                '--use-gl=swiftshader',
-                '--enable-unsafe-swiftshader',
-                '--disable-gpu-sandbox',
-                '--no-sandbox',
-            ],
+            args: renderer.args,
         },
         video: 'off',
         screenshot: 'only-on-failure',

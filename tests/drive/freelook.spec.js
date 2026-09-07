@@ -85,15 +85,16 @@ test('#27 sticky drag: a release that misses the canvas must end the drag', asyn
     const sticky = await page.evaluate(async () => {
         const canvas = document.getElementById('renderCanvas');
         const fire = (target, type, y, buttons) => target.dispatchEvent(new PointerEvent(type, {
-            pointerId: 7, pointerType: 'mouse', clientY: y, buttons, bubbles: true,
+            pointerId: 7, pointerType: 'mouse', clientY: y,
+            button: type === 'pointermove' ? -1 : 0, buttons, bubbles: true,
         }));
         const box = canvas.getBoundingClientRect();
         const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
         const cam = window._freeLookCam();
         const beta0 = cam.beta, alpha0 = cam.alpha;
-        // Put the orbit at the terrain clamp so the next upward synthetic
-        // demand crosses the intercept (synthetic pointermoves do not drive
-        // Babylon's own input, so the real drag can't be replayed verbatim).
+        // Put the orbit at the terrain clamp so the next upward demand
+        // crosses the intercept. Pointermoves use button=-1, as real browser
+        // events do when no button changes; button=0 would synthesize clicks.
         const r = Math.max(0.01, cam.radius || 10);
         const minY = window._camGroundUnder().ground + 1.0;
         cam.beta = Math.max(0.05, Math.acos(Math.max(-1, Math.min(1, (minY - cam.target.y) / r))));
@@ -104,11 +105,13 @@ test('#27 sticky drag: a release that misses the canvas must end the drag', asyn
         // Release OFF the canvas: target the body, so the canvas never sees the up.
         fire(document.body, 'pointerup', cy - 1200, 0);
         await new Promise(r => setTimeout(r, 100));
+        const released = window._freeLookProbe();
         // Bare cursor moves (buttons = 0) over the canvas.
         for (let i = 0; i < 12; i++) fire(canvas, 'pointermove', cy - 1200 + i * 25, 0);
         await new Promise(r => setTimeout(r, 400));
         const end = window._freeLookProbe();
         return {
+            tilted, released, end,
             tiltEngaged: tilted.tiltGoal > 1e-5 || tilted.tiltRise > 1e-5,
             drifted: Math.abs(end.beta - beta0 - (tilted.beta - beta0)) +
                      Math.abs(end.alpha - alpha0 - (tilted.alpha - alpha0)) > 1e-4,
@@ -116,6 +119,7 @@ test('#27 sticky drag: a release that misses the canvas must end the drag', asyn
     });
     // The upward drag must actually have engaged the tilt tracker, and after
     // the missed release the bare moves must not have drifted the camera.
+    console.log('STICKY-DRAG', JSON.stringify(sticky));
     expect(sticky.tiltEngaged).toBe(true);
     expect(sticky.drifted).toBe(false);
 });
@@ -175,6 +179,45 @@ test('free-look: after a forced crash settles, orbit works and the follow stays 
     // Eye above the snow while orbiting the resting body
     const p = await page.evaluate(() => window._freeLookProbe());
     expect(p.gap).toBeGreaterThanOrEqual(0.99);
+
+    // User report 2026-09-07: the close-up pulled wheel zoom back to 1.9 m
+    // and target-follow erased every pan. Exercise real input through rest
+    // and recovery; a manual survey must retain ownership of the camera.
+    const box = await page.locator('#renderCanvas').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 15; i++) {
+        await page.mouse.wheel(0, 500);
+        await page.waitForTimeout(60);
+    }
+    await page.waitForTimeout(600);
+    const zoomed = await page.evaluate(() => window._freeLookProbe());
+    expect(zoomed.radius, 'can survey beyond the old 80 m limit').toBeGreaterThan(100);
+    await page.waitForTimeout(1000);
+    const held = await page.evaluate(() => window._freeLookProbe());
+    expect(held.radius, 'automatic close-up must not reclaim zoom').toBeGreaterThanOrEqual(zoomed.radius - 0.05);
+
+    const target = await page.evaluate(() => window._freeLookCam().target.asArray());
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up({ button: 'right' });
+    // Babylon also eases pointer goals after its inertial fields reach zero.
+    // Wait for the visible target to settle before checking ownership.
+    await page.waitForTimeout(500);
+    let previous = await page.evaluate(() => window._freeLookCam().target.asArray());
+    await expect.poll(async () => {
+        await page.waitForTimeout(250);
+        const current = await page.evaluate(() => window._freeLookCam().target.asArray());
+        const delta = Math.hypot(current[0] - previous[0], current[2] - previous[2]);
+        previous = current;
+        return delta;
+    }, { timeout: 10000 }).toBeLessThan(0.005);
+    const panned = await page.evaluate(() => window._freeLookCam().target.asArray());
+    expect(Math.hypot(panned[0] - target[0], panned[2] - target[2]), 'right drag pans across the scene').toBeGreaterThan(1);
+    await page.waitForTimeout(1000);
+    const retained = await page.evaluate(() => window._freeLookCam().target.asArray());
+    console.log('CRASH-SURVEY', JSON.stringify({ target, panned, retained, camera: await page.evaluate(() => window._freeLookProbe()) }));
+    expect(Math.hypot(retained[0] - panned[0], retained[2] - panned[2]), 'crash follow must not recenter a pan').toBeLessThan(0.05);
+    await page.screenshot({ path: require('node:path').join(__dirname, '../../shots/crash_survey.png') });
 });
 // HUMAN TESTING #7 (author, 2026-08-29): "the scene starts in front of the
 // aerialist when the page loads … it was fine before when camera started

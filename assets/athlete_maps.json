@@ -5,40 +5,40 @@
  "res": 2048,
  "stats": {
   "normal_flatten": {
-   "before": 13.12,
-   "after": 5.24,
-   "texels": 568459
+   "before": 13.09,
+   "after": 5.26,
+   "texels": 541296
   },
   "normal": {
    "p99": 1.0,
-   "mean": 0.6532,
-   "belowHalf": 0.0059,
+   "mean": 0.6539,
+   "belowHalf": 0.0049,
    "srgb": false
   },
   "ao_flatten": {
-   "before": 21.11,
-   "after": 11.96,
-   "texels": 568459
+   "before": 21.26,
+   "after": 12.16,
+   "texels": 541296
   },
   "crotch_ao": {
-   "before": 187.64,
-   "after": 202.71,
-   "texels": 32389
+   "before": 188.87,
+   "after": 203.81,
+   "texels": 30686
   },
   "ao": {
    "p99": 1.0,
-   "mean": 0.8868,
+   "mean": 0.8826,
    "belowHalf": 0.0,
    "srgb": false
   },
   "leg_ink": {
-   "texels": 374493,
-   "ink": 12296
+   "texels": 353903,
+   "ink": 11716
   },
   "albedo": {
    "p99": 1.0,
-   "mean": 0.7411,
-   "belowHalf": 0.1979,
+   "mean": 0.7424,
+   "belowHalf": 0.1918,
    "srgb": true
   },
   "face": {
@@ -47,8 +47,8 @@
    "rim_front": 0.0184,
    "rim_side_h": 0.5538,
    "rim_back_h": 0.5574,
-   "dome_off": 0.001,
-   "turn_deg": -0.3666,
+   "dome_off": 0.0009,
+   "turn_deg": -0.3329,
    "goggle_proud": 0.0433,
    "goggle_push_mm": 6.3654,
    "nose_tip_h": 0.3565,
@@ -63,41 +63,41 @@
    ]
   },
   "faceForward": [
-   -0.0064,
+   -0.0058,
    0.0,
    -1.0
   ],
-  "stripe_leak": 0.58525
+  "stripe_leak": 0.66028
  },
  "delivery": {
   "athlete_albedo": {
-   "mean_abs": 0.0037,
-   "p99_abs": 0.0275,
-   "png": 1208528,
-   "ratio": 3.05,
+   "mean_abs": 0.0039,
+   "p99_abs": 0.0314,
+   "png": 1299770,
+   "ratio": 2.99,
    "res": 2048,
-   "web": 395862
+   "web": 434680
   },
   "athlete_ao": {
-   "mean_abs": 0.0089,
+   "mean_abs": 0.0091,
    "p99_abs": 0.0863,
-   "png": 1899218,
-   "ratio": 15.18,
+   "png": 1947826,
+   "ratio": 14.91,
    "res": 1024,
-   "web": 125106
+   "web": 130598
   },
   "athlete_normal": {
-   "mean_deg": 1.411,
-   "p95_deg": 4.461,
-   "png": 4817559,
-   "ratio": 7.93,
+   "mean_deg": 1.415,
+   "p95_deg": 4.49,
+   "png": 4849453,
+   "ratio": 7.78,
    "res": 2048,
-   "web": 607726
+   "web": 623108
   },
-  "total_web": 1128694
+  "total_web": 1188386
  },
  "faceForward": [
-  -0.0064,
+  -0.0058,
   0.0,
   -1.0
  ]

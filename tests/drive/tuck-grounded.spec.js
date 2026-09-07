@@ -50,7 +50,13 @@ function measure(page, squat) {
         for (const s of ['L', 'R']) {
             out['handToKnee' + s] = hyp(seg('lowerArm' + s).top, seg('upperLeg' + s).bot);
             out['hip' + s]    = hyp(seg('upperLeg' + s).top, torso.bot);
-            out['shoulder' + s] = hyp(seg('upperArm' + s).bot, torso.top);
+            // The arm binds 150 mm above the torso centre; 275 mm is the
+            // neck station. Checking against the neck rewarded the old shrug
+            // that caused the tuck-entry hitch.
+            const shoulder = [M.torso.position.y + 0.150 * Math.cos(M.torso.rotation.x),
+                M.torso.position.z + 0.150 * Math.sin(M.torso.rotation.x) +
+                    AerialEngine.bodyModel.BASE_Z['upperArm' + s]];
+            out['shoulder' + s] = hyp(seg('upperArm' + s).bot, shoulder);
             const ul = seg('upperLeg' + s), ll = seg('lowerLeg' + s);
             out['kneeGap' + s] = hyp(ll.top, ul.bot);
             // interior knee angle: thigh direction (hip->knee) vs shin (knee->ankle)

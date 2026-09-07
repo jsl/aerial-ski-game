@@ -29,6 +29,7 @@ const ALLOWED_FUNCTIONS = {
     buildCharacter:      'constructs Babylon meshes — renderer',
     buildHUD:            'constructs GUI controls — renderer',
     applyPose:           'writes solved transforms onto meshes + IK fix-up — renderer',
+    _alignShoulderChains: 'attaches rendered arm chains to the moving torso in mesh/pose copies; preserves articulation and never changes engine state — renderer (ADR-0002)',
     applyGamepadLateral: 'repositions arm meshes — renderer',
     _startGame:          'scene/loop orchestration — wiring, not simulation',
     makePBR:             'material factory — a StandardMaterial->PBR compat shim, renderer',

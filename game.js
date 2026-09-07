@@ -802,6 +802,16 @@ function buildCharacter(scene) {
         node.parent = root;
         meshes[nm] = node;
     }
+    // The lower boot shell follows the binding; only its cuff follows the shin.
+    // Keeping these frames separate allows ankle flex without lifting a heel.
+    const bootDrivers = {};
+    for (const side of ['L', 'R']) {
+        const node = new BABYLON.TransformNode('boot' + side, scene);
+        node.parent = root;
+        node.position.copyFrom(meshes['lowerLeg' + side].position);
+        bootDrivers['boot' + side] = node;
+    }
+    _bootRenderDrivers.set(meshes, bootDrivers);
     // OPUS ITEM 5: the four half-angle joint helpers. Same contract as the
     // vertebrae — no geometry, no physics, driven every frame from the bones
     // they sit between (updateJointHelpers), and inert at rest by construction.
@@ -869,6 +879,7 @@ const SPINE_LEN   = (TORSO_HALF * 2) / SPINE_NAMES.length;
 // hip's blend gap in the in-run tuck without the spine out-bending the pose.
 const SPINE_COUPLE = 0.35;
 const SPINE_MAX    = 0.35;
+const SPINE_BEND_STEP = 0.20;                 // adjacent vertebrae: 11.5 degrees
 
 let _spineRest = null;
 function _spineRestDeltas() {
@@ -1041,20 +1052,28 @@ function updateSpineChain(meshes) {
     const rz  = torso.rotation.z || 0;
     const rest = _spineRestDeltas();
     const ulL = meshes.upperLegL, ulR = meshes.upperLegR, head = meshes.head;
-    const thighRx = (ulL && ulR) ? (ulL.rotation.x + ulR.rotation.x) / 2 : t;
+    // Ragdoll Euler angles cross ±pi. Average their offsets in the torso's
+    // frame so a pair of nearly parallel thighs cannot fold the back by 180°.
+    const thighRx = (ulL && ulR)
+        ? t + _wrapPi(_wrapPi(ulL.rotation.x - t)
+            + 0.5 * _wrapPi(ulR.rotation.x - ulL.rotation.x)) : t;
     const headRx  = head ? head.rotation.x : t;
     const clamp = (v, m) => (v > m ? m : (v < -m ? -m : v));
-    const dLow  = clamp(SPINE_COUPLE * ((thighRx - t) - rest.low),  SPINE_MAX);
-    const dHigh = clamp(SPINE_COUPLE * ((headRx  - t) - rest.high), SPINE_MAX);
-    // The middle vertebra takes the negated mean so the three deltas sum to
-    // zero: to first order the chain then still ends where the rigid rod ends,
-    // and the closure correction below has almost nothing left to do.
+    const dLow  = clamp(SPINE_COUPLE * _wrapPi((thighRx - t) - rest.low),  SPINE_MAX);
+    const dHigh = clamp(SPINE_COUPLE * _wrapPi((headRx  - t) - rest.high), SPINE_MAX);
     // The middle vertebra takes MINUS THE SUM of the other two, so the three
     // deltas cancel: to first order the chain then ends exactly where the rigid
     // rod ends and the closure correction below has almost nothing left to do.
     // (Halving it here was a bug — with dLow clamped at 20 deg the residual sum
     // was 13 deg and the closure step measured 14.7 mm against a 15 mm limit.)
     let d = [dLow, -(dLow + dHigh), dHigh];
+    // Three independently coupled frames must not turn the lumbar region
+    // into a sharp S fold. The old squat produced a 44-degree change over
+    // one 183 mm vertebra, visibly pleating the back into a paper web.
+    // Bound local curvature while preserving the requested bend proportions
+    // and zero-sum closure; a neutral spine is still exactly its bind frame.
+    const turn = Math.max(Math.abs(d[1] - d[0]), Math.abs(d[2] - d[1]));
+    if (turn > SPINE_BEND_STEP) d = d.map(a => a * SPINE_BEND_STEP / turn);
     if (typeof window !== 'undefined') {
         // Switches for spine.spec.js. _spineOff reproduces the OLD single rigid
         // torso bone exactly; _spineForce bends the chain by a fixed amount
@@ -1112,8 +1131,8 @@ function updateSpineChain(meshes) {
     return {
         helpers,
         step: mag / n,
-        dLowDeg: dLow * 180 / Math.PI,
-        dHighDeg: dHigh * 180 / Math.PI,
+        dLowDeg: d[0] * 180 / Math.PI,
+        dHighDeg: d[2] * 180 / Math.PI,
         rxDeg: rx.map(a => a * 180 / Math.PI),
     };
 }
@@ -1187,12 +1206,24 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     // in-plane fields (y, z, rx) — x/rz stay with the solver because the
     // A-frame stance pass and the boot–ski pin own them afterwards.
     if (squat > 0.001) {
+        // Interpolate from standing directly to the stationary squat. Blending
+        // the already-tucked in-run pose again sent the athlete forward first,
+        // then abruptly back upright halfway through pressing tuck at the gate.
+        const standing = AerialEngine.pose.computePose({
+            tuck: 0, armDropL, armDropR, armSnap, layArmT, armRaise,
+            grounded: grounded !== false, pikeAmount, pikeArmDrop,
+        });
+        const stillWeight = Math.min(1, squat / Math.max(tuck, 0.000001));
         for (const seg of SEGMENTS) {
-            const p = solved[seg.name], q = _STILL_SQUAT[seg.name];
-            if (!p || !q) continue;
-            p.y  += (q.y  - p.y)  * squat;
-            p.z  += (q.dz  - (p.z - (BASE_Z[seg.name] || 0))) * squat;
-            p.rx += (q.rx - p.rx) * squat;
+            const p = solved[seg.name], q = _STILL_SQUAT[seg.name],
+                  r = standing[seg.name];
+            if (!p || !q || !r) continue;
+            const y = r.y + (q.y - r.y) * tuck;
+            const z = r.z + (q.dz + (BASE_Z[seg.name] || 0) - r.z) * tuck;
+            const rx = r.rx + (q.rx - r.rx) * tuck;
+            p.y += (y - p.y) * stillWeight;
+            p.z += (z - p.z) * stillWeight;
+            p.rx += (rx - p.rx) * stillWeight;
         }
     }
 
@@ -1233,14 +1264,11 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     }
 
 
-    // ── P13 kinematic chain reconciliation (always on, blend-scaled) ───────
-    // Blending each segment's position independently breaks joint continuity
-    // at intermediate blend values (mid-tuck tear, stretched neck). The
-    // correction pulls each segment onto its parent's joint anchor, but it is
-    // SCALED by s = 4·blend·(1−blend): zero at the authored pose endpoints
-    // (the tables deliberately bend the spine etc. there), full mid-blend
-    // where the drift actually tears. The pike pass (engaged whenever
-    // pikeAmount > 0) keeps its historical full-strength behaviour.
+    // ── P13 intermediate leg/head chain reconciliation ───────────────────
+    // Independent table interpolation can open joints between authored poses.
+    // Reconcile those intermediate leg/head frames; grounded skis remain the
+    // fixed anchor. Shoulder attachment is solved independently below on EVERY
+    // frame, including endpoints, so entering tuck cannot jump to the neck.
     // Renderer-side only (ADR-0002).
     {
         const sTuck  = 4 * tuck * (1 - tuck);
@@ -1270,34 +1298,7 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
                 ulMesh.position.y = hipY - 0.18 * Math.cos(urx);
                 ulMesh.position.z = hipZ - 0.18 * Math.sin(urx);
             }
-            // Shoulders: the pose tables anchor both arm chains at the fixed
-            // pivot (y = 0.150, BASE_Z), which drifts off the torso's +Y end
-            // as the torso pitches (mid-tuck blend). Translate each side's
-            // two arm segments RIGIDLY by the pivot gap — the tables' arm
-            // shape is preserved exactly, only the shoulder joint moves, and
-            // the pass is inert at the authored pose endpoints (sBlend = 0).
-            const shoulderY = torso.position.y + 0.275 * cT;
-            const shoulderZ = torso.position.z + 0.275 * sT;
-            for (const side of ['L', 'R']) {
-                const uMesh = meshes['upperArm' + side];
-                const lMesh = meshes['lowerArm' + side];
-                if (!uMesh || !lMesh) continue;
-                const rx = uMesh.rotation.x, rz = uMesh.rotation.z;
-                const crz = Math.cos(rz);
-                // dir = M_x(rx) * M_z(rz) * (0,1,0): the arm's local +Y in
-                // parent space (Euler order YXZ, ry = 0). +Y runs toward the
-                // WRIST (POSE_UNTUCKED, armSweep, applyGamepadLateral and the
-                // armature's own head->tail), so the SHOULDER is the -Y end.
-                // This read +0.150 until the author's 23:40 crouch ruling: the
-                // sign matched the two pose tables that were themselves rolled
-                // 180 deg out of the bind axis (see POSE_INRUN_TUCK).
-                const dirY = crz * Math.cos(rx);
-                const dirZ = crz * Math.sin(rx);
-                const dY = shoulderY - (uMesh.position.y - 0.150 * dirY);
-                const dZ = shoulderZ - (uMesh.position.z - 0.150 * dirZ);
-                uMesh.position.y += dY; uMesh.position.z += dZ;
-                lMesh.position.y += dY; lMesh.position.z += dZ;
-            }
+
         }
         for (const side of ['L', 'R']) {
             const ulMesh = meshes['upperLeg' + side];
@@ -1306,20 +1307,29 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
             const rx     = ulMesh.rotation.x;
             const cosRx  = Math.cos(rx);
             const sinRx  = Math.sin(rx);
+            const shinCos = Math.cos(llMesh.rotation.x);
+            const shinSin = Math.sin(llMesh.rotation.x);
             // Knee = local -Y end of upper leg
             const kneeY  = ulMesh.position.y - 0.18 * cosRx;
             const kneeZ  = ulMesh.position.z - 0.18 * sinRx;
             // Lower leg center: align its local +Y end (top) to the knee
-            llMesh.position.y = kneeY - 0.18 * cosRx;
-            llMesh.position.z = kneeZ - 0.18 * sinRx;
+            llMesh.position.y = kneeY - 0.18 * shinCos;
+            llMesh.position.z = kneeZ - 0.18 * shinSin;
             // Ski center: align its local +Y end (top) to the ankle
-            const ankleY = llMesh.position.y - 0.18 * cosRx;
-            const ankleZ = llMesh.position.z - 0.18 * sinRx;
-            skMesh.position.y = ankleY - 0.015 * cosRx;
-            skMesh.position.z = ankleZ - 0.015 * sinRx;
+            const ankleY = llMesh.position.y - 0.18 * shinCos;
+            const ankleZ = llMesh.position.z - 0.18 * shinSin;
+            if (grounded === false) {
+                skMesh.position.y = ankleY - 0.015 * shinCos;
+                skMesh.position.z = ankleZ - 0.015 * shinSin;
+            }
+            // On snow the ski is the anchor. Pulling it from this temporary
+            // hip-first chain moved it half a metre at tuck=1, when the P13
+            // blend branch switches off. The final boot pin derives the legs
+            // from the continuously authored ski placement instead.
         }
         }
     }
+    _alignShoulderChains(meshes);
     // P13 tear detector gate (post-reconciliation, so it measures real joints)
     if (AerialEngine.kinematics.checkTearing(meshes)) {
         console.error('P13 Kinematic Chain Solver: Tear detected!');
@@ -1338,6 +1348,34 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
 
     // The spine reads the FINAL torso/thigh/head transforms, so it runs last.
     updateSpineChain(meshes);
+}
+
+// The render skeleton's shoulder lies 150 mm above the torso centre. The
+// engine arm sweep uses a fixed world-local pivot; attach the entire solved
+// chain to the moving torso without changing its elbow or wrist articulation.
+// This also applies at exact pose endpoints and to recovery pose objects.
+function _alignShoulderChains(nodes, solved = false) {
+    const torso = nodes.torso;
+    if (!torso) return;
+    const tp = solved ? torso : torso.position;
+    const trx = solved ? torso.rx : torso.rotation.x;
+    const trz = solved ? torso.rz : torso.rotation.z;
+    const shoulderY = tp.y + 0.150 * Math.cos(trz || 0) * Math.cos(trx);
+    const shoulderZ = tp.z + 0.150 * Math.cos(trz || 0) * Math.sin(trx);
+    for (const side of ['L', 'R']) {
+        const upper = nodes['upperArm' + side], lower = nodes['lowerArm' + side];
+        if (!upper || !lower) continue;
+        const up = solved ? upper : upper.position;
+        const lp = solved ? lower : lower.position;
+        const rx = solved ? upper.rx : upper.rotation.x;
+        const rz = solved ? upper.rz : upper.rotation.z;
+        const c = Math.cos(rz || 0);
+        const dy = shoulderY - (up.y - 0.150 * c * Math.cos(rx));
+        const dz = shoulderZ + (BASE_Z['upperArm' + side] || 0)
+            - (up.z - 0.150 * c * Math.sin(rx));
+        up.y += dy; up.z += dz;
+        lp.y += dy; lp.z += dz;
+    }
 }
 
 // ── Gamepad lateral arm correction ─────────────────────────────────────────
@@ -1389,6 +1427,7 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
         lMesh.rotation.x = -phi;
         lMesh.rotation.z = rzOff;
     }
+    _alignShoulderChains(meshes);
 }
 
 // ── In-run crouch: the torso sits on the pinned hips (author 23:40) ────────
@@ -1401,11 +1440,11 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
 // and the lumbar ring are a fifth of a metre apart.
 // The legs are pinned to the skis, which are on the snow, so the TORSO is the
 // side that moves: translate the torso and everything hanging off it (head,
-// both arm chains) onto the hips. Weighted by the same w as the arm hold, so
-// it is exactly zero at rest and in flight. Renderer-side only (ADR-0002).
+// both arm chains) onto the hips. The changing gap closes fully throughout
+// the hold; only the neutral stance offset fades at entry. This function is
+// used by grounded pose paths. Renderer-side only (ADR-0002).
 function _seatTorsoOnHips(meshes, tuck, armRaise) {
     const w = (tuck || 0) * (1 - (armRaise || 0));
-    if (w <= 0.001) return null;
     const t = meshes.torso;
     if (!t) return null;
     let hy = 0, hz = 0, n = 0;
@@ -1420,14 +1459,27 @@ function _seatTorsoOnHips(meshes, tuck, armRaise) {
     if (!n) return null;
     hy /= n; hz /= n;
     const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
+    const gapY = hy - (t.position.y - 0.275 * tc);
+    const gapZ = hz - (t.position.z - 0.275 * ts);
+    if (w <= 0.001) {
+        _hipSeatRest.set(meshes, { y: gapY, z: gapZ });
+        return null;
+    }
     // #21 v5 (ruling on 237): the seat is a CONSTRAINT, not a pose blend.
     // Scaling the correction by the entry weight w left half the pin-vs-torso
     // gap open mid-blend (measured 0.187 m hip tear at tuck 0.5 — the author's
     // "body stretches weird going into tuck"). The chain must close fully on
     // every blend frame; continuity at the endpoints is preserved because the
-    // gap itself is 0 there (the rest pose is chain-consistent).
-    const dy = (hy - (t.position.y - 0.275 * tc));
-    const dz = (hz - (t.position.z - 0.275 * ts));
+    // changing gap is corrected fully while the neutral offset fades below.
+    // The across-slope resting stance has an intentional asymmetric hip
+    // offset. Ease its handoff into the seated chain instead of snapping the
+    // full offset away on the first tuck frame. The deep crouch still closes
+    // exactly onto the hips.
+    const entry = Math.min(1, w / 0.8);
+    const seatWeight = entry * entry * (3 - 2 * entry);
+    const restGap = _hipSeatRest.get(meshes) || { y: 0, z: 0 };
+    const dy = gapY - restGap.y * (1 - seatWeight);
+    const dz = gapZ - restGap.z * (1 - seatWeight);
     for (const nm of ['torso', 'head', 'upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR']) {
         const m = meshes[nm];
         if (!m) continue;
@@ -1450,8 +1502,8 @@ function _seatTorsoOnHips(meshes, tuck, armRaise) {
 //  (b) it aimed at nothing: a constant angle, so the hands landed wherever the
 //      pin happened to leave the legs.
 //
-// Now: the shoulder comes from the LIVE torso (its +Y end, the same anchor the
-// P13 reconciler uses) and the hand is aimed at the LIVE knee — knee height,
+// Now: the shoulder comes from the LIVE torso at its anatomical +0.150 m
+// station and the hand is aimed at the LIVE knee — knee height,
 // HAND_AHEAD in front of it (footage IMG_3523 f_040-f_070; ruling: hand within
 // ±0.10 m of knee height, 0.10-0.30 m ahead of it). Elbows straight: the arm
 // is one straight line from the shoulder, both segments on it, +Y toward the
@@ -1474,8 +1526,8 @@ function _inrunArmForward(meshes, tuck, armRaise, squatDamp) {
     const t = meshes.torso;
     if (!t) return;
     const tc = Math.cos(t.rotation.x), ts = Math.sin(t.rotation.x);
-    const shY = t.position.y + 0.275 * tc;
-    const shZ = t.position.z + 0.275 * ts;
+    const shY = t.position.y + 0.150 * tc;
+    const shZ = t.position.z + 0.150 * ts;
     let ky = 0, kz = 0, n = 0;
     for (const side of ['L', 'R']) {
         const ul = meshes['upperLeg' + side];
@@ -1584,12 +1636,17 @@ const _A_FRAME_RZ = 3 * Math.PI / 180;
 // its SOLE (not its bone) centres on the ski, and slides that ski's toe and
 // heel blocks in until they touch the sole's ends.
 var _bootFit = null;
+// Render-only equipment frames are outside the canonical pose/physics mesh map.
+const _bootRenderDrivers = new WeakMap();
+const _hipSeatRest = new WeakMap();
 function _calibrateBootFit(meshes) {
     const skiL = meshes.skiL, skiR = meshes.skiR;
     if (!skiL || !skiR || !skiL.getScene) return null;
     const scene = skiL.getScene();
     if (!scene) return null;
-    const parts = scene.meshes.filter(m =>
+    const shells = scene.meshes.filter(m =>
+        m.name && /^athleteBoot[LR]/.test(m.name) && m.skeleton);
+    const parts = shells.length ? shells : scene.meshes.filter(m =>
         m.name && m.name.indexOf('athleteBody') === 0 && m.skeleton);
     if (!parts.length) return null;
 
@@ -1650,7 +1707,7 @@ function _calibrateBootFit(meshes) {
             if (a[i + 2] < zLo) zLo = a[i + 2];
             if (a[i + 2] > zHi) zHi = a[i + 2];
         }
-        if (n < 50) return null;
+        if (n < (shells.length ? 4 : 50)) return null;
         // Reject an implausible read rather than bake it in: a boot sole is
         // 15-35 cm long and cannot be more than 6 cm off the ski it is pinned
         // to. Returning null simply means the next frame tries again.
@@ -1730,6 +1787,26 @@ function _pinBootsToSkis(meshes, tuck, armRaise) {
         ll.position.x = ax;
         ll.position.y = ay + _BOOT_SKI.hl * cL;
         ll.position.z = az + _BOOT_SKI.hl * sL;
+        const boot = (_bootRenderDrivers.get(meshes) || {})['boot' + side];
+        if (boot) {
+            boot.rotationQuaternion = sk.rotationQuaternion
+                ? sk.rotationQuaternion.clone() : null;
+            boot.rotation.copyFrom(sk.rotation);
+            const q = sk.rotationQuaternion;
+            const ux = q ? 2 * (q.x * q.y - q.z * q.w)
+                : -Math.sin(sk.rotation.z || 0);
+            const uy = q ? q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z
+                : Math.cos(sk.rotation.x) * Math.cos(sk.rotation.z || 0);
+            const uz = q ? 2 * (q.y * q.z + q.x * q.w)
+                : Math.sin(sk.rotation.x) * Math.cos(sk.rotation.z || 0);
+            const height = _BOOT_SKI.skiHh + _BOOT_SKI.hl;
+            // Include lateral roll: at the across-slope ready stance the
+            // ski normal has a large X component. Omitting it buried the
+            // otherwise parallel sole 27 mm below the deck.
+            boot.position.set(sk.position.x + height * ux,
+                              sk.position.y + height * uy,
+                              sk.position.z + height * uz);
+        }
         
         const solverFlex = ul.rotation.x - ll.rotation.x; // Simplified; need to preserve original knee flex
         const rxU = rxL + solverFlex, cU = Math.cos(rxU), sU = Math.sin(rxU);
@@ -2498,7 +2575,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=104";   // 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=109";   // 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -2938,7 +3015,8 @@ void main(void) {
                     }
                     let linked = 0;
                     for (const bone of skel.bones) {
-                        const driver = character.meshes[bone.name];
+                        const driver = character.meshes[bone.name] ||
+                            (_bootRenderDrivers.get(character.meshes) || {})[bone.name];
                         const node = (driver && driver.mesh) ? driver.mesh : driver;
                         if (!node) continue;
                         // linkTransformNode makes the bone FOLLOW the node the
@@ -6700,7 +6778,7 @@ void main(void) {
     // _CRASH_FALL_CAP; the caller's hard-constraint solve keeps segment lengths.
     // Skipped for the #20 negative control (looseGroundRest lowers NOTHING).
     const _CRASH_FALL_CAP = 3.5;   // m/s: snow drag on a falling body; a 0.5 m drop lands in ~0.35 s
-    const _CRASH_FALL_CAP_LATE = 0.3;    // m/s after the 1 s fold window: a 0.25 m forearm at 0.3 m/s is 69 deg/s, inside the 90 deg/s post-window joint gate (the 256 ruling's arm rate)
+    const _CRASH_FALL_CAP_LATE = 0.3;    // m/s trunk ceiling after the initial fold; shorter limb levers use lower caps below
     const _crashGravitySettle = function (R, dt) {
         if (R.looseGroundRest) return;
         const _late = R.rollAt !== undefined && R.t - R.rollAt > 1.0;
@@ -6712,7 +6790,16 @@ void main(void) {
             // inside the 220 deg/s (3.84 rad/s) fold-window joint contract by
             // construction: head/neck lever ~0.15 m -> 0.5 m/s, arms ~0.25 -> 0.8,
             // legs 0.36 -> 1.2, torso/hips 1.5 (no hinge partner shorter than 0.4)
-            const _cap = _late ? _CRASH_FALL_CAP_LATE
+            // After the initial fold, use the joint's lever length rather
+            // than the same 0.3 m/s for every point. A moving elbow between
+            // two supported endpoints rotates BOTH adjacent segments; their
+            // angular rates add. The old uniform cap allowed ~2.4 rad/s at
+            // a 25 cm forearm, producing a late whip after the body landed.
+            const _lateCap = /^(head|neck)/.test(pt.name) ? 0.15
+                : /^(hand|elbow|wrist|shoulder|sh[LR])/.test(pt.name) ? 0.18
+                : /^(ankle|knee|foot|hip)/.test(pt.name) ? 0.25
+                : _CRASH_FALL_CAP_LATE;
+            const _cap = _late ? _lateCap
                 : /^(head|neck)/.test(pt.name) ? 0.4
                 : /^(hand|elbow|wrist|shoulder)/.test(pt.name) ? 0.6
                 : /^(ankle|knee|foot)/.test(pt.name) ? 1.0
@@ -7270,7 +7357,12 @@ void main(void) {
                             pt.prev.x = pt.p.x - vx * k;
                             pt.prev.z = pt.p.z - vz * k;
                         }
-                        if (pt.prev.y > pt.p.y) pt.prev.y = pt.p.y;
+                        // Snow contact has no vertical rebound. A floor
+                        // projection can lift p ABOVE prev after a stick
+                        // solve; retaining that difference injected upward
+                        // Verlet velocity and made the crumple bounce away
+                        // before the contact-gated slide could begin.
+                        pt.prev.y = pt.p.y;
                     }
                 }
             };
@@ -8090,6 +8182,7 @@ void main(void) {
         let q = W.qWalk;
 
         const writeSolved = function (solved, blendFromRest) {
+            _alignShoulderChains(solved, true);
             for (const seg of SEGMENTS) {
                 if (seg.name === 'skiL' || seg.name === 'skiR') continue;
                 const n = M[seg.name], p = solved[seg.name];
@@ -8748,7 +8841,25 @@ void main(void) {
     // behind by a torso that moved — a spine detaching mid-crash would be a
     // worse artefact than the one this item removes.
     const _spineFollow = () => {
-        try { if (character && character.meshes) updateSpineChain(character.meshes); }
+        try {
+            if (character && character.meshes) {
+                if (crashActive) {
+                    // Released skis leave the boots on the athlete, through
+                    // the tumble, rest, get-up and walk-off.
+                    const boots = _bootRenderDrivers.get(character.meshes) || {};
+                    for (const side of ['L', 'R']) {
+                        const boot = boots['boot' + side];
+                        const shin = character.meshes['lowerLeg' + side];
+                        if (!boot || !shin) continue;
+                        boot.position.copyFrom(shin.position);
+                        boot.rotation.copyFrom(shin.rotation);
+                        boot.rotationQuaternion = shin.rotationQuaternion
+                            ? shin.rotationQuaternion.clone() : null;
+                    }
+                }
+                updateSpineChain(character.meshes);
+            }
+        }
         catch (e) { /* never cost a frame */ }
     };
     if (scene.onBeforeRenderObservable && scene.onBeforeRenderObservable.add) {
@@ -8786,6 +8897,15 @@ void main(void) {
     // view stays where the user put it; it resumes on the next run.
     let _freeLookActive = false;
     let _freeLookHintT  = null;   // performance.now() when first shown; hint fades
+    let _crashCameraUserControlled = false;
+    function _takeCrashCameraControl() {
+        if (!state.crashed) return;
+        _crashCameraUserControlled = true;
+        _crashRestAlphaGoal = null;
+        _crashRestAlphaLast = null;
+        _camTargetAlpha = null;
+    }
+    canvas.addEventListener('wheel', _takeCrashCameraControl, { capture: true, passive: true });
     // HUMAN TESTING #18: ArcRotate can lower its eye only as far as the terrain
     // clamp.  Continued drag at that boundary is view-pitch demand, not a dead
     // gesture: raise the target while keeping the eye on the same safe clamp.
@@ -8799,7 +8919,7 @@ void main(void) {
         const _rested = state.crashed && window._ragdollProbe
             && window._ragdollProbe() && window._ragdollProbe().resting;
         return (readyState && readyTurnT === 0.0) || state.stopped
-            || (state.crashed && (!crashActive || _rested)) || replayActive;
+            || (state.crashed && (!crashActive || _rested || _crashCameraUserControlled)) || replayActive;
     }
     // Terrain clamp: the eye never dips below 1 m over the snow under it
     // (plan P10 "never see under the terrain"). Applied every frame on the
@@ -8852,6 +8972,7 @@ void main(void) {
             const c  = Math.max(-1, Math.min(1, (minY - t2) / r));
             // cos(beta) decreasing → cap beta at the value that clears minY.
             camera.beta = Math.min(camera.beta, Math.max(0.05, Math.acos(c)));
+            if (camera.getViewMatrix) camera.getViewMatrix(true);
         } catch (e) { /* a clamp miss must never cost a frame */ }
     }
     function _resetFreeLookTilt() {
@@ -8881,7 +9002,7 @@ void main(void) {
             }
             return;
         }
-        if (_freeLookTiltBaseY === null ||
+        if (_freeLookPointerY === null || _freeLookTiltBaseY === null ||
             (_freeLookTiltGoal <= 1e-5 && _freeLookTiltRise <= 1e-5)) return;
         const lim = _freeLookTiltLimit();
         _freeLookTiltGoal = Math.min(_freeLookTiltGoal, lim);
@@ -8926,28 +9047,36 @@ void main(void) {
     //   2. A window-level safety net: pointerup/pointercancel/blur/
     //      visibilitychange clear the tilt tracker's drag state unconditionally.
     canvas.addEventListener('pointerdown', e => {
+        _takeCrashCameraControl();
+        if (e.button === 2 || e.ctrlKey) {
+            // Preserve the current view while handing its target to panning.
+            _freeLookTiltBaseY = null;
+            _freeLookTiltRise = 0;
+            _freeLookTiltGoal = 0;
+        }
         _freeLookPointerY = e.clientY;
         try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     }, true);
-    const _clearFreeLookDrag = () => { _freeLookPointerY = null; _freeLookTiltBaseY = null; };
+    // Keep the tilt baseline across successive drags; resetting it at every
+    // release accumulated target height while throwing away the actual tilt.
+    const _clearFreeLookDrag = () => {
+        _freeLookPointerY = null;
+        _freeLookTiltGoal = _freeLookTiltRise;
+    };
     canvas.addEventListener('pointerup', _clearFreeLookDrag, true);
     canvas.addEventListener('pointercancel', _clearFreeLookDrag, true);
     window.addEventListener('pointerup', _clearFreeLookDrag, true);
-    // 250 Finding 3 (freelook #27): with a real mouse, setPointerCapture
-    // retargets the release to the canvas and Babylon's ArcRotate pointer
-    // input sees it; synthetic (and some out-of-window) releases bypass
-    // capture, so Babylon's pointer cache keeps the drag alive and bare
-    // cursor moves keep orbiting. Replay the release to the canvas once so
-    // Babylon's own handlers end the drag too.
+    // Off-canvas releases must reach Babylon's DOM input too, otherwise its
+    // mouse-button state can retain the previous gesture.
     let _replayingUp = false;
     const _replayUp = (e) => {
-        if (_replayingUp) return;
+        if (_replayingUp || e.target === canvas) return;
         _replayingUp = true;
         try {
             canvas.dispatchEvent(new PointerEvent('pointerup', {
                 pointerId: e.pointerId, pointerType: e.pointerType,
-                clientX: e.clientX, clientY: e.clientY,
-                buttons: e.buttons, bubbles: true,
+                button: e.button >= 0 ? e.button : 0, buttons: 0,
+                clientX: e.clientX, clientY: e.clientY, bubbles: true,
             }));
         } catch (_) {}
         _replayingUp = false;
@@ -8959,7 +9088,9 @@ void main(void) {
     document.addEventListener('visibilitychange', _clearFreeLookDrag);
     canvas.addEventListener('pointermove', e => {
         const prevY = _freeLookPointerY;
+        if (prevY === null) return; // hovering after release is not a new drag
         _freeLookPointerY = e.clientY;
+        if (e.button === 2 || (e.buttons & 2) || e.ctrlKey) return; // preserve Babylon's pan gesture
         if (!_freeLookActive || window._freeLookTiltDisabled || prevY === null ||
             !camera || !camera.target) return;
         const dy = e.clientY - prevY;
@@ -9005,9 +9136,10 @@ void main(void) {
             const cp = camera.position;
             return {
                 active: _freeLookActive,
+                manualCrashCamera: _crashCameraUserControlled,
                 alpha: camera.alpha, beta: camera.beta, radius: camera.radius,
                 gap: cp.y - (terrainRootY(cp.z) - FOOT_OFFSET),
-                targetZ: camera.target.z, camZ: cp.z, rootZ: state.posZ,
+                targetX: camera.target.x, targetZ: camera.target.z, camZ: cp.z, rootZ: state.posZ,
                 targetY: camera.target.y, camY: cp.y,
                 tilt: _freeLookTiltRise,
                 tiltGoal: _freeLookTiltGoal,
@@ -9019,6 +9151,7 @@ void main(void) {
     // Layout-aware WASD nudge (only while free-look is active). Game keys
     // (arrows, space) are untouched, so launching a run while orbiting works.
     window.addEventListener('keydown', e => {
+        if (['a', 'd', 'w', 's'].some(k => _keyIsLetter(e, k))) _takeCrashCameraControl();
         if (!_freeLookActive) return;
         const step = e.shiftKey ? 0.04 : 0.12;
         if (_keyIsLetter(e, 'a'))      camera.alpha -= step;
@@ -11243,13 +11376,16 @@ void main(void) {
             // the tuck (fully on at 0, gone by tuck 0.25), which is continuous.
             const _stanceW = readyState
                 ? Math.max(0, Math.min(1, 1 - (state.tuckAmount || 0) / 0.25)) : 0;
-            if (_stanceW > 0.001 &&
+            if (readyState &&
                 _readyStance.last && _readyStance.last.legF > 0.001) {
                 const _ulL = character.meshes.upperLegL;
                 const _llL = character.meshes.lowerLegL;
                 if (_ulL && _llL) {
-                    const _f = _stanceW * 1.12 * _readyStance.last.legF; // 0.291 rad = 16.7° at full weight, in the ruling's 15–20° band
-                    _ulL.rotation.x = _llL.rotation.x + _f;
+                    // Replace only the earlier ready-stance increment. An
+                    // absolute shin+flex assignment erased the actual squat
+                    // thigh angle until tuck=.25, then jumped when it stopped.
+                    const _f = (_stanceW * 1.12 - 0.45) * _readyStance.last.legF;
+                    _ulL.rotation.x += _f;
                     _ulL.position.y = _llL.position.y + 0.18 * Math.cos(_llL.rotation.x)
                                     + 0.18 * Math.cos(_ulL.rotation.x);
                     _ulL.position.z = _llL.position.z + 0.18 * Math.sin(_llL.rotation.x)
@@ -11291,9 +11427,24 @@ void main(void) {
                 for (const [side, preZ] of [['L', preZL], ['R', preZR]]) {
                     if (preZ === null || preZ === undefined) continue;
                     const dz = (character.meshes['upperLeg' + side].position.z - preZ) * _stanceW;
+                    const upper = character.meshes['upperArm' + side];
+                    if (!upper) continue;
+                    const crz = Math.cos(upper.rotation.z || 0);
+                    const shoulderY = upper.position.y - 0.15 * crz * Math.cos(upper.rotation.x);
+                    const shoulderZ = upper.position.z - 0.15 * crz * Math.sin(upper.rotation.x);
+                    // Reach the resting thigh with a small arm swing. A
+                    // translation of the whole arm also moved its shoulder
+                    // 70 mm backwards, inflating the sleeve-owned back skin
+                    // into a backpack at the supposedly neutral stance.
+                    const swing = -Math.asin(Math.max(-0.35, Math.min(0.35, dz / 0.55)));
+                    const c = Math.cos(swing), sn = Math.sin(swing);
                     for (const seg of ['upperArm', 'lowerArm']) {
                         const m = character.meshes[seg + side];
-                        if (m) m.position.z += dz;
+                        if (!m) continue;
+                        const y = m.position.y - shoulderY, z = m.position.z - shoulderZ;
+                        m.position.y = shoulderY + c * y - sn * z;
+                        m.position.z = shoulderZ + sn * y + c * z;
+                        m.rotation.x += swing;
                     }
                 }
                 // Fable (2026-09-01): the parked hands-vs-thigh red. With the
@@ -11333,13 +11484,15 @@ void main(void) {
         // ── Camera follow — track character position; free mouse; C lerps smoothly ──
         // P10 free-look: while active, the follow block stands down entirely so
         // the user's orbit/zoom/pan stays put; it resumes when the next run starts.
+        if (!state.crashed) _crashCameraUserControlled = false;
         const _flAllowed = _freeLookAllowed();
         if (_flAllowed !== _freeLookActive) {
             _freeLookActive = _flAllowed;
             if (_flAllowed) {
                 if (_freeLookHintT === null) _freeLookHintT = performance.now();
                 camera.lowerRadiusLimit = 3;    // wheel zoom opens up
-                camera.upperRadiusLimit = 80;
+                camera.upperRadiusLimit = 240;
+                camera.wheelDeltaPercentage = 0.08;
                 // HUMAN TESTING #7 bug: on page load free-look took over before
                 // the follow block had ever framed the athlete, so the orbit
                 // target stayed at the world origin and the camera (alpha 1.5π
@@ -11357,8 +11510,8 @@ void main(void) {
                 camera.radius = 10;
             }
         }
-        // 252 (ruling on 251): on EVERY crash frame — slide, rest beat and
-        // walk-off, free-look on or off — the camera target eases to the
+        // Automatic crash framing follows the slide, rest beat and walk-off
+        // until the user takes control. The camera target eases to the
         // SLAVED character.root on all three axes. The single carrier of
         // 249 must also be the camera's: the previous arrangement let the
         // non-free-look hard-set below write `state.posZ` (the ENGINE root)
@@ -11366,7 +11519,7 @@ void main(void) {
         // ~5.6 m past the rendered body (measured on 1198dd8: root z rest
         // 75.9, target z 81.5). ragdoll.torso is a root-relative particle
         // centre and was never a world target.
-        if (state.crashed && character && character.root) {
+        if (state.crashed && !_crashCameraUserControlled && character && character.root) {
             const _ck = Math.min(1, 6 * dt);
             const _target = character.root.position;
             camera.target.x += (_target.x - camera.target.x) * _ck;
@@ -11390,8 +11543,8 @@ void main(void) {
         // ragdoll has settled (R.resting), ease the follow radius in so the
         // body reads at rest framing instead of a speck at the locked 10 m.
         // Radius ONLY: the 252 target-ease above and the free-look stand-down
-        // guard are untouched, and the ease runs inward only (radius > goal)
-        // so a user's wheel zoom-in is never fought. The next run's
+        // automatic close-up yields to any camera gesture, including zoom-out.
+        // The next run's
         // free-look-exit branch resets radius/limits, so nothing leaks into
         // live play. `window._crashRestFramingDisabled = true` is the
         // negative-control override (the gate must stay at 10 m with it set);
@@ -11408,7 +11561,7 @@ void main(void) {
         // 45 % bar vs curled rests is an open reviewer question. (Radii
         // below the free-look 3 m floor read back clamped; the ease lowers
         // the floor to the goal itself.)
-        if (window._crashRestFramingDisabled !== true && state.crashed
+        if (!_crashCameraUserControlled && window._crashRestFramingDisabled !== true && state.crashed
                 && window._ragdollProbe && window._ragdollProbe()
                 && window._ragdollProbe().resting) {
             const _goal = window._crashRestRadius || 1.9;
@@ -11430,7 +11583,7 @@ void main(void) {
         // the free-look-exit branch, into live play.
         const _restProbeNow = window._ragdollProbe && window._ragdollProbe();
         const _restNow = !!(state.crashed && _restProbeNow && _restProbeNow.resting);
-        const _restFramingOff = window._crashRestFramingDisabled === true;
+        const _restFramingOff = window._crashRestFramingDisabled === true || _crashCameraUserControlled;
         if (_restNow && !_wasCrashRest && !_restFramingOff) {
             _preRestAlpha = camera.alpha;
             _crashRestAlphaGoal = null;
@@ -11479,6 +11632,10 @@ void main(void) {
             _crashRestAlphaLast = null;
         }
         _wasCrashRest = _restNow;
+        if (_freeLookActive) {
+            // Screen-space panning should cover more ground as the view widens.
+            camera.panningSensibility = Math.max(20, 10000 / Math.max(1, camera.radius));
+        }
         if (!_freeLookActive && !state.crashed) {
             camera.target.y = _visRootY;
             camera.target.z = state.posZ;
@@ -11538,7 +11695,7 @@ void main(void) {
         hud.text = '';
         const _fpHint = firstPersonMode ? '\nV: third person' : '\nV: first person';
         const _flHint = (_freeLookHintT !== null && performance.now() - _freeLookHintT < 5000)
-            ? '\ndrag to look around · wheel or W/S zoom · A/D pan' : '';
+            ? '\ndrag to orbit · right-drag to pan · wheel or W/S zoom · A/D orbit' : '';
         if (_freeLookHintT !== null && performance.now() - _freeLookHintT >= 5000) _freeLookHintT = 0;
         if (_poolDiveMode) {
             hint.text = readyState
