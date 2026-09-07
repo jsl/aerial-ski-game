@@ -16,6 +16,23 @@ Everything you need is in this repo; nothing depends on the previous agents' mem
    tuck/pike flip boost, landing/crash decisions) and rulings 296–302.
 4. `docs/HANDOFF-2026-09-03.md` — lanes, servers, standing laws 1–12, the reviewer's mistakes.
 
+## 0b. Update 2026-09-07 (Fable passes F9 + F10, shipped)
+
+- **v104 = F9 LEGS**: the leg is AUTHORED (`LEG_SHEET` in `build_body.py`: breadth/depth by station
+  around a bone centreline, superellipse 2.2, faded into the seat and the boot), the knee band is
+  rebuilt as one bridged surface (`_leg_sheet_rebuild_knee`: bisect at knee ± 35 mm, delete, bridge,
+  subdivide, project), cross-leg knee weights re-owned, the hip weld drops beyond-reach bones. Thigh
+  144 / knee 115 / calf 117 mm, STEP 4.4 mm; leg-axis + boots + look green. `LEG_SHEET=0` = the old leg.
+  `LEG_SHEET_DUMP=<path>` exports the high-poly after the pass; render it with the reviewer's
+  `render_legs.py` / `render_knee*.py` (Blender workbench) — the eye before the gates.
+- **F10 CRASH SLIDE** (`game.js`, default path): the frozen crumple falls under gravity while it
+  slides and conforms to the terrain (per-lever fall caps, projected solve, first-contact 0.6 s
+  wall); the rigid lift and the 261 lever fold are retired. Gates re-scoped by written ruling in the
+  specs. Crash suites are frame-time sensitive: run `crash-ragdoll`, `getup-forensics`, `walkoff`
+  ONE AT A TIME. Headless probes need a canvas click before the start key.
+- Still open on the body: the TORSO (design doc §3/§4 — chest depth, waist taper, arms clear of the
+  ribs; `TORSO1` mechanism blocked by the left-hip hem weld), and the seat/hip crease in the crouch.
+
 ## 1. State of the asset (shipped v103 on 8201)
 
 - **Fixed and shipped this week**: legs re-centred onto their bones and INTO the boots (v101),
