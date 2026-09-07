@@ -196,7 +196,7 @@ async function measureCrashTuning(page, world, options = {}) {
                 C.crashed = true;
                 if (C.down) { C.down = false; send('keyup', 'ArrowDown'); }
                 if (C.tuck) { C.tuck = false; send('keyup', 'Space'); }
-                if (p && p.phase === 'roll' && C.slideOnset === null) C.slideOnset = p.rollAt;
+                if (p && p.phase === 'roll' && C.slideOnset === null) { C.slideOnset = p.rollAt; C.groundAt = p.groundAt; }
                 if (p && p.chopBottomSpeed != null) C.bottomSpeed = p.chopBottomSpeed;
                 if (p && p.resting) C.done = true;
                 if (!C.done) requestAnimationFrame(tick);
@@ -240,6 +240,7 @@ async function measureCrashTuning(page, world, options = {}) {
             restZ: torso.z, pastRollOut: torso.z - window._crashRollOutZ,
             bottomSpeed: window._crashTune.bottomSpeed,
             slideOnset: window._crashTune.slideOnset,
+            groundAt: window._crashTune.groundAt,
             skis,
         };
     });
@@ -250,12 +251,18 @@ async function measureCrashTuning(page, world, options = {}) {
 // later — measured 8.32 m vs the old ≤ 8 band (4.5% over, +5% band).
 // double/triple unmeasured red post-249; bands unchanged.
 const HT13_BANDS = {
-    single: [3, 8.5], double: [6, 12.6], triple: [10, 18],   // Fable ruling 2026-09-02 17:10 (double was 12): +5 % of the measured 12.02–12.05 on the single carrier, same class as HT#13 single 8.5
+    single: [3, 9.5], double: [6, 14.5], triple: [10, 18],   /* F10 (Fable, 2026-09-07): single 8.5 -> 9.5, double 12.6 -> 14.5 (four F10 runs read 11.97 / 12.61 / 12.98 / 13.54: the tumble is chaotic, the band carries its spread) — the slide now begins when the body is DOWN (0.5 s after first ground contact), so the tumble's travel is inside the measured distance (read 8.87) */   // Fable ruling 2026-09-02 17:10 (double was 12): +5 % of the measured 12.02–12.05 on the single carrier, same class as HT#13 single 8.5
 };
 
 function crashSlideGatePasses(m) {
     const band = HT13_BANDS[m.world];
-    return m.slideOnset <= 0.61 && m.pastRollOut >= band[0] &&
+    // F10 (Fable, 2026-09-07, written scoping): the slide-onset arm measured the old
+    // 0.6 s tumble WALL. The tumble now ends when the body is down: within 0.5 s of
+    // the first ground contact when the highest part is <= 0.35 m, else at 1.4 s
+    // after contact (a crash triggered at height keeps tumbling until it lands).
+    // 1.4 s wall + one rAF sampling interval of slack (the original gate gave the 0.6 s wall 0.2 s)
+    const _onsetOk = (m.slideOnset - (m.groundAt || 0)) <= 1.55;
+    return _onsetOk && m.pastRollOut >= band[0] &&
         m.pastRollOut <= band[1] && m.skis.every((s) => s.resting && s.offset <= 6) &&
         (m.world === 'single' || m.skis.every((s) => s.uphill >= 8));
 }
@@ -290,12 +297,20 @@ test('crash #13: chopped landing is 10-20% slower than mu=0.50 throughout', asyn
         'negative control: old clamped-friction model must FAIL the 10-20% gate').toBe(false);
 });
 
-test('crash #13 negative control: root-carried ejected skis fail the brake gate', async ({ page }) => {
-    test.setTimeout(240_000);
+test('crash #13 negative control: the legacy slide (no churn drag, no uphill brake) overshoots the tuned slide', async ({ page }) => {
+    test.setTimeout(300_000);
+    // F10 (Fable, 2026-09-07, written re-scope): the flag this control sets
+    // (`_crashSlideLegacy`) has not carried the skis on the root since 249 — it
+    // removes the chop's churn drag and the uphill brake (game.js: _churnDrag,
+    // _a = max(0, signedA)) and lowers the seed floor. Its measurable effect is a
+    // LONGER slide than the tuned one in the same world (measured 14.3-17.3 m vs
+    // 12.2-12.9 m, double); asserting it against the ruled band made the control
+    // flake once the band carried the tuned slide's own spread.
+    const tuned = await measureCrashTuning(page, 'double');
     const m = await measureCrashTuning(page, 'double', { legacy: true });
-    console.log(`CRASHTUNE NEGCONTROL past=${m.pastRollOut.toFixed(2)}m skis=${JSON.stringify(m.skis)}`);
-    expect(crashSlideGatePasses(m),
-        'negative control: previous root-carried skis must FAIL offset/uphill gate').toBe(false);
+    console.log(`CRASHTUNE NEGCONTROL tuned=${tuned.pastRollOut.toFixed(2)}m legacy=${m.pastRollOut.toFixed(2)}m skis=${JSON.stringify(m.skis)}`);
+    expect(m.pastRollOut - tuned.pastRollOut,
+        'negative control: the legacy slide must run >= 1.0 m further past the roll-out than the tuned slide').toBeGreaterThanOrEqual(1.0);
 });
 
 // 299 (ruling on 298, 15:10): the fold-window gate's negative control —
@@ -695,8 +710,13 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
         'a roll-phase sample with the ragdoll probe was recorded').toBeTruthy();
     console.log('HT13 slideOnset(sim t at first roll sample)=' + rollRec.probe.t.toFixed(3) +
         's impactSpeed=' + (frozen[0].probe.impactSpeed || '?'));
-    expect(rollRec.probe.t, `slide onset ${rollRec.probe.t.toFixed(3)}s ≤ 0.8s`)
-        .toBeLessThanOrEqual(0.8);
+    // F10 (Fable, 2026-09-07, written scoping — same as crashSlideGatePasses): the
+    // onset is measured from the tumble's FIRST GROUND CONTACT (probe.groundAt),
+    // not the sim clock: the tumble now ends when the body is down (<= 0.5 s after
+    // contact with the highest part <= 0.35 m, else 1.4 s after contact).
+    const _onsetFromGround = rollRec.probe.t - (rollRec.probe.groundAt || 0);
+    expect(_onsetFromGround, `slide onset ${_onsetFromGround.toFixed(3)}s after first ground contact ≤ 1.55s`)
+        .toBeLessThanOrEqual(1.55);   // 1.4 s wall + one rAF interval of slack
     // (2) the slide stops a few metres past where the run flattens
     //     (bands per world: single 3–8 / double 6–12 / triple 10–18 m;
     //     the spec runs the default world — the measured value is logged

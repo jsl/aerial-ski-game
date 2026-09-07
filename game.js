@@ -3296,6 +3296,7 @@ void main(void) {
         return { resting: !!ragdoll.resting, maxSpeed: ragdoll.maxSpeed,
                  t: ragdoll.t, restAt: ragdoll.restAt, phase: ragdoll.phase,
                  rollAt: ragdoll.rollAt,
+                 groundAt: ragdoll.groundT0,   // F10: first ground contact of the tumble (the slide-onset clock)
                  chopBottomSpeed: ragdoll.chopBottomSpeed,
                  impactSpeed: ragdoll.impactSpeed,
                  // NEXT item 3 (2026-08-29): peak tumble pose excursion (deg)
@@ -6694,6 +6695,33 @@ void main(void) {
     // margin for the stick re-projection's overshoot (measured 3.65 rad/s
     // peak when folding at the full 200).
     const _FOLD_W = 180 * Math.PI / 180;
+    // F10: gravity settle of the frozen crumple (default crash path). Parts that
+    // are already on the floor stay; the others fall with g, capped at
+    // _CRASH_FALL_CAP; the caller's hard-constraint solve keeps segment lengths.
+    // Skipped for the #20 negative control (looseGroundRest lowers NOTHING).
+    const _CRASH_FALL_CAP = 3.5;   // m/s: snow drag on a falling body; a 0.5 m drop lands in ~0.35 s
+    const _CRASH_FALL_CAP_LATE = 0.3;    // m/s after the 1 s fold window: a 0.25 m forearm at 0.3 m/s is 69 deg/s, inside the 90 deg/s post-window joint gate (the 256 ruling's arm rate)
+    const _crashGravitySettle = function (R, dt) {
+        if (R.looseGroundRest) return;
+        const _late = R.rollAt !== undefined && R.t - R.rollAt > 1.0;
+        for (const pt of R.parts) {
+            const _tY = _crashFloorY(pt.p.z) + pt.r;
+            const _gap = pt.p.y - _tY;
+            if (_gap <= 0.005) { pt.p.y = Math.max(pt.p.y, _tY); pt._vy = 0; continue; }
+            // per-lever cap so a part falling against a grounded partner stays
+            // inside the 220 deg/s (3.84 rad/s) fold-window joint contract by
+            // construction: head/neck lever ~0.15 m -> 0.5 m/s, arms ~0.25 -> 0.8,
+            // legs 0.36 -> 1.2, torso/hips 1.5 (no hinge partner shorter than 0.4)
+            const _cap = _late ? _CRASH_FALL_CAP_LATE
+                : /^(head|neck)/.test(pt.name) ? 0.4
+                : /^(hand|elbow|wrist|shoulder)/.test(pt.name) ? 0.6
+                : /^(ankle|knee|foot)/.test(pt.name) ? 1.0
+                : Math.min(_CRASH_FALL_CAP, 1.2);
+            pt._vy = Math.max(-_cap, (pt._vy || 0) - 9.81 * dt);
+            pt.p.y = Math.max(_tY, pt.p.y + pt._vy * dt);
+            if (pt.p.y <= _tY + 1e-6) pt._vy = 0;
+        }
+    };
     const _lieFoldStep = function (R, dt) {
         if (R.foldT0 === undefined || R._lieFoldDone || R.looseGroundRest) return;
         const _FOLD_T = 1.0;
@@ -7473,7 +7501,35 @@ void main(void) {
         // wall of time is frame-rate independent: tumble at most 0.6 s
         // (HUMAN TESTING #13: slide onset ≤ 0.6 s after impact),
         // then freeze the pose and slide it as ONE rigid piece.
-        if (R.phase === 'tumble' && R.t >= 0.6) {
+        // Fable F10: the tumble ends when the body is DOWN, not at a wall of time.
+        // At 0.6 s the crumple was frozen a metre high and then slid upright; the
+        // particles keep tumbling (gravity + contacts) until the highest part is
+        // within 0.35 m of the snow, with a 1.4 s wall so a hung-up ragdoll still
+        // freezes (the gravity settle then brings it down).
+        let _tumbleTop = 0, _tumbleLow = 99;
+        if (R.phase === 'tumble') {
+            for (const pt of R.parts) {
+                const _g = pt.p.y - (_crashFloorY(pt.p.z) + pt.r);
+                if (_g > _tumbleTop) _tumbleTop = _g;
+                if (_g < _tumbleLow) _tumbleLow = _g;
+            }
+            // the clock starts at the first ground contact: a crash that leaves
+            // the athlete airborne (the triple) keeps tumbling until it lands
+            if (R.groundT0 === undefined && _tumbleLow <= 0.03) R.groundT0 = R.t;
+        }
+        const _tg = R.groundT0 === undefined ? -1 : R.t - R.groundT0;
+        // never freeze while airborne (the triple's crash is triggered at height):
+        // the crumple is frozen only with a part on the snow, or at the 4 s wall
+        // the #20 negative control (looseGroundRest) reproduces the PRE-F10 class
+        // entirely — the 0.6 s wall and no lowering — so it still leaves a segment
+        // airborne for the rest-contact gate to reject
+        // F10 final form: the freeze stays a fixed 0.6 s WALL (a pose-dependent end made
+        // the slide distance wander 2 m run to run), but the wall is measured from the
+        // FIRST GROUND CONTACT so a crash triggered at height never freezes mid-air;
+        // gravity then brings the frozen crumple down while it slides.
+        const _tumbleDone = R.looseGroundRest ? (R.t >= 0.6)
+            : ((_tg >= 0.6 && _tumbleLow <= 0.05) || R.t >= 4.0);
+        if (R.phase === 'tumble' && _tumbleDone) {
             // Freeze: capture the body's mean horizontal velocity, kill all
             // internal velocities (prev = p), switch to the rigid slide.
             let _sx = 0, _sz = 0;
@@ -7673,14 +7729,22 @@ void main(void) {
                 // 0.23 → 1.62 m within 5 roll frames).
                 const _dy = _slope * R.slideV.z * dt;
                 if (!_crashLieV4()) {
+                // Fable F10: the body CONFORMS to the terrain while it slides. The old
+                // rigid lift (raise every part by the largest shortfall) levitated the
+                // flat body by 0.7 m on the concave roll-out (measured: maxClear 0.03 ->
+                // 0.72 m at roll+3 s) — the very "levitation" the author reports. Each
+                // part is clamped to its own floor and the hard constraints keep the
+                // segment lengths, so the chain drapes over the curvature.
                 let _lift = 0;
                 for (const pt of R.parts) {
                     pt.prev.x = pt.p.x; pt.prev.y = pt.p.y; pt.prev.z = pt.p.z;
                     pt.p.x += _dx; pt.p.y += _dy; pt.p.z += _dz;
-                    const _short = (_crashFloorY(pt.p.z) + pt.r) - pt.p.y;
-                    if (_short > _lift) _lift = _short;
+                    const _fy = _crashFloorY(pt.p.z) + pt.r;
+                    if (R.looseGroundRest) {          // the #20 control: the old rigid lift
+                        if (_fy - pt.p.y > _lift) _lift = _fy - pt.p.y;
+                    } else if (pt.p.y < _fy) { pt.p.y = _fy; pt._vy = 0; }
                 }
-                if (_lift > 0) {
+                if (R.looseGroundRest && _lift > 0) {
                     for (const pt of R.parts) pt.p.y += _lift;
                 }
                 // Settle-while-rolling: lower non-contacting parts at a
@@ -7710,22 +7774,38 @@ void main(void) {
                     R._lieFoldDone = (typeof window !== 'undefined' &&
                         window._crashLieDisabled === true);   // NC: no fold
                 }
-                _lieFoldStep(R, dt);
-                for (const pt of R.parts) {
-                    if (R.looseGroundRest) break;   // Fable 20:30: the #20 negative control lowers NOTHING
-                    const _tY = _crashFloorY(pt.p.z) + pt.r;
-                    const _rate = /^ankle/.test(pt.name) ? 0.5 : /^knee/.test(pt.name) ? 0.35
-                                : /^(head|neck)/.test(pt.name) ? 0.3          // head/neck lever ~0.3 m: 0.4 m/s measured a 1.60 rad/s neck rate — over the ruled 90 deg/s post-window limit; 0.3 clears it
-                                : 0.3;   // hips/arms: 0.3 m/s per the ruling on 256 (arm lever ~0.3 m → 1 rad/s)
-                    if (pt.p.y - _tY > 0.02) pt.p.y = Math.max(_tY, pt.p.y - _rate * dt);
+                // F10: the 261 lever fold is superseded — gravity on every part plus
+                // the length constraints IS the fold (a propped chain pivots down at
+                // its hinge). Running both added their rates (elbow 6 rad/s measured).
+                if (!R._lieFoldDone && R.t - R.foldT0 >= 1.0) {
+                    R._lieFoldDone = true; R.foldDoneAt = R.t; R.lieDur = R.foldDoneAt - R.foldT0;
                 }
-                for (const hp of R.hard) {
-                    const a = hp.a.p, b = hp.b.p;
-                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-                    const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
-                    const k = (l - hp.rest) / l * 0.5;
-                    a.x += dx * k; a.y += dy * k; a.z += dz * k;
-                    b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                // Fable F10 (2026-09-05; author: "when athlete crashes they must slide
+                // along ground, not slide on legs to end and then gradually lower"):
+                // the frozen crumple FALLS under gravity while it slides — each part
+                // integrates a vertical velocity (g, capped at _CRASH_FALL_CAP for the
+                // snow's drag) until it meets the floor, and the hard constraints keep
+                // the segment lengths, so a propped chain pivots down the way a body
+                // does. A 0.5 m-high torso is on the snow ~0.35 s after the freeze
+                // instead of ~1.7 s at the old 0.3 m/s per-lever rates.
+                _crashGravitySettle(R, dt);
+                // projected solve: lengths, then the floor again (a constraint can
+                // push a grounded neighbour under the snow — measured 18.6 cm);
+                // the #20 control keeps the old single pass without the floor
+                for (let _it = 0; _it < (R.looseGroundRest ? 1 : 2); _it++) {
+                    for (const hp of R.hard) {
+                        const a = hp.a.p, b = hp.b.p;
+                        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                        const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                        const k = (l - hp.rest) / l * 0.5;
+                        a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                        b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                    if (R.looseGroundRest) break;
+                    for (const pt of R.parts) {
+                        const _fy = _crashFloorY(pt.p.z) + pt.r;
+                        if (pt.p.y < _fy) { pt.p.y = _fy; pt._vy = 0; }
+                    }
                 }
                 R.maxSpeed = _vH;
                 } else if (R._lieFrozen) {
@@ -7790,13 +7870,28 @@ void main(void) {
             // well inside its 1.0 s window (it ends with the window).
             // v4 never starts the fold (foldT0 stays undefined, so the call
             // below is a no-op for it) — skip it explicitly.
-            if (!_crashLieV4()) _lieFoldStep(R, dt);
+            if (!_crashLieV4()) {
+                _crashGravitySettle(R, dt);
+                for (let _it = 0; _it < 2; _it++) {
+                    for (const hp of R.hard) {
+                        const a = hp.a.p, b = hp.b.p;
+                        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                        const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+                        const k = (l - hp.rest) / l * 0.5;
+                        a.x += dx * k; a.y += dy * k; a.z += dz * k;
+                        b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+                    }
+                    for (const pt of R.parts) {
+                        const _fy = _crashFloorY(pt.p.z) + pt.r;
+                        if (pt.p.y < _fy) { pt.p.y = _fy; pt._vy = 0; }
+                    }
+                }
+            }
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
                 const _gap = pt.p.y - _tY;
                 if (_gap > _above) _above = _gap;
-                if (!_crashLieV4() && _gap > 0.02) pt.p.y = Math.max(_tY, pt.p.y - 0.3 * dt);
             }
             if (_crashLieV4() && !R.looseGroundRest) {
                 // v4: same lever-ceiling fall as the roll (90 deg/s — the
@@ -8082,7 +8177,12 @@ void main(void) {
                     };
                     let b;
                     if (swoopOff) {
-                        b = bRaw; // NC: the unpaced blend — this is the swoop
+                        // NC: the unpaced blend — this was the swoop while the rest
+                        // was propped 0.42 m up (pre-F10). From today's FLAT rest an
+                        // unpaced 0.65 s blend rises at ~0.8 m/s, which the whole-chain
+                        // gate rightly accepts, so the control is synthetic now: the
+                        // blend compressed to 0.2 s (~2.5 m/s) — the gate must reject it.
+                        b = _walkoffSmooth(Math.min(1, getT / 0.2));
                         liftAt(b);
                     } else {
                         // 237 TRIPLE GET-UP STALL, root-caused: the old
@@ -8242,6 +8342,12 @@ void main(void) {
             const allow = W.govY + _RISE_CAP * dtS;
             if (rootY > allow) rootY = allow;
             W.govY = rootY;
+        } else if (swoopOff && !W._swoopKick && onGetup && W.st && W.st !== 'roll') {
+            // #29 negative control, F10 (2026-09-07): from the flat rest the ungoverned
+            // get-up never exceeds the whole-chain gate on its own (the swoop was the
+            // propped rest), so the control injects one 0.5 m root kick at the first
+            // post-roll get-up frame — the synthetic snap the gate must still reject.
+            rootY += 0.5; W._swoopKick = true;
         }
         root.position.x = rootX; root.position.y = rootY; root.position.z = rootZ;
         if (!root.rotationQuaternion) root.rotationQuaternion = new BABYLON.Quaternion(q.x, q.y, q.z, q.w);

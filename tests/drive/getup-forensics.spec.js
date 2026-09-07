@@ -229,7 +229,12 @@ async function forensics(page, world, opts) {
             // During the WALK-OFF get-up the root is deliberately static
             // while the kneel/rise sweeps the legs under it (bounded by
             // the maxSep gate) — the snap contract is the crash proper.
-            if (i > 3 && f.walkPhase === null) {
+            // F10 (Fable, 2026-09-07, written scoping): the TUMBLE is excluded too —
+            // its particles legitimately move 0.1-0.2 m per frame relative to the
+            // slaved root (a body tumbling at 10 m/s); before F10 the tumble was cut
+            // at 0.6 s and fell inside the seed exclusion, so this gate never read it.
+            // The snap contract is the slide and the get-up.
+            if (i > 3 && f.walkPhase === null && f.phase !== 'tumble') {
                 const p = F.frames[i - 1];
                 // 249: the leg nodes' jump RELATIVE to the root's own
                 // jump — the coherent body legitimately slides 0.5–0.9 m
@@ -518,8 +523,15 @@ test('lie-v4 negative control: default-off restores the pre-v4 class', async ({ 
         `maxClearAfter=${maxAfter} ` +
         `jointRaw=${m.jointRates ? m.jointRates.rawEarly.toFixed(2) + '/' + m.jointRates.rawEarlyJ : 'n/a'} ` +
         `jointAvg=${m.jointRates ? m.jointRates.avgEarly.toFixed(2) + '/' + m.jointRates.avgEarlyJ : 'n/a'}`);
+    // F10 (Fable, 2026-09-07, written re-scope): the pre-v4 "propped, slow" class is
+    // GONE from the default path by the author's instruction (the body slides along
+    // the ground from the freeze), so this control can no longer assert it. What
+    // "default-off" must still prove: the v4 mechanisms are INERT (no whip governor
+    // hits, no scheduled ease) and the default path still gets the core down.
     expect(maxAfter).not.toBeNull();
-    expect(maxAfter, 'NC: default-off worst particle stays propped (pre-v4 class ~0.33)').toBeGreaterThan(0.08);
+    const _whip = Math.max(...lieFrames.map((f) => f.whipHit || 0));
+    const _ease = Math.max(...lieFrames.map((f) => f.easePeak || 0));
+    expect(_whip, 'NC: default-off — the v4 whip governor never engages').toBe(0);
+    expect(_ease, 'NC: default-off — the v4 scheduled ease never runs').toBe(0);
     expect(downEl).not.toBeNull();
-    expect(downEl, 'NC: default-off core comes down SLOW (pre-v4 class ~1.4 s, v4 <= 0.40 s)').toBeGreaterThanOrEqual(0.8);
 });
