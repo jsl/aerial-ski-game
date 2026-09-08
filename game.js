@@ -1300,7 +1300,10 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
                 if (!ulMesh) continue;
                 const urx = ulMesh.rotation.x;
                 ulMesh.position.y = hipY - 0.18 * Math.cos(urx);
-                ulMesh.position.z = hipZ - 0.18 * Math.sin(urx);
+                // Preserve the bind's per-side sagittal station. Omitting
+                // BASE_Z pulled each neutral leg 8 mm off its rest plane.
+                ulMesh.position.z = hipZ + (BASE_Z['upperLeg' + side] || 0)
+                    - 0.18 * Math.sin(urx);
             }
 
         }
@@ -2629,7 +2632,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=112";   // 112: Retina scaling/camera help (same Lean11 assets); 111: lean waist and seat; 110: inner sleeve bridge reseated; 109: fitted torso/boot rig; 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=113";   // 113: balanced waist/sleeves and coherent rim UVs; 112: Retina scaling/camera help (same Lean11 assets); 111: lean waist and seat; 110: inner sleeve bridge reseated; 109: fitted torso/boot rig; 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 

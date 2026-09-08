@@ -522,3 +522,126 @@ Fresh actual-keyboard tuck footage is in `shots/astra-motion-v112/`; final
 crash-through-recovery footage is in `shots/astra-crash-v112/`. Both use
 the confirmed RTX5070Ti ANGLE/Vulkan renderer. The local
 `shots/astra-review.html` links the current films and six-view comparison.
+
+
+## Follow-up author feedback: consistent slim proportions
+
+After reviewing v112, the author says the waist is now too skinny and the
+arms look too baggy or muscular. The target is a fairly slim, consistent frame,
+not a strongly pinched waist surrounded by larger sleeves. This supersedes
+acceptance of the additional18% waist-width contraction. Astra is preparing
+a limited pass that restores some waist breadth while retaining the reduced
+seat depth, and trims sleeve volume without changing shoulder/elbow/wrist
+pivots or the accepted tuck poses. Candidate will be compared against v112
+before promotion. Existing crotch-contour and crash-onset concerns remain.
+
+
+## Follow-up proportion pass: v113 balanced waist and sleeves
+
+The author found the v112/v111-body waist too narrow and the sleeves too
+baggy or muscular, and requested a fairly slim, consistent frame. v113 eases
+the extra waist-width contraction from 18% toward 6%, with a smooth restore
+between z=-0.24 and -0.08. The already accepted 18% hip/seat width reduction
+below that region and 24% depth reduction remain. The first candidate applied
+the width restore through the hip band and failed required hip-fold sample
+coverage; restricting it to the actual waist restored all 11 measured bands
+without changing the gate. Fitted sleeve factors change from .78/.82 to
+.70/.77 for upper/forearm, using the existing smooth joint fades. Mean fitted
+upper-arm radius is 47.7 mm versus 52.6 mm previously (about 9% slimmer), and
+arm/thigh ratio .472 versus .521, against the unchanged <=.55 limit.
+Shoulder/elbow/wrist pivots, stance, boots, tuck/IK and gameplay are unchanged.
+
+The accepted GPU build reports 50/9680 sliver faces (0.5165%), all 11 fold
+bands with mean 1.94 mm against the 1.9 mm floor, zero arm/trunk UV overlap,
+9097 vertices, 23 bones, and zero bind-matrix error. It was baked with OptiX
+on the NVIDIA RTX 5070 Ti. Matched six-view images are
+`shots/astra-frame-before-centered/` and `shots/astra-frame13-centered/`.
+Root and Astra reviewed ready/tuck front, quarter and side views: the waist
+is less pinched, sleeves moderately slimmer, the accepted seat/tuck shape
+is retained, and no new elbow bulge was observed. This is a bounded proportion
+adjustment; the previously recorded waist fold and crotch contour concerns
+are not claimed resolved.
+
+A recurring dark inner-knee triangle initially prevented promotion. Exact
+posed-triangle picking identified post-bake rim-cap UVs spanning unrelated
+atlas islands: a roughly 22 mm face interpolated from u=.313 to .843, and
+another crossed approximately (.250,.563) to (.845,.017). Thus unrelated
+shape/atlas changes exposed distant dark ink despite unchanged knee geometry.
+`repair_small_rim_uvs` now marks generated small-rim caps and repairs only
+those with discontinuous charts, using a nearby neutral suit patch checked
+in albedo, AO and normal maps. A tiny nondegenerate UV fan remains inside the
+selected chart instead of collapsing its tangent basis to a single UV point.
+The final build repaired one generated cap; vertex drift was exactly zero.
+The pre/post UV-fix exports contain the same 9058 unique body positions,
+with no added, removed or moved positions. Delivery-map packing now follows
+this final repair so its full-resolution PNG inputs are not deleted early.
+The BMesh marker layer is created before fill operations to keep returned
+face references valid. These are generation fixes, not painted-over artifacts.
+
+`tests/drive/cloth-uv.spec.js` checks actual delivered, leg-owned triangles
+shorter than 50 mm for distant chart crossings. The pre-fix candidate fails
+on three triangles with UV spans .53-.81; the repaired candidate passes.
+Its negative control displaces an actual mesh UV by .6 and is caught by the
+same instrument. Logs: `/tmp/astra-cloth-uv-before.log` (expected failure)
+and `/tmp/astra-cloth-uv-after.log` (pass, including negative control).
+Fixed six-view captures confirm the dark knee mark is gone. The old blemished
+candidate images remain at `shots/astra-frame13-before-uv/`; exact picks are
+recorded in `/tmp/astra-frame13-pixels.json`.
+
+v113 source/assets/cache tags are synchronized. Final combined body, sole,
+grasp, spine and cloth-UV verification is assigned to root after promotion.
+Standard build command uses `--boots on` and an isolated `--out` path;
+required gates were not waived. Build log and failed-attempt evidence remain
+in `/tmp/astra-body-pass13/`.
+
+SHA-256 provenance:
+
+- Previous accepted v111 body (also served by v112):
+  `03fa343cd3135b1c86255ffc741e92264ab1db1ab3db3f04c6474f21157dd923`.
+- Proportion candidate before cap UV repair:
+  `814ab26be37cd73e329c92a4afdc132541aee4d83f4c56e89492544e91d9690a`.
+- Accepted v113 body:
+  `e8f5e01cf9adf2a93ebc9b0d373d13c9d89a9263848b96e8ff047a13c723aefe`.
+- Exact successful builder source:
+  `6f4ee9b8726dd302fa4149228d014bdda4c4d9deb96ec592ce15676f1a0694ef`.
+
+
+### Final v113 neutral-flight closure correction
+
+The first combined 24-case v113 render batch passed 23 cases but exposed the
+spine dose fixture's neutral-air maximum strain of 1.731 against the unchanged
+1.35 gate. Running the prior v111 body under the same current source reproduced
+exactly 1.731 (`/tmp/astra-dose-v111-same-source.log`), separating it from the
+proportion/UV changes. The earlier always-active airborne P13 closure omitted
+the authored upper-leg `BASE_Z` stations (+8 mm left / -8 mm right), pulling
+both neutral leg chains onto z=0 and deforming their shared skin at rest.
+
+The hip-anchor calculation now retains those per-side stations while keeping
+closure active at both exact airborne endpoints. This is a render-only anchor
+correction; the physics model, new body assets, and accepted poses remain.
+Focused dose, airborne endpoint, live grounded motion, air/ground grasp,
+chain and negative-control checks pass 7/7 in 20.1 seconds
+(`/tmp/astra-rest-offset-final.log`). Neutral max strain is now 1.004; worst
+airborne arm endpoint movement is 1.67 mm against the unchanged 10 mm gate.
+The optional `REVIEW_ASSET_DIR` hook in the spine fixture permits this same-source,
+different-body reproduction without changing the measured pose or thresholds.
+Root owns the remaining full-spine/sole verification and exact physics audit
+before refreshing the affected display goldens.
+
+
+Final v113 verification: all15 full-spine and actual toe/heel contact checks
+pass on the NVIDIA GPU (/tmp/astra-v113-spine-sole-final.log), following the
+7 focused neutral/endpoint/live-motion/grasp checks. The initial24-case run
+passed body, suit, UV/negative-control and grasp coverage; its one neutral
+failure was reproduced with the previous mesh and is resolved by the authored
+leg-station correction above, without changing the1.35 strain threshold.
+All98 unit tests pass. Exact gameplay audit:30 scenarios/5,408 frames,
+zero state differences;29 scenarios contain expected display-node changes.
+Display goldens deliberately recaptured under ADR0005 and verified30/30.
+Engine files remain unchanged. Known crotch/waist-fold and crash-onset concerns
+from the earlier checkpoint are retained; no full crash suite was repeated
+for this proportion follow-up.
+
+Live v113: http://buypower.lan.phq.org:8200/ . The latest proportion comparison
+against v112 is /shots/astra-frame-review.html on the same server, with matched
+ready/tuck front, quarter and side views. Port8201 is still the older snapshot.

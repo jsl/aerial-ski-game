@@ -6653,7 +6653,7 @@ SHELL_EASE = {'torso': 0.007, 'upperArm': 0.005, 'lowerArm': 0.005,
 # Item 4: the frame under the shell. Legs stay full (leg-dominant), the upper
 # body comes down. Calibrated against the measured tube radii — see the
 # SHELLFIT log line and docs/OPUS-NOTES.md.
-SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.78, 'lowerArm': 0.82,
+SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.70, 'lowerArm': 0.77,
               'upperLeg': 1.00, 'lowerLeg': 1.00}   # Fable exp-1: the shin was SLIMMED to 93 % while the thigh stayed at 100 % — the front-view thigh/shin ratio the author reads as 'huge thighs, skinny knees' was designed in. Tube = near-constant width: shin 1.00 (thigh untouched: slimming it stepped the hip end)
 # Torso slim as a function of `along`: the chest/trap end comes down, the hips
 # do not (chest circumference <= 1.05 x hip circumference).
@@ -8103,13 +8103,17 @@ def _fill_small_rims(bm, tag):
     local ragged rims at the outer thighs, hips and knees, so only loops
     that span at most RIM_LOOP_MAX are closed.
     """
+    marker = bm.faces.layers.int.get('astra_rim_patch') or bm.faces.layers.int.new('astra_rim_patch')
     filled = 0
     sizes = []
     for loop in _boundary_loops(bm):
         span = _loop_span(loop)
         sizes.append(round(span, 3))
         if span <= RIM_LOOP_MAX:
-            bmesh.ops.contextual_create(bm, geom=loop)
+            created = bmesh.ops.contextual_create(bm, geom=loop)
+            for face in created.get('faces', []):
+                if face.is_valid:
+                    face[marker] = 1
             filled += 1
     remain = sum(1 for e in bm.edges if len(e.link_faces) == 1)
     log(f'AFRAME WATERTIGHT: fill_small_rims[{tag}] {filled} loop(s) '
@@ -8117,6 +8121,86 @@ def _fill_small_rims(bm, tag):
         f'{remain} boundary edges remain')
     return filled
 
+
+def repair_small_rim_uvs(bm, tag, albedo_px):
+    """Give post-bake rim caps a coherent tiny patch in the nearby suit atlas.
+
+    contextual_create can inherit corner UVs from unrelated islands. On a
+    22 mm knee cap that spanned u=.313..843, the renderer sampled distant ink.
+    Mark only generated small-rim faces and repair those discontinuous charts;
+    preserve all vertices, weights, and the closed surface.
+    """
+    layer = bm.faces.layers.int.get('astra_rim_patch')
+    uv_layer = bm.loops.layers.uv.active
+    if layer is None or uv_layer is None or albedo_px is None:
+        return
+    span = lambda f: max((a[uv_layer].uv - b[uv_layer].uv).length
+                         for a in f.loops for b in f.loops)
+    targets = [f for f in bm.faces if f[layer] and span(f) > 0.15]
+    if not targets:
+        return
+    maps = {'albedo': albedo_px}
+    out_dir = os.path.dirname(OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT))
+    for name in ('ao', 'normal'):
+        image = bpy.data.images.load(os.path.join(out_dir, 'athlete_' + name + '.png'))
+        image.colorspace_settings.name = 'Non-Color'
+        pixels = np.empty(len(image.pixels), dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        maps[name] = (pixels, image.size[0], image.size[1])
+        bpy.data.images.remove(image)
+    def sample(name, uv):
+        pixels, width, height = maps[name]
+        x = max(0, min(width - 1, int(uv.x * width)))
+        y = max(0, min(height - 1, int(uv.y * height)))
+        offset = 4 * (y * width + x)
+        return pixels[offset:offset + 3]
+    def clean(uv):
+        for dx, dy in ((0, 0), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            q = uv + Vector((dx / RES, dy / RES))
+            color, normal = sample('albedo', q), sample('normal', q)
+            if min(color) < 0.45 or max(color) - min(color) > 0.20:
+                return False
+            if sample('ao', q)[0] < 0.80 or normal[2] < 0.85:
+                return False
+        return True
+    candidates = []
+    for f in bm.faces:
+        if f[layer] or span(f) > 0.10:
+            continue
+        uv = sum((l[uv_layer].uv for l in f.loops), Vector((0, 0))) / len(f.loops)
+        # Keep the tiny new chart strictly inside an existing valid chart.
+        edge_distances = []
+        for loop in f.loops:
+            a, b = loop[uv_layer].uv, loop.link_loop_next[uv_layer].uv
+            edge = b - a
+            if edge.length_squared < 1e-15:
+                edge_distances.append(0.0)
+                continue
+            t = max(0.0, min(1.0, (uv - a).dot(edge) / edge.length_squared))
+            edge_distances.append((uv - (a + t * edge)).length)
+        if min(edge_distances) < 1.5 / RES:
+            continue
+        if clean(uv):
+            candidates.append((f.calc_center_median(), uv, f))
+    before = {v: v.co.copy() for f in targets for v in f.verts}
+    for face in targets:
+        center = face.calc_center_median()
+        options = [(float((co - center).length), uv) for co, uv, other in candidates
+                   if (co - center).length < 0.12]
+        if not options:
+            raise SystemExit(f'[body] rim UV gate FAILED: no clean local suit patch for {tuple(center)}')
+        _, anchor = min(options, key=lambda item: item[0])
+        # A small, nondegenerate fan avoids a zero tangent basis while all
+        # maps still sample the same clean local garment patch.
+        for i, loop in enumerate(face.loops):
+            angle = 2 * math.pi * i / len(face.loops)
+            loop[uv_layer].uv = anchor + Vector((math.cos(angle), math.sin(angle))) * (0.45 / RES)
+        if span(face) > 2 / RES:
+            raise SystemExit('[body] rim UV gate FAILED: repaired chart is discontinuous')
+    drift = max((v.co - co).length for v, co in before.items())
+    if drift != 0:
+        raise SystemExit('[body] rim UV repair moved geometry')
+    log(f'rim UV repair[{tag}]: {len(targets)} generated caps assigned coherent local suit patches; vertex drift {drift:.2e}')
 
 def _gusset_region_finish(bm, tag, inseam_z, hip_z):
     """Fable (2026-09-01): the crotch/seat region of the delivered mesh is a
@@ -8447,6 +8531,7 @@ def close_boundary(mesh, tag, albedo_px=None):
             if _le:
                 bmesh.ops.collapse(bm, edges=_le, uvs=True)
     _gusset_region_finish(bm, tag, _inseam, _hip_z)
+    repair_small_rim_uvs(bm, tag, albedo_px)
     bm.to_mesh(mesh.data)
     bm.free()
     mesh.data.update()
@@ -12825,14 +12910,18 @@ def slim_waist_and_seat(body):
         arm = sum(g.weight for g in v.groups if any(n in names[g.group] for n in ('Arm', 'Shoulder', 'Elbow')))
         w = height * lateral * (1 - _shell_sstep((arm - 0.05) / 0.20))
         before = v.co.copy()
-        v.co.x *= 1 - 0.18 * w
+        # Restore waist breadth above the iliac region, while retaining
+        # the already accepted lean hip/seat width below it.
+        waist_restore = _shell_sstep((v.co.z + 0.24) / 0.16)
+        width_cut = 0.18 - 0.12 * waist_restore
+        v.co.x *= 1 - width_cut * w
         v.co.y *= 1 - 0.24 * w
         moved = (v.co - before).length
         if moved > 0.00001:
             count += 1
             maximum = max(maximum, moved)
     body.data.update()
-    log(f'lean waist/seat: {count} vertices, max {maximum * 1000:.1f} mm; width18% depth24% peak contraction')
+    log(f'lean waist/seat: {count} vertices, max {maximum * 1000:.1f} mm; width6% waist/18% seat, depth24% peak contraction')
 
 def reseat_inner_armpit(body):
     """Lift only the inner sleeve bridge toward the anatomical axilla.
@@ -15951,15 +16040,6 @@ def main():
     _alb_img = bpy.data.images.load(os.path.join(out_dir, 'athlete_albedo.png'))
     _alb_px = (_alb_img.pixels[:], _alb_img.size[0], _alb_img.size[1])
     bpy.data.images.remove(_alb_img)
-    packed = pack_delivery_maps(out_dir)
-    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
-        json.dump({
-            'normal': 'assets/athlete_normal.webp',
-            'ao': 'assets/athlete_ao.webp',
-            'albedo': 'assets/athlete_albedo.webp',
-            'res': RES, 'stats': stats, 'delivery': packed,
-            'faceForward': face['faceForward'],
-        }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -15975,6 +16055,18 @@ def main():
     # hidden interior geometry; the bake and the gates measure exactly what
     # they measured before, the delivered mesh is closed.
     close_boundary(low, 'pre-export', albedo_px=_alb_px)
+    # Cap UV selection reads all full-resolution bakes before delivery packing
+    # removes the intermediate PNGs. Geometry and skinning are already final.
+    packed = pack_delivery_maps(out_dir)
+    with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
+        json.dump({
+            'normal': 'assets/athlete_normal.webp',
+            'ao': 'assets/athlete_ao.webp',
+            'albedo': 'assets/athlete_albedo.webp',
+            'res': RES, 'stats': stats, 'delivery': packed,
+            'faceForward': face['faceForward'],
+        }, f, indent=1)
+
     orient_consistent(low, 'delivered mesh (pre-export)')
     watertight_gate(low, 'delivered mesh (pre-export)')
     bpy.ops.export_scene.gltf(

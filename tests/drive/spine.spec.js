@@ -27,6 +27,8 @@
 const { test, expect } = require('@playwright/test');
 
 async function boot(page) {
+    if (process.env.REVIEW_ASSET_DIR) await page.route('**/assets/athlete_body.glb*', route =>
+        route.fulfill({ path: require('node:path').join(process.env.REVIEW_ASSET_DIR, 'athlete_body.glb') }));
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function',
         null, { timeout: 30_000 });
