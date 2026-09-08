@@ -1,14 +1,9 @@
 'use strict';
 // ── Ready stance across the in-run (reviewer order 4) ─────────────────────────
-// While the athlete waits yawed across the fall line (readyState), renderer-side
-// (ADR-0002): both skis lie flat on the slope plane (rolled about their long
-// axis) with their lowest edges seated on the physics surface within 5 mm and
-// never below it; the torso stays vertical in world (≤ 3°); the uphill knee
-// flexes ≥ 10° more than the downhill knee; the hands hang beside the thighs
-// (|hand z − hip z| ≤ 3 cm). When ↑ starts the turn, readyTurnT completes back
-// into the normal in-run posture with both skis still on the snow (no
-// penetration; the run's pre-existing root seating float is documented and
-// gated at 9 cm until P1 reconciles the run's visual seating).
+// Across the hill, each visible uphill ski edge engages the snow slightly;
+// the opposite edge stays clear. Uphill knee flex follows the actual height
+// difference while the hips remain level and the torso upright. Launch still
+// returns smoothly to the downhill in-run posture (renderer only).
 const { test, expect } = require('@playwright/test');
 
 // Angular distance of heading a (deg) from target deg, folded to [0,180].
@@ -17,7 +12,7 @@ const foldDistTo = (a, target) => {
     return Math.abs(d);
 };
 
-test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at sides; turn returns in-run posture', async ({ page }) => {
+test('ready stance: ski edges engaged and seated, torso vertical, uphill knee, arms at sides; turn returns in-run posture', async ({ page }) => {
     await page.goto('/index.html');
     await page.waitForFunction(() => typeof window._getGameState === 'function');
     await page.waitForFunction(() => window._surfacesApplied !== undefined);
@@ -69,10 +64,10 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
         const flex = (t, s) => Math.abs(t.rotation.x - s.rotation.x);
         const flexL = flex(scene.getMeshByName('upperLegL'), scene.getMeshByName('lowerLegL'));
         const flexR = flex(scene.getMeshByName('upperLegR'), scene.getMeshByName('lowerLegR'));
-        // hands beside thighs: wrist (lowerArm −Y end) z vs hip (upperLeg) z, root-local
+        // Wrist is the lower arm +Y end; compare it to the thigh in the body frame.
         const handZ = (armName) => {
             const a = scene.getMeshByName(armName);
-            return a.position.z - 0.125 * Math.sin(a.rotation.x);
+            return a.position.z + 0.125 * Math.cos(a.rotation.z || 0) * Math.sin(a.rotation.x);
         };
         const hipZL = scene.getMeshByName('upperLegL').position.z;
         const hipZR = scene.getMeshByName('upperLegR').position.z;
@@ -99,10 +94,18 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
             const pA = tipW.x * A.x + tipW.y * A.y + tipW.z * A.z;
             skiHeadDeg[nm] = Math.atan2(pA, pF) * 180 / Math.PI;
         }
+        const hip = name => {
+            const m = scene.getMeshByName(name);
+            m.computeWorldMatrix(true);
+            return BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(0, .18, 0), m.getWorldMatrix());
+        };
+        const deltaHip = hip('upperLegL').subtract(hip('upperLegR'));
         return {
             readyState: g.readyState,
             readyTurnT: g.readyTurnT !== undefined ? g.readyTurnT : probe.readyTurnT,
             skiL: probe.skis.skiL, skiR: probe.skis.skiR,
+            legFit: { hipGapY: deltaHip.y,
+                hipGapZ: BABYLON.Vector3.Dot(deltaHip, root.getDirection(BABYLON.Axis.Z)) - .016 },
             torsoTiltDeg, skiRollDeg,
             flexL, flexR,
             handHipZL: Math.abs(handZ('lowerArmL') - hipZL),
@@ -114,14 +117,18 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
     expect(ready.readyState, 'game boots into the ready state').toBe(true);
     for (const ski of ['skiL', 'skiR']) {
         const s = ready[ski];
-        expect(s.worst, `${ski} lowest edge ≥ surface (no penetration)`).toBeGreaterThanOrEqual(0);
+        expect(s.worst, `${ski} engaged edge sinks no more than 3 mm`).toBeGreaterThanOrEqual(-0.003);
         expect(s.worst, `${ski} lowest edge within 5 mm of the surface`).toBeLessThanOrEqual(0.005);
         for (let i = 0; i < 5; i++) {
-            expect(s.samples[i], `${ski} sample ${i}`).toBeGreaterThanOrEqual(0);
+            expect(s.samples[i], `${ski} sample ${i}`).toBeGreaterThanOrEqual(-0.003);
             expect(s.samples[i], `${ski} sample ${i}`).toBeLessThanOrEqual(0.005);
         }
     }
-    expect(ready.skiRollDeg, 'ski rolled flat onto the slope plane').toBeLessThanOrEqual(2);
+    expect(ready.skiRollDeg, 'ski is edged relative to the snow').toBeGreaterThanOrEqual(8);
+    expect(ready.skiRollDeg, 'ski stays near horizontal across this slope').toBeLessThanOrEqual(18);
+    for (const ski of ['skiL', 'skiR']) expect(Math.min(...ready[ski].opposite)).toBeGreaterThan(.008);
+    expect(Math.abs(ready.legFit.hipGapY), 'uphill hip stays level').toBeLessThan(.003);
+    expect(Math.abs(ready.legFit.hipGapZ), 'uphill hip stays at its authored fore/aft station').toBeLessThan(.003);
     // iter-28 gates: the pair lies ACROSS the hill beside the boots while
     // waiting (measured 90.00°/90.00° on the fixed tree; was ≈0°).
     for (const nm of ['skiL', 'skiR']) {
@@ -131,12 +138,12 @@ test('ready stance: skis flat and seated, torso vertical, uphill knee, arms at s
             .toBeLessThanOrEqual(8);
     }
     expect(ready.torsoTiltDeg, 'torso vertical in world while waiting').toBeLessThanOrEqual(3);
-    // Ruling on 198 (19:55): the uphill knee bends ~15–20° in the on-slope
-    // ready stance (was ≥ 10°); negative control = the old stiff 12.7° stance.
-    expect(ready.flexL - ready.flexR, 'uphill knee flexes in the ruled 15–20° band')
-        .toBeGreaterThanOrEqual(15 * Math.PI / 180);
-    expect(ready.flexL - ready.flexR, 'uphill knee flexion stays ≤ 20°')
-        .toBeLessThanOrEqual(20 * Math.PI / 180);
+    // The old fixed15–20 degree thigh bend left the uphill hip high and
+    // forward. The author's slope-matched stance now uses both leg segments.
+    expect(ready.flexL - ready.flexR, 'uphill knee bends for the ski-height difference')
+        .toBeGreaterThanOrEqual(10 * Math.PI / 180);
+    expect(ready.flexL - ready.flexR, 'uphill knee remains a standing bend')
+        .toBeLessThanOrEqual(65 * Math.PI / 180);
     expect(ready.handHipZL, 'left hand beside the thigh (|Δz| ≤ 3 cm)').toBeLessThanOrEqual(0.03);
     expect(ready.handHipZR, 'right hand beside the thigh (|Δz| ≤ 3 cm)').toBeLessThanOrEqual(0.03);
 

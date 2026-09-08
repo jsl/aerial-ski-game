@@ -4,9 +4,9 @@
 // Promoted from tools/probe_leg_axis.js. Ready stance; per side, along the ski's
 // local frame (z increases toward the ski tail):
 //   G1 shin-through-cuff: |shinAtCuff.centreAlong - boot.cuffCentreAlong| <= 0.03 m
-//   G2 shin bands: each 5 cm band 0.10-0.30 m above the boot sole has its shin
-//      centre along the ski axis within +/-0.035 m of the cuff centre
-//   G3 boot station: cuff centre within +/-0.06 m of its fixed mounting station on the ski
+//   G2 shin bands: each 5 cm band 0.10-0.30 m above the boot sole stays
+//      within +/-0.035 m of the cuff-centred rendered shin axis
+//   G3 boot station: cuff axis at sole height stays within +/-0.06 m of its mounting station
 //      (guards against the 274 whole-block shift: boot heel -0.683 -> -0.796)
 //   NC: a synthetic +0.07 m shift applied to the shin readings must FAIL G1/G2.
 // RED on v100 (+0.072) and on the 274 build (+0.082) is REQUIRED before the
@@ -15,7 +15,8 @@
 const { test, expect } = require('@playwright/test');
 
 // 2026-09-07: an asymmetric alpine boot's bbox midpoint is not its ankle.
-// The cuff is measured in its own ski frame; the mounting station is z=0.
+// The full cuff is measured in its ski frame; project its rendered shin axis
+// to sole height for mounting station z=0. This allows natural uphill flex.
 // Keep the original 60 mm block-shift limit and the tighter shin/cuff gates.
 const CUFF_STATION = { L: 0, R: 0 };
 

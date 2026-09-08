@@ -1352,8 +1352,8 @@ def stripe_half_angle(name, radius):
     # real sleeve needs a wider angular span to retain its 40 mm blue panel.
     # Paint, relief, and the normal-map census use this same physical band.
     upper = name.startswith('upperArm')
-    cap = 0.75 if upper else STRIPE_DPHI_MAX
-    half_width = 0.030 if upper else STRIPE_HALF_W
+    cap = 0.78 if upper else STRIPE_DPHI_MAX
+    half_width = 0.031 if upper else STRIPE_HALF_W
     return min(half_width / max(radius, 1e-4), cap)
 
 
@@ -6653,41 +6653,25 @@ SHELL_EASE = {'torso': 0.007, 'upperArm': 0.005, 'lowerArm': 0.005,
 # Item 4: the frame under the shell. Legs stay full (leg-dominant), the upper
 # body comes down. Calibrated against the measured tube radii — see the
 # SHELLFIT log line and docs/OPUS-NOTES.md.
-SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.70, 'lowerArm': 0.77,
+SHELL_SLIM = {'torso': 1.00, 'upperArm': 0.60, 'lowerArm': 0.71,
               'upperLeg': 1.00, 'lowerLeg': 1.00}   # Fable exp-1: the shin was SLIMMED to 93 % while the thigh stayed at 100 % — the front-view thigh/shin ratio the author reads as 'huge thighs, skinny knees' was designed in. Tube = near-constant width: shin 1.00 (thigh untouched: slimming it stepped the hip end)
 # Torso slim as a function of `along`: the chest/trap end comes down, the hips
 # do not (chest circumference <= 1.05 x hip circumference).
 SHELL_TORSO_TOP_SLIM = 0.90
 SHELL_EXP = {'torso': 2.6}     # superellipse: a box with soft edges
-# SLOT 301 (TORSO1): the torso reads fat and box-sectioned (reviewer on v103:
-# width 47-49 cm armpits-to-hips with NO taper, depth 26-30 cm, exponent 2.6
-# box, flat back, biceps fused with the ribs). TORSO1=1 slims and tapers the
-# torso downstream of the shell; the DEFAULT is 0 (HEAD geometry) because the
-# slim torso trips two downstream class-change gates (fold population
-# lower-back 240/705 — the absolute-width bib swallows the slim waist — and
-# the belly-strip weight seam 1.453/1.1) that need a reviewer re-baseline
-# ruling (law 1); see entry 301. BODY_SABOTAGE_TORSO=1 (with TORSO1=1)
-# inflates the torso instead (gate NC: must fail, and does on all three).
-SHELL_EXP_TORSO1 = 2.1         # (c): a ribcage, not a box (spec 2.0-2.2)
-# Per-band reshape scales about the torso rung axis (build z, lateral, depth),
-# smoothstep-interpolated between control points, 1.0 outside the ends.
-# Chest slims modestly in width but hard in depth; the waist dips deep over
-# two full 5 cm bands (a V needs the floor to span the band whose max sets it);
-# the hem and the shoulder/neck fade to 1.0 so no shelf forms at either join.
-# Shape budget (see entry 301): a smoothstep rise R over N 2 cm rows reads a
-# slope-step of ~6R/N^2, so the waist floor (5 cm, set by band-max) plus the
-# spec's V needs the fall over ~11.5 cm and the rise over ~10.5 cm — each ONE
-# smoothstep between sparse control points (a mid-transition control point
-# would kink the slope back to 0). The hips slim modestly so the fall is
-# short enough for the STEP budget; the hem and shoulder fades sit outside
-# the measured rows.
+# TORSO1 keeps the ribcage shallow and smoothly blends its garment envelope.
+# The 2026-09-08 author request replaces the earlier pronounced V-taper with
+# a nearly straight slim outline. Waist width therefore tracks chest width;
+# the depth profile still preserves the accepted lean posterior seat.
+SHELL_EXP_TORSO1 = 2.1
+# (build z, lateral scale, depth scale), smoothstep between sparse stations.
 TORSO1_PROFILE = (
     (0.30, 1.00, 1.00),
     (0.20, 1.00, 1.00),
     (0.12, 0.95, 0.88),
     (0.055, 0.95, 0.80),
-    (-0.05, 0.65, 0.84),
-    (-0.10, 0.65, 0.85),
+    (-0.05, 0.82, 0.84),
+    (-0.10, 0.82, 0.85),
     (-0.215, 0.90, 0.95),
     (-0.26, 1.00, 1.00),
 )
@@ -9431,7 +9415,7 @@ def suit_shell_gate(body, shell, prop):
 
 BIDELTOID_GATE = 0.41                 # hard ceiling (m)
 BIDELTOID_TARGET = (0.38, 0.40)       # author's target band at standing 1.515
-CAP_OUTER_X = 0.198                   # post-fix outboard limit about the bone plane
+CAP_OUTER_X = 0.190                   # post-fix outboard limit about the bone plane
 
 
 def narrow_shoulders(body, level=False):
@@ -10135,7 +10119,7 @@ def _superellipse_pinch(c, s, n_old=2.6, n_new=SHELL_EXP_TORSO1):
 
 
 def torso_reshape_pass(body):
-    """Slot 301: slim + V-taper the torso about its own rung axis.
+    """Reshape the slim, near-straight trunk about its own rung axis.
 
     Moves torso geometry only (trunk-dominant + the inboard chest-wall sheet);
     arm shafts, head, legs, hem and neck stay exactly. TORSO1=0 skips (HEAD
@@ -10191,7 +10175,7 @@ def torso_reshape_pass(body):
 
 
 def torso_profile_gate(prof, shellprop):
-    """Slot 301 gate on the shipped torso. Strict iff TORSO1=1; with
+    """Straight-profile and physical continuity gates. Strict iff TORSO1=1; with
     TORSO1=0 the profile is logged (the before-state) and not enforced
     (precedent: KNEE_RING's threshold switch)."""
     if os.environ.get('TORSO1', '1') != '1':
@@ -10207,8 +10191,9 @@ def torso_profile_gate(prof, shellprop):
                    f'shoulder {sh * 1000:.0f} mm '
                    f'({0.55 * sh * 1000:.0f} mm)')
     ratio = prof['waistW'] / prof['chestW']
-    if not 0.74 <= ratio <= 0.84:
-        bad.append(f'waist/chest {ratio:.3f} outside 0.74-0.84 '
+    # User 2026-09-08 explicitly replaces the old V taper with a straight slim trunk.
+    if not 0.90 <= ratio <= 1.05:
+        bad.append(f'waist/chest {ratio:.3f} outside 0.90-1.05 (straight-outline request) '
                    f'(waist {prof["waistW"] * 1000:.0f}, chest '
                    f'{prof["chestW"] * 1000:.0f} mm)')
     if prof['step'] > 0.012:
@@ -12910,10 +12895,10 @@ def slim_waist_and_seat(body):
         arm = sum(g.weight for g in v.groups if any(n in names[g.group] for n in ('Arm', 'Shoulder', 'Elbow')))
         w = height * lateral * (1 - _shell_sstep((arm - 0.05) / 0.20))
         before = v.co.copy()
-        # Restore waist breadth above the iliac region, while retaining
-        # the already accepted lean hip/seat width below it.
+        # Preserve abdomen breadth and ease lateral hip pinching; the
+        # posterior seat remains contracted independently in depth.
         waist_restore = _shell_sstep((v.co.z + 0.24) / 0.16)
-        width_cut = 0.18 - 0.12 * waist_restore
+        width_cut = 0.10 * (1 - waist_restore)
         v.co.x *= 1 - width_cut * w
         v.co.y *= 1 - 0.24 * w
         moved = (v.co - before).length
@@ -12921,7 +12906,7 @@ def slim_waist_and_seat(body):
             count += 1
             maximum = max(maximum, moved)
     body.data.update()
-    log(f'lean waist/seat: {count} vertices, max {maximum * 1000:.1f} mm; width6% waist/18% seat, depth24% peak contraction')
+    log(f'lean waist/seat: {count} vertices, max {maximum * 1000:.1f} mm; width0% waist/10% hip, posterior depth retained, depth24% peak contraction')
 
 def reseat_inner_armpit(body):
     """Lift only the inner sleeve bridge toward the anatomical axilla.
@@ -12961,6 +12946,65 @@ def reseat_inner_armpit(body):
             maximum = max(maximum, dz)
     body.data.update()
     log(f'inner armpit reseated: {count} vertices, max {maximum * 1000:.1f} mm')
+
+def fair_outer_frame(body):
+    """User 2026-09-08: slim shoulder envelope and unscalloped outer knees.
+
+    Preserve joint centres, inner-leg clearance and posterior seat depth.
+    Smooth bounded displacement fields affect only the visible outer garment.
+    """
+    names = {g.index: g.name for g in body.vertex_groups}
+    original = [v.co.copy() for v in body.data.vertices]
+    moved_shoulder, moved_knee, max_shoulder, max_knee = 0, 0, 0.0, 0.0
+    for v in body.data.vertices:
+        p = v.co
+        shoulder = _shell_sstep((p.z + 0.10) / 0.13)
+        shoulder *= 1 - _shell_sstep((p.z - 0.18) / 0.11)
+        shoulder *= _shell_sstep((abs(p.x) - 0.085) / 0.080)
+        dx = 0.014 * shoulder
+        if dx > 1e-6:
+            p.x -= math.copysign(dx, p.x)
+            p.y *= 1 - 0.08 * shoulder
+            moved_shoulder += 1
+            max_shoulder = max(max_shoulder, (p - original[v.index]).length)
+    for side, sign in (('L', -1), ('R', 1)):
+        knee = bl('upperLeg' + side).z - SEGMENTS['upperLeg' + side]['h'] / 2
+        rows = {}
+        selected = []
+        for v in body.data.vertices:
+            ownership = sum(g.weight for g in v.groups if names[g.group] in
+                            ('upperLeg' + side, 'lowerLeg' + side, 'hlpKnee' + side))
+            if ownership < 0.65 or abs(v.co.z - knee) > 0.20 or sign * v.co.x < 0.10:
+                continue
+            k = round((v.co.z - knee) / 0.015)
+            rows[k] = max(rows.get(k, 0.0), sign * v.co.x)
+            selected.append(v.index)
+        if not rows:
+            continue
+        lo, hi = min(rows), max(rows)
+        filled = {k: rows.get(k, rows[min(rows, key=lambda j: abs(j-k))]) for k in range(lo, hi+1)}
+        smoothed = dict(filled)
+        for _ in range(20):
+            smoothed = {k: (0.50 * smoothed[k] + 0.25 * smoothed.get(k-1, smoothed[k])
+                           + 0.25 * smoothed.get(k+1, smoothed[k])) for k in smoothed}
+        delta = {k: max(-0.008, min(0.008, smoothed[k] - filled[k])) for k in filled}
+        for i in selected:
+            p = body.data.vertices[i].co
+            station = (p.z - knee) / 0.015
+            k = math.floor(station)
+            a = station - k
+            d = delta.get(k, 0.0) * (1-a) + delta.get(k+1, 0.0) * a
+            fade = 1 - _shell_sstep((abs(p.z-knee) - 0.12) / 0.07)
+            fade *= _shell_sstep((sign*p.x - 0.10) / 0.040)
+            d *= fade
+            p.x += sign*d
+            if abs(d) > 1e-6:
+                moved_knee += 1
+                max_knee = max(max_knee, abs(d))
+    body.data.update()
+    log(f'OUTER FRAME: shoulders {moved_shoulder} verts max {max_shoulder*1000:.1f} mm; '
+        f'knees {moved_knee} verts max {max_knee*1000:.1f} mm; joint/inner/seat stations unchanged')
+
 
 def finish_lowpoly(body, lm):
     """
@@ -13013,6 +13057,7 @@ def finish_lowpoly(body, lm):
 
     reseat_inner_armpit(body)
     slim_waist_and_seat(body)
+    fair_outer_frame(body)
 
     # Establish posed trunk ownership before zone classification. Final
     # helpers reassert it later, but the atlas must already separate it.

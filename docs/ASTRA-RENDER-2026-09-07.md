@@ -645,3 +645,141 @@ for this proportion follow-up.
 Live v113: http://buypower.lan.phq.org:8200/ . The latest proportion comparison
 against v112 is /shots/astra-frame-review.html on the same server, with matched
 ready/tuck front, quarter and side views. Port8201 is still the older snapshot.
+
+## Follow-up straight-frame pass: v114 (2026-09-08)
+
+The latest author review explicitly asks for a slimmer shoulder/biceps outline,
+a less inward abdomen, and a consistent slim outer contour through the hips and
+knees. This supersedes the old pronounced V-taper preference. The builder's
+former waist/chest requirement of 0.74–0.84 deliberately enforced the unwanted
+hourglass silhouette; it is now 0.90–1.05. Chest-depth and 12 mm slope-step
+integrity gates are unchanged. The accepted tuck and arm/leg drivers are not
+modified by this asset pass; the accompanying ready stance work is separate.
+
+Changes in accepted Frame14b:
+
+- Waist profile lateral scale 0.65→0.82; remove the extra 6% abdomen narrowing.
+  Measured waist/chest is 0.977, chest depth 206 mm, slope step 8.5 mm.
+- Ease lateral hip contraction 18%→10% to fill the side notch, while keeping
+  the accepted 24% posterior/depth contraction. This does not restore the
+  protruding rear seat.
+- Upper sleeve fit 0.70→0.60, forearm 0.77→0.71; fitted upperarm radius
+  47.7→41.7 mm. Deltoid outer limit 198→190 mm. A smooth spatial shoulder
+  envelope pass additionally moves 726 vertices by at most 16.2 mm, including
+  the rounded chest/shoulder bridge that the sleeve tube fit alone missed.
+- Fair only the outer knee envelope using a smoothed axial radius profile,
+  smoothly capped at 8 mm. 222 vertices move. Inner-leg clearance, joint
+  centres, depth, and seat geometry are excluded from this knee operation.
+- Preserve the blue upper sleeve panel on the slimmer surface: its shared
+  paint half-width 30→31 mm and angular cap 0.75→0.78 rad. The existing
+  40 mm measured stripe gate remains; delivered upper sleeve widths measure
+  46.5/40.9 mm. Leg and forearm stripe parameters are unchanged.
+
+The first scratch Frame14 used an incomplete invocation without `--boots on`;
+its preview therefore lacked the hard boot shells and was rejected. It was
+never promoted. The production build option remains unchanged: boots must be
+explicitly enabled. Early Frame14b attempts narrowly failed the 40 mm sleeve
+stripe gate (39.8–39.9 mm). Increasing the sleeve geometry factor and the generic
+stripe cap did not fix the active upper-sleeve paint path. Those trials were
+rejected; the accepted correction is to the actual shared `stripe_half_angle`
+upper-arm paint band, with no stripe gate waiver or anatomy inflation.
+
+Successful GPU invocation:
+
+```sh
+~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup \
+  --python blender/build_body.py -- \
+  --out assets/athlete_body.glb --res 2048 --boots on
+```
+
+The isolated build used `/tmp/astra-frame14b-candidate.py` with the repository
+`HERE` path set explicitly; the promoted builder restores its normal relative
+path resolution. Log: `/tmp/astra-frame14b-build.log`. All build integrity gates
+pass: 38/9679 slivers (0.393%), all declared fold zones represented at 1.93 mm
+mean relief, zero arm/trunk UV overlap, one coherent small-rim UV repair with
+zero vertex drift, 9098 body vertices, 23 bones, four equipment meshes including
+both boots, and exact written bind matrices. Hardware: OptiX NVIDIA GeForce
+RTX 5070 Ti; GPU browser review independently reports NVIDIA Vulkan ANGLE.
+
+Matched six-view review sets are `shots/astra-frame14-before/` (v113 assets) and
+`shots/astra-frame14b/` (accepted candidate), with old asset copies in
+`/tmp/astra-body-v113-before14/`. Front views show the straighter abdomen,
+narrower shoulder cape/sleeves, and less scalloped outer knees. Side views
+preserve the lean rear seat; tuck views preserve the accepted pose. A residual
+side waist fold remains visible and is not claimed fixed. Root reviewed and
+accepted the candidate before promotion; final runtime/body checks follow.
+
+SHA-256:
+
+- Prior v113 body: `e8f5e01cf9adf2a93ebc9b0d373d13c9d89a9263848b96e8ff047a13c723aefe`
+- v114 body: `18c26b34af966f2cd87c7ff00c6ee5ac45acf0d7db607961aa5c947e1db8d6c6`
+- Promoted builder: `2a897dac7fd4257129ba273655593f9cfd4633a7ae97912c8f8ac6d5cb4d3ed8`
+
+### v114 flexed-cuff instrument correction
+
+The new terrain-matched ready stance flexes the uphill shin about 24 degrees.
+The hard boot's upper lip is already weighted 100% to that shin, so it follows
+correctly while the sole remains ski-driven. The previous leg-axis instrument
+incorrectly sliced only the highest 12 mm of the posed lip (one side of a tilted
+ring), then compared every higher shin band to a single fixed ski-z coordinate.
+This reported 31 mm cuff and 53–58 mm band errors despite the correct flex.
+
+`tools/measure-leg-axis.js` now selects the complete upper ring in bind space,
+measures its actual posed centroid, and compares shin samples to the line
+anchored at that independent cuff centroid with the rendered lowerLeg driver
+direction. The cuff line is projected to sole height for the mounting-station
+gate. No cuff geometry, skin weights, pose, or runtime code changed. The
+30/35/60 mm gates are unchanged, as are the synthetic 70 mm shin displacement
+and actual rendered 120 mm boot displacement negative controls.
+
+All three GPU cases pass (`/tmp/astra-v114-cuff-axis.log`): shin/cuff residuals
+3.65/7.30 mm, worst uphill band residual 15.14 mm, and mounting station residuals
+5.45/3.43 mm. Both displacement controls still fail the physical gates as
+intended. This rederivation permits anatomical shin flex without allowing a
+translated boot or shin to hide behind its own fitted centre.
+
+### v114 terrain stance and final validation
+
+The latest author request explicitly replaces the flat ready ski bases with
+engaged edges and asks for uphill knee flex with a straight garment outline.
+The renderer now seats the actual visible ski sidecut/rocker, including its
+calibration offset, instead of the wider hidden driver box. Across the 22-degree
+slope it holds 12 degrees of edging relative to the snow: engaged-edge samples
+are -1.5 to +0.8 mm, and the opposite edges clear the snow by 16.6–18.8 mm.
+Edging fades as the hop turn faces downhill. Engine contact physics is unchanged.
+
+A two-bone uphill leg solve keeps the ankle fixed, closes the knee, preserves
+limb lengths and matches the downhill hip height and authored fore/aft station.
+The 60.6 mm terrain offset requires about 47.9 degrees of knee flex; the old
+fixed thigh rotation left the hip roughly 45 mm high and 120 mm forward.
+This correction fades through early tuck and the hop turn. Toe and heel remain
+attached; actual hop attachment drift measures 0.62 mm and 1.21 degrees.
+
+The ready fixture now independently measures rendered hip alignment and actual
+ski edges, replacing its obsolete flat-base and fixed 15–20-degree flex targets.
+Its hand probe now uses the wrist endpoint rather than the elbow. The hop
+fixture samples a baseline before input and measures the actual lower-shin
+ankle endpoint; its 5 mm / 3 degree attachment limits remain unchanged.
+Shallow edge engagement uses the existing 5 mm contact tolerance. New unit
+coverage exercises either uphill leg at three heights, fixed ankles, closed
+knees, unchanged skis and continuous fade to zero weight.
+
+Final evidence on v114:
+
+- Body, cloth UV, spine and knee-grasp GPU cases pass (23 cases).
+- Final ready stance and hop turn: 2/2 pass; boot-sole and ground/air tuck
+  attachment checks also pass. Corrected cuff instrument: 3/3 pass including
+  both displacement negative controls.
+- Unit suite: 100/100 pass.
+- Physics audit: 30 scenarios, 5408 frames, zero state differences. Only display
+  fields changed in 22 traces; explicit ADR0005 display recapture and subsequent
+  golden verification both pass 30/30. No engine or body-model changes.
+- Final motion capture: `shots/astra-motion-v114/`, NVIDIA RTX 5070 Ti Vulkan
+  renderer. Ready/tuck/release images and `tuck-cycle.webm` are available.
+- Matched body comparison: `shots/astra-frame-review.html`, v113/v114 assets
+  both rendered with the new stance. Live preview remains port 8200; port 8201
+  is the earlier stable snapshot.
+
+The side-waist fold remains visible. This follow-up did not rerun or resolve
+previously recorded crash rebound/onset concerns. The accepted lean seat and
+tuck poses remain the target; no claim of a perfectly straight side silhouette.

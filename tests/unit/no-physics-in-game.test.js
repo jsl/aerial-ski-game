@@ -36,6 +36,7 @@ const ALLOWED_FUNCTIONS = {
     makePBR:             'material factory — a StandardMaterial->PBR compat shim, renderer',
     _buildStyledSki:     'styled ski geometry/texture factory, parents children to the physics drivers — renderer',
     _inrunArmForward:    'in-run crouch arm-hold blend on the mesh drivers — renderer (ADR-0002)',
+    _fitReadyUphillLeg: 'fits a render leg between its ski ankle and the opposite hip; no gameplay state',
     _seatTorsoOnHips:    'translates the torso/head/arm drivers onto the hips the boot–ski pin left them off (author 23:40 crouch) — renderer (ADR-0002). It writes mesh transforms from mesh transforms, adds no state and never touches the physics state object.',
     _pinBootsToSkis:     'boot–ski seating fix-up on the mesh drivers after applyPose — renderer (ADR-0002)',
     _calibrateBootFit:   'one-shot measurement of where the skinned SOLE sits relative to the ski it is pinned to, and the matching slide of that ski\'s toe/heel blocks (author HUMAN TESTING #12 item 3) — renderer (ADR-0002). It reads vertex buffers and writes two child mesh positions; it holds no simulation state.',

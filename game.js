@@ -350,6 +350,10 @@ function _buildStyledSki(scene, driver, seg, assets) {
     vd.applyToMesh(vis);
     vis.material = assets.bodyMat;
     vis.parent   = driver;
+    // Actual sidecut/rocker samples, including the visible ski's fit offset.
+    // The hidden driver is wider and cannot seat an edged ski accurately.
+    driver._snowEdges = S.map(p => ({ z: p.z, y: p.bot, halfWidth: p.hw }));
+    driver._snowEdgeMesh = vis;
 
     // Binding under the boot line: toe piece ahead of the boot footprint,
     // heel piece behind it.
@@ -1500,6 +1504,49 @@ function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
 // both arm chains) onto the hips. The changing gap closes fully throughout
 // the hold; only the neutral stance offset fades at entry. This function is
 // used by grounded pose paths. Renderer-side only (ADR-0002).
+// Fit the shorter uphill leg between its pinned ankle and the same hip
+// height/fore-aft station as the downhill leg. The cuff can flex while the
+// dedicated boot sole remains rigidly clamped to its ski.
+function _fitReadyUphillLeg(meshes, weight) {
+    if (!(weight > 0)) return null;
+    const side = meshes.skiL.position.y >= meshes.skiR.position.y ? 'L' : 'R';
+    const other = side === 'L' ? 'R' : 'L';
+    const upper = meshes['upperLeg' + side], lower = meshes['lowerLeg' + side];
+    const down = meshes['upperLeg' + other];
+    const direction = m => ({ x: -Math.sin(m.rotation.z || 0),
+        y: Math.cos(m.rotation.z || 0) * Math.cos(m.rotation.x),
+        z: Math.cos(m.rotation.z || 0) * Math.sin(m.rotation.x) });
+    const dl = direction(lower), dd = direction(down);
+    const ankle = { x: lower.position.x - .18 * dl.x,
+        y: lower.position.y - .18 * dl.y, z: lower.position.z - .18 * dl.z };
+    const hipY = down.position.y + .18 * dd.y;
+    const hipZ = down.position.z + .18 * dd.z +
+        (BASE_Z['upperLeg' + side] || 0) - (BASE_Z['upperLeg' + other] || 0);
+    const dy = hipY - ankle.y, dz = hipZ - ankle.z;
+    const raw = Math.hypot(dy, dz);
+    if (raw < 1e-6) return null;
+    const thigh = .36 * Math.cos(upper.rotation.z || 0);
+    const shin = .36 * Math.cos(lower.rotation.z || 0);
+    const distance = Math.max(Math.abs(thigh - shin) + 1e-6, Math.min(thigh + shin - 1e-6, raw));
+    const along = (shin * shin - thigh * thigh + distance * distance) / (2 * distance);
+    const bend = Math.sqrt(Math.max(0, shin * shin - along * along));
+    const ky = ankle.y + dy / raw * along + dz / raw * bend;
+    const kz = ankle.z + dz / raw * along - dy / raw * bend;
+    const lowerAngle = Math.atan2(kz - ankle.z, ky - ankle.y);
+    const upperAngle = Math.atan2(hipZ - kz, hipY - ky);
+    const mix = (a, b) => a + weight * Math.atan2(Math.sin(b - a), Math.cos(b - a));
+    lower.rotation.x = mix(lower.rotation.x, lowerAngle);
+    upper.rotation.x = mix(upper.rotation.x, upperAngle);
+    const l = direction(lower), u = direction(upper);
+    for (const key of ['x', 'y', 'z']) {
+        lower.position[key] = ankle[key] + .18 * l[key];
+        upper.position[key] = ankle[key] + .36 * l[key] + .18 * u[key];
+    }
+    return { side, flex: Math.abs(upper.rotation.x - lower.rotation.x),
+        hipGapY: upper.position.y + .18 * u.y - hipY,
+        hipGapZ: upper.position.z + .18 * u.z - hipZ };
+}
+
 function _seatTorsoOnHips(meshes, tuck, armRaise) {
     const w = (tuck || 0) * (1 - (armRaise || 0));
     const t = meshes.torso;
@@ -2632,7 +2679,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=113";   // 113: balanced waist/sleeves and coherent rim UVs; 112: Retina scaling/camera help (same Lean11 assets); 111: lean waist and seat; 110: inner sleeve bridge reseated; 109: fitted torso/boot rig; 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=114";   // 114: straight slim frame and slimmer shoulder envelope; 112: Retina scaling/camera help (same Lean11 assets); 111: lean waist and seat; 110: inner sleeve bridge reseated; 109: fitted torso/boot rig; 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -3927,21 +3974,26 @@ void main(void) {
             const qS = sk.rotationQuaternion
                 ? sk.rotationQuaternion
                 : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, sk.rotation.x || 0);
-            const samples = [];
+            const samples = [], opposite = [];
+            const edgeMesh = sk._snowEdgeMesh;
+            const offset = edgeMesh ? edgeMesh.position : { x: 0, y: 0, z: 0 };
+            const flat = sk._snowEdges.filter(p => Math.abs(p.y + _skiHalfDims.y) < 1e-6);
             for (let i = 0; i < 5; i++) {
-                const s = -_skiHalfDims.z + (2 * _skiHalfDims.z) * (i / 4);
-                let worst = Infinity;
-                for (const e of [-_skiHalfDims.x, _skiHalfDims.x]) {
-                    const loc = _quatRotateVec(qS, new BABYLON.Vector3(e, -_skiHalfDims.y, s));
+                const p = flat[Math.round(i * (flat.length - 1) / 4)];
+                const clears = [];
+                for (const x of [-p.halfWidth, p.halfWidth]) {
+                    const loc = _quatRotateVec(qS, new BABYLON.Vector3(x + offset.x,
+                        p.y + offset.y, p.z + offset.z));
                     const off = _quatRotateVec(character.root.rotationQuaternion,
                         new BABYLON.Vector3(sk.position.x + loc.x, sk.position.y + loc.y, sk.position.z + loc.z));
-                    const clear = character.root.position.y + off.y -
-                        (terrainRootY(state.posZ + off.z) - FOOT_OFFSET);
-                    if (clear < worst) worst = clear;
+                    clears.push(character.root.position.y + off.y -
+                        (terrainRootY(state.posZ + off.z) - FOOT_OFFSET));
                 }
-                samples.push(+worst.toFixed(4));
+                samples.push(+Math.min(...clears).toFixed(4));
+                opposite.push(+Math.max(...clears).toFixed(4));
             }
-            r.skis[nm] = { worst: Math.min.apply(null, samples), samples: samples };
+            r.skis[nm] = { worst: Math.min(...samples), samples, opposite };
+
         }
         return r;
     };
@@ -11307,21 +11359,9 @@ void main(void) {
             }
         }
 
-        // ── Ready stance (reviewer order 4): skis flat on the slope plane ──
-        // Waiting across the fall line, both skis are rolled about their long
-        // axis so they lie FLAT on the slope plane, and the rendered root is
-        // seated so each ski's lowest edges rest on the physics surface
-        // (terrainRootY(z) - FOOT_OFFSET + 2 mm). The uphill (L) leg flexes at
-        // hip and knee for the side-stance look, with the thigh re-pinned to
-        // the unmoved shin so the boot/ski relationship is untouched.
-        // Display only (ADR-0002): state.rootY is physics state and is NOT
-        // touched here; as readyTurnT advances the seating blends into the
-        // run's own root seating (state.rootY + the FOOT_OFFSET*(1-cos) lift),
-        // so the ready→run handoff stays continuous. The leg fade and the
-        // quaternion hand-back at readyTurnT = 1 return the normal in-run
-        // posture. Deliberately free of computeWorldMatrix /
-        // TransformCoordinates / Quaternion.invert so the golden harness's
-        // inert Babylon stub executes the exact same numbers.
+        // Across-slope ready stance: engage the uphill edges, seat the
+        // visible ski sidecuts, then solve the uphill knee after boot pinning.
+        // Render transforms only; the physics root and surface are unchanged.
         if (readyState && readyTurnT < 1.0 && !_poolDiveMode &&
             !_trampolineMode && !_trampolineMatMode && !crashActive &&
             character.meshes.skiL && character.meshes.skiR &&
@@ -11333,7 +11373,10 @@ void main(void) {
             const _rEps  = 0.05;
             const _rDydz = (terrainRootY(state.posZ + _rEps) - terrainRootY(state.posZ - _rEps)) / (2 * _rEps);
             const _slope = Math.atan(Math.abs(_rDydz));   // slope magnitude at the athlete
-            // World-space target for each ski: lie flat ON the slope plane AND
+            // World-space target follows the skier's heading, with the
+            // uphill edge engaged 12 degrees into the across-slope stance.
+            // During the hop turn this fades to the slope plane.
+            // Previously the entire base lay flat ON the slope plane.
             // follow the body through the ready turn. Compose yaw INSIDE the
             // pitch (Rx∘Ry): once the ski length points across the hill, world X
             // is its own long axis, so the outer Rx rolls it about that axis and
@@ -11348,7 +11391,9 @@ void main(void) {
             // then cancelled the root's readyYaw, which is why the skis never
             // turned with the body.)
             const _skiYaw = Math.PI + ((1.0 - HOP_TURN.yawFrac(readyTurnT)) * (Math.PI / 2));
-            const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope)
+            const _edgeAngle = Math.min(_slope, 12 * Math.PI / 180)
+                * (1 - HOP_TURN.yawFrac(readyTurnT));
+            const qFlat  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, _slope - _edgeAngle)
                 .multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _skiYaw));
             const qRoot  = character.root.rotationQuaternion;
             // Ski-local roll+heading residual that composes with the yawed
@@ -11370,41 +11415,35 @@ void main(void) {
             const _delta   = _sideGap * Math.tan(_slope) * (1.0 - HOP_TURN.yawFrac(_u));
             character.meshes.skiL.position.y  += _delta;
             character.meshes.lowerLegL.position.y += _delta;
-            // Uphill-leg knee/hip flexion for the stance look (fades with the
-            // hop's yaw: the side stance is gone once the skis face downhill)
-            const _legF = 0.26 * (1.0 - HOP_TURN.yawFrac(_u));
-            if (_legF > 0.001) {
-                const _ul = character.meshes.upperLegL, _ll = character.meshes.lowerLegL;
-                _ul.rotation.x += 0.45 * _legF;
-                _ll.rotation.x -= 0.85 * _legF;
-                // Knee stays joined: shin bottom (ankle) rides its ski, the
-                // thigh centre follows so the knee joint stays closed.
-                const _cU = Math.cos(_ul.rotation.x), _sU = Math.sin(_ul.rotation.x);
-                const _cL = Math.cos(_ll.rotation.x), _sL = Math.sin(_ll.rotation.x);
-                _ul.position.y = _ll.position.y + 0.18 * _cL + 0.18 * _cU;
-                _ul.position.z = _ll.position.z + 0.18 * _sL + 0.18 * _sU;
-            }
-            // Roll both skis flat, then seat: lowest edge of the ski bottoms on
-            // the physics surface + 2 mm. Two passes converge (translation is
-            // linear in the root offset).
+            // The knee is solved from the actual ski-height difference
+            // after the sole pin, rather than adding a fixed thigh angle.
+            // Seat each visible uphill edge just into the snow. Sidecut
+            // leaves a small natural gap under the opposite edge; rockered
+            // tips remain clear. Independent seating handles fitted offsets.
+            const _localUp = _quatRotateVec(qRoot, new BABYLON.Vector3(0, 1, 0));
+            const _seatGain = _localUp.y - _rDydz * _localUp.z;
             for (let _it = 0; _it < 2; _it++) {
-                let _worst = Infinity;
-                const _rootY0 = character.root.position.y;
-                for (const _skName of ['skiL', 'skiR']) {
+                for (const _skName of ['skiR', 'skiL']) {
                     const _sk = character.meshes[_skName];
                     _sk.rotationQuaternion = qLocal;
-                    const _cx = _sk.position.x, _cy = _sk.position.y, _cz = _sk.position.z;
-                    for (let _i = 0; _i < 5; _i++) {
-                        const _s = -_skiHalfDims.z + (2 * _skiHalfDims.z) * (_i / 4);
-                        for (const _e of [-_skiHalfDims.x, _skiHalfDims.x]) {
-                            const _loc = _quatRotateVec(qLocal, new BABYLON.Vector3(_e, -_skiHalfDims.y, _s));
-                            const _off = _quatRotateVec(qRoot, new BABYLON.Vector3(_cx + _loc.x, _cy + _loc.y, _cz + _loc.z));
-                            const _clear = _rootY0 + _off.y - (terrainRootY(state.posZ + _off.z) - FOOT_OFFSET);
-                            if (_clear < _worst) _worst = _clear;
+                    const _vis = _sk._snowEdgeMesh;
+                    const _offset = _vis ? _vis.position : { x: 0, y: 0, z: 0 };
+                    let _worst = Infinity;
+                    for (const _p of _sk._snowEdges) {
+                        for (const _e of [-_p.halfWidth, _p.halfWidth]) {
+                            const _loc = _quatRotateVec(qLocal, new BABYLON.Vector3(
+                                _e + _offset.x, _p.y + _offset.y, _p.z + _offset.z));
+                            const _off = _quatRotateVec(qRoot, new BABYLON.Vector3(
+                                _sk.position.x + _loc.x, _sk.position.y + _loc.y, _sk.position.z + _loc.z));
+                            const _clear = character.root.position.y + _off.y -
+                                (terrainRootY(state.posZ + _off.z) - FOOT_OFFSET);
+                            _worst = Math.min(_worst, _clear);
                         }
                     }
+                    const _contact = -0.0015 * (1 - HOP_TURN.yawFrac(readyTurnT));
+                    if (_skName === 'skiR') character.root.position.y += _contact - _worst;
+                    else _sk.position.y += (_contact - _worst) / Math.max(0.1, _seatGain);
                 }
-                character.root.position.y += 0.002 - _worst;
             }
             // ── Hop-turn overlay (author spec, 2026-08-26; display only) ──────
             // Crouch/absorb: both knees fold about pinned ankles (each shin
@@ -11457,7 +11496,7 @@ void main(void) {
             _readyStance.last = { slope: _slope, blend: _blend, readyTurnT: _u,
                                   hop: _hop, flexK: _k, drop: _hopDrop,
                                   yawFrac: HOP_TURN.yawFrac(_u),
-                                  legF: _legF };
+                                  edgeAngle: _edgeAngle, legF: 0 };
         } else if (!crashActive && character.meshes.skiL && character.meshes.skiL.rotationQuaternion) {
             // Hand the skis back to the pose solver's euler rotations
             character.meshes.skiL.rotationQuaternion = null;
@@ -11492,36 +11531,16 @@ void main(void) {
                 _pinBootsToSkis(character.meshes, state.tuckAmount,
                                 state.grounded ? state.armRaise : 1);
             }
-            // Sol-8 (ready-stance knee flex): the pin derives both legs' rx
-            // from the ski pitch — physically right, a binding clamps boot to
-            // ski — so the stance block's knee term never survives into the
-            // measured flex; only its hip term does (0.45·legF = 0.117 rad,
-            // under the 0.1745 rad gate). Re-apply the stance flex AFTER the
-            // pin, entirely in the uphill THIGH term: the root/skis are
-            // already seated, and a thigh-pitch change moves only the thigh
-            // centre, so the seating gates stay exact.
-            // Fable (2026-09-01, #21 v5 residual snaps): the stance flex and the
-            // arm z-follow below were gated on a HARD threshold (tuck < 0.05),
-            // so entering the tuck switched both off in one frame — the
-            // remaining "back stretches funny" handoff snap. They now FADE with
-            // the tuck (fully on at 0, gone by tuck 0.25), which is continuous.
-            const _stanceW = readyState
+            // Fade the terrain-matched stance continuously into the tuck
+            // and hop turn. Both soles remain owned by the preceding pin.
+            const _stanceT = readyState
                 ? Math.max(0, Math.min(1, 1 - (state.tuckAmount || 0) / 0.25)) : 0;
-            if (readyState &&
-                _readyStance.last && _readyStance.last.legF > 0.001) {
-                const _ulL = character.meshes.upperLegL;
-                const _llL = character.meshes.lowerLegL;
-                if (_ulL && _llL) {
-                    // Replace only the earlier ready-stance increment. An
-                    // absolute shin+flex assignment erased the actual squat
-                    // thigh angle until tuck=.25, then jumped when it stopped.
-                    const _f = (_stanceW * 1.12 - 0.45) * _readyStance.last.legF;
-                    _ulL.rotation.x += _f;
-                    _ulL.position.y = _llL.position.y + 0.18 * Math.cos(_llL.rotation.x)
-                                    + 0.18 * Math.cos(_ulL.rotation.x);
-                    _ulL.position.z = _llL.position.z + 0.18 * Math.sin(_llL.rotation.x)
-                                    + 0.18 * Math.sin(_ulL.rotation.x);
-                }
+            const _stanceW = _stanceT * _stanceT * (3 - 2 * _stanceT);
+            if (readyState && _readyStance.last) {
+                const fit = _fitReadyUphillLeg(character.meshes, _stanceW *
+                    (1 - HOP_TURN.yawFrac(readyTurnT)));
+                _readyStance.last.legFit = fit;
+                _readyStance.last.legF = fit ? fit.flex : 0;
             }
             _seatTorsoOnHips(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1);
