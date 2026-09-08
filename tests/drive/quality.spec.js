@@ -204,7 +204,7 @@ test('the adaptive scaling fallback raises under load and restores with headroom
     await boot(page);
 
     // Drive the adapter's step function directly with synthetic frame times:
-    // 2 s over the 14 ms budget must raise the level, then 5 s of headroom
+    // 2 s over the 22 ms budget must raise the level, then 5 s of headroom
     // must snap it back to base. Deterministic — no wall-clock dependence.
     const r = await page.evaluate(() => {
         const Q = window._quality;
@@ -212,6 +212,12 @@ test('the adaptive scaling fallback raises under load and restores with headroom
         const realMax = Q.maxScaling;
         const start = engine.getHardwareScalingLevel();
         const raises0 = Q.raises, restores0 = Q.restores;
+        // A normal 60 Hz display must not be mistaken for overload.
+        Q.maxScaling = 2.0;
+        engine.setHardwareScalingLevel(Q.baseScaling);
+        for (let i = 0; i < 600; i++) Q.step(1000 / 60);
+        const normalScaling = engine.getHardwareScalingLevel();
+        const normalRaises = Q.raises - raises0;
         // Headless (DPR 1) has no headroom between base and the CSS floor, so
         // widen the ceiling to exercise the mechanism the retina path runs.
         // The whole sequence is synchronous so the live render loop cannot
@@ -223,17 +229,45 @@ test('the adaptive scaling fallback raises under load and restores with headroom
         const restored = engine.getHardwareScalingLevel();
         Q.maxScaling = realMax;
         return {
-            start, raised, restored,
+            start, raised, restored, normalScaling, normalRaises,
             raises: Q.raises - raises0,
             restores: Q.restores - restores0,
             base: Q.baseScaling,
         };
     });
 
-    expect(r.raises, '2 s of >14 ms frames must raise the scaling level').toBeGreaterThan(0);
+    expect(r.normalRaises).toBe(0);
+    expect(r.normalScaling).toBeCloseTo(r.base, 6);
+    expect(r.raises, '2 s of >22 ms frames must raise the scaling level').toBeGreaterThan(0);
     expect(r.raised).toBeGreaterThan(r.start);
     expect(r.restores, '5 s of headroom must walk the level back to base').toBeGreaterThan(0);
     expect(r.restored).toBeCloseTo(r.base, 6);
+});
+
+test('Retina keeps twice the canvas resolution at normal 60 Hz', async ({ browser }) => {
+    const context = await browser.newContext({ deviceScaleFactor: 2,
+        viewport: { width: 320, height: 220 } });
+    try {
+        const page = await context.newPage();
+        await page.goto('http://127.0.0.1:' + (process.env.DRIVE_PORT || '8099') + '/index.html');
+        await page.waitForFunction(() => window._quality);
+        const result = await page.evaluate(() => {
+            const engine = BABYLON.EngineStore.LastCreatedScene.getEngine();
+            const Q = window._quality;
+            // First restore any quality lost while shader compilation warms up.
+            for (let i = 0; i < 400; i++) Q.step(1000 / 60);
+            const raises = Q.raises;
+            for (let i = 0; i < 600; i++) Q.step(1000 / 60);
+            const canvas = document.getElementById('renderCanvas');
+            return { scaling: Q.scaling, raises: Q.raises - raises,
+                width: canvas.width, cssWidth: canvas.clientWidth,
+                height: canvas.height, cssHeight: canvas.clientHeight };
+        });
+        expect(result.scaling).toBe(0.5);
+        expect(result.raises).toBe(0);
+        expect(result.width).toBe(result.cssWidth * 2);
+        expect(result.height).toBe(result.cssHeight * 2);
+    } finally { await context.close(); }
 });
 
 test('frame-time budget: 300 frames stay inside the simulation guard', async ({ page }) => {

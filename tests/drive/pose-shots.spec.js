@@ -6,7 +6,7 @@
 // generator, and it also asserts the athlete is actually IN frame so a camera
 // that drifts off the body cannot leave a stale-looking shot behind.
 //
-// The pose is set with window._poseProbe and then held: the render loop is
+// The shipped pose composition is set with _airHold/_inrunHold and then held: the render loop is
 // stopped BEFORE the probe and one synchronous render is issued after it,
 // because the game re-applies its own pose every frame and would otherwise
 // overwrite the probe before the screenshot lands (the same hazard
@@ -77,8 +77,12 @@ test.describe('canonical pose shots', () => {
                     // torso seat, arm hold). _poseProbe alone draws a pose the
                     // player never sees (author 23:40).
                     const hold = () => scene.onBeforeRenderObservable.addOnce(() => {
-                        if (pose.grounded && window._inrunHold) window._inrunHold(pose.tuck);
-                        else window._poseProbe(pose.tuck, pose.grounded, pose.pike);
+                        if (pose.grounded) window._inrunHold(pose.tuck);
+                        else window._airHold(pose.tuck, pose.pike);
+                        // The real frame loop refreshes these after the pin,
+                        // seat and arm corrections. This observer runs last,
+                        // so refresh here too before the skeleton is drawn.
+                        window._spineProbe();
                     });
                     hold(); scene.render();
                     const parts = scene.meshes.filter(m => m.name

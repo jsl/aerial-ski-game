@@ -169,7 +169,7 @@ var _styledSkiAssets = null;   // shared topsheet atlas + materials for both ski
 // a rounded shovel rising ≈5.5 cm over the front ≈18 cm, a slightly lifted
 // flat tail, thickness 1.6 cm underfoot tapering to ≈1 cm, a generic painted
 // topsheet (DynamicTexture — colours and shapes only, no marks), dark
-// sidewalls, a matte base, plus toe/heel binding pieces and a brake bar.
+// sidewalls, a matte base, plus toe/heel binding pieces.
 //
 // Invariants the drive specs hold (rig.spec.js "styled skis"):
 //   • every vertex sits ON or ABOVE the driver box bottom plane y=-seg.h/2 —
@@ -352,11 +352,10 @@ function _buildStyledSki(scene, driver, seg, assets) {
     vis.parent   = driver;
 
     // Binding under the boot line: toe piece ahead of the boot footprint,
-    // heel piece behind it, brake bar spread across the tail deck.
+    // heel piece behind it.
     const toeH = 0.032, heelH = 0.034;
     const toeY = profile(-0.205).top + toeH / 2;
     const heelY = profile(0.245).top + heelH / 2;
-    const brakeY = profile(0.315).top + 0.004;
 
     const toe = BABYLON.MeshBuilder.CreateBox(seg.name + '_toe',
         { width: 0.078, height: toeH, depth: 0.13 }, scene);
@@ -367,11 +366,6 @@ function _buildStyledSki(scene, driver, seg, assets) {
         { width: 0.09, height: heelH, depth: 0.115 }, scene);
     heel.parent = driver; heel.position.set(0, heelY, 0.245);
     heel.material = assets.bindMat;
-
-    const brake = BABYLON.MeshBuilder.CreateBox(seg.name + '_brake',
-        { width: 0.20, height: 0.0075, depth: 0.05 }, scene);
-    brake.parent = driver; brake.position.set(0, brakeY, 0.315);
-    brake.material = assets.bindMat;
 
     return vis;
 }
@@ -1073,7 +1067,14 @@ function updateSpineChain(meshes) {
     // Bound local curvature while preserving the requested bend proportions
     // and zero-sum closure; a neutral spine is still exactly its bind frame.
     const turn = Math.max(Math.abs(d[1] - d[0]), Math.abs(d[2] - d[1]));
-    if (turn > SPINE_BEND_STEP) d = d.map(a => a * SPINE_BEND_STEP / turn);
+    // Keep the small-angle response exactly linear, then approach the bound
+    // with a matching first derivative. A hard clamp here made the vertebrae
+    // abruptly stop bending partway into the tuck, despite continuous joints.
+    const softStart = SPINE_BEND_STEP / 2;
+    if (turn > softStart) {
+        const softTurn = softStart + softStart * Math.tanh((turn - softStart) / softStart);
+        d = d.map(a => a * softTurn / turn);
+    }
     if (typeof window !== 'undefined') {
         // Switches for spine.spec.js. _spineOff reproduces the OLD single rigid
         // torso bone exactly; _spineForce bends the chain by a fixed amount
@@ -1273,7 +1274,10 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     {
         const sTuck  = 4 * tuck * (1 - tuck);
         const sBlend = Math.max(sTuck, pikeAmount > 0 ? 1 : 0);
-        if (sBlend > 0) {
+        // Airborne skis derive from this closed leg chain at every blend,
+        // including exact endpoints. Switching back to the authored endpoint
+        // rows introduced an 8 mm knee jump, amplified by the hand-wrap IK.
+        if (sBlend > 0 || grounded === false) {
         const torso = meshes.torso;
         if (torso) {
             const trx = torso.rotation.x;
@@ -1375,6 +1379,56 @@ function _alignShoulderChains(nodes, solved = false) {
             - (up.z - 0.150 * c * Math.sin(rx));
         up.y += dy; up.z += dz;
         lp.y += dy; lp.z += dz;
+    }
+}
+
+// Keep the anatomical shoulder attachment while wrapping the hands around
+// the tuck's kneecaps. Solve the two physical arm lengths in 3D;
+// preserve the existing elbow bend plane and fade the target continuously.
+function _graspTuckKnees(meshes, tuck, pike = 0) {
+    const t = Math.max(0, Math.min(1, tuck)) * (1 - Math.max(0, Math.min(1, pike)));
+    const w = t * t * (3 - 2 * t);
+    if (w <= 0) return;
+    const dir = m => [-Math.sin(m.rotation.z), Math.cos(m.rotation.z) * Math.cos(m.rotation.x), Math.cos(m.rotation.z) * Math.sin(m.rotation.x)];
+    const end = (m, h) => { const d = dir(m); return [m.position.x + h*d[0], m.position.y + h*d[1], m.position.z + h*d[2]]; };
+    for (const side of ['L', 'R']) {
+        const upper = meshes['upperArm' + side], lower = meshes['lowerArm' + side], leg = meshes['upperLeg' + side];
+        if (!upper || !lower || !leg) continue;
+        const shoulder = end(upper, -0.15), elbow = end(upper, 0.15);
+        const wrist = end(lower, 0.125), knee = end(leg, -0.18);
+        const target = wrist.map((v, i) => v + w * (knee[i] - (i === 2 ? 0.025 : 0) - v));
+        let delta = target.map((v, i) => v - shoulder[i]);
+        const rawD = Math.hypot(...delta);
+        if (rawD < 1e-8) continue;
+        const axis = delta.map(v => v / rawD);
+        const d = Math.max(0.050001, Math.min(0.549999, rawD));
+        const along = (0.30*0.30 - 0.25*0.25 + d*d) / (2*d);
+        const radius = Math.sqrt(Math.max(0, 0.30*0.30 - along*along));
+        const oldBend = elbow.map((v,i) => v - shoulder[i]);
+        const projection = oldBend.reduce((a,v,i) => a + v*axis[i], 0);
+        let bend = oldBend.map((v,i) => v - projection*axis[i]);
+        let norm = Math.hypot(...bend);
+        if (norm < 1e-8) {
+            const seed = Math.abs(axis[0]) < 0.9 ? [1,0,0] : [0,0,1];
+            const dot = seed.reduce((a,v,i) => a + v*axis[i], 0);
+            bend = seed.map((v,i) => v - dot*axis[i]); norm = Math.hypot(...bend);
+        }
+        const joint = shoulder.map((v,i) => v + along*axis[i] + radius*bend[i]/norm);
+        const reached = shoulder.map((v,i) => v + d*axis[i]);
+        const write = (mesh, a, b, length) => {
+            const unit = b.map((v,i) => (v-a[i])/length);
+            // Fade the solve itself too: the authored arm may have a small
+            // lateral elbow offset, which must not snap shut at tuck > 0.
+            mesh.position.x += w * ((a[0]+b[0])/2 - mesh.position.x);
+            mesh.position.y += w * ((a[1]+b[1])/2 - mesh.position.y);
+            mesh.position.z += w * ((a[2]+b[2])/2 - mesh.position.z);
+            const rx = Math.atan2(unit[2], unit[1]);
+            const rz = -Math.asin(Math.max(-1, Math.min(1, unit[0])));
+            mesh.rotation.x += w * Math.atan2(Math.sin(rx - mesh.rotation.x), Math.cos(rx - mesh.rotation.x));
+            mesh.rotation.z += w * Math.atan2(Math.sin(rz - mesh.rotation.z), Math.cos(rz - mesh.rotation.z));
+        };
+        write(upper, shoulder, joint, 0.30);
+        write(lower, joint, reached, 0.25);
     }
 }
 
@@ -1733,8 +1787,7 @@ function _calibrateBootFit(meshes) {
         const vis = scn.getMeshByName('ski' + side + '_vis');
         const toe = scn.getMeshByName('ski' + side + '_toe');
         const heel = scn.getMeshByName('ski' + side + '_heel');
-        const brake = scn.getMeshByName('ski' + side + '_brake');
-        for (const m of [vis, toe, heel, brake]) if (m) m.position.x = fit[side].dx;
+        for (const m of [vis, toe, heel]) if (m) m.position.x = fit[side].dx;
         // Forward on a ski is -z, so the toe block's REAR face meets the sole's
         // toe and the heel block's FRONT face meets its heel; _BOOT_SKI.clamp
         // is the overlap a real binding has onto the boot's lugs.
@@ -2037,8 +2090,9 @@ function _startGame() {
     // ── P12: render at device pixel ratio, with an adaptive fallback ────────
     // A CSS pixel is not a hardware pixel on hi-dpi displays; rendering at 1x
     // CSS resolution is the "visibly soft image" tell. The multiplier is
-    // capped at 2 because beyond that the eye buys nothing. The per-frame
-    // adapter is the safety valve: if the frame time overshoots the 14 ms
+    // capped at 2 to bound fill cost. The per-frame adapter only treats
+    // sustained frames above 22 ms as overload; normal 60 Hz (16.7 ms)
+    // presentation must retain Retina detail. If it overshoots that
     // budget for 2 s, the scaling level walks up — first giving back the
     // extra device pixels, never dropping below full CSS resolution — and
     // walks back to base after 5 s of headroom, so a transient stall (shader
@@ -2046,7 +2100,7 @@ function _startGame() {
     const _quality = {
         baseScaling: 1 / Math.min(window.devicePixelRatio || 1, 2),
         maxScaling: 1.0,   // the fallback never renders below CSS resolution
-        slowMs: 0,         // ms accumulated over the 14 ms budget
+        slowMs: 0,         // ms accumulated over the 22 ms overload threshold
         fastMs: 0,         // ms accumulated under it
         raises: 0,
         restores: 0,
@@ -2065,7 +2119,7 @@ function _startGame() {
             _quality.armed = true;
         }
         const lvl = engine.getHardwareScalingLevel();
-        if (dtMs > 14) {
+        if (dtMs > 22) {
             _quality.fastMs = 0;
             _quality.slowMs += dtMs;
             if (_quality.slowMs >= 2000 && lvl < _quality.maxScaling) {
@@ -2575,7 +2629,7 @@ void main(void) {
         env: scene.environmentIntensity,
     });
     // Bump this whenever assets/ is regenerated.
-    const ASSET_V = "?v=109";   // 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
+    const ASSET_V = "?v=112";   // 112: Retina scaling/camera help (same Lean11 assets); 111: lean waist and seat; 110: inner sleeve bridge reseated; 109: fitted torso/boot rig; 104: F9 LEG SHEET (lean legs, knee bridge);   // 100: assets rebuilt WITH boots (266 shipped bare feet);   // 99: 266 legs 1 (shell fitted-row clamp + 0.75 aspect floor, shin SHELL_CURV 0.55); 98: 264 boots details
     // multipliers — which is the property that makes them safe. An additive
     // baked term double-counts light the runtime already renders (that is what
 
@@ -3421,6 +3475,11 @@ void main(void) {
                      return _mc === -Infinity ? null : +_mc.toFixed(4);
                  })(),
                  lieDur: ragdoll.lieDur !== undefined ? ragdoll.lieDur : null,
+                 rateLimit: ragdoll._rateLimit || null,
+                 constraintErrors: window._crashConstraintAudit ? Object.fromEntries(
+                     ragdoll.hard.map(hp => [hp.a.name + '/' + hp.b.name,
+                         Math.hypot(hp.a.p.x - hp.b.p.x, hp.a.p.y - hp.b.p.y,
+                             hp.a.p.z - hp.b.p.z) - hp.rest])) : undefined,
                 // 294: the body-CENTRE clearance (torso particle vs the
                 // crash floor) for the lie-down t→clearance curve, plus
                 // the hinge states the 261 gates classify (propped chains
@@ -4081,12 +4140,19 @@ void main(void) {
     window._airHold = function (tuck, pikeAmount) {
         const M = character.meshes;
         applyPose(M, tuck, 1, 1, 0, 0, 0, false, pikeAmount || 0, 0);
+        // The real airborne frame hands the skis back from the ready stance's
+        // terrain quaternion to the pose's Euler rotation before pinning.
+        // A hold entered from ready must make that same handoff; otherwise a
+        // pike is pinned to the standing ski angle and the hips appear torn.
+        for (const side of ['L', 'R']) M['ski' + side].rotationQuaternion = null;
         // The frame loop's airborne order (see the render-step block):
         // pin → seat → arm-forward. armRaise is 1 airborne (the held
         // overhead base pose), squat 0.
         _pinBootsToSkis(M, tuck, 1);
         _seatTorsoOnHips(M, tuck, 1);
         _inrunArmForward(M, tuck, 1, 0);
+        _graspTuckKnees(M, tuck, pikeAmount || 0);
+        updateSpineChain(M);
         return true;
     };
 
@@ -4106,6 +4172,8 @@ void main(void) {
         _pinBootsToSkis(M, t, 0);
         _seatTorsoOnHips(M, t, 0);
         _inrunArmForward(M, t, 0, s);
+        _graspTuckKnees(M, t, 0);
+        updateSpineChain(M);
         const seg = (n) => {
             const m = M[n];
             return { y: m.position.y, z: m.position.z, rx: m.rotation.x };
@@ -7005,7 +7073,7 @@ void main(void) {
                 _hx.x = _nk.p.x + _hdx * _hs;
                 _hx.y = _nk.p.y + _hdy * _hs;
                 _hx.z = _nk.p.z + _hdz * _hs;
-                const _hsurf = _crashFloorY(_hx.z) + _hx.r;
+                const _hsurf = _crashFloorY(_hx.z) + R.byName.headTop.r;
                 if (_hx.y < _hsurf) {
                     const _Lh = R.headRest;
                     const _ux = (_hx.x - _nk.p.x) / _Lh;
@@ -7274,9 +7342,61 @@ void main(void) {
             _B.prev.z = _B.p.z - (_jvz + _rz);
         }
     };
+    // Preserve slide translation while damping rapid internal folds caused by
+    // terrain/length projection. Vertical fall caps alone cannot constrain a
+    // neck or elbow when its supporting torso is also rotating on curved snow.
+    const _crashLimitRollRates = function (R, before, dt) {
+        if (!before || R.looseGroundRest || _crashLieV4() || window._crashRateLimitDisabled) return;
+        const pairs = [
+            ['neck', 'torsoBottom', 'headTop'],
+            ['kneeL', 'hipL', 'ankleL'], ['kneeR', 'hipR', 'ankleR'],
+            ['elbowL', 'shL', 'wristL'], ['elbowR', 'shR', 'wristR'],
+        ];
+        const angle = (points, names) => {
+            const j = points[names[0]], a = points[names[1]], b = points[names[2]];
+            const ax = a.x-j.x, ay = a.y-j.y, az = a.z-j.z;
+            const bx = b.x-j.x, by = b.y-j.y, bz = b.z-j.z;
+            const den = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz);
+            return Math.acos(Math.max(-1, Math.min(1, (ax*bx+ay*by+az*bz) / Math.max(1e-12, den))));
+        };
+        const after = Object.fromEntries(R.parts.map(pt => [pt.name, pt.p]));
+        const maxTurn = Math.max(...pairs.map(pair => Math.abs(angle(after, pair)-angle(before, pair))));
+        // A rendered frame may drain three 120 Hz steps after two on the
+        // preceding frame. Leave room for that cadence in the late motion,
+        // keeping the displayed rate below the existing 90 degrees/s limit.
+        const budget = (R.t - R.rollAt <= 1 ? 170 : 50) * Math.PI / 180 * dt;
+        if (maxTurn <= budget) return;
+        const blend = budget / maxTurn;
+        const shift = { x: 0, y: 0, z: 0 };
+        for (const pt of R.parts) for (const axis of ['x', 'y', 'z']) {
+            shift[axis] += (pt.p[axis] - before[pt.name][axis]) / R.parts.length;
+        }
+        let floorLift = 0;
+        for (const pt of R.parts) {
+            for (const axis of ['x', 'y', 'z']) {
+                const base = before[pt.name][axis] + shift[axis];
+                pt.p[axis] = base + (pt.p[axis] - base) * blend;
+            }
+            floorLift = Math.max(floorLift, _crashFloorY(pt.p.z) + pt.r - pt.p.y);
+        }
+        // A per-particle floor clamp after rate limiting could stretch the
+        // short neck constraint every tick at the roll-out. Lift this bounded
+        // pose as one piece instead; the next ordinary contact/length solve
+        // continues draping the body onto the terrain. Uniform translation
+        // preserves both hinge angles and the solved segment lengths.
+        if (floorLift > 0) {
+            for (const pt of R.parts) {
+                pt.p.y += floorLift;
+                if (pt.p.y <= _crashFloorY(pt.p.z) + pt.r + 1e-6) pt._vy = 0;
+            }
+        }
+        R._rateLimit = { count: (R._rateLimit ? R._rateLimit.count : 0) + 1,
+            maxRawRate: Math.max(R._rateLimit ? R._rateLimit.maxRawRate : 0, maxTurn / dt),
+            maxFloorLift: Math.max(R._rateLimit ? R._rateLimit.maxFloorLift || 0 : 0, floorLift) };
+    };
     function _crashRagdollTick(R, dt) {
-
-
+        const beforeRoll = (R.phase === 'roll' || R.phase === 'settling') && !R.looseGroundRest && !_crashLieV4()
+            ? Object.fromEntries(R.parts.map(pt => [pt.name, { ...pt.p }])) : null;
         R.t += dt;
         // When the hard freeze has fired (R.phase leaves 'tumble'), the
         // ragdoll pose is FROZEN in world space — but the physics root KEEPS
@@ -7294,6 +7414,7 @@ void main(void) {
         const nSub = dt > 0.026 ? 3 : 2;
         const h = dt / nSub;
         for (let s = 0; s < nSub; s++) {
+            const snowContacts = new Set();
             for (const pt of R.parts) {
                 // Linear damping raised 0.996 → 0.99 (human item 2: total
                 // ragdoll motion after impact ≈ 2–3 s, then still).
@@ -7330,6 +7451,7 @@ void main(void) {
                 for (const pt of R.parts) {
                     const surf = _crashFloorY(pt.p.z) + pt.r;
                     if (pt.p.y < surf) {
+                        snowContacts.add(pt);
                         pt.p.y = surf;
                         const vx = pt.p.x - pt.prev.x, vz = pt.p.z - pt.prev.z;
                         const vH = Math.sqrt(vx * vx + vz * vz);
@@ -7522,7 +7644,7 @@ void main(void) {
                 // reads as tilted back, not sunk. If even vertical cannot
                 // clear (neck itself too deep), it lands on vertical — the
                 // best achievable — and the contact loop handles the rest.
-                const _hsurf = _crashFloorY(_hx.z) + _hx.r;
+                const _hsurf = _crashFloorY(_hx.z) + R.byName.headTop.r;
                 if (_hx.y < _hsurf) {
                     const _Lh = R.headRest;
                     const _ux = (_hx.x - _nk.p.x) / _Lh;
@@ -7543,6 +7665,10 @@ void main(void) {
                     }
                 }
             }
+            // Shape/neck polishing follows the final floor projection. Do
+            // not turn its small lift of a contacting point into new upward
+            // Verlet velocity on the next substep.
+            for (const pt of snowContacts) pt.prev.y = pt.p.y;
         }
         }
         // ── Skis: flat slide on the surface, yaw spin, come to rest ───────
@@ -7884,7 +8010,7 @@ void main(void) {
                 // projected solve: lengths, then the floor again (a constraint can
                 // push a grounded neighbour under the snow — measured 18.6 cm);
                 // the #20 control keeps the old single pass without the floor
-                for (let _it = 0; _it < (R.looseGroundRest ? 1 : 2); _it++) {
+                for (let _it = 0; _it < (R.looseGroundRest ? 1 : 6); _it++) {
                     for (const hp of R.hard) {
                         const a = hp.a.p, b = hp.b.p;
                         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -7899,6 +8025,7 @@ void main(void) {
                         if (pt.p.y < _fy) { pt.p.y = _fy; pt._vy = 0; }
                     }
                 }
+                _crashLimitRollRates(R, beforeRoll, dt);
                 R.maxSpeed = _vH;
                 } else if (R._lieFrozen) {
                     // v4 frozen tail: the pose is set (every joint rate went
@@ -7964,7 +8091,7 @@ void main(void) {
             // below is a no-op for it) — skip it explicitly.
             if (!_crashLieV4()) {
                 _crashGravitySettle(R, dt);
-                for (let _it = 0; _it < 2; _it++) {
+                for (let _it = 0; _it < 6; _it++) {
                     for (const hp of R.hard) {
                         const a = hp.a.p, b = hp.b.p;
                         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -7979,6 +8106,7 @@ void main(void) {
                     }
                 }
             }
+            _crashLimitRollRates(R, beforeRoll, dt);
             let _above = 0;
             for (const pt of R.parts) {
                 const _tY = _crashFloorY(pt.p.z) + pt.r;
@@ -11397,6 +11525,8 @@ void main(void) {
             _inrunArmForward(character.meshes, state.tuckAmount,
                              state.grounded ? state.armRaise : 1,
                              window._lastSquat || 0);
+            _graspTuckKnees(character.meshes, state.tuckAmount *
+                (state.grounded ? 1 - state.armRaise : 1), state.pikeAmount || 0);
             // Fable F7 (2026-09-02): the spine chain (spine_01..03 bones) is
             // solved inside applyPose from the torso BEFORE the hip seat moves
             // the torso; in the sustained in-run crouch (torso pitched 34 deg,

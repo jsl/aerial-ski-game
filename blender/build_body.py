@@ -8746,7 +8746,8 @@ def _suit_deoverlap(bm, lay, tag):
         log(f'  close_boundary[{tag}] suit-deoverlap: {len(cand)} candidate face(s), '
             f'no opposed pair within 30 mm — no double wall, no-op')
         return
-    _faces = [cand[i][0] for i, _ in deleted if cand[i][0].is_valid]
+    # A face can participate in several opposed pairs. Delete it once.
+    _faces = list(dict.fromkeys(cand[i][0] for i, _ in deleted if cand[i][0].is_valid))
     _area = sum(f.calc_area() for f in _faces)
     log(f'  close_boundary[{tag}] suit-deoverlap: {len(_faces)}/{len(cand)} inner suit face(s) '
         f'deleted in the junction region, area {_area * 1e4:.1f} cm2, face ids '
@@ -12808,6 +12809,70 @@ def unwrap_zones(body, vzone):
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
+
+def slim_waist_and_seat(body):
+    """Lean athlete garment volume, preserving the skeleton and pose.
+
+    Smoothly contract the lower abdomen and seat in width/depth; blend back
+    to the existing ribcage and thigh surfaces without a new seam.
+    """
+    names = {g.index: g.name for g in body.vertex_groups}
+    count, maximum = 0, 0.0
+    for v in body.data.vertices:
+        height = _shell_sstep((v.co.z + 0.50) / 0.16)
+        height *= 1 - _shell_sstep((v.co.z + 0.09) / 0.18)
+        lateral = 1 - _shell_sstep((abs(v.co.x) - 0.145) / 0.060)
+        arm = sum(g.weight for g in v.groups if any(n in names[g.group] for n in ('Arm', 'Shoulder', 'Elbow')))
+        w = height * lateral * (1 - _shell_sstep((arm - 0.05) / 0.20))
+        before = v.co.copy()
+        v.co.x *= 1 - 0.18 * w
+        v.co.y *= 1 - 0.24 * w
+        moved = (v.co - before).length
+        if moved > 0.00001:
+            count += 1
+            maximum = max(maximum, moved)
+    body.data.update()
+    log(f'lean waist/seat: {count} vertices, max {maximum * 1000:.1f} mm; width18% depth24% peak contraction')
+
+def reseat_inner_armpit(body):
+    """Lift only the inner sleeve bridge toward the anatomical axilla.
+
+    The posed source leaves its inner sleeve seam 100 mm below the armpit,
+    creating a broad triangle from the elbow to the chest during a tuck.
+    Keep the outer sleeve, torso, and hip fixed; smoothly shorten this web.
+    """
+    names = {g.index: g.name for g in body.vertex_groups}
+    count, maximum = 0, 0.0
+    offsets = [0.0] * len(body.data.vertices)
+    for v in body.data.vertices:
+        arm = sum(g.weight for g in v.groups
+                  if any(s in names[g.group] for s in ('Arm', 'Shoulder', 'Elbow')))
+        leg = sum(g.weight for g in v.groups
+                  if any(s in names[g.group] for s in ('Leg', 'Hip', 'Knee')))
+        mask = _shell_sstep((arm - 0.25) / 0.40) * (1 - _shell_sstep(leg / 0.15))
+        mask *= _shell_sstep((abs(v.co.x) - 0.055) / 0.030)
+        mask *= 1 - _shell_sstep((abs(v.co.x) - 0.105) / 0.040)
+        mask *= 1 - _shell_sstep((abs(v.co.y) - 0.030) / 0.040)
+        mask *= _shell_sstep((v.co.z + 0.250) / 0.150)
+        mask *= 1 - _shell_sstep((v.co.z - 0.005) / 0.100)
+        dz = min(0.040, max(0.0, 0.035 - v.co.z)) * mask
+        offsets[v.index] = dz
+    adjacency = [[] for _ in offsets]
+    for edge in body.data.edges:
+        a, b = edge.vertices
+        adjacency[a].append(b)
+        adjacency[b].append(a)
+    for _ in range(3):
+        offsets = [0.5 * d + 0.5 * sum(offsets[j] for j in adjacency[i]) / len(adjacency[i])
+                   if d > 0 and adjacency[i] else 0.0 for i, d in enumerate(offsets)]
+    for v, dz in zip(body.data.vertices, offsets):
+        if dz > 0.00001:
+            v.co.z += dz
+            count += 1
+            maximum = max(maximum, dz)
+    body.data.update()
+    log(f'inner armpit reseated: {count} vertices, max {maximum * 1000:.1f} mm')
+
 def finish_lowpoly(body, lm):
     """
     Decimate, unwrap and split the helmet into its own material slot — spending
@@ -12856,6 +12921,9 @@ def finish_lowpoly(body, lm):
     after, counts = region_shares(body, lm)
     log(f'faces after:  head {after["head"]:.1%}, face {after["face"]:.1%}, '
         f'hand {after["hand"]:.1%}, suit {after["body"]:.1%}  ({counts})')
+
+    reseat_inner_armpit(body)
+    slim_waist_and_seat(body)
 
     # Establish posed trunk ownership before zone classification. Final
     # helpers reassert it later, but the atlas must already separate it.

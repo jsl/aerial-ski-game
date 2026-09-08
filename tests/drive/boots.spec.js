@@ -12,9 +12,9 @@
 //       projected ankle disc — the painted boot tube (the "old shoe") must
 //       never step out of the shell;
 //   (3) nothing above the knee, boots actually rendered.
-// The shipped kill-switch BOOTS_ENABLED stays default-OFF (the REVIEWER flips
-// it per the 01:55 protocol); every live test here runs with the `?boots=1`
-// measurement override.
+// Boots are enabled by default; every live test here explicitly uses
+// `?boots=1` so this material/geometry contract stays independent of a caller's
+// diagnostic `?boots=0` setting.
 //
 // NEGATIVE CONTROLS:
 //   NC1: boots displaced +0.5 m off the ankle (the 208 fold defect class)

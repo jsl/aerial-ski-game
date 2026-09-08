@@ -378,7 +378,10 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     // crash_rest.png framing, so hold the new downstream sequence at rest
     // here; walkoff.spec.js exercises the shipped default in all three worlds
     // and separately proves this stay-down control fails its #14 gate.
-    await page.evaluate(() => { window._crashWalkoffDisabled = true; });
+    await page.evaluate(() => {
+        window._crashWalkoffDisabled = true;
+        window._crashConstraintAudit = true;
+    });
 
     // ── Deterministic crash trigger (reviewer entry-109 ruling) ─────────────
     // window._debugTriggerCrash() forces the NEXT touchdown to take the
@@ -757,6 +760,12 @@ test('crash: ragdoll keeps the body coherent on the snow, no legacy solids, sett
     const worstJoints = JSON.stringify(Object.fromEntries(
         Object.entries(perJoint).map(([k, v]) => [k, +v.toFixed(4)])));
     expect(worstGap, `worst joint gap ${worstGap.toFixed(4)} m ≤ 0.02 per joint ${worstJoints}`).toBeLessThanOrEqual(0.02);
+    // A slow slide can continue beyond the original five-second window.
+    // Keep the same attachment limit through the entire crash and stopped tail.
+    const wholeSlideGap = Math.max(...traceR.filter(r => r.probe)
+        .flatMap(r => Object.values(r.gaps).filter(v => v !== null)));
+    expect(wholeSlideGap, `whole-slide joint gap ${wholeSlideGap.toFixed(4)} m ≤ 0.02`)
+        .toBeLessThanOrEqual(0.02);
     expect(worstPen, `worst body penetration ${worstPen.toFixed(4)} m ≤ 5 cm`).toBeLessThanOrEqual(0.05);
     for (const c of skiClear) {
         expect(c, `ski rests on the snow (clearance ${c === null ? 'n/a' : c.toFixed(4)})`).not.toBeNull();

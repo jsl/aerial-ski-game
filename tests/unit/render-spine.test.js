@@ -60,3 +60,23 @@ test('deep squat retains gentle spine curvature without a lumbar angular hinge',
     assert.ok(Math.abs(result.dLowDeg) > 1, 'the spine still flexes with the squat');
     assert.ok(result.step < 0.003, 'hip-to-neck closure must remain within 3 mm per joint');
 });
+
+test('spine bending speed stays continuous as the tuck reaches its curvature limit', () => {
+    const angle = thigh => {
+        const meshes = rig(0, thigh, thigh, 0);
+        context.updateSpineChain(meshes);
+        return meshes.spine_01.rotation.x;
+    };
+    // With a level head, adjacent turn is twice the thigh coupling. Sample
+    // both the soft transition and the former hard limit from either side.
+    const h = 1e-5;
+    for (const turn of [0.10, 0.20]) {
+        const thigh = turn / (2 * context.SPINE_COUPLE);
+        const left = (angle(thigh) - angle(thigh - h)) / h;
+        const right = (angle(thigh + h) - angle(thigh)) / h;
+        assert.ok(Math.abs(left - right) < 1e-4,
+            `vertebra speed must not jump at adjacent turn ${turn}`);
+    }
+    assert.ok(Math.abs(angle(1e-4) / 1e-4 - context.SPINE_COUPLE) < 1e-10,
+        'small movements retain the original neutral response');
+});

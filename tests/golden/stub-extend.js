@@ -91,6 +91,7 @@ function patchMath(B) {
                 return this;
             },
             clone() { return new Q(this.x, this.y, this.z, this.w); },
+            set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; },
             copyFrom(s) { this.x = s.x; this.y = s.y; this.z = s.z; this.w = s.w; return this; },
             conjugate() { return new Q(-this.x, -this.y, -this.z, this.w); },
             length() { return Math.sqrt(this.x ** 2 + this.y ** 2 + this.z ** 2 + this.w ** 2); },
@@ -307,6 +308,9 @@ function extendStub(ctx) {
     if (!B.Tools)       B.Tools       = { CreateScreenshot: noop, ToRadians: (d) => d * Math.PI / 180 };
     if (!B.Animation)   B.Animation   = inert('Animation');
     if (!B.SceneLoader) B.SceneLoader = { ImportMesh: noop, Append: noop, ImportMeshAsync: async () => ({ meshes: [], skeletons: [] }) };
+    if (B.Scene && !B.Scene.prototype.getEngine) {
+        B.Scene.prototype.getEngine = function () { return B._engine; };
+    }
 
     patchNodeTransforms(B);
 
@@ -411,6 +415,7 @@ function patchNodeTransforms(B) {
         node.thinInstanceSetBuffer = function () {};
         node.thinInstanceGetWorldMatrices = function () { return []; };
         node.freezeWorldMatrix = function () {};
+        node.unfreezeWorldMatrix = function () {};
         if (!node.getWorldMatrix) {
             node.getWorldMatrix = function () {
                 const { pos, rot } = absolutePosition(this);
@@ -531,6 +536,11 @@ function patchNodeTransforms(B) {
                     B.Mesh && B.Mesh.prototype].filter(Boolean);
 
     for (const proto of protos) {
+        // The skier root is a TransformNode, created after decorate() visits
+        // the initial registry. Match the inert mesh freeze API here too, or
+        // reaching crash rest throws and silently discards the ragdoll.
+        if (!proto.freezeWorldMatrix) proto.freezeWorldMatrix = function () {};
+        if (!proto.unfreezeWorldMatrix) proto.unfreezeWorldMatrix = function () {};
         if (!proto.computeWorldMatrix) {
             // Transforms are computed on demand in absolutePosition(); nothing
             // to cache, so this only needs to exist and be harmless.

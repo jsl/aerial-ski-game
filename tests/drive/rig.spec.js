@@ -1136,7 +1136,7 @@ test('styled skis: shaped geometry replaces the slats, boot line carries a bindi
                 contactFwd: fwd === Infinity ? null : +fwd.toFixed(4),
                 // Relative to the SKI, not to the physics driver. Author
                 // HUMAN TESTING #12 item 3 slides the whole visible ski —
-                // deck, binding and brake together — laterally under the boot
+                // deck and binding together — laterally under the boot
                 // (see _calibrateBootFit), so the driver's x stopped being the
                 // ski's centreline. "The binding is centred on the ski" is the
                 // statement this gate was always making; it just used to be

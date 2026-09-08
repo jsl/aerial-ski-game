@@ -2,8 +2,8 @@
 // ── #21 v3 part 2: the SITTING flight tuck (ruling on 197, Fable 19:30) ────
 // `APPROVED: POSE_TUCKED display-table adjustment per this ruling.` Gates on
 // the ruling's three numbers, measured on the LIVE character at the flight
-// tuck endpoint (tuck 1, airborne — where POSE_TUCKED is the authored table
-// and the reconciler is inert):
+// tuck endpoint (tuck 1, airborne), including the same ski pin, anatomical
+// shoulder attachment and hand wrap that the production frame applies:
 //   • torso within ~10 deg of upright  (|torso rx| <= 10.5 deg)
 //   • HANDS GRASPING the kneecaps <= 5 cm — wrist (lowerArm +Y end) to knee
 //     (upperLeg -Y end), the wrap must read as contact, not proximity
@@ -29,11 +29,11 @@ async function boot(page) {
 }
 
 // Apply the flight tuck endpoint to the live meshes and measure the ruling's
-// numbers with the same segment-end maths applyPose/_poseProbe use.
+// numbers from the final airborne composition and physical segment ends.
 function measure(page) {
     return page.evaluate(() => {
         const M = window._characterMeshes;
-        window._poseProbe(1, false, 0);   // writes the tuck=1 airborne pose
+        window._airHold(1, 0);   // actual airborne pin, shoulder and grasp composition
         const seg = (n) => {
             const m = M[n];
             const crz = Math.cos(m.rotation.z);
@@ -49,7 +49,9 @@ function measure(page) {
         for (const s of ['L', 'R']) {
             out['handToKnee' + s] = hyp(seg('lowerArm' + s).top, seg('upperLeg' + s).bot);
             out['neck' + s] = hyp(seg('head').bot, torso.top);
-            out['shoulder' + s] = hyp(seg('upperArm' + s).bot, torso.top);
+            out['shoulder' + s] = hyp(seg('upperArm' + s).bot, [
+                M.torso.position.y + 0.150 * Math.cos(M.torso.rotation.z) * Math.cos(M.torso.rotation.x),
+                M.torso.position.z + 0.150 * Math.cos(M.torso.rotation.z) * Math.sin(M.torso.rotation.x)]);
             out['hip' + s] = hyp(seg('upperLeg' + s).top, torso.bot);
             const ul = seg('upperLeg' + s);
             out['knee' + s] = hyp(seg('lowerLeg' + s).top, ul.bot);
@@ -82,6 +84,25 @@ test.describe('sitting flight tuck (#21 v3 part 2)', () => {
                          'kneeL', 'kneeR', 'ankleL', 'ankleR']) {
             expect(g[k], `sitting tuck ${k}`).toBeLessThanOrEqual(TEAR_LIMIT);
         }
+    });
+
+    test('stationary tuck brings the gloves within reach of the kneecaps without stretching arms', async ({ page }) => {
+        await boot(page);
+        const gaps = await page.evaluate(() => {
+            window._inrunHold(1, 1);
+            const M = window._characterMeshes;
+            const end = (m, h) => [m.position.x - h * Math.sin(m.rotation.z),
+                m.position.y + h * Math.cos(m.rotation.z) * Math.cos(m.rotation.x),
+                m.position.z + h * Math.cos(m.rotation.z) * Math.sin(m.rotation.x)];
+            return ['L', 'R'].map(s => {
+                const wrist = end(M['lowerArm' + s], .125), knee = end(M['upperLeg' + s], -.18);
+                return Math.hypot(...wrist.map((v, i) => v - knee[i]));
+            });
+        });
+        // The tilted ready skis put the far knee beyond the arm's exact
+        // 550 mm reach. Keep the wrist within 90 mm of the kneecap,
+        // rather than stretching limbs or changing the accepted squat pose.
+        for (const gap of gaps) expect(gap).toBeLessThanOrEqual(.09);
     });
 
     test('NEGATIVE CONTROL: the previous table\'s grasp fails the 5 cm gate', async ({ page }) => {

@@ -12,6 +12,14 @@ const path = require('node:path');
         const context = await browser.newContext({ viewport: { width: 960, height: 720 },
             recordVideo: { dir: out, size: { width: 960, height: 720 } } });
         const page = await context.newPage();
+        // Optional local candidate for an isolated diagnostic capture. The
+        // working game and asset tree stay intact while comparing solver passes.
+        if (process.env.REVIEW_GAME_JS) {
+            const candidate = fs.readFileSync(path.resolve(process.env.REVIEW_GAME_JS), 'utf8');
+            await page.route('**/game.js?*', route => route.fulfill({
+                status: 200, contentType: 'application/javascript', body: candidate,
+            }));
+        }
         await page.goto('http://127.0.0.1:' + (process.env.DRIVE_PORT || 8200) + '/index.html');
         await page.waitForFunction(() => window._bodyLinked > 0);
         const renderer = await page.evaluate(sideView => {

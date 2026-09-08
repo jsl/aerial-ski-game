@@ -46,6 +46,10 @@ function runScenario(sc) {
                 error = { frame: f, message: 'swallowed: ' + sw[0].message };
                 break;
             }
+            if (sim.env.ctx._crashErr && !error) {
+                error = { frame: f, message: 'crash renderer: ' + sim.env.ctx._crashErr };
+                break;
+            }
         } catch (e) {
             // Record and stop: a throw is itself a behavioural fact worth
             // locking down, and continuing would produce meaningless frames.
