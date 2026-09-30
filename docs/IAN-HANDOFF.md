@@ -9,7 +9,9 @@ Recovery verified September 30, 2026:
 
 - Dad's live checkout on **buypower** is `/home/justin/Code/aerial-ski-game`.
   Port 8200 serves that directory directly; there is no build output to find.
-- GitHub: https://github.com/IanLeitgeb/aerial-ski-game/tree/render-realism-glm
+- GitHub: https://github.com/jsl/aerial-ski-game/tree/render-realism-glm
+- Dad's `jsl` account has read-only access to `IanLeitgeb/aerial-ski-game`,
+  so this branch is backed up in Dad's fork, `jsl/aerial-ski-game`.
 - Use branch **`render-realism-glm`**, not GitHub's default `main` branch.
 - The recovered clean checkpoint was `b65da2acf7eda0a0e488c4ea0e958f91708b489b`;
   its latest game change is v114 at `1f7e169`. Later handoff-only commits do not
@@ -42,7 +44,7 @@ If the shared bundle is unavailable, use Ian's own GitHub access instead:
 
 ```bash
 mkdir -p ~/Code
-git clone --branch render-realism-glm https://github.com/IanLeitgeb/aerial-ski-game.git ~/Code/aerial-ski-game
+git clone --branch render-realism-glm https://github.com/jsl/aerial-ski-game.git ~/Code/aerial-ski-game
 cd ~/Code/aerial-ski-game
 git branch --show-current
 ```
