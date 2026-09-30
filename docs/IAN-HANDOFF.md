@@ -3,6 +3,23 @@
 Give this file to Claude Code while signed in to **Ian's own buypower account**.
 Claude should explain each step simply and do the setup, coding and checks.
 
+## Where the latest code lives
+
+Recovery verified September 30, 2026:
+
+- Dad's live checkout on **buypower** is `/home/justin/Code/aerial-ski-game`.
+  Port 8200 serves that directory directly; there is no build output to find.
+- GitHub: https://github.com/IanLeitgeb/aerial-ski-game/tree/render-realism-glm
+- Use branch **`render-realism-glm`**, not GitHub's default `main` branch.
+- The recovered clean checkpoint was `b65da2acf7eda0a0e488c4ea0e958f91708b489b`;
+  its latest game change is v114 at `1f7e169`. Later handoff-only commits do not
+  change the game. The package's `SOURCE_COMMIT` records its exact bundled tip.
+- This document is tracked as `docs/IAN-HANDOFF.md`. A shared copy and full Git
+  bundle are at `/var/tmp/aerial-ski-ian-handoff/` on **buypower**, not zion.
+  The shared directory was missing and has been recreated from the live checkout.
+- Temporary directories can be cleaned up. GitHub and the tracked document are
+  the durable recovery source; the bundle permits setup without GitHub access.
+
 ## Start with an independent copy
 
 The handoff snapshot is a Git bundle readable by other local accounts:
@@ -20,6 +37,18 @@ cd ~/Code/aerial-ski-game
 git remote remove origin
 git branch --show-current
 ```
+
+If the shared bundle is unavailable, use Ian's own GitHub access instead:
+
+```bash
+mkdir -p ~/Code
+git clone --branch render-realism-glm https://github.com/IanLeitgeb/aerial-ski-game.git ~/Code/aerial-ski-game
+cd ~/Code/aerial-ski-game
+git branch --show-current
+```
+
+Use only one clone method and never overwrite an existing checkout. If GitHub
+requires authentication, use Ian's account; do not borrow Dad's credentials.
 
 The last command must print `render-realism-glm`. Keep work on that branch in
 Ian's copy. Do not edit Justin's checkout or switch to main. The bundle is a
@@ -98,7 +127,8 @@ Follow the existing asset/cache versioning process in `game.js` and `index.html`
 Use `DRIVE_GPU=1` for GPU browser reviews and verify the renderer actually reports
 NVIDIA, rather than assuming a successful browser launch proves GPU use.
 
-For test tooling, install dependencies in Ian's copy with `npm ci` and, if needed,
+For test tooling, install dependencies in Ian's copy with `npm install` (the
+repository does not track a lockfile, so a fresh clone cannot use `npm ci`) and, if needed,
 `npx playwright install chromium`. Basic checks:
 
 ```bash
